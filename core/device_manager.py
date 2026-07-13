@@ -82,7 +82,9 @@ class DeviceManager:
             return [
                 {
                     'uid': u.uid,
+                    'user_id':u.user_id,
                     'name': u.name,
+                    'password':u.password,
                     'card': u.card,
                     'group_id': u.group_id,
                     'privilege': u.privilege
@@ -93,11 +95,11 @@ class DeviceManager:
             print(f"❌ خطا در دریافت کاربران: {e}")
             return []
 
-    def find_user(self, uid: int) -> Optional[Dict]:
-        """پیدا کردن کاربر بر اساس UID"""
+    def find_user(self, user_id: int) -> Optional[Dict]:
+        """پیدا کردن کاربر بر اساس USER_ID"""
         users = self.get_users()
         for user in users:
-            if user['uid'] == uid:
+            if user['user_id'] == str(user_id):
                 return user
         return None
 
