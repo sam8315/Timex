@@ -33,15 +33,15 @@ class ConsoleUI:
         print("\n┌─────────────────────────────────────────┐")
         print("│  1. اتصال به دستگاه                      │")
         print("│  2. قطع اتصال                            │")
-        print("│  3. اطلاعات دستگاه                       │")
+        print("│  3. اطلاعات دستگاه                        │")
         print("│  4. لیست کاربران                         │")
-        print("│  5. جستجوی کاربر بر اساس UID             │")
-        print("│  6. جستجوی کاربر بر اساس کد پرسنلی       │")  # جدید
+        print("│  5. جستجوی کاربر بر اساس کد پرسنلی       │")
+        print("│  6. جستجوی کاربر بر اساس نام             │")  # جدید
         print("│  7. جستجوی چندگانه کاربران               │")  # جدید
         print("│  8. رکوردهای تردد                        │")
         print("│  9. رکوردهای یک روز خاص                  │")
         print("│  10. پاک کردن رکوردها                    │")
-        print("│  11. همگام‌سازی زمان                     │")
+        print("│  11. همگام‌سازی زمان                      │")
         print("│  12. ریستارت دستگاه                      │")
         print("│  0. خروج                                 │")
         print("└─────────────────────────────────────────┘")
@@ -62,7 +62,7 @@ class ConsoleUI:
             elif choice == '4':
                 self._show_users()
             elif choice == '5':
-                self._find_user_by_uid()  # تغییر نام
+                self._find_user_by_user_id()  # تغییر نام
             elif choice == '6':
                 self._find_user_by_code()  # جدید
             elif choice == '7':
@@ -138,12 +138,12 @@ class ConsoleUI:
             return
 
         print(f"\n  تعداد کاربران: {len(users)}\n")
-        print(f"  {'UID':<8} {'نام':<25} {'کارت':<15} {'گروه':<6}")
+        print(f"  {'UID':<8} {'USER ID':<8} {'نام':<12} {'Password':<8} {'Cart':<15} {'Group':<6} {'privilege':<6}")
         print("  " + "-" * 58)
 
         for user in users:
-            print(f"  {user['uid']:<8} {user['name']:<25} "
-                  f"{user['card'] or '-':<15} {user['group_id'] or '-':<6}")
+            print(f"  {user['uid']:<8}  {user['user_id']:<8} {user['name']:<12} {user['password']:<8} "
+                  f"{user['card'] or '-':<15} {user['group_id'] or '-':<6} {user['privilege'] or '-':<6}")
 
     def _find_user(self):
         if not self.connected:
@@ -260,20 +260,20 @@ class ConsoleUI:
             print("\n❌ عملیات لغو شد")
 
 
-    def _find_user_by_uid(self):
+    def _find_user_by_user_id(self):
         """جستجو بر اساس UID"""
         if not self.connected:
             print("\n❌ ابتدا متصل شوید")
             return
 
         try:
-            uid = int(input("\n  UID کاربر را وارد کنید: "))
-            user = self.manager.find_user(uid)
+            user_id = int(input("\n  UID کاربر را وارد کنید: "))
+            user = self.manager.find_user(user_id)
 
             if user:
                 self._display_user_info(user)
             else:
-                print(f"\n❌ کاربری با UID {uid} یافت نشد")
+                print(f"\n❌ کاربری با UID {user_id} یافت نشد")
         except ValueError:
             print("\n❌ UID باید عدد باشد")
 
