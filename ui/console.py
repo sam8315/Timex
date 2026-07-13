@@ -1,3 +1,9 @@
+from typing import Dict
+from datetime import datetime
+import jdatetime
+from core.device_manager import DeviceManager
+
+
 class ConsoleUI:
     """رابط کاربری کنسول"""
 
