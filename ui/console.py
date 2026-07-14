@@ -183,7 +183,7 @@ class ConsoleUI:
         # نمایش 20 رکورد آخر
         display_count = min(20, len(records))
         print(f"  آخرین {display_count} رکورد:\n")
-        print(f"  {'UID':<8} {'زمان میلادی':<22} {'زمان شمسی':<22} {'وضعیت':<8}")
+        print(f"  {'UID':<8} {'Time':<22} {'Time shamsi':<22} {'status(ramz=0,finger=1,cart=2)':<8} {'punch(enter=0,exit=1)':<8}")
         print("  " + "-" * 64)
 
         for record in records[-display_count:]:
@@ -194,7 +194,7 @@ class ConsoleUI:
             except:
                 jts_str = "-"
 
-            print(f"  {record['user_id']:<8} {str(ts):<22} {jts_str:<22} {record['status']:<8}")
+            print(f"  {record['user_id']:<8} {str(ts):<22} {jts_str:<22} {record['status']:<8} {record['punch']:<8}")
 
     def _show_attendance_by_date(self):
         if not self.connected:
@@ -211,7 +211,7 @@ class ConsoleUI:
 
             self.header(f"رکوردهای تاریخ {date_str}")
             print(f"\n  تعداد رکوردها: {len(records)}\n")
-            print(f"  {'UID':<8} {'زمان':<20} {'وضعیت':<8}")
+            print(f"  {'UID':<8} {'Time':<20} {'Status':<8}")
             print("  " + "-" * 40)
 
             for record in records:
