@@ -3,7 +3,7 @@
 """
 from datetime import datetime
 from typing import Optional
-from sqlalchemy import Integer, DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy import Integer, DateTime, ForeignKey, UniqueConstraint, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from models.base import Base, TimestampMixin
 
@@ -14,9 +14,9 @@ class Attendance(TimestampMixin, Base):
 
     # فیلدهای اصلی
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    user_id: Mapped[int] = mapped_column(
-        Integer,
-        ForeignKey("users.uid", ondelete="CASCADE"),
+    user_id: Mapped[str] = mapped_column(
+        String(50),
+        ForeignKey("users.user_id", ondelete="CASCADE"),
         nullable=False,
         index=True
     )

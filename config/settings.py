@@ -23,6 +23,13 @@ DB_NAME = os.getenv("DB_NAME", "timex_db")
 # فرمت: postgresql://user:password@host:port/dbname
 DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
+# 🆕 تنظیمات MySQL قدیمی
+MYSQL_HOST = os.getenv("MYSQL_HOST", "localhost")
+MYSQL_PORT = int(os.getenv("MYSQL_PORT", 3306))
+MYSQL_USER = os.getenv("MYSQL_USER", "root")
+MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "")
+MYSQL_DB = os.getenv("MYSQL_DB", "")
+
 # تنظیمات برنامه
 APP_NAME = "سیستم مدیریت حضور و غیاب"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.1.0"

@@ -2,7 +2,7 @@
 مدل جدول کاربران
 """
 from typing import Optional, List
-from sqlalchemy import Integer, String
+from sqlalchemy import Integer, String, BigInteger
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from models.base import Base, TimestampMixin
 
@@ -13,9 +13,12 @@ class User(TimestampMixin, Base):
 
     # فیلدهای اصلی
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    uid: Mapped[int] = mapped_column(Integer, unique=True, nullable=False, index=True)
+
+    # user_id: کد پرسنلی (همان user_id در دستگاه ZKTeco)
+    user_id: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
+
     name: Mapped[str] = mapped_column(String(100), nullable=False)
-    card: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    card: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     group_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     privilege: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
@@ -27,13 +30,12 @@ class User(TimestampMixin, Base):
     )
 
     def __repr__(self) -> str:
-        return f"<User(id={self.id}, uid={self.uid}, name='{self.name}')>"
+        return f"<User(user_id='{self.user_id}', name='{self.name}')>"
 
     def to_dict(self) -> dict:
-        """تبدیل مدل به دیکشنری"""
         return {
             'id': self.id,
-            'uid': self.uid,
+            'user_id': self.user_id,
             'name': self.name,
             'card': self.card,
             'group_id': self.group_id,

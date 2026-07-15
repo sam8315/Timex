@@ -41,10 +41,19 @@ class ConsoleUI:
         print("│  8. رکوردهای تردد                        │")
         print("│  9. رکوردهای یک روز خاص                  │")
         print("│  10. پاک کردن رکوردها                    │")
-        print("│  11. همگام‌سازی زمان                      │")
-        print("│  12. ریستارت دستگاه                      │")
+        print("│      دیتابیس و Migration                 │")
+        print("│  11. همگام‌سازی کاربران با دیتابیس        │")
+        print("│  12. همگام‌سازی رکوردهای تردد با دیتابیس  │")  # 🆕 گزینه جدید
+        print("│  13. انتقال کامل از MySQL (Migration)    │")
+        print("│  14. انتقال تدریجی از MySQL (Sync)       │")
+        print("│  15. تست اتصال به MySQL                  │")
+        print("│                                          │")
+        print("│              تنظیمات                     │")
+        print("│  16. همگام‌سازی زمان                      │")
+        print("│  17. ریستارت دستگاه                      │")
+        print("│                                          │")
         print("│  0. خروج                                 │")
-        print("└─────────────────────────────────────────┘")
+        print("└─────────────────────────────────────────────────┘")
 
         return input("\n  انتخاب شما: ").strip()
 
@@ -74,8 +83,18 @@ class ConsoleUI:
             elif choice == '10':
                 self._clear_attendance()
             elif choice == '11':
+                self._sync_users_to_db()
+            elif choice == '12':  # یا شماره‌ای که انتخاب کردید
+                self._sync_attendance_to_db()
+            elif choice == '13':
+                self._migrate_from_mysql()  # 🆕
+            elif choice == '14':
+                self._sync_from_mysql()  # 🆕
+            elif choice == '15':
+                self._test_mysql_connection()  # 🆕
+            elif choice == '16':
                 self._sync_time()
-            elif choice == '12':
+            elif choice == '17':
                 self._restart()
             elif choice == '0':
                 self._disconnect()
@@ -334,3 +353,129 @@ class ConsoleUI:
         print(f"  کارت      : {user['card'] or '-'}")
         print(f"  گروه      : {user['group_id'] or '-'}")
         print(f"  سطح دسترسی: {user['privilege']}")
+
+    def _migrate_from_mysql(self):
+        """انتقال کامل داده‌ها از MySQL"""
+        from database.migration import DataMigrator
+
+        print("\n" + "=" * 60)
+        print("  🔄 انتقال کامل داده‌ها از MySQL")
+        print("=" * 60)
+        print("\n⚠️  این عملیات ممکن است چند دقیقه طول بکشد")
+
+        confirm = input("\nآیا مطمئن هستید؟ (بله/خیر): ").strip()
+        if confirm.lower() not in ['بله', 'yes', 'y']:
+            print("\n❌ عملیات لغو شد")
+            return
+
+        dry_run_input = input("\nاجرا در حالت Dry Run (فقط شبیه‌سازی)؟ (بله/خیر): ").strip()
+        dry_run = dry_run_input.lower() in ['بله', 'yes', 'y']
+
+        migrator = DataMigrator()
+
+        if not migrator.connect_mysql():
+            return
+
+        try:
+            migrator.migrate_all(dry_run=dry_run)
+        finally:
+            migrator.disconnect_mysql()
+
+    def _sync_from_mysql(self):
+        """Sync تدریجی از MySQL (فقط رکوردهای جدید)"""
+        from database.migration import DataMigrator
+
+        print("\n" + "=" * 60)
+        print("  🔄 همگام‌سازی تدریجی از MySQL")
+        print("=" * 60)
+
+        migrator = DataMigrator()
+
+        # دریافت آخرین تاریخ sync شده
+        last_date = migrator.get_last_synced_date()
+
+        if not last_date:
+            print("\n⚠️  هیچ رکوردی در PostgreSQL وجود ندارد")
+            print("💡 ابتدا از گزینه 11 (Migration کامل) استفاده کنید")
+            return
+
+        print(f"\n📅 آخرین رکورد sync شده: {last_date}")
+
+        from_date = input(f"\nانتقال از تاریخ (پیش‌فرض: {last_date}): ").strip()
+        if not from_date:
+            from_date = last_date
+
+        if not migrator.connect_mysql():
+            return
+
+        try:
+            migrator.migrate_from_date(from_date)
+        finally:
+            migrator.disconnect_mysql()
+
+    def _test_mysql_connection(self):
+        """تست اتصال به MySQL"""
+        from database.mysql_connector import MySQLConnector
+
+        print("\n🔌 در حال تست اتصال به MySQL...")
+
+        mysql = MySQLConnector()
+
+        if mysql.connect():
+            print("✅ اتصال به MySQL برقرار شد")
+
+            # نمایش اطلاعات
+            count = mysql.get_record_count()
+            print(f"📊 تعداد رکوردهای ioinfo: {count}")
+
+            personnel = mysql.get_unique_personnel()
+            print(f"👥 تعداد پرسنل منحصر به فرد: {len(personnel)}")
+
+            # نمایش چند رکورد نمونه
+            print("\n📝 5 رکورد نمونه:")
+            records = mysql.get_ioinfo_records(limit=5)
+            for r in records:
+                print(f"  Perno={r['Perno']}, "
+                      f"Enter={r['EnterDate']} {r['EnterTime']}, "
+                      f"Exit={r['ExitDate'] or '-'} {r['ExitTime'] or '-'}")
+
+            mysql.disconnect()
+        else:
+            print("❌ اتصال به MySQL ناموفق بود")
+
+    def _sync_users_to_db(self):
+        """همگام‌سازی کاربران دستگاه با دیتابیس"""
+        if not self.connected:
+            print("\n❌ ابتدا به دستگاه متصل شوید")
+            return
+
+        print("\n" + "=" * 60)
+        print("  🔄 همگام‌سازی کاربران با دیتابیس")
+        print("=" * 60)
+
+        confirm = input("\nآیا مطمئن هستید؟ (بله/خیر): ").strip()
+        if confirm.lower() not in ['بله', 'yes', 'y']:
+            print("\n❌ عملیات لغو شد")
+            return
+
+        self.manager.sync_users_to_db()
+
+    def _sync_attendance_to_db(self):
+        """همگام‌سازی رکوردهای تردد دستگاه با دیتابیس"""
+        if not self.connected:
+            print("\n❌ ابتدا به دستگاه متصل شوید (گزینه 1)")
+            return
+
+        print("\n" + "=" * 60)
+        print("  🔄 همگام‌سازی رکوردهای تردد با دیتابیس")
+        print("=" * 60)
+        print("\n⚠️  این عملیات بسته به تعداد رکوردها ممکن است زمان‌بر باشد.")
+        print("💡 رکوردهای تکراری به صورت خودکار نادیده گرفته می‌شوند.")
+
+        confirm = input("\nآیا مطمئن هستید؟ (بله/خیر): ").strip()
+        if confirm.lower() not in ['بله', 'yes', 'y']:
+            print("\n❌ عملیات لغو شد")
+            return
+
+        # فراخوانی متد مدیر دستگاه
+        self.manager.sync_attendance_to_db()
