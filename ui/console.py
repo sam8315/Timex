@@ -1,5 +1,5 @@
 from typing import Dict
-from datetime import datetime
+from datetime import datetime, timedelta,date
 import jdatetime
 from core.device_manager import DeviceManager
 
@@ -52,6 +52,10 @@ class ConsoleUI:
         print("│  16. همگام‌سازی زمان                      │")
         print("│  17. ریستارت دستگاه                      │")
         print("│                                          │")
+        print("│  🔍 تحلیل و گزارش                       │")
+        print("│  18. بررسی ترددهای ناقص                       │")  # 🆕
+        print("│  19. آمار کلی ترددها                          │")  # 🆕
+        print("│  20. جزئیات تردد یک کاربر                     │")  # 🆕
         print("│  0. خروج                                 │")
         print("└─────────────────────────────────────────────────┘")
 
@@ -96,6 +100,12 @@ class ConsoleUI:
                 self._sync_time()
             elif choice == '17':
                 self._restart()
+            elif choice == '18':
+                self._show_incomplete_attendances()
+            elif choice == '19':
+                self._show_attendance_statistics()
+            elif choice == '20':
+                self._show_user_attendance_detail()
             elif choice == '0':
                 self._disconnect()
                 print("\n👋 خدانگهدار!")
@@ -479,3 +489,176 @@ class ConsoleUI:
 
         # فراخوانی متد مدیر دستگاه
         self.manager.sync_attendance_to_db()
+
+    def _show_incomplete_attendances(self):
+        """نمایش ترددهای ناقص"""
+        from core.attendance_analyzer import AttendanceAnalyzer
+
+        print("\n" + "=" * 60)
+        print("  🔍 بررسی ترددهای ناقص")
+        print("=" * 60)
+
+        # دریافت بازه زمانی
+        print("\n📅 بازه زمانی را مشخص کنید:")
+        from_date_str = input("  از تاریخ (شمسی - مثال: 1405/04/01) [پیش‌فرض: اول ماه]: ").strip()
+        to_date_str = input("  تا تاریخ (شمسی - مثال: 1405/04/24) [پیش‌فرض: امروز]: ").strip()
+
+        try:
+            # تبدیل تاریخ شمسی به میلادی
+            if from_date_str:
+                j_from = jdatetime.datetime.strptime(from_date_str, "%Y/%m/%d").date()
+                from_date = j_from.togregorian()
+            else:
+                today = date.today()
+                from_date = date(today.year, today.month, 1)
+
+            if to_date_str:
+                j_to = jdatetime.datetime.strptime(to_date_str, "%Y/%m/%d").date()
+                to_date = j_to.togregorian()
+            else:
+                to_date = date.today()
+
+        except Exception as e:
+            print(f"\n❌ خطا در تبدیل تاریخ: {e}")
+            return
+
+        analyzer = AttendanceAnalyzer()
+        try:
+            incomplete = analyzer.get_incomplete_attendances(from_date, to_date)
+
+            if not incomplete:
+                print("\n✅ هیچ تردد ناقصی در این بازه زمانی یافت نشد!")
+                return
+
+            print(f"\n⚠️  تعداد {len(incomplete)} تردد ناقص یافت شد:\n")
+            print(f"  {'تاریخ':<12} {'کد پرسنلی':<12} {'نام':<20} {'وضعیت':<25} {'ورود':<6} {'خروج':<6}")
+            print("  " + "-" * 85)
+
+            for item in incomplete:
+                # تبدیل تاریخ میلادی به شمسی برای نمایش
+                j_date = jdatetime.date.fromgregorian(date=item['date'])
+                date_str = j_date.strftime("%Y/%m/%d")
+
+                print(f"  {date_str:<12} {item['user_id']:<12} {item['name']:<20} "
+                      f"{item['type']:<25} {item['enter_count']:<6} {item['exit_count']:<6}")
+
+            # خلاصه بر اساس نوع مشکل
+            missing_enter = sum(1 for i in incomplete if i['issue'] == 'missing_enter')
+            missing_exit = sum(1 for i in incomplete if i['issue'] == 'missing_exit')
+            imbalance = sum(1 for i in incomplete if i['issue'] == 'imbalance')
+
+            print("\n" + "-" * 85)
+            print(f"  📊 خلاصه:")
+            print(f"     • خروج بدون ورود   : {missing_enter}")
+            print(f"     • ورود بدون خروج   : {missing_exit}")
+            print(f"     • عدم تعادل       : {imbalance}")
+            print("-" * 85)
+
+        finally:
+            analyzer.close()
+
+    def _show_attendance_statistics(self):
+        """نمایش آمار کلی ترددها"""
+        from core.attendance_analyzer import AttendanceAnalyzer
+
+        print("\n" + "=" * 60)
+        print("  📊 آمار کلی ترددها")
+        print("=" * 60)
+
+        analyzer = AttendanceAnalyzer()
+        try:
+            stats = analyzer.get_summary_statistics()
+
+            j_from = jdatetime.date.fromgregorian(date=stats['from_date'])
+            j_to = jdatetime.date.fromgregorian(date=stats['to_date'])
+
+            print(f"\n  📅 بازه زمانی: {j_from.strftime('%Y/%m/%d')} تا {j_to.strftime('%Y/%m/%d')}")
+            print("\n" + "-" * 60)
+            print(f"  • کل رکوردهای تردد      : {stats['total_records']:,}")
+            print(f"  • تعداد ورودها           : {stats['enter_count']:,}")
+            print(f"  • تعداد خروج‌ها          : {stats['exit_count']:,}")
+            print(f"  • کاربران فعال           : {stats['unique_users']}")
+            print(f"  • ترددهای ناقص           : {stats['incomplete_count']}")
+
+            if stats['enter_count'] > 0 or stats['exit_count'] > 0:
+                ratio = stats['exit_count'] / stats['enter_count'] if stats['enter_count'] > 0 else 0
+                print(f"  • نسبت خروج به ورود    : {ratio:.2%}")
+
+            print("-" * 60)
+
+        finally:
+            analyzer.close()
+
+    def _show_user_attendance_detail(self):
+        """نمایش جزئیات تردد یک کاربر"""
+        from core.attendance_analyzer import AttendanceAnalyzer
+
+        print("\n" + "=" * 60)
+        print("  🔎 جزئیات تردد یک کاربر")
+        print("=" * 60)
+
+        user_id = input("\n  کد پرسنلی کاربر را وارد کنید: ").strip()
+        if not user_id:
+            print("❌ کد پرسنلی نمی‌تواند خالی باشد")
+            return
+
+        date_str = input("  تاریخ (شمسی - مثال: 1405/04/24) [پیش‌فرض: امروز]: ").strip()
+
+        try:
+            if date_str:
+                j_date = jdatetime.datetime.strptime(date_str, "%Y/%m/%d").date()
+                target_date = j_date.togregorian()
+            else:
+                target_date = date.today()
+        except Exception as e:
+            print(f"\n❌ خطا در تبدیل تاریخ: {e}")
+            return
+
+        analyzer = AttendanceAnalyzer()
+        try:
+            detail = analyzer.get_user_attendance_detail(user_id, target_date)
+
+            if 'error' in detail:
+                print(f"\n❌ {detail['error']}")
+                return
+
+            j_date = jdatetime.date.fromgregorian(date=target_date)
+
+            print(f"\n  👤 کاربر: {detail['user']['name']} (کد: {detail['user']['user_id']})")
+            print(f"  📅 تاریخ: {j_date.strftime('%Y/%m/%d')}")
+            print("\n" + "-" * 60)
+
+            if detail['enter_count'] == 0 and detail['exit_count'] == 0:
+                print("  ⚠️  هیچ ترددی برای این کاربر در این تاریخ ثبت نشده است")
+            else:
+                print(f"  🟢 تعداد ورودها: {detail['enter_count']}")
+                for e in detail['enters']:
+                    time_str = e['time'].strftime("%H:%M:%S")
+                    print(f"      • {time_str} (روش: {self._get_status_name(e['status'])})")
+
+                print(f"\n  🔴 تعداد خروج‌ها: {detail['exit_count']}")
+                for x in detail['exits']:
+                    time_str = x['time'].strftime("%H:%M:%S")
+                    print(f"      • {time_str} (روش: {self._get_status_name(x['status'])})")
+
+                print("\n" + "-" * 60)
+                if detail['is_complete']:
+                    print("  ✅ وضعیت: تردد کامل")
+                else:
+                    print("  ⚠️  وضعیت: تردد ناقص")
+
+            print("-" * 60)
+
+        finally:
+            analyzer.close()
+
+    def _get_status_name(self, status: int) -> str:
+        """تبدیل کد status به نام خوانا"""
+        status_map = {
+            0: 'اثر انگشت',
+            1: 'کارت',
+            2: 'رمز',
+            3: 'چهره',
+            15: 'سایر'
+        }
+        return status_map.get(status, f'نامشخص ({status})')
