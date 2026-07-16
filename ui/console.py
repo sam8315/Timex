@@ -590,64 +590,115 @@ class ConsoleUI:
             analyzer.close()
 
     def _show_user_attendance_detail(self):
-        """نمایش جزئیات تردد یک کاربر"""
+        """نمایش جزئیات تردد یک کاربر در بازه زمانی"""
         from core.attendance_analyzer import AttendanceAnalyzer
 
-        print("\n" + "=" * 60)
-        print("  🔎 جزئیات تردد یک کاربر")
-        print("=" * 60)
+        print("\n" + "=" * 100)
+        print("  🔎 گزارش تردد کاربر در بازه زمانی")
+        print("=" * 100)
 
-        user_id = input("\n  کد پرسنلی کاربر را وارد کنید: ").strip()
+        user_id = input("\n  📛 کد پرسنلی کاربر: ").strip()
         if not user_id:
-            print("❌ کد پرسنلی نمی‌تواند خالی باشد")
+            print("  ❌ کد پرسنلی نمی‌تواند خالی باشد")
             return
 
-        date_str = input("  تاریخ (شمسی - مثال: 1405/04/24) [پیش‌فرض: امروز]: ").strip()
+        # دریافت بازه زمانی با پیش‌فرض اول ماه شمسی
+        today_j = jdatetime.date.today()
+        default_from = jdatetime.date(today_j.year, today_j.month, 1)
+
+        from_str = input(f"  📅 از تاریخ (شمسی) [پیش‌فرض: {default_from.strftime('%Y/%m/%d')}]: ").strip()
+        to_str = input(f"  📅 تا تاریخ (شمسی) [پیش‌فرض: {today_j.strftime('%Y/%m/%d')}]: ").strip()
 
         try:
-            if date_str:
-                j_date = jdatetime.datetime.strptime(date_str, "%Y/%m/%d").date()
-                target_date = j_date.togregorian()
-            else:
-                target_date = date.today()
+            # تبدیل تاریخ‌ها
+            from_date = jdatetime.datetime.strptime(
+                from_str if from_str else default_from.strftime("%Y/%m/%d"),
+                "%Y/%m/%d"
+            ).date().togregorian()
+
+            to_date = jdatetime.datetime.strptime(
+                to_str if to_str else today_j.strftime("%Y/%m/%d"),
+                "%Y/%m/%d"
+            ).date().togregorian()
+
         except Exception as e:
-            print(f"\n❌ خطا در تبدیل تاریخ: {e}")
+            print(f"\n  ❌ خطا در تبدیل تاریخ: {e}")
             return
 
         analyzer = AttendanceAnalyzer()
         try:
-            detail = analyzer.get_user_attendance_detail(user_id, target_date)
+            result = analyzer.get_user_attendance_range(user_id, from_date, to_date)
 
-            if 'error' in detail:
-                print(f"\n❌ {detail['error']}")
+            if 'error' in result:
+                print(f"\n  ❌ {result['error']}")
                 return
 
-            j_date = jdatetime.date.fromgregorian(date=target_date)
+            days = result['days']
+            summary = result['summary']
 
-            print(f"\n  👤 کاربر: {detail['user']['name']} (کد: {detail['user']['user_id']})")
-            print(f"  📅 تاریخ: {j_date.strftime('%Y/%m/%d')}")
-            print("\n" + "-" * 60)
+            # هدر گزارش
+            print(f"\n  👤 کاربر: {result['user']['name']} (کد: {result['user']['user_id']})")
+            j_from = jdatetime.date.fromgregorian(date=result['from_date'])
+            j_to = jdatetime.date.fromgregorian(date=result['to_date'])
+            print(f"  📅 بازه: {j_from.strftime('%Y/%m/%d')} تا {j_to.strftime('%Y/%m/%d')}")
 
-            if detail['enter_count'] == 0 and detail['exit_count'] == 0:
-                print("  ⚠️  هیچ ترددی برای این کاربر در این تاریخ ثبت نشده است")
-            else:
-                print(f"  🟢 تعداد ورودها: {detail['enter_count']}")
-                for e in detail['enters']:
-                    time_str = e['time'].strftime("%H:%M:%S")
-                    print(f"      • {time_str} (روش: {self._get_status_name(e['status'])})")
+            if not days:
+                print("\n  ⚠️  هیچ ترددی در این بازه زمانی ثبت نشده است")
+                return
 
-                print(f"\n  🔴 تعداد خروج‌ها: {detail['exit_count']}")
-                for x in detail['exits']:
-                    time_str = x['time'].strftime("%H:%M:%S")
-                    print(f"      • {time_str} (روش: {self._get_status_name(x['status'])})")
+            # جدول نتایج با ستون‌های پهن‌تر
+            print("\n  ┌──────────────┬────────────┬────────────┬────────┬────────┬──────────┬──────────────┐")
+            print("  │ تاریخ        │ ورود اول   │ خروج آخر   │  ورود  │  خروج  │ ساعت‌کار  │ وضعیت        │")
+            print("  ├──────────────┼────────────┼────────────┼────────┼────────┼──────────┼──────────────┤")
 
-                print("\n" + "-" * 60)
-                if detail['is_complete']:
-                    print("  ✅ وضعیت: تردد کامل")
+            for day in days:
+                j_date = jdatetime.date.fromgregorian(date=day['date'])
+                date_str = j_date.strftime("%Y/%m/%d")
+
+                first_enter = day['first_enter'].strftime("%H:%M") if day['first_enter'] else "   ---    "
+                last_exit = day['last_exit'].strftime("%H:%M") if day['last_exit'] else "   ---    "
+
+                # محاسبه و نمایش ساعت کاری
+                if day['work_hours'] is not None:
+                    hours = int(day['work_hours'])
+                    minutes = int((day['work_hours'] - hours) * 60)
+                    work_str = f"  {hours:02d}:{minutes:02d}   "
                 else:
-                    print("  ⚠️  وضعیت: تردد ناقص")
+                    work_str = "   ---    "
 
-            print("-" * 60)
+                # وضعیت با پهنای مناسب
+                if day['is_complete']:
+                    status = "✅ کامل       "
+                elif day['enter_count'] > 0 and day['exit_count'] == 0:
+                    status = "⚠️ بدون خروج  "
+                elif day['enter_count'] == 0 and day['exit_count'] > 0:
+                    status = "❌ بدون ورود  "
+                else:
+                    status = "🔄 نامتعادل   "
+
+                print(f"  │ {date_str:<12} │ {first_enter:<10} │ {last_exit:<10} │ "
+                      f"{day['enter_count']:^6} │ {day['exit_count']:^6} │ {work_str:<8} │ {status:<12} │")
+
+            print("  └──────────────┴────────────┴────────────┴────────┴────────┴──────────┴──────────────┘")
+
+            # خلاصه آماری
+            print("\n  " + "-" * 96)
+            print(f"  📊 خلاصه:")
+            print(f"     • روزهای ثبت شده     : {summary['total_days']}")
+            print(f"     • روزهای کامل        : {summary['complete_days']} ✅")
+            print(f"     • روزهای ناقص        : {summary['incomplete_days']} ⚠️")
+
+            total_hours = int(summary['total_work_hours'])
+            total_minutes = int((summary['total_work_hours'] - total_hours) * 60)
+            print(f"     • مجموع ساعات کاری   : {total_hours} ساعت و {total_minutes} دقیقه")
+
+            if summary['total_days'] > 0:
+                avg_hours = summary['total_work_hours'] / summary['total_days']
+                avg_h = int(avg_hours)
+                avg_m = int((avg_hours - avg_h) * 60)
+                print(f"     • میانگین روزانه     : {avg_h} ساعت و {avg_m} دقیقه")
+
+            print("  " + "-" * 96)
 
         finally:
             analyzer.close()

@@ -5,7 +5,7 @@ from datetime import datetime, date
 from typing import List, Dict, Optional
 from sqlalchemy import func, and_, case
 from sqlalchemy.orm import Session
-import jdatetime
+from jdatetime import date as jdate
 
 from database.engine import SessionLocal
 from models.user import User
@@ -116,8 +116,12 @@ class AttendanceAnalyzer:
         """
         if not to_date:
             to_date = date.today()
+
+        today_jalali = jdate.fromgregorian(date=to_date)
+        first_day_jalali = jdate(today_jalali.year, today_jalali.month, 1)
         if not from_date:
-            from_date = date(to_date.year, to_date.month, 1)
+            # from_date = date(to_date.year, to_date.month, 1)
+            from_date = first_day_jalali.togregorian()
 
         # کل رکوردها
         total_records = self.db.query(Attendance).filter(
@@ -165,30 +169,76 @@ class AttendanceAnalyzer:
             'to_date': to_date
         }
 
-    def get_user_attendance_detail(self, user_id: str, target_date: date) -> Dict:
+    def get_user_attendance_range(
+            self,
+            user_id: str,
+            from_date: date,
+            to_date: date
+    ) -> Dict:
         """
-        دریافت جزئیات تردد یک کاربر در یک روز خاص
+        دریافت جزئیات تردد یک کاربر در یک بازه زمانی
+
+        Returns:
+            Dict: شامل اطلاعات کاربر و لیست روزانه
         """
         user = self.db.query(User).filter(User.user_id == user_id).first()
         if not user:
             return {'error': 'کاربر یافت نشد'}
 
-        records = self.db.query(Attendance).filter(
+        # کوئری: گروه‌بندی بر اساس روز
+        query = self.db.query(
+            func.date(Attendance.timestamp).label('attendance_date'),
+            func.sum(case((Attendance.punch == 0, 1), else_=0)).label('enter_count'),
+            func.sum(case((Attendance.punch == 1, 1), else_=0)).label('exit_count'),
+            func.min(case((Attendance.punch == 0, Attendance.timestamp))).label('first_enter'),
+            func.max(case((Attendance.punch == 1, Attendance.timestamp))).label('last_exit')
+        ).filter(
             and_(
                 Attendance.user_id == user_id,
-                func.date(Attendance.timestamp) == target_date
+                func.date(Attendance.timestamp) >= from_date,
+                func.date(Attendance.timestamp) <= to_date
             )
-        ).order_by(Attendance.timestamp).all()
+        ).group_by(
+            func.date(Attendance.timestamp)
+        ).order_by(
+            func.date(Attendance.timestamp).desc()
+        )
 
-        enters = [r for r in records if r.punch == 0]
-        exits = [r for r in records if r.punch == 1]
+        days = []
+        for row in query:
+            is_complete = row.enter_count > 0 and row.exit_count > 0 and row.enter_count == row.exit_count
+
+            # محاسبه ساعات کاری (اگر کامل باشد)
+            work_hours = None
+            if row.first_enter and row.last_exit:
+                delta = row.last_exit - row.first_enter
+                work_hours = delta.total_seconds() / 3600
+
+            days.append({
+                'date': row.attendance_date,
+                'first_enter': row.first_enter,
+                'last_exit': row.last_exit,
+                'enter_count': row.enter_count,
+                'exit_count': row.exit_count,
+                'is_complete': is_complete,
+                'work_hours': work_hours
+            })
+
+        # محاسبه آمار کلی
+        total_days = len(days)
+        complete_days = sum(1 for d in days if d['is_complete'])
+        incomplete_days = total_days - complete_days
+        total_work_hours = sum(d['work_hours'] or 0 for d in days)
 
         return {
             'user': {'user_id': user.user_id, 'name': user.name},
-            'date': target_date,
-            'enters': [{'time': r.timestamp, 'status': r.status} for r in enters],
-            'exits': [{'time': r.timestamp, 'status': r.status} for r in exits],
-            'enter_count': len(enters),
-            'exit_count': len(exits),
-            'is_complete': len(enters) == len(exits) and len(enters) > 0
+            'from_date': from_date,
+            'to_date': to_date,
+            'days': days,
+            'summary': {
+                'total_days': total_days,
+                'complete_days': complete_days,
+                'incomplete_days': incomplete_days,
+                'total_work_hours': total_work_hours
+            }
         }
