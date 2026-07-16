@@ -2,6 +2,7 @@ from typing import Dict
 from datetime import datetime, timedelta,date
 import jdatetime
 from core.device_manager import DeviceManager
+from core.attendance_analyzer import AttendanceAnalyzer
 
 
 class ConsoleUI:
@@ -56,6 +57,10 @@ class ConsoleUI:
         print("│  18. بررسی ترددهای ناقص                       │")  # 🆕
         print("│  19. آمار کلی ترددها                          │")  # 🆕
         print("│  20. جزئیات تردد یک کاربر                     │")  # 🆕
+        print("│  ✏️  ویرایش ترددها                              │")
+        print("│  21. افزودن رکورد تردد دستی                    │")  # 🆕
+        print("│  22. حذف رکورد تردد                             │")  # 🆕
+        print("│  23. تغییر وضعیت (ورود/خروج) رکورد             │")  # 🆕
         print("│  0. خروج                                 │")
         print("└─────────────────────────────────────────────────┘")
 
@@ -106,6 +111,12 @@ class ConsoleUI:
                 self._show_attendance_statistics()
             elif choice == '20':
                 self._show_user_attendance_detail()
+            elif choice == '21':
+                self._add_attendance_record()
+            elif choice == '22':
+                self._delete_attendance_record()
+            elif choice == '23':
+                self._update_attendance_punch()
             elif choice == '0':
                 self._disconnect()
                 print("\n👋 خدانگهدار!")
@@ -557,6 +568,325 @@ class ConsoleUI:
         finally:
             analyzer.close()
 
+    def _show_user_attendance_detail(self):
+        """نمایش جزئیات تردد یک کاربر در بازه زمانی با قابلیت ویرایش"""
+        from core.attendance_analyzer import AttendanceAnalyzer
+
+        print("\n" + "=" * 80)
+        print("  🔎 گزارش تردد کاربر در بازه زمانی")
+        print("=" * 80)
+
+        user_id = input("\n  📛 کد پرسنلی کاربر: ").strip()
+        if not user_id:
+            print("  ❌ کد پرسنلی نمی‌تواند خالی باشد")
+            return
+
+        # دریافت بازه زمانی
+        today_j = jdatetime.date.today()
+        default_from = jdatetime.date(today_j.year, today_j.month, 1)
+
+        from_str = input(f"  📅 از تاریخ (شمسی) [پیش‌فرض: {default_from.strftime('%Y/%m/%d')}]: ").strip()
+        to_str = input(f"  📅 تا تاریخ (شمسی) [پیش‌فرض: {today_j.strftime('%Y/%m/%d')}]: ").strip()
+
+        try:
+            from_date = jdatetime.datetime.strptime(
+                from_str if from_str else default_from.strftime("%Y/%m/%d"),
+                "%Y/%m/%d"
+            ).date().togregorian()
+
+            to_date = jdatetime.datetime.strptime(
+                to_str if to_str else today_j.strftime("%Y/%m/%d"),
+                "%Y/%m/%d"
+            ).date().togregorian()
+
+        except Exception as e:
+            print(f"\n  ❌ خطا در تبدیل تاریخ: {e}")
+            return
+
+        # حلقه اصلی
+        while True:
+            analyzer = AttendanceAnalyzer()
+            try:
+                result = analyzer.get_user_attendance_range(user_id, from_date, to_date)
+
+                if 'error' in result:
+                    print(f"\n  ❌ {result['error']}")
+                    return
+
+                days = result['days']
+                summary = result['summary']
+
+                # هدر گزارش
+                print("\n" + "=" * 80)
+                print(f"  👤 کاربر: {result['user']['name']} (کد: {result['user']['user_id']})")
+                j_from = jdatetime.date.fromgregorian(date=result['from_date'])
+                j_to = jdatetime.date.fromgregorian(date=result['to_date'])
+                print(f"  📅 بازه: {j_from.strftime('%Y/%m/%d')} تا {j_to.strftime('%Y/%m/%d')}")
+
+                # جدول نتایج
+                print("\n  ┌────────────┬──────────┬──────────┬──────┬──────┬────────┬──────────────┐")
+                print("  │ تاریخ      │ ورود اول │ خروج آخر │ ورود │ خروج │ ساعت‌کار│ وضعیت        │")
+                print("  ├────────────┼──────────┼──────────┼──────┼──────┼────────┼──────────────┤")
+
+                for day in days:
+                    j_date = jdatetime.date.fromgregorian(date=day['date'])
+                    date_str = j_date.strftime("%Y/%m/%d")
+
+                    first_enter = day['first_enter'].strftime("%H:%M") if day['first_enter'] else "  ---   "
+                    last_exit = day['last_exit'].strftime("%H:%M") if day['last_exit'] else "  ---   "
+
+                    if day['work_hours'] is not None:
+                        hours = int(day['work_hours'])
+                        minutes = int((day['work_hours'] - hours) * 60)
+                        work_str = f"{hours:02d}:{minutes:02d}  "
+                    else:
+                        work_str = "  ---   "
+
+                    # تعیین وضعیت
+                    if day['has_sequence_error']:
+                        status = "⚠️ ترتیب اشتباه"
+                    elif day['is_complete']:
+                        status = "✅ کامل"
+                    elif day['enter_count'] > 0 and day['exit_count'] == 0:
+                        status = "⚠️ بدون خروج"
+                    elif day['enter_count'] == 0 and day['exit_count'] > 0:
+                        status = "❌ بدون ورود"
+                    else:
+                        status = "🔄 نامتعادل"
+
+                    print(f"  │ {date_str:<10} │ {first_enter:<8} │ {last_exit:<8} │ "
+                          f"{day['enter_count']:<4} │ {day['exit_count']:<4} │ {work_str:<6} │ {status:<12} │")
+
+                    # ✅ نمایش تمام رکوردها اگر بیشتر از 1 ورود/خروج باشد
+                    if len(day['all_records']) > 2:
+                        print(f"  │            │ تمام رکوردهای این روز:                              │")
+                        for i, rec in enumerate(day['all_records'], 1):
+                            time_str = rec['timestamp'].strftime("%H:%M")
+                            punch_icon = "🟢" if rec['punch'] == 0 else "🔴"
+                            print(
+                                f"  │            │   {i}. {punch_icon} {time_str} {rec['punch_name']:<10}                    │")
+
+                print("  └────────────┴──────────┴──────────┴──────┴──────┴────────┴──────────────┘")
+
+                # ⭐ منوی ویرایش - همیشه نمایش داده می‌شود
+                print("\n  ┌─────────────────────────────────────────┐")
+                print("  │  ✏️  عملیات ویرایش                       │")
+                print("  │  1. ➕ افزودن رکورد جدید                 │")
+                print("  │  2. 🗑️  حذف رکورد                        │")
+                print("  │  3. 🔄 تغییر وضعیت (ورود/خروج)          │")
+                print("  │  0. 🔙 بازگشت به منوی اصلی              │")
+                print("  └─────────────────────────────────────────┘")
+
+                edit_choice = input("\n  انتخاب شما: ").strip()
+
+                if edit_choice == '0':
+                    print("\n  🔙 بازگشت به منوی اصلی")
+                    break
+                elif edit_choice == '1':
+                    self._add_record_inline(user_id, from_date, to_date)
+                elif edit_choice == '2':
+                    self._delete_record_inline(user_id, from_date, to_date)
+                elif edit_choice == '3':
+                    self._update_punch_inline(user_id, from_date, to_date)
+                else:
+                    print("\n  ❌ انتخاب نامعتبر")
+
+            finally:
+                analyzer.close()
+
+    def _add_record_inline(self, user_id: str, from_date: date, to_date: date):
+        """افزودن رکورد در زمینه گزارش کاربر"""
+        print("\n" + "-" * 70)
+        print("  ➕ افزودن رکورد جدید")
+        print("-" * 70)
+
+        date_str = input("  📅 تاریخ (شمسی - مثال: 1405/04/24): ").strip()
+        time_str = input("  🕐 ساعت (مثال: 08:30): ").strip()
+
+        print("\n  نوع تردد:")
+        print("    0. ورود (Check-in)")
+        print("    1. خروج (Check-out)")
+        punch_str = input("  انتخاب [0/1]: ").strip()
+
+        try:
+            j_date = jdatetime.datetime.strptime(date_str, "%Y/%m/%d").date()
+            g_date = j_date.togregorian()
+
+            hour, minute = map(int, time_str.split(':'))
+            timestamp = datetime(g_date.year, g_date.month, g_date.day, hour, minute)
+
+            punch = int(punch_str)
+            if punch not in [0, 1]:
+                print("  ❌ نوع تردد باید 0 یا 1 باشد")
+                return
+
+            punch_name = "ورود" if punch == 0 else "خروج"
+            j_date_display = jdatetime.date.fromgregorian(date=g_date)
+
+            print("\n" + "-" * 70)
+            print(f"  📋 پیش‌نمایش:")
+            print(f"     • کاربر      : {user_id}")
+            print(f"     • تاریخ      : {j_date_display.strftime('%Y/%m/%d')}")
+            print(f"     • ساعت       : {timestamp.strftime('%H:%M')}")
+            print(f"     • نوع        : {punch_name}")
+            print("-" * 70)
+
+            confirm = input("\n  آیا تایید می‌کنید؟ (بله/خیر): ").strip()
+            if confirm.lower() not in ['بله', 'yes', 'y']:
+                print("  ❌ عملیات لغو شد")
+                return
+
+            analyzer = AttendanceAnalyzer()
+            try:
+                result = analyzer.add_attendance_record(user_id, timestamp, punch)
+                print(f"\n  {result['message']}")
+            finally:
+                analyzer.close()
+
+        except ValueError as e:
+            print(f"\n  ❌ فرمت تاریخ یا ساعت نامعتبر است: {e}")
+        except Exception as e:
+            print(f"\n  ❌ خطا: {e}")
+
+    def _delete_record_inline(self, user_id: str, from_date: date, to_date: date):
+        """حذف رکورد در زمینه گزارش کاربر"""
+        print("\n" + "-" * 70)
+        print("  🗑️  حذف رکورد")
+        print("-" * 70)
+
+        date_str = input("  📅 تاریخ (شمسی - مثال: 1405/04/24): ").strip()
+
+        try:
+            j_date = jdatetime.datetime.strptime(date_str, "%Y/%m/%d").date()
+            g_date = j_date.togregorian()
+
+            analyzer = AttendanceAnalyzer()
+            try:
+                records = analyzer.get_attendance_records_by_date(user_id, g_date)
+
+                if not records:
+                    print(f"\n  ⚠️  هیچ رکوردی برای این کاربر در این تاریخ یافت نشد")
+                    return
+
+                j_date_display = jdatetime.date.fromgregorian(date=g_date)
+                print(f"\n  📋 رکوردهای کاربر {user_id} در تاریخ {j_date_display.strftime('%Y/%m/%d')}:")
+                print("  " + "-" * 60)
+                print(f"  {'#':<4} {'شناسه':<8} {'زمان':<12} {'نوع':<10}")
+                print("  " + "-" * 60)
+
+                for i, r in enumerate(records, 1):
+                    time_str = r['timestamp'].strftime("%H:%M:%S")
+                    print(f"  {i:<4} {r['id']:<8} {time_str:<12} {r['punch_name']:<10}")
+
+                print("  " + "-" * 60)
+
+                choice = input("\n  شماره رکورد برای حذف (یا 0 برای انصراف): ").strip()
+                if choice == '0' or not choice:
+                    print("  ❌ عملیات لغو شد")
+                    return
+
+                idx = int(choice) - 1
+                if idx < 0 or idx >= len(records):
+                    print("  ❌ شماره نامعتبر")
+                    return
+
+                selected = records[idx]
+
+                print("\n" + "-" * 60)
+                print(f"  ⚠️  آیا مطمئن هستید که می‌خواهید این رکورد را حذف کنید؟")
+                print(f"     • شناسه   : {selected['id']}")
+                print(f"     • زمان    : {selected['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
+                print(f"     • نوع     : {selected['punch_name']}")
+                print("-" * 60)
+
+                confirm = input("  تایید حذف (بله/خیر): ").strip()
+                if confirm.lower() not in ['بله', 'yes', 'y']:
+                    print("  ❌ عملیات لغو شد")
+                    return
+
+                result = analyzer.delete_attendance_record(selected['id'])
+                print(f"\n  {result['message']}")
+
+            finally:
+                analyzer.close()
+
+        except ValueError as e:
+            print(f"\n  ❌ خطا: {e}")
+        except Exception as e:
+            print(f"\n  ❌ خطا: {e}")
+
+    def _update_punch_inline(self, user_id: str, from_date: date, to_date: date):
+        """تغییر وضعیت در زمینه گزارش کاربر"""
+        print("\n" + "-" * 70)
+        print("  🔄 تغییر وضعیت (ورود/خروج)")
+        print("-" * 70)
+
+        date_str = input("  📅 تاریخ (شمسی - مثال: 1405/04/24): ").strip()
+
+        try:
+            j_date = jdatetime.datetime.strptime(date_str, "%Y/%m/%d").date()
+            g_date = j_date.togregorian()
+
+            analyzer = AttendanceAnalyzer()
+            try:
+                records = analyzer.get_attendance_records_by_date(user_id, g_date)
+
+                if not records:
+                    print(f"\n  ⚠️  هیچ رکوردی برای این کاربر در این تاریخ یافت نشد")
+                    return
+
+                j_date_display = jdatetime.date.fromgregorian(date=g_date)
+                print(f"\n  📋 رکوردهای کاربر {user_id} در تاریخ {j_date_display.strftime('%Y/%m/%d')}:")
+                print("  " + "-" * 60)
+                print(f"  {'#':<4} {'شناسه':<8} {'زمان':<12} {'نوع فعلی':<10}")
+                print("  " + "-" * 60)
+
+                for i, r in enumerate(records, 1):
+                    time_str = r['timestamp'].strftime("%H:%M:%S")
+                    print(f"  {i:<4} {r['id']:<8} {time_str:<12} {r['punch_name']:<10}")
+
+                print("  " + "-" * 60)
+
+                choice = input("\n  شماره رکورد برای تغییر (یا 0 برای انصراف): ").strip()
+                if choice == '0' or not choice:
+                    print("  ❌ عملیات لغو شد")
+                    return
+
+                idx = int(choice) - 1
+                if idx < 0 or idx >= len(records):
+                    print("  ❌ شماره نامعتبر")
+                    return
+
+                selected = records[idx]
+
+                current_name = selected['punch_name']
+                new_punch = 1 if selected['punch'] == 0 else 0
+                new_name = "خروج" if new_punch == 1 else "ورود"
+
+                print("\n" + "-" * 60)
+                print(f"  🔄 تغییر وضعیت:")
+                print(f"     • شناسه      : {selected['id']}")
+                print(f"     • زمان       : {selected['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
+                print(f"     • وضعیت فعلی : {current_name}")
+                print(f"     • وضعیت جدید : {new_name}")
+                print("-" * 60)
+
+                confirm = input("  آیا تایید می‌کنید؟ (بله/خیر): ").strip()
+                if confirm.lower() not in ['بله', 'yes', 'y']:
+                    print("  ❌ عملیات لغو شد")
+                    return
+
+                result = analyzer.update_attendance_punch(selected['id'], new_punch)
+                print(f"\n  {result['message']}")
+
+            finally:
+                analyzer.close()
+
+        except ValueError as e:
+            print(f"\n  ❌ خطا: {e}")
+        except Exception as e:
+            print(f"\n  ❌ خطا: {e}")
+
     def _show_attendance_statistics(self):
         """نمایش آمار کلی ترددها"""
         from core.attendance_analyzer import AttendanceAnalyzer
@@ -589,119 +919,6 @@ class ConsoleUI:
         finally:
             analyzer.close()
 
-    def _show_user_attendance_detail(self):
-        """نمایش جزئیات تردد یک کاربر در بازه زمانی"""
-        from core.attendance_analyzer import AttendanceAnalyzer
-
-        print("\n" + "=" * 100)
-        print("  🔎 گزارش تردد کاربر در بازه زمانی")
-        print("=" * 100)
-
-        user_id = input("\n  📛 کد پرسنلی کاربر: ").strip()
-        if not user_id:
-            print("  ❌ کد پرسنلی نمی‌تواند خالی باشد")
-            return
-
-        # دریافت بازه زمانی با پیش‌فرض اول ماه شمسی
-        today_j = jdatetime.date.today()
-        default_from = jdatetime.date(today_j.year, today_j.month, 1)
-
-        from_str = input(f"  📅 از تاریخ (شمسی) [پیش‌فرض: {default_from.strftime('%Y/%m/%d')}]: ").strip()
-        to_str = input(f"  📅 تا تاریخ (شمسی) [پیش‌فرض: {today_j.strftime('%Y/%m/%d')}]: ").strip()
-
-        try:
-            # تبدیل تاریخ‌ها
-            from_date = jdatetime.datetime.strptime(
-                from_str if from_str else default_from.strftime("%Y/%m/%d"),
-                "%Y/%m/%d"
-            ).date().togregorian()
-
-            to_date = jdatetime.datetime.strptime(
-                to_str if to_str else today_j.strftime("%Y/%m/%d"),
-                "%Y/%m/%d"
-            ).date().togregorian()
-
-        except Exception as e:
-            print(f"\n  ❌ خطا در تبدیل تاریخ: {e}")
-            return
-
-        analyzer = AttendanceAnalyzer()
-        try:
-            result = analyzer.get_user_attendance_range(user_id, from_date, to_date)
-
-            if 'error' in result:
-                print(f"\n  ❌ {result['error']}")
-                return
-
-            days = result['days']
-            summary = result['summary']
-
-            # هدر گزارش
-            print(f"\n  👤 کاربر: {result['user']['name']} (کد: {result['user']['user_id']})")
-            j_from = jdatetime.date.fromgregorian(date=result['from_date'])
-            j_to = jdatetime.date.fromgregorian(date=result['to_date'])
-            print(f"  📅 بازه: {j_from.strftime('%Y/%m/%d')} تا {j_to.strftime('%Y/%m/%d')}")
-
-            if not days:
-                print("\n  ⚠️  هیچ ترددی در این بازه زمانی ثبت نشده است")
-                return
-
-            # جدول نتایج با ستون‌های پهن‌تر
-            print("\n  ┌──────────────┬────────────┬────────────┬────────┬────────┬──────────┬──────────────┐")
-            print("  │ تاریخ        │ ورود اول   │ خروج آخر   │  ورود  │  خروج  │ ساعت‌کار  │ وضعیت        │")
-            print("  ├──────────────┼────────────┼────────────┼────────┼────────┼──────────┼──────────────┤")
-
-            for day in days:
-                j_date = jdatetime.date.fromgregorian(date=day['date'])
-                date_str = j_date.strftime("%Y/%m/%d")
-
-                first_enter = day['first_enter'].strftime("%H:%M") if day['first_enter'] else "   ---    "
-                last_exit = day['last_exit'].strftime("%H:%M") if day['last_exit'] else "   ---    "
-
-                # محاسبه و نمایش ساعت کاری
-                if day['work_hours'] is not None:
-                    hours = int(day['work_hours'])
-                    minutes = int((day['work_hours'] - hours) * 60)
-                    work_str = f"  {hours:02d}:{minutes:02d}   "
-                else:
-                    work_str = "   ---    "
-
-                # وضعیت با پهنای مناسب
-                if day['is_complete']:
-                    status = "✅ کامل       "
-                elif day['enter_count'] > 0 and day['exit_count'] == 0:
-                    status = "⚠️ بدون خروج  "
-                elif day['enter_count'] == 0 and day['exit_count'] > 0:
-                    status = "❌ بدون ورود  "
-                else:
-                    status = "🔄 نامتعادل   "
-
-                print(f"  │ {date_str:<12} │ {first_enter:<10} │ {last_exit:<10} │ "
-                      f"{day['enter_count']:^6} │ {day['exit_count']:^6} │ {work_str:<8} │ {status:<12} │")
-
-            print("  └──────────────┴────────────┴────────────┴────────┴────────┴──────────┴──────────────┘")
-
-            # خلاصه آماری
-            print("\n  " + "-" * 96)
-            print(f"  📊 خلاصه:")
-            print(f"     • روزهای ثبت شده     : {summary['total_days']}")
-            print(f"     • روزهای کامل        : {summary['complete_days']} ✅")
-            print(f"     • روزهای ناقص        : {summary['incomplete_days']} ⚠️")
-
-            total_hours = int(summary['total_work_hours'])
-            total_minutes = int((summary['total_work_hours'] - total_hours) * 60)
-            print(f"     • مجموع ساعات کاری   : {total_hours} ساعت و {total_minutes} دقیقه")
-
-            if summary['total_days'] > 0:
-                avg_hours = summary['total_work_hours'] / summary['total_days']
-                avg_h = int(avg_hours)
-                avg_m = int((avg_hours - avg_h) * 60)
-                print(f"     • میانگین روزانه     : {avg_h} ساعت و {avg_m} دقیقه")
-
-            print("  " + "-" * 96)
-
-        finally:
-            analyzer.close()
 
     def _get_status_name(self, status: int) -> str:
         """تبدیل کد status به نام خوانا"""
@@ -713,3 +930,226 @@ class ConsoleUI:
             15: 'سایر'
         }
         return status_map.get(status, f'نامشخص ({status})')
+
+    def _add_attendance_record(self):
+        """افزودن دستی رکورد تردد"""
+        from core.attendance_analyzer import AttendanceAnalyzer
+
+        print("\n" + "=" * 70)
+        print("  ➕ افزودن رکورد تردد دستی")
+        print("=" * 70)
+
+        user_id = input("\n  📛 کد پرسنلی کاربر: ").strip()
+        if not user_id:
+            print("  ❌ کد پرسنلی نمی‌تواند خالی باشد")
+            return
+
+        date_str = input("  📅 تاریخ (شمسی - مثال: 1405/04/24): ").strip()
+        time_str = input("  🕐 ساعت (مثال: 08:30): ").strip()
+
+        print("\n  نوع تردد:")
+        print("    0. ورود (Check-in)")
+        print("    1. خروج (Check-out)")
+        punch_str = input("  انتخاب [0/1]: ").strip()
+
+        try:
+            # تبدیل تاریخ شمسی و ساخت datetime
+            j_date = jdatetime.datetime.strptime(date_str, "%Y/%m/%d").date()
+            g_date = j_date.togregorian()
+
+            # ترکیب تاریخ و ساعت
+            hour, minute = map(int, time_str.split(':'))
+            timestamp = datetime(g_date.year, g_date.month, g_date.day, hour, minute)
+
+            punch = int(punch_str)
+            if punch not in [0, 1]:
+                print("  ❌ نوع تردد باید 0 یا 1 باشد")
+                return
+
+            # نمایش پیش‌نمایش
+            punch_name = "ورود" if punch == 0 else "خروج"
+            j_date_display = jdatetime.date.fromgregorian(date=g_date)
+
+            print("\n" + "-" * 70)
+            print(f"  📋 پیش‌نمایش:")
+            print(f"     • کاربر      : {user_id}")
+            print(f"     • تاریخ      : {j_date_display.strftime('%Y/%m/%d')}")
+            print(f"     • ساعت       : {timestamp.strftime('%H:%M')}")
+            print(f"     • نوع        : {punch_name}")
+            print("-" * 70)
+
+            confirm = input("\n  آیا تایید می‌کنید؟ (بله/خیر): ").strip()
+            if confirm.lower() not in ['بله', 'yes', 'y']:
+                print("  ❌ عملیات لغو شد")
+                return
+
+            analyzer = AttendanceAnalyzer()
+            try:
+                result = analyzer.add_attendance_record(user_id, timestamp, punch)
+                print(f"\n  {result['message']}")
+            finally:
+                analyzer.close()
+
+        except ValueError as e:
+            print(f"\n  ❌ فرمت تاریخ یا ساعت نامعتبر است: {e}")
+        except Exception as e:
+            print(f"\n  ❌ خطا: {e}")
+
+    def _delete_attendance_record(self):
+        """حذف یک رکورد تردد"""
+        from core.attendance_analyzer import AttendanceAnalyzer
+
+        print("\n" + "=" * 70)
+        print("  🗑️  حذف رکورد تردد")
+        print("=" * 70)
+
+        user_id = input("\n  📛 کد پرسنلی کاربر: ").strip()
+        if not user_id:
+            print("  ❌ کد پرسنلی نمی‌تواند خالی باشد")
+            return
+
+        date_str = input("  📅 تاریخ (شمسی - مثال: 1405/04/24): ").strip()
+
+        try:
+            j_date = jdatetime.datetime.strptime(date_str, "%Y/%m/%d").date()
+            g_date = j_date.togregorian()
+
+            analyzer = AttendanceAnalyzer()
+            try:
+                records = analyzer.get_attendance_records_by_date(user_id, g_date)
+
+                if not records:
+                    print(f"\n  ⚠️  هیچ رکوردی برای این کاربر در این تاریخ یافت نشد")
+                    return
+
+                # نمایش لیست رکوردها
+                j_date_display = jdatetime.date.fromgregorian(date=g_date)
+                print(f"\n  📋 رکوردهای کاربر {user_id} در تاریخ {j_date_display.strftime('%Y/%m/%d')}:")
+                print("  " + "-" * 60)
+                print(f"  {'#':<4} {'شناسه':<8} {'زمان':<12} {'نوع':<10}")
+                print("  " + "-" * 60)
+
+                for i, r in enumerate(records, 1):
+                    time_str = r['timestamp'].strftime("%H:%M:%S")
+                    print(f"  {i:<4} {r['id']:<8} {time_str:<12} {r['punch_name']:<10}")
+
+                print("  " + "-" * 60)
+
+                # انتخاب رکورد برای حذف
+                choice = input("\n  شماره رکورد برای حذف (یا 0 برای انصراف): ").strip()
+                if choice == '0' or not choice:
+                    print("  ❌ عملیات لغو شد")
+                    return
+
+                idx = int(choice) - 1
+                if idx < 0 or idx >= len(records):
+                    print("  ❌ شماره نامعتبر")
+                    return
+
+                selected = records[idx]
+
+                # تایید نهایی
+                print("\n" + "-" * 60)
+                print(f"  ⚠️  آیا مطمئن هستید که می‌خواهید این رکورد را حذف کنید؟")
+                print(f"     • شناسه   : {selected['id']}")
+                print(f"     • زمان    : {selected['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
+                print(f"     • نوع     : {selected['punch_name']}")
+                print("-" * 60)
+
+                confirm = input("  تایید حذف (بله/خیر): ").strip()
+                if confirm.lower() not in ['بله', 'yes', 'y']:
+                    print("  ❌ عملیات لغو شد")
+                    return
+
+                result = analyzer.delete_attendance_record(selected['id'])
+                print(f"\n  {result['message']}")
+
+            finally:
+                analyzer.close()
+
+        except ValueError as e:
+            print(f"\n  ❌ خطا: {e}")
+        except Exception as e:
+            print(f"\n  ❌ خطا: {e}")
+
+    def _update_attendance_punch(self):
+        """تغییر وضعیت (ورود/خروج) یک رکورد"""
+        from core.attendance_analyzer import AttendanceAnalyzer
+
+        print("\n" + "=" * 70)
+        print("  🔄 تغییر وضعیت (ورود/خروج) رکورد")
+        print("=" * 70)
+
+        user_id = input("\n  📛 کد پرسنلی کاربر: ").strip()
+        if not user_id:
+            print("  ❌ کد پرسنلی نمی‌تواند خالی باشد")
+            return
+
+        date_str = input("  📅 تاریخ (شمسی - مثال: 1405/04/24): ").strip()
+
+        try:
+            j_date = jdatetime.datetime.strptime(date_str, "%Y/%m/%d").date()
+            g_date = j_date.togregorian()
+
+            analyzer = AttendanceAnalyzer()
+            try:
+                records = analyzer.get_attendance_records_by_date(user_id, g_date)
+
+                if not records:
+                    print(f"\n  ⚠️  هیچ رکوردی برای این کاربر در این تاریخ یافت نشد")
+                    return
+
+                # نمایش لیست رکوردها
+                j_date_display = jdatetime.date.fromgregorian(date=g_date)
+                print(f"\n  📋 رکوردهای کاربر {user_id} در تاریخ {j_date_display.strftime('%Y/%m/%d')}:")
+                print("  " + "-" * 60)
+                print(f"  {'#':<4} {'شناسه':<8} {'زمان':<12} {'نوع فعلی':<10}")
+                print("  " + "-" * 60)
+
+                for i, r in enumerate(records, 1):
+                    time_str = r['timestamp'].strftime("%H:%M:%S")
+                    print(f"  {i:<4} {r['id']:<8} {time_str:<12} {r['punch_name']:<10}")
+
+                print("  " + "-" * 60)
+
+                # انتخاب رکورد
+                choice = input("\n  شماره رکورد برای تغییر (یا 0 برای انصراف): ").strip()
+                if choice == '0' or not choice:
+                    print("  ❌ عملیات لغو شد")
+                    return
+
+                idx = int(choice) - 1
+                if idx < 0 or idx >= len(records):
+                    print("  ❌ شماره نامعتبر")
+                    return
+
+                selected = records[idx]
+
+                # انتخاب نوع جدید
+                current_name = selected['punch_name']
+                new_punch = 1 if selected['punch'] == 0 else 0
+                new_name = "خروج" if new_punch == 1 else "ورود"
+
+                print("\n" + "-" * 60)
+                print(f"  🔄 تغییر وضعیت:")
+                print(f"     • شناسه      : {selected['id']}")
+                print(f"     • زمان       : {selected['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
+                print(f"     • وضعیت فعلی : {current_name}")
+                print(f"     • وضعیت جدید : {new_name}")
+                print("-" * 60)
+
+                confirm = input("  آیا تایید می‌کنید؟ (بله/خیر): ").strip()
+                if confirm.lower() not in ['بله', 'yes', 'y']:
+                    print("  ❌ عملیات لغو شد")
+                    return
+
+                result = analyzer.update_attendance_punch(selected['id'], new_punch)
+                print(f"\n  {result['message']}")
+
+            finally:
+                analyzer.close()
+
+        except ValueError as e:
+            print(f"\n  ❌ خطا: {e}")
+        except Exception as e:
+            print(f"\n  ❌ خطا: {e}")
