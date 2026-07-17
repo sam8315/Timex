@@ -127,7 +127,8 @@ class DataMigrator:
                     user_id=user_id_str,
                     timestamp=timestamp,
                     status=0,
-                    punch=0
+                    punch=0,
+                    source=Attendance.SOURCE_LEGACY  # ✅ منبع: MySQL قدیمی
                 ).on_conflict_do_nothing(
                     index_elements=['user_id', 'timestamp']
                 )
@@ -158,7 +159,8 @@ class DataMigrator:
                     user_id=user_id_str,
                     timestamp=timestamp,
                     status=1,
-                    punch=1
+                    punch=1,
+                    source=Attendance.SOURCE_LEGACY  # ✅ منبع: MySQL قدیمی
                 ).on_conflict_do_nothing(
                     index_elements=['user_id', 'timestamp']
                 )

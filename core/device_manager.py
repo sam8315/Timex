@@ -238,7 +238,8 @@ class DeviceManager:
                         user_id=user_id_str,
                         timestamp=record.timestamp,
                         status=record.status if record.status is not None else 0,
-                        punch=record.punch if record.punch is not None else 0
+                        punch=record.punch if record.punch is not None else 0,
+                        source=Attendance.SOURCE_DEVICE  # ✅ منبع: دستگاه
                     ).on_conflict_do_nothing(
                         index_elements=['user_id', 'timestamp']
                     )

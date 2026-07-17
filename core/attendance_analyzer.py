@@ -54,7 +54,8 @@ class AttendanceAnalyzer:
         ).filter(
             and_(
                 func.date(Attendance.timestamp) >= from_date,
-                func.date(Attendance.timestamp) <= to_date
+                func.date(Attendance.timestamp) <= to_date,
+                Attendance.is_deleted == False  # ✅ فیلتر جدید
             )
         ).group_by(
             User.user_id,
@@ -127,7 +128,8 @@ class AttendanceAnalyzer:
         total_records = self.db.query(Attendance).filter(
             and_(
                 func.date(Attendance.timestamp) >= from_date,
-                func.date(Attendance.timestamp) <= to_date
+                func.date(Attendance.timestamp) <= to_date,
+                Attendance.is_deleted == False
             )
         ).count()
 
@@ -136,7 +138,8 @@ class AttendanceAnalyzer:
             and_(
                 Attendance.punch == 0,
                 func.date(Attendance.timestamp) >= from_date,
-                func.date(Attendance.timestamp) <= to_date
+                func.date(Attendance.timestamp) <= to_date,
+                Attendance.is_deleted == False
             )
         ).count()
 
@@ -144,7 +147,8 @@ class AttendanceAnalyzer:
             and_(
                 Attendance.punch == 1,
                 func.date(Attendance.timestamp) >= from_date,
-                func.date(Attendance.timestamp) <= to_date
+                func.date(Attendance.timestamp) <= to_date,
+                Attendance.is_deleted == False
             )
         ).count()
 
@@ -188,7 +192,8 @@ class AttendanceAnalyzer:
             and_(
                 Attendance.user_id == user_id,
                 func.date(Attendance.timestamp) >= from_date,
-                func.date(Attendance.timestamp) <= to_date
+                func.date(Attendance.timestamp) <= to_date,
+                Attendance.is_deleted == False
             )
         ).order_by(Attendance.timestamp).all()
 
@@ -328,7 +333,8 @@ class AttendanceAnalyzer:
                 user_id=user_id,
                 timestamp=timestamp,
                 punch=punch,
-                status=status
+                status=status,
+                source=Attendance.SOURCE_MANUAL  # ✅ منبع: دستی
             ).on_conflict_do_nothing(
                 index_elements=['user_id', 'timestamp']
             )
@@ -353,26 +359,29 @@ class AttendanceAnalyzer:
 
     def delete_attendance_record(self, record_id: int) -> Dict:
         """
-        حذف یک رکورد تردد بر اساس شناسه
+        حذف منطقی یک رکورد تردد (Soft Delete)
         """
         try:
             record = self.db.query(Attendance).filter(Attendance.id == record_id).first()
             if not record:
                 return {'success': False, 'message': '❌ رکورد یافت نشد'}
 
-            # ذخیره اطلاعات برای گزارش
+            if record.is_deleted:
+                return {'success': False, 'message': '⚠️  این رکورد قبلاً حذف شده است'}
+
+            # ✅ به جای حذف واقعی، فقط is_deleted را True می‌کنیم
+            record.is_deleted = True
+            self.db.commit()
+
             info = {
                 'user_id': record.user_id,
                 'timestamp': record.timestamp,
                 'punch': record.punch
             }
 
-            self.db.delete(record)
-            self.db.commit()
-
             return {
                 'success': True,
-                'message': f'✅ رکورد حذف شد (کاربر: {info["user_id"]}, زمان: {info["timestamp"]})'
+                'message': f'✅ رکورد به صورت منطقی حذف شد (کاربر: {info["user_id"]}, زمان: {info["timestamp"]})'
             }
 
         except Exception as e:
@@ -441,3 +450,29 @@ class AttendanceAnalyzer:
             'is_valid': len(errors) == 0,
             'errors': errors
         }
+
+    def restore_attendance_record(self, record_id: int) -> Dict:
+        """
+        بازیابی یک رکورد حذف شده (Undo Soft Delete)
+        """
+
+        try:
+            record = self.db.query(Attendance).filter(Attendance.id == record_id).first()
+            if not record:
+                return {'success': False, 'message': '❌ رکورد یافت نشد'}
+
+            if not record.is_deleted:
+                return {'success': False, 'message': '⚠️  این رکورد حذف نشده است'}
+
+            record.is_deleted = False
+            self.db.commit()
+
+            return {
+                'success': True,
+                'message': f'✅ رکورد با موفقیت بازیابی شد'
+            }
+
+        except Exception as e:
+            self.db.rollback()
+            return {'success': False, 'message': f'❌ خطا در بازیابی: {e}'}
+

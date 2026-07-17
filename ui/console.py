@@ -61,6 +61,7 @@ class ConsoleUI:
         print("│  21. افزودن رکورد تردد دستی                    │")  # 🆕
         print("│  22. حذف رکورد تردد                             │")  # 🆕
         print("│  23. تغییر وضعیت (ورود/خروج) رکورد             │")  # 🆕
+        print("│  24. ♻️  بازیابی رکورد حذف شده                  │")  # 🆕
         print("│  0. خروج                                 │")
         print("└─────────────────────────────────────────────────┘")
 
@@ -117,6 +118,8 @@ class ConsoleUI:
                 self._delete_attendance_record()
             elif choice == '23':
                 self._update_attendance_punch()
+            elif choice == '24':
+                pass
             elif choice == '0':
                 self._disconnect()
                 print("\n👋 خدانگهدار!")
