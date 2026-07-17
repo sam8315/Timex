@@ -370,7 +370,7 @@ class DeviceManager:
                     if existing_user:
                         existing_user.name = device_user.name
                         existing_user.card = device_user.card
-                        existing_user.group_id = device_user.group_id
+                        # existing_user.group_id = device_user.group_id     #گروه کابر نباید تغییر کند
                         existing_user.privilege = device_user.privilege
                         stats['updated_users'] += 1
                     else:
