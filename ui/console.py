@@ -403,36 +403,18 @@ class ConsoleUI:
             migrator.disconnect_mysql()
 
     def _sync_from_mysql(self):
-        """Sync تدریجی از MySQL (فقط رکوردهای جدید)"""
+        """همگام‌سازی تدریجی هوشمند از MySQL"""
         from database.migration import DataMigrator
 
         print("\n" + "=" * 60)
-        print("  🔄 همگام‌سازی تدریجی از MySQL")
+        print("  🔄 همگام‌سازی تدریجی هوشمند از MySQL")
         print("=" * 60)
 
+        dry_run_input = input("\nاجرا در حالت Dry Run (فقط شبیه‌سازی)؟ (بله/خیر): ").strip()
+        dry_run = dry_run_input.lower() in ['بله', 'yes', 'y']
+
         migrator = DataMigrator()
-
-        # دریافت آخرین تاریخ sync شده
-        last_date = migrator.get_last_synced_date()
-
-        if not last_date:
-            print("\n⚠️  هیچ رکوردی در PostgreSQL وجود ندارد")
-            print("💡 ابتدا از گزینه 11 (Migration کامل) استفاده کنید")
-            return
-
-        print(f"\n📅 آخرین رکورد sync شده: {last_date}")
-
-        from_date = input(f"\nانتقال از تاریخ (پیش‌فرض: {last_date}): ").strip()
-        if not from_date:
-            from_date = last_date
-
-        if not migrator.connect_mysql():
-            return
-
-        try:
-            migrator.migrate_from_date(from_date)
-        finally:
-            migrator.disconnect_mysql()
+        migrator.sync_incremental(dry_run=dry_run)
 
     def _test_mysql_connection(self):
         """تست اتصال به MySQL"""

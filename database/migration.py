@@ -2,7 +2,7 @@
 ماژول انتقال داده‌ها از MySQL قدیمی به PostgreSQL جدید
 """
 from datetime import datetime
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 import jdatetime
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
@@ -294,61 +294,128 @@ class DataMigrator:
         self._print_stats()
         return self.stats
 
-    def migrate_from_date(self, from_date: str, dry_run: bool = False) -> Dict:
+    def sync_incremental(self, dry_run: bool = False) -> Dict:
         """
-        انتقال داده‌ها از یک تاریخ خاص (برای Sync تدریجی)
-        با آمار دقیق
+        همگام‌سازی تدریجی هوشمند
+
+        منطق:
+        1. آخرین رکورد PostgreSQL را پیدا کن
+        2. آن را در MySQL جستجو کن
+        3. اگر پیدا شد، از رکورد بعدی به بعد sync کن
+        4. اگر پیدا نشد، کاری نکن
+
+        Args:
+            dry_run: حالت شبیه‌سازی
+
+        Returns:
+            Dict: آمار عملیات
         """
-        print(f"\n🔄 انتقال داده‌ها از تاریخ {from_date} به بعد...")
-
-        records = self.mysql.get_ioinfo_records(from_date=from_date)
-        total = len(records)
-        self.stats['total_records'] = total
-
-        if total == 0:
-            print("⚠️  هیچ رکورد جدیدی یافت نشد")
-            return self.stats
-
-        print(f"✅ تعداد {total} رکورد یافت شد")
+        print("\n" + "=" * 60)
+        print("  🔄 همگام‌سازی تدریجی هوشمند")
+        print("=" * 60)
 
         if dry_run:
-            print("⚠️  حالت Dry Run - داده‌ای ذخیره نخواهد شد")
+            print("  ⚠️  حالت Dry Run - داده‌ای ذخیره نخواهد شد")
+
+        # مرحله 1: دریافت آخرین رکورد PostgreSQL
+        print("\n📊 بررسی آخرین رکورد در PostgreSQL...")
+        last_record = self.get_last_synced_record()
+
+        if not last_record:
+            print("⚠️  هیچ رکوردی در PostgreSQL وجود ندارد")
+            print("💡 ابتدا از گزینه Migration کامل استفاده کنید")
             return self.stats
 
-        db: Session = SessionLocal()
-        batch_size = 100
+        print(f"✅ آخرین رکورد یافت شد:")
+        print(f"   • کاربر      : {last_record['user_id']}")
+        print(f"   • زمان       : {last_record['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"   • تاریخ شمسی : {last_record['date_jalali']}")
+
+        # مرحله 2: اتصال به MySQL
+        if not self.connect_mysql():
+            return self.stats
 
         try:
-            print("\n💾 در حال انتقال داده‌ها...")
+            # مرحله 3: جستجوی رکورد در MySQL
+            print(f"\n🔍 جستجوی رکورد در MySQL...")
+            found = self.find_record_in_mysql(
+                last_record['user_id'],
+                last_record['timestamp']
+            )
 
-            for i, record in enumerate(records, 1):
-                enter_count, exit_count = self._process_single_record(db, record)
+            if not found:
+                print("❌ آخرین رکورد PostgreSQL در MySQL یافت نشد")
+                print("💡 ممکن است داده‌ها دستکاری شده باشند")
+                print("💡 از گزینه Migration کامل استفاده کنید")
+                return self.stats
 
-                # ✅ این آمار فقط شمارش می‌کند، نه واقعیت
-                # واقعیت در _process_single_record با on_conflict_do_nothing مدیریت می‌شود
+            print("✅ رکورد در MySQL یافت شد")
 
-                if i % batch_size == 0:
-                    try:
-                        db.commit()
-                        print(f"  ✅ دسته‌ای ذخیره شد: {i}/{total}")
-                    except Exception as e:
-                        db.rollback()
-                        print(f"  ⚠️  خطا در batch {i}: {e}")
-                        self.stats['errors'] += 1
+            # مرحله 4: دریافت رکوردهای بعدی
+            print(f"\n📖 دریافت رکوردهای جدید از MySQL...")
+            new_records = self.get_records_after_timestamp(
+                # last_record['user_id'],
+                last_record['timestamp']
+            )
 
-            # Commit نهایی
-            db.commit()
-            print(f"\n✅ انتقال کامل شد")
+            total = len(new_records)
+            self.stats['total_records'] = total
 
-        except Exception as e:
-            db.rollback()
-            print(f"\n❌ خطا در انتقال: {e}")
-            self.stats['errors'] += 1
+            if total == 0:
+                print("✅ هیچ رکورد جدیدی یافت نشد - دیتابیس به‌روز است")
+                return self.stats
+
+            print(f"✅ تعداد {total} رکورد جدید یافت شد")
+
+            if dry_run:
+                print("\n🔍 در حال تحلیل رکوردها...")
+                for i, record in enumerate(new_records, 1):
+                    enter_count, exit_count = self._process_single_record_dry(record)
+                    self.stats['enter_records'] += enter_count
+                    self.stats['exit_records'] += exit_count
+
+                    if i % 1000 == 0:
+                        print(f"  تحلیل شد: {i}/{total}")
+
+                self._print_stats()
+                return self.stats
+
+            # مرحله 5: انتقال رکوردهای جدید
+            db: Session = SessionLocal()
+            batch_size = 100
+
+            try:
+                print("\n💾 در حال انتقال داده‌ها...")
+
+                for i, record in enumerate(new_records, 1):
+                    enter_count, exit_count = self._process_single_record(db, record)
+                    self.stats['enter_records'] += enter_count
+                    self.stats['exit_records'] += exit_count
+
+                    if i % batch_size == 0:
+                        try:
+                            db.commit()
+                            print(f"  ✅ دسته‌ای ذخیره شد: {i}/{total}")
+                        except Exception as e:
+                            db.rollback()
+                            print(f"  ⚠️  خطا در batch {i}: {e}")
+                            self.stats['errors'] += 1
+
+                db.commit()
+                print(f"\n✅ همگام‌سازی کامل شد: {total}/{total}")
+
+            except Exception as e:
+                db.rollback()
+                print(f"\n❌ خطا در انتقال: {e}")
+                self.stats['errors'] += 1
+            finally:
+                db.close()
+
+            self._print_stats()
+            return self.stats
+
         finally:
-            db.close()
-
-        self._print_stats()
-        return self.stats
+            self.disconnect_mysql()
 
     def _print_stats(self):
         """نمایش آمار عملیات"""
@@ -364,10 +431,12 @@ class DataMigrator:
         print(f"  • خطاها               : {self.stats['errors']}")
         print("-" * 60)
 
-    def get_last_synced_date(self) -> str:
+    def get_last_synced_record(self) -> Optional[Dict]:
         """
-        دریافت آخرین تاریخ sync شده در PostgreSQL
-        برای استفاده در Sync تدریجی
+        دریافت آخرین رکورد sync شده در PostgreSQL
+
+        Returns:
+            Dict: شامل user_id و timestamp آخرین رکورد، یا None
         """
         db: Session = SessionLocal()
         try:
@@ -376,11 +445,89 @@ class DataMigrator:
             ).first()
 
             if last_record:
-                # تبدیل به تاریخ شمسی
-                jdt = jdatetime.datetime.fromgregorian(
-                    datetime=last_record.timestamp
-                )
-                return jdt.strftime("%Y/%m/%d")
+                return {
+                    'user_id': last_record.user_id,
+                    'timestamp': last_record.timestamp,
+                    'date_jalali': jdatetime.datetime.fromgregorian(
+                        datetime=last_record.timestamp
+                    ).strftime("%Y/%m/%d")
+                }
             return None
         finally:
             db.close()
+
+    def find_record_in_mysql(self, user_id: str, timestamp: datetime) -> bool:
+        """
+        بررسی وجود یک رکورد خاص در MySQL
+        """
+        # ✅ اصلاح: استفاده از self.mysql.connection
+        if not self.mysql.connection:
+            print("❌ ابتدا باید به MySQL متصل شوید")
+            return False
+
+        try:
+            # تبدیل timestamp میلادی به تاریخ و زمان شمسی
+            j_timestamp = jdatetime.datetime.fromgregorian(datetime=timestamp)
+            date_str = j_timestamp.strftime("%Y/%m/%d")
+            time_str = j_timestamp.strftime("%H:%M")
+
+            with self.mysql.connection.cursor() as cursor:
+                # جستجو در EnterDate/EnterTime
+                cursor.execute(
+                    """
+                    SELECT COUNT(*) as cnt
+                    FROM ioinfo
+                    WHERE Perno = %s
+                      AND (
+                        (EnterDate = %s AND EnterTime = %s)
+                            OR (ExitDate = %s AND ExitTime = %s)
+                        )
+                    """,
+                    (int(user_id), date_str, time_str, date_str, time_str)
+                )
+                result = cursor.fetchone()
+                return result['cnt'] > 0 if result else False
+
+        except Exception as e:
+            print(f"⚠️  خطا در جستجوی رکورد: {e}")
+            return False
+
+    def get_records_after_timestamp(self, timestamp: datetime) -> List[Dict]:
+        """
+        دریافت تمام رکوردهای MySQL بعد از یک timestamp خاص (از همه کاربران)
+
+        Args:
+            timestamp: زمان شروع (میلادی)
+
+        Returns:
+            List[Dict]: لیست رکوردها
+        """
+        if not self.mysql.connection:
+            print("❌ ابتدا باید به MySQL متصل شوید")
+            return []
+
+        try:
+            # تبدیل timestamp میلادی به تاریخ و زمان شمسی
+            j_timestamp = jdatetime.datetime.fromgregorian(datetime=timestamp)
+            date_str = j_timestamp.strftime("%Y/%m/%d")
+            time_str = j_timestamp.strftime("%H:%M")
+
+            with self.mysql.connection.cursor() as cursor:
+                # ✅ اصلاح: حذف شرط Perno و دریافت همه رکوردها
+                cursor.execute(
+                    """
+                    SELECT Perno, EnterDate, EnterTime, ExitDate, ExitTime
+                    FROM ioinfo
+                    WHERE EnterDate > %s
+                       OR (EnterDate = %s AND EnterTime > %s)
+                       OR ExitDate > %s
+                       OR (ExitDate = %s AND ExitTime > %s)
+                    ORDER BY EnterDate ASC, EnterTime ASC
+                    """,
+                    (date_str, date_str, time_str, date_str, date_str, time_str)
+                )
+                return cursor.fetchall()
+
+        except Exception as e:
+            print(f"⚠️  خطا در دریافت رکوردها: {e}")
+            return []
