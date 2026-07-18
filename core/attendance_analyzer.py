@@ -11,6 +11,41 @@ from database.engine import SessionLocal
 from models.user import User
 from models.attendance import Attendance
 
+from datetime import datetime, timedelta, date
+
+
+def calculate_night_hours(start_time: datetime, end_time: datetime) -> float:
+    """
+    محاسبه ساعات شب‌کاری (بین ۲۲:۰۰ تا ۰۶:۰۰ صبح)
+    """
+    if not start_time or not end_time or start_time >= end_time:
+        return 0.0
+
+    night_hours = 0.0
+    current = start_time
+
+    while current < end_time:
+        # تعیین شروع بازه شب برای روز جاری
+        if current.hour < 6:
+            # اگر ساعت فعلی بین ۰۰:۰۰ تا ۰۵:۵۹ است، شب از ۲۲:۰۰ روز قبل شروع شده
+            night_start = (current - timedelta(days=1)).replace(hour=22, minute=0, second=0, microsecond=0)
+        else:
+            night_start = current.replace(hour=22, minute=0, second=0, microsecond=0)
+
+        night_end = night_start + timedelta(hours=8)  # ۰۶:۰۰ صبح روز بعد
+
+        # محاسبه اشتراک بازه شیفت با بازه شب
+        intersect_start = max(current, night_start)
+        intersect_end = min(end_time, night_end)
+
+        if intersect_start < intersect_end:
+            delta = intersect_end - intersect_start
+            night_hours += delta.total_seconds() / 3600.0
+
+        # حرکت به پایان این بازه شب برای بررسی روز بعد (جلوگیری از حلقه بی‌نهایت)
+        current = night_end
+
+    return round(night_hours, 2)
 
 class AttendanceAnalyzer:
     """تحلیل‌گر ترددها برای شناسایی موارد ناقص"""
@@ -173,22 +208,16 @@ class AttendanceAnalyzer:
             'to_date': to_date
         }
 
-    def get_user_attendance_range(
-            self,
-            user_id: str,
-            from_date: date,
-            to_date: date
-    ) -> Dict:
+    def get_user_attendance_range(self, user_id: str, from_date: date, to_date: date) -> Dict:
         """
-        دریافت جزئیات تردد یک کاربر در یک بازه زمانی
-        با نمایش تمام ورودها و خروج‌ها
+        دریافت جزئیات تردد با جفت‌کردن ورود/خروج و محاسبه شب‌کاری
         """
         user = self.db.query(User).filter(User.user_id == user_id).first()
         if not user:
             return {'error': 'کاربر یافت نشد'}
 
-        # دریافت تمام رکوردها در بازه زمانی
-        all_records = self.db.query(Attendance).filter(
+        # دریافت تمام رکوردها مرتب شده بر اساس زمان
+        records = self.db.query(Attendance).filter(
             and_(
                 Attendance.user_id == user_id,
                 func.date(Attendance.timestamp) >= from_date,
@@ -197,54 +226,148 @@ class AttendanceAnalyzer:
             )
         ).order_by(Attendance.timestamp).all()
 
-        # گروه‌بندی بر اساس روز
-        days_dict = {}
-        for record in all_records:
-            day = record.timestamp.date()
-            if day not in days_dict:
-                days_dict[day] = []
-            days_dict[day].append(record)
+        # --- منطق جفت‌کردن (Pairing) ---
+        shifts = []
+        pending_in = None
+        current_day_records = []
 
-        # پردازش هر روز
+        for record in records:
+            current_day_records.append(record)
+
+            if record.punch == 0:  # ورود
+                if pending_in is not None:
+                    # ورود قبلی بدون خروج مانده بود (خطای ترتیب)
+                    shifts.append({
+                        'in_record': pending_in,
+                        'out_record': None,
+                        'date': pending_in.timestamp.date(),
+                        'records': current_day_records[:-1],
+                        'error': 'consecutive_in'
+                    })
+                pending_in = record
+                current_day_records = [record]  # شروع روز جدید برای این شیفت
+
+            elif record.punch == 1:  # خروج
+                if pending_in is not None:
+                    # جفت کامل شد
+                    shifts.append({
+                        'in_record': pending_in,
+                        'out_record': record,
+                        'date': pending_in.timestamp.date(),  # تاریخ شیفت بر اساس روز ورود است
+                        'records': current_day_records,
+                        'error': None
+                    })
+                    pending_in = None
+                    current_day_records = []
+                else:
+                    # خروج بدون ورود
+                    shifts.append({
+                        'in_record': None,
+                        'out_record': record,
+                        'date': record.timestamp.date(),
+                        'records': current_day_records,
+                        'error': 'exit_without_in'
+                    })
+
+        # اگر در پایان بازه، ورودی بدون خروج باقی مانده باشد
+        if pending_in is not None:
+            shifts.append({
+                'in_record': pending_in,
+                'out_record': None,
+                'date': pending_in.timestamp.date(),
+                'records': current_day_records,
+                'error': 'missing_exit'
+            })
+
+        # --- پردازش شیفت‌ها و گروه‌بندی بر اساس روز ---
+        days_dict = {}
+        for shift in shifts:
+            day = shift['date']
+            if day not in days_dict:
+                days_dict[day] = {'shifts': [], 'errors': []}
+
+            days_dict[day]['shifts'].append(shift)
+            if shift['error']:
+                days_dict[day]['errors'].append(shift)
+
+        # ساخت خروجی نهایی
         days = []
         for day_date in sorted(days_dict.keys(), reverse=True):
-            day_records = days_dict[day_date]
+            day_data = days_dict[day_date]
+            day_shifts = day_data['shifts']
 
-            # مرتب‌سازی بر اساس زمان
-            day_records.sort(key=lambda r: r.timestamp)
+            first_enter = None
+            last_exit = None
+            total_work_hours = 0.0
+            total_night_hours = 0.0
+            enter_count = 0
+            exit_count = 0
+            all_records = []
+            has_sequence_error = len(day_data['errors']) > 0
 
-            # شمارش ورود و خروج
-            enters = [r for r in day_records if r.punch == 0]
-            exits = [r for r in day_records if r.punch == 1]
+            for shift in day_shifts:
+                if shift['in_record']:
+                    enter_count += 1
+                    if first_enter is None or shift['in_record'].timestamp < first_enter:
+                        first_enter = shift['in_record'].timestamp
 
-            enter_count = len(enters)
-            exit_count = len(exits)
+                if shift['out_record']:
+                    exit_count += 1
+                    if last_exit is None or shift['out_record'].timestamp > last_exit:
+                        last_exit = shift['out_record'].timestamp
 
-            # اولین ورود و آخرین خروج
-            first_enter = enters[0].timestamp if enters else None
-            last_exit = exits[-1].timestamp if exits else None
+                # محاسبه ساعات کار و شب‌کاری برای شیفت‌های کامل
+                if shift['in_record'] and shift['out_record']:
+                    delta = shift['out_record'].timestamp - shift['in_record'].timestamp
+                    total_work_hours += delta.total_seconds() / 3600.0
 
-            # بررسی کامل بودن
-            is_complete = enter_count > 0 and exit_count > 0 and enter_count == exit_count
+                    night_h = calculate_night_hours(shift['in_record'].timestamp, shift['out_record'].timestamp)
+                    total_night_hours += night_h
 
-            # محاسبه ساعات کاری
-            work_hours = None
-            if first_enter and last_exit:
-                delta = last_exit - first_enter
-                work_hours = delta.total_seconds() / 3600
+                all_records.extend(shift['records'])
 
-            # بررسی صحت ترتیب
-            sequence_check = self._check_sequence_validity(day_records)
-
-            # ✅ ذخیره تمام رکوردها برای نمایش
-            all_times = [
+            # مرتب‌سازی رکوردها برای نمایش
+            all_records.sort(key=lambda r: r.timestamp)
+            all_records_display = [
                 {
                     'timestamp': r.timestamp,
                     'punch': r.punch,
-                    'punch_name': 'ورود' if r.punch == 0 else 'خروج'
+                    'punch_name': 'ورود' if r.punch == 0 else 'خروج',
+                    'source': r.source
                 }
-                for r in day_records
+                for r in all_records
             ]
+
+            is_complete = (enter_count > 0 and exit_count > 0 and enter_count == exit_count and not has_sequence_error)
+
+            # ✅ ساخت sequence_errors با ساختار صحیح
+            sequence_errors_list = []
+            for shift in day_data['errors']:
+                error_record = shift['in_record'] if shift['in_record'] else shift['out_record']
+                error_type = shift['error']
+
+                # تبدیل نوع خطا به پیام خوانا
+                if error_type == 'consecutive_in':
+                    message = '❌ دو ورود متوالی'
+                    error_type_display = 'consecutive'
+                elif error_type == 'exit_without_in':
+                    message = '❌ خروج قبل از ورود'
+                    error_type_display = 'exit_before_enter'
+                elif error_type == 'missing_exit':
+                    message = '⚠️ ورود بدون خروج'
+                    error_type_display = 'missing_exit'
+                else:
+                    message = f'⚠️ خطای نامشخص: {error_type}'
+                    error_type_display = 'unknown'
+
+                sequence_errors_list.append({
+                    'index': 0,
+                    'record_id': error_record.id if error_record else None,
+                    'timestamp': error_record.timestamp if error_record else None,
+                    'punch': error_record.punch if error_record else None,
+                    'error_type': error_type_display,
+                    'message': message
+                })
 
             days.append({
                 'date': day_date,
@@ -253,18 +376,19 @@ class AttendanceAnalyzer:
                 'enter_count': enter_count,
                 'exit_count': exit_count,
                 'is_complete': is_complete,
-                'work_hours': work_hours,
-                'has_sequence_error': not sequence_check['is_valid'],
-                'sequence_errors': sequence_check['errors'],
-                'all_records': all_times  # 🆕 تمام رکوردها
+                'work_hours': round(total_work_hours, 2) if total_work_hours > 0 else None,
+                'night_hours': round(total_night_hours, 2) if total_night_hours > 0 else None,
+                'has_sequence_error': has_sequence_error,
+                'sequence_errors': sequence_errors_list,
+                'all_records': all_records_display
             })
-
-        # محاسبه آمار کلی
+        # آمار کلی
         total_days = len(days)
         complete_days = sum(1 for d in days if d['is_complete'])
         incomplete_days = total_days - complete_days
         sequence_error_days = sum(1 for d in days if d['has_sequence_error'])
-        total_work_hours = sum(d['work_hours'] or 0 for d in days)
+        total_work = sum(d['work_hours'] or 0 for d in days)
+        total_night = sum(d['night_hours'] or 0 for d in days)
 
         return {
             'user': {'user_id': user.user_id, 'name': user.name},
@@ -276,10 +400,10 @@ class AttendanceAnalyzer:
                 'complete_days': complete_days,
                 'incomplete_days': incomplete_days,
                 'sequence_error_days': sequence_error_days,
-                'total_work_hours': total_work_hours
+                'total_work_hours': round(total_work, 2),
+                'total_night_hours': round(total_night, 2)
             }
         }
-
     def get_attendance_records_by_date(self, user_id: str, target_date: date) -> List[Dict]:
         """
         دریافت تمام رکوردهای یک کاربر در یک روز خاص (با شناسه)
@@ -420,6 +544,12 @@ class AttendanceAnalyzer:
         """
         بررسی صحت ترتیب ورود و خروج
 
+        قوانین:
+        1. دو ورود متوالی ممنوع
+        2. دو خروج متوالی ممنوع
+        3. اولین رکورد روز نمی‌تواند خروج باشد (مگر ادامه از روز قبل)
+        4. بعد از هر ورود، باید خروج باشد (و برعکس)
+
         Returns:
             Dict: شامل وضعیت صحت و جزئیات خطا
         """
@@ -433,18 +563,45 @@ class AttendanceAnalyzer:
         prev_punch = None
 
         for i, record in enumerate(sorted_records):
-            if prev_punch is not None and record.punch == prev_punch:
-                # دو ورود یا دو خروج متوالی
-                punch_name = "ورود" if record.punch == 0 else "خروج"
+            current_punch = record.punch
+            punch_name = "ورود" if current_punch == 0 else "خروج"
+
+            # قانون 1 و 2: دو ورود یا دو خروج متوالی
+            if prev_punch is not None and current_punch == prev_punch:
                 errors.append({
                     'index': i,
                     'record_id': record.id,
                     'timestamp': record.timestamp,
-                    'punch': record.punch,
+                    'punch': current_punch,
+                    'error_type': 'consecutive',
                     'message': f'❌ دو {punch_name} متوالی'
                 })
 
-            prev_punch = record.punch
+            # قانون 3: اولین رکورد نمی‌تواند خروج باشد
+            # (مگر اینکه فقط یک خروج در روز باشد که آن هم مشکوک است)
+            if i == 0 and current_punch == 1:
+                # اگر فقط یک رکورد در روز باشد و آن خروج باشد → خطا
+                # اگر چند رکورد باشد و اولی خروج باشد → باید دومی ورود باشد
+                if len(sorted_records) == 1:
+                    errors.append({
+                        'index': i,
+                        'record_id': record.id,
+                        'timestamp': record.timestamp,
+                        'punch': current_punch,
+                        'error_type': 'exit_before_enter',
+                        'message': f'❌ خروج بدون ورود قبلی'
+                    })
+                elif len(sorted_records) > 1 and sorted_records[1].punch != 0:
+                    errors.append({
+                        'index': i,
+                        'record_id': record.id,
+                        'timestamp': record.timestamp,
+                        'punch': current_punch,
+                        'error_type': 'exit_before_enter',
+                        'message': f'❌ خروج قبل از ورود'
+                    })
+
+            prev_punch = current_punch
 
         return {
             'is_valid': len(errors) == 0,

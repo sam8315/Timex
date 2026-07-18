@@ -254,12 +254,12 @@ class ConsoleUI:
 
             self.header(f"رکوردهای تاریخ {date_str}")
             print(f"\n  تعداد رکوردها: {len(records)}\n")
-            print(f"  {'UID':<8} {'Time':<20} {'Status':<8}")
+            print(f"  {'UID':<8} {'Time':<20} {'Punch':<8}")
             print("  " + "-" * 40)
 
             for record in records:
                 ts_str = record['timestamp'].strftime("%H:%M:%S")
-                print(f"  {record['user_id']:<8} {ts_str:<20} {record['status']:<8}")
+                print(f"  {record['user_id']:<8} {ts_str:<20} {record['punch']:<8}")
 
         except Exception as e:
             print(f"\n❌ خطا: {e}")
@@ -557,9 +557,9 @@ class ConsoleUI:
         """نمایش جزئیات تردد یک کاربر در بازه زمانی با قابلیت ویرایش"""
         from core.attendance_analyzer import AttendanceAnalyzer
 
-        print("\n" + "=" * 80)
+        print("\n" + "=" * 95)
         print("  🔎 گزارش تردد کاربر در بازه زمانی")
-        print("=" * 80)
+        print("=" * 95)
 
         user_id = input("\n  📛 کد پرسنلی کاربر: ").strip()
         if not user_id:
@@ -602,58 +602,112 @@ class ConsoleUI:
                 summary = result['summary']
 
                 # هدر گزارش
-                print("\n" + "=" * 80)
+                print("\n" + "=" * 95)
                 print(f"  👤 کاربر: {result['user']['name']} (کد: {result['user']['user_id']})")
                 j_from = jdatetime.date.fromgregorian(date=result['from_date'])
                 j_to = jdatetime.date.fromgregorian(date=result['to_date'])
                 print(f"  📅 بازه: {j_from.strftime('%Y/%m/%d')} تا {j_to.strftime('%Y/%m/%d')}")
 
-                # جدول نتایج
-                print("\n  ┌────────────┬──────────┬──────────┬──────┬──────┬────────┬──────────────┐")
-                print("  │ تاریخ      │ ورود اول │ خروج آخر │ ورود │ خروج │ ساعت‌کار│ وضعیت        │")
-                print("  ├────────────┼──────────┼──────────┼──────┼──────┼────────┼──────────────┤")
+                if not days:
+                    print("\n  ⚠️  هیچ ترددی در این بازه زمانی ثبت نشده است")
+                else:
+                    # جدول نتایج با ستون شب‌کاری
+                    print("\n  ┌────────────┬──────────┬──────────┬──────┬──────┬────────┬──────────┬──────────────┐")
+                    print("  │ تاریخ      │ ورود     │ خروج     │ ورود │ خروج │ کار    │ شب‌کاری  │ وضعیت        │")
+                    print("  ├────────────┼──────────┼──────────┼──────┼──────┼────────┼──────────┼──────────────┤")
 
-                for day in days:
-                    j_date = jdatetime.date.fromgregorian(date=day['date'])
-                    date_str = j_date.strftime("%Y/%m/%d")
+                    for day in days:
+                        j_date = jdatetime.date.fromgregorian(date=day['date'])
+                        date_str = j_date.strftime("%Y/%m/%d")
 
-                    first_enter = day['first_enter'].strftime("%H:%M") if day['first_enter'] else "  ---   "
-                    last_exit = day['last_exit'].strftime("%H:%M") if day['last_exit'] else "  ---   "
+                        # فرمت‌بندی زمان با تشخیص روز بعد
+                        def fmt_time(dt):
+                            if not dt:
+                                return "  ---   "
+                            time_str = dt.strftime("%H:%M")
+                            if dt.date() > day['date']:
+                                return f"{time_str} (+1)"
+                            return f"{time_str}    "
 
-                    if day['work_hours'] is not None:
-                        hours = int(day['work_hours'])
-                        minutes = int((day['work_hours'] - hours) * 60)
-                        work_str = f"{hours:02d}:{minutes:02d}  "
-                    else:
-                        work_str = "  ---   "
+                        first_enter = fmt_time(day['first_enter'])
+                        last_exit = fmt_time(day['last_exit'])
 
-                    # تعیین وضعیت
-                    if day['has_sequence_error']:
-                        status = "⚠️ ترتیب اشتباه"
-                    elif day['is_complete']:
-                        status = "✅ کامل"
-                    elif day['enter_count'] > 0 and day['exit_count'] == 0:
-                        status = "⚠️ بدون خروج"
-                    elif day['enter_count'] == 0 and day['exit_count'] > 0:
-                        status = "❌ بدون ورود"
-                    else:
-                        status = "🔄 نامتعادل"
+                        if day['work_hours']:
+                            work_h = int(day['work_hours'])
+                            work_m = int((day['work_hours'] - work_h) * 60)
+                            work_str = f"{work_h:02d}:{work_m:02d}  "
+                        else:
+                            work_str = "  ---   "
 
-                    print(f"  │ {date_str:<10} │ {first_enter:<8} │ {last_exit:<8} │ "
-                          f"{day['enter_count']:<4} │ {day['exit_count']:<4} │ {work_str:<6} │ {status:<12} │")
+                        if day['night_hours']:
+                            night_h = int(day['night_hours'])
+                            night_m = int((day['night_hours'] - night_h) * 60)
+                            night_str = f"{night_h:02d}:{night_m:02d}  "
+                        else:
+                            night_str = "  --    "
 
-                    # ✅ نمایش تمام رکوردها اگر بیشتر از 1 ورود/خروج باشد
-                    if len(day['all_records']) > 2:
-                        print(f"  │            │ تمام رکوردهای این روز:                              │")
-                        for i, rec in enumerate(day['all_records'], 1):
-                            time_str = rec['timestamp'].strftime("%H:%M")
-                            punch_icon = "🟢" if rec['punch'] == 0 else "🔴"
-                            print(
-                                f"  │            │   {i}. {punch_icon} {time_str} {rec['punch_name']:<10}                    │")
+                        # تعیین وضعیت
+                        if day['has_sequence_error']:
+                            error_types = [e.get('error_type', '') for e in day['sequence_errors']]
+                            if 'exit_before_enter' in error_types:
+                                status = "❌ خروج قبل ورود"
+                            elif 'consecutive' in error_types:
+                                status = "⚠️ ترتیب اشتباه"
+                            else:
+                                status = "⚠️ خطای ترتیب"
+                        elif day['is_complete']:
+                            status = "✅ کامل"
+                        elif day['enter_count'] > 0 and day['exit_count'] == 0:
+                            status = "⚠️ بدون خروج"
+                        elif day['enter_count'] == 0 and day['exit_count'] > 0:
+                            status = "❌ بدون ورود"
+                        else:
+                            status = "🔄 نامتعادل"
 
-                print("  └────────────┴──────────┴──────────┴──────┴──────┴────────┴──────────────┘")
+                        print(f"  │ {date_str:<10} │ {first_enter:<8} │ {last_exit:<8} │ "
+                              f"{day['enter_count']:<4} │ {day['exit_count']:<4} │ {work_str:<6} │ {night_str:<8} │ {status:<12} │")
 
-                # ⭐ منوی ویرایش - همیشه نمایش داده می‌شود
+                        # نمایش جزئیات رکوردها
+                        if len(day['all_records']) > 2 or day['has_sequence_error']:
+                            print(f"  │            │ جزئیات رکوردها:                                                     │")
+                            for i, rec in enumerate(day['all_records'], 1):
+                                time_str = rec['timestamp'].strftime("%H:%M")
+                                if rec['timestamp'].date() > day['date']:
+                                    time_str += " (+1)"
+                                punch_icon = "🟢" if rec['punch'] == 0 else "🔴"
+                                source_icon = "📱" if rec.get('source') == 'D' else ("📦" if rec.get('source') == 'L' else "✋")
+                                print(f"  │            │   {i}. {punch_icon} {time_str} {rec['punch_name']:<10} {source_icon:<3}                  │")
+
+                    print("  └────────────┴──────────┴──────────┴──────┴──────┴────────┴──────────┴──────────────┘")
+
+                    # خلاصه آماری
+                    print("\n  " + "-" * 91)
+                    print(f"  📊 خلاصه:")
+                    print(f"     • روزهای ثبت شده     : {summary['total_days']}")
+                    print(f"     • روزهای کامل        : {summary['complete_days']} ✅")
+                    print(f"     • روزهای ناقص/خطادار : {summary['incomplete_days'] + summary['sequence_error_days']} ⚠️")
+
+                    total_h = int(summary['total_work_hours'])
+                    total_m = int((summary['total_work_hours'] - total_h) * 60)
+                    print(f"     • مجموع ساعات کاری   : {total_h} ساعت و {total_m} دقیقه")
+
+                    night_h = int(summary['total_night_hours'])
+                    night_m = int((summary['total_night_hours'] - night_h) * 60)
+                    print(f"     • مجموع ساعات شب‌کاری : {night_h} ساعت و {night_m} دقیقه 🌙")
+                    print("  " + "-" * 91)
+
+                    # نمایش جزئیات خطاهای ترتیب
+                    days_with_errors = [d for d in days if d['has_sequence_error']]
+                    if days_with_errors:
+                        print("\n  ⚠️  روزهایی با خطای ترتیب ورود/خروج:")
+                        for day in days_with_errors:
+                            j_date = jdatetime.date.fromgregorian(date=day['date'])
+                            print(f"\n     📅 {j_date.strftime('%Y/%m/%d')}:")
+                            for error in day['sequence_errors']:
+                                time_str = error['timestamp'].strftime("%H:%M:%S")
+                                print(f"        • {time_str} - {error['message']}")
+
+                # منوی ویرایش
                 print("\n  ┌─────────────────────────────────────────┐")
                 print("  │  ✏️  عملیات ویرایش                       │")
                 print("  │  1. ➕ افزودن رکورد جدید                 │")
@@ -678,6 +732,7 @@ class ConsoleUI:
 
             finally:
                 analyzer.close()
+
 
     def _add_record_inline(self, user_id: str, from_date: date, to_date: date):
         """افزودن رکورد در زمینه گزارش کاربر"""
