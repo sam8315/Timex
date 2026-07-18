@@ -224,7 +224,7 @@ class ConsoleUI:
         print(f"\n  تعداد رکوردها: {len(records)}\n")
 
         # نمایش 20 رکورد آخر
-        display_count = min(20, len(records))
+        display_count = min(200, len(records))
         print(f"  آخرین {display_count} رکورد:\n")
         print(f"  {'UID':<8} {'Time':<22} {'Time shamsi':<22} {'status(ramz=0,finger=1,cart=2)':<8} {'punch(enter=0,exit=1)':<8}")
         print("  " + "-" * 64)

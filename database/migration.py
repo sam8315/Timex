@@ -6,12 +6,13 @@ from typing import List, Dict, Tuple, Optional
 import jdatetime
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import and_  # ✅ این خط را اضافه کنید
+from sqlalchemy.dialects.postgresql import insert  # ✅ این هم اگر نیست
 
 from database.mysql_connector import MySQLConnector
 from database.engine import SessionLocal
 from models.user import User
 from models.attendance import Attendance
-from sqlalchemy.dialects.postgresql import insert
 
 
 class DataMigrator:
@@ -99,133 +100,102 @@ class DataMigrator:
             record: Dict
     ) -> Tuple[int, int]:
         """
-        پردازش یک رکورد ioinfo و تبدیل به رکوردهای attendance
-        با آمار دقیق (تشخیص تکراری‌ها)
+        پردازش یک رکورد یکپارچه (ورود یا خروج)
+
+        Args:
+            record: Dict با کلیدهای Perno, event_date, event_time, event_type
+
+        Returns:
+            Tuple[int, int]: (تعداد ورود، تعداد خروج) - فقط یکی 1 می‌شود
         """
         from sqlalchemy.dialects.postgresql import insert
 
-        enter_count = 0
-        exit_count = 0
         perno = record['Perno']
         user_id_str = str(perno)
+        event_type = record['event_type']  # 'IN' یا 'OUT'
 
         # اطمینان از وجود کاربر
         if not self._ensure_user_exists(db, perno):
             self.stats['skipped_records'] += 1
             return 0, 0
 
-        # پردازش رکورد ورود
-        if record.get('EnterDate') and record.get('EnterTime'):
-            try:
-                timestamp = self._convert_jalali_to_gregorian(
-                    record['EnterDate'],
-                    record['EnterTime']
+        try:
+            # تبدیل تاریخ و زمان
+            timestamp = self._convert_jalali_to_gregorian(
+                record['event_date'],
+                record['event_time']
+            )
+
+            # ✅ بررسی تکراری بودن قبل از insert
+            existing = db.query(Attendance).filter(
+                and_(
+                    Attendance.user_id == user_id_str,
+                    Attendance.timestamp == timestamp,
+                    Attendance.is_deleted == False
                 )
+            ).first()
 
-                # ✅ استفاده از insert هوشمند
-                stmt = insert(Attendance).values(
-                    user_id=user_id_str,
-                    timestamp=timestamp,
-                    status=0,
-                    punch=0,
-                    source=Attendance.SOURCE_LEGACY  # ✅ منبع: MySQL قدیمی
-                ).on_conflict_do_nothing(
-                    index_elements=['user_id', 'timestamp']
-                )
+            if existing:
+                self.stats['duplicates'] += 1
+                return 0, 0
 
-                result = db.execute(stmt)
+            # تعیین punch بر اساس event_type
+            punch = 0 if event_type == 'IN' else 1
 
-                # ✅ بررسی واقعاً چند رکورد درج شد
-                if result.rowcount > 0:
+            stmt = insert(Attendance).values(
+                user_id=user_id_str,
+                timestamp=timestamp,
+                status=1,
+                punch=punch,
+                source=Attendance.SOURCE_LEGACY
+            )
+
+            result = db.execute(stmt)
+
+            if result.rowcount > 0:
+                if event_type == 'IN':
                     self.stats['enter_records'] += 1
-                    enter_count = 1
+                    return 1, 0
                 else:
-                    # رکورد تکراری بود
-                    self.stats['duplicates'] += 1  # 🆕 رکورد تکراری بود
-
-            except Exception as e:
-                print(f"⚠️  خطا در تبدیل تاریخ ورود (Perno={perno}): {e}")
-                self.stats['errors'] += 1
-
-        # پردازش رکورد خروج
-        if record.get('ExitDate') and record.get('ExitTime'):
-            try:
-                timestamp = self._convert_jalali_to_gregorian(
-                    record['ExitDate'],
-                    record['ExitTime']
-                )
-
-                stmt = insert(Attendance).values(
-                    user_id=user_id_str,
-                    timestamp=timestamp,
-                    status=1,
-                    punch=1,
-                    source=Attendance.SOURCE_LEGACY  # ✅ منبع: MySQL قدیمی
-                ).on_conflict_do_nothing(
-                    index_elements=['user_id', 'timestamp']
-                )
-
-                result = db.execute(stmt)
-
-                if result.rowcount > 0:
                     self.stats['exit_records'] += 1
-                    exit_count = 1
-                else:
-                    # رکورد تکراری بود
-                    self.stats['duplicates'] += 1  # 🆕 رکورد تکراری بود
+                    return 0, 1
+            else:
+                self.stats['duplicates'] += 1
+                return 0, 0
 
-            except Exception as e:
-                print(f"⚠️  خطا در تبدیل تاریخ خروج (Perno={perno}): {e}")
-                self.stats['errors'] += 1
-
-        return enter_count, exit_count
+        except Exception as e:
+            print(f"⚠️  خطا در پردازش رکورد (Perno={perno}, {event_type}): {e}")
+            self.stats['errors'] += 1
+            return 0, 0
 
     def _process_single_record_dry(self, record: Dict) -> Tuple[int, int]:
         """
         پردازش یک رکورد در حالت dry_run (بدون نیاز به دیتابیس)
-        فقط تبدیل تاریخ را تست می‌کند
-
-        Returns:
-            Tuple[int, int]: (تعداد رکوردهای ورود، تعداد رکوردهای خروج)
         """
         enter_count = 0
         exit_count = 0
+        event_type = record['event_type']
 
-        # تست تبدیل تاریخ ورود
-        if record.get('EnterDate') and record.get('EnterTime'):
-            try:
-                self._convert_jalali_to_gregorian(
-                    record['EnterDate'],
-                    record['EnterTime']
-                )
+        try:
+            self._convert_jalali_to_gregorian(
+                record['event_date'],
+                record['event_time']
+            )
+
+            if event_type == 'IN':
                 enter_count = 1
-            except Exception as e:
-                print(f"⚠️  خطا در تبدیل تاریخ ورود (Perno={record['Perno']}): {e}")
-                self.stats['errors'] += 1
-
-        # تست تبدیل تاریخ خروج
-        if record.get('ExitDate') and record.get('ExitTime'):
-            try:
-                self._convert_jalali_to_gregorian(
-                    record['ExitDate'],
-                    record['ExitTime']
-                )
+            else:
                 exit_count = 1
-            except Exception as e:
-                print(f"⚠️  خطا در تبدیل تاریخ خروج (Perno={record['Perno']}): {e}")
-                self.stats['errors'] += 1
+
+        except Exception as e:
+            print(f"⚠️  خطا در تبدیل تاریخ (Perno={record['Perno']}): {e}")
+            self.stats['errors'] += 1
 
         return enter_count, exit_count
 
     def migrate_all(self, dry_run: bool = False) -> Dict:
         """
-        انتقال کامل همه داده‌ها
-
-        Args:
-            dry_run: اگر True باشد، فقط شبیه‌سازی می‌کند و ذخیره نمی‌کند
-
-        Returns:
-            Dict: آمار عملیات
+        انتقال کامل همه داده‌ها با استفاده از UNION ALL
         """
         print("\n" + "=" * 60)
         print("  🔄 شروع انتقال داده‌ها از MySQL به PostgreSQL")
@@ -234,67 +204,97 @@ class DataMigrator:
         if dry_run:
             print("  ⚠️  حالت Dry Run - داده‌ای ذخیره نخواهد شد")
 
-        # دریافت رکوردها
+        # دریافت رکوردها با UNION ALL
         print("\n📖 در حال خواندن رکوردها از MySQL...")
-        records = self.mysql.get_ioinfo_records()
-        total = len(records)
-        self.stats['total_records'] = total
 
-        if total == 0:
-            print("⚠️  هیچ رکوردی در MySQL یافت نشد")
-            return self.stats
+        if not self.mysql.connection:
+            if not self.connect_mysql():
+                return self.stats
 
-        print(f"✅ تعداد {total} رکورد یافت شد")
+        try:
+            with self.mysql.connection.cursor() as cursor:
+                query = """
+                        SELECT Perno, \
+                               EnterDate AS event_date, \
+                               EnterTime AS event_time, \
+                               'IN'      AS event_type
+                        FROM ioinfo
+                        WHERE EnterDate IS NOT NULL \
+                          AND EnterTime IS NOT NULL
 
-        if dry_run:
-            print("\n🔍 در حال تحلیل رکوردها...")
-            for i, record in enumerate(records, 1):
-                enter_count, exit_count = self._process_single_record_dry(record)
-                self.stats['enter_records'] += enter_count
-                self.stats['exit_records'] += exit_count
+                        UNION ALL
 
-                if i % 10000 == 0:
-                    print(f"  تحلیل شد: {i}/{total}")
+                        SELECT Perno, \
+                               ExitDate AS event_date, \
+                               ExitTime AS event_time, \
+                               'OUT'    AS event_type
+                        FROM ioinfo
+                        WHERE ExitDate IS NOT NULL
+                          AND ExitTime IS NOT NULL
+
+                        ORDER BY event_date ASC, event_time ASC \
+                        """
+
+                cursor.execute(query)
+                records = cursor.fetchall()
+
+            total = len(records)
+            self.stats['total_records'] = total
+
+            if total == 0:
+                print("⚠️  هیچ رکوردی در MySQL یافت نشد")
+                return self.stats
+
+            print(f"✅ تعداد {total} رکورد یافت شد")
+
+            if dry_run:
+                print("\n🔍 در حال تحلیل رکوردها...")
+                for i, record in enumerate(records, 1):
+                    enter_count, exit_count = self._process_single_record_dry(record)
+                    self.stats['enter_records'] += enter_count
+                    self.stats['exit_records'] += exit_count
+
+                    if i % 10000 == 0:
+                        print(f"  تحلیل شد: {i}/{total}")
+
+                self._print_stats()
+                return self.stats
+
+            # انتقال واقعی
+            db: Session = SessionLocal()
+            batch_size = 100
+
+            try:
+                print("\n💾 در حال انتقال داده‌ها...")
+
+                for i, record in enumerate(records, 1):
+                    enter_count, exit_count = self._process_single_record(db, record)
+
+                    if i % batch_size == 0:
+                        try:
+                            db.commit()
+                            if i % 5000 == 0:
+                                print(f"  ✅ ذخیره شد: {i}/{total}")
+                        except Exception as e:
+                            db.rollback()
+                            print(f"  ⚠️  خطا در batch {i}: {e}")
+                            self.stats['errors'] += 1
+
+                db.commit()
+                print(f"\n✅ انتقال کامل شد: {total}/{total}")
+
+            except Exception as e:
+                db.rollback()
+                print(f"\n❌ خطا در انتقال: {e}")
+                self.stats['errors'] += 1
+            finally:
+                db.close()
 
             self._print_stats()
             return self.stats
 
-        # انتقال واقعی
-        db: Session = SessionLocal()
-        batch_size = 100
-
-        try:
-            print("\n💾 در حال انتقال داده‌ها...")
-
-            for i, record in enumerate(records, 1):
-                enter_count, exit_count = self._process_single_record(db, record)
-                self.stats['enter_records'] += enter_count
-                self.stats['exit_records'] += exit_count
-
-                # Commit هر batch
-                if i % batch_size == 0:
-                    try:
-                        db.commit()
-                        if i % 5000 == 0:  # برای شلوغ نکردن کنسول، هر 5000 تا پیام بده
-                            print(f"  ✅ ذخیره شد: {i}/{total}")
-                    except Exception as e:
-                        db.rollback()
-                        print(f"  ⚠️  خطا در batch {i}: {e}")
-                        self.stats['errors'] += 1
-
-            # Commit نهایی رکوردهای باقی‌مانده
-            db.commit()
-            print(f"\n✅ انتقال کامل شد: {total}/{total}")
-
-        except Exception as e:
-            db.rollback()
-            print(f"\n❌ خطا در انتقال: {e}")
-            self.stats['errors'] += 1
         finally:
-            db.close()
-
-        self._print_stats()
-        return self.stats
+            self.disconnect_mysql()
 
     def sync_incremental(self, dry_run: bool = False) -> Dict:
         """
@@ -353,10 +353,9 @@ class DataMigrator:
 
             print("✅ رکورد در MySQL یافت شد")
 
-            # مرحله 4: دریافت رکوردهای بعدی
+            # مرحله 4: دریافت رکوردهای بعدی (از همه کاربران)
             print(f"\n📖 دریافت رکوردهای جدید از MySQL...")
             new_records = self.get_records_after_timestamp(
-                # last_record['user_id'],
                 last_record['timestamp']
             )
 
@@ -382,6 +381,38 @@ class DataMigrator:
                 self._print_stats()
                 return self.stats
 
+            # مرحله 5: انتقال رکوردهای جدید
+            db: Session = SessionLocal()
+            batch_size = 100
+
+            try:
+                print("\n💾 در حال انتقال داده‌ها...")
+
+                for i, record in enumerate(new_records, 1):
+                    enter_count, exit_count = self._process_single_record(db, record)
+                    # ✅ آمار در _process_single_record به‌روز می‌شود
+
+                    if i % batch_size == 0:
+                        try:
+                            db.commit()
+                            print(f"  ✅ دسته‌ای ذخیره شد: {i}/{total}")
+                        except Exception as e:
+                            db.rollback()
+                            print(f"  ⚠️  خطا در batch {i}: {e}")
+                            self.stats['errors'] += 1
+
+                db.commit()
+                print(f"\n✅ همگام‌سازی کامل شد: {total}/{total}")
+
+            except Exception as e:
+                db.rollback()
+                print(f"\n❌ خطا در انتقال: {e}")
+                self.stats['errors'] += 1
+            finally:
+                db.close()
+
+            self._print_stats()
+            return self.stats
             # مرحله 5: انتقال رکوردهای جدید
             db: Session = SessionLocal()
             batch_size = 100
@@ -461,8 +492,8 @@ class DataMigrator:
     def find_record_in_mysql(self, user_id: str, timestamp: datetime) -> bool:
         """
         بررسی وجود یک رکورد خاص در MySQL
+        با در نظر گرفتن عدم دقت ثانیه
         """
-        # ✅ اصلاح: استفاده از self.mysql.connection
         if not self.mysql.connection:
             print("❌ ابتدا باید به MySQL متصل شوید")
             return False
@@ -471,38 +502,48 @@ class DataMigrator:
             # تبدیل timestamp میلادی به تاریخ و زمان شمسی
             j_timestamp = jdatetime.datetime.fromgregorian(datetime=timestamp)
             date_str = j_timestamp.strftime("%Y/%m/%d")
-            time_str = j_timestamp.strftime("%H:%M")
+            time_str = j_timestamp.strftime("%H:%M")  # ✅ فقط ساعت و دقیقه
 
             with self.mysql.connection.cursor() as cursor:
-                # جستجو در EnterDate/EnterTime
+                # ✅ جستجو با UNION ALL
+                query = """
+                        SELECT COUNT(*) as cnt \
+                        FROM (SELECT Perno, EnterDate AS event_date, EnterTime AS event_time \
+                              FROM ioinfo \
+                              WHERE Perno = %s \
+                                AND EnterDate = %s \
+                                AND EnterTime = %s \
+
+                              UNION ALL \
+
+                              SELECT Perno, ExitDate AS event_date, ExitTime AS event_time \
+                              FROM ioinfo \
+                              WHERE Perno = %s \
+                                AND ExitDate = %s \
+                                AND ExitTime = %s) AS combined \
+                        """
+
                 cursor.execute(
-                    """
-                    SELECT COUNT(*) as cnt
-                    FROM ioinfo
-                    WHERE Perno = %s
-                      AND (
-                        (EnterDate = %s AND EnterTime = %s)
-                            OR (ExitDate = %s AND ExitTime = %s)
-                        )
-                    """,
-                    (int(user_id), date_str, time_str, date_str, time_str)
+                    query,
+                    (int(user_id), date_str, time_str, int(user_id), date_str, time_str)
                 )
+
                 result = cursor.fetchone()
                 return result['cnt'] > 0 if result else False
 
         except Exception as e:
             print(f"⚠️  خطا در جستجوی رکورد: {e}")
             return False
-
     def get_records_after_timestamp(self, timestamp: datetime) -> List[Dict]:
         """
         دریافت تمام رکوردهای MySQL بعد از یک timestamp خاص (از همه کاربران)
+        با استفاده از UNION ALL برای یکپارچه‌سازی ورود و خروج
 
         Args:
             timestamp: زمان شروع (میلادی)
 
         Returns:
-            List[Dict]: لیست رکوردها
+            List[Dict]: لیست رکوردها با فرمت یکپارچه
         """
         if not self.mysql.connection:
             print("❌ ابتدا باید به MySQL متصل شوید")
@@ -515,19 +556,36 @@ class DataMigrator:
             time_str = j_timestamp.strftime("%H:%M")
 
             with self.mysql.connection.cursor() as cursor:
-                # ✅ اصلاح: حذف شرط Perno و دریافت همه رکوردها
+                # ✅ استفاده از UNION ALL برای یکپارچه‌سازی
+                query = """
+                        SELECT Perno, \
+                               EnterDate AS event_date, \
+                               EnterTime AS event_time, \
+                               'IN'      AS event_type
+                        FROM ioinfo
+                        WHERE EnterDate > %s
+                           OR (EnterDate = %s AND EnterTime > %s)
+
+                        UNION ALL
+
+                        SELECT Perno, \
+                               ExitDate AS event_date, \
+                               ExitTime AS event_time, \
+                               'OUT'    AS event_type
+                        FROM ioinfo
+                        WHERE (ExitDate > %s \
+                            OR (ExitDate = %s AND ExitTime > %s))
+                          AND ExitTime IS NOT NULL
+                          AND ExitDate IS NOT NULL
+
+                        ORDER BY event_date ASC, event_time ASC \
+                        """
+
                 cursor.execute(
-                    """
-                    SELECT Perno, EnterDate, EnterTime, ExitDate, ExitTime
-                    FROM ioinfo
-                    WHERE EnterDate > %s
-                       OR (EnterDate = %s AND EnterTime > %s)
-                       OR ExitDate > %s
-                       OR (ExitDate = %s AND ExitTime > %s)
-                    ORDER BY EnterDate ASC, EnterTime ASC
-                    """,
+                    query,
                     (date_str, date_str, time_str, date_str, date_str, time_str)
                 )
+
                 return cursor.fetchall()
 
         except Exception as e:
