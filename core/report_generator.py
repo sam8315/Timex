@@ -99,24 +99,47 @@ class ReportGenerator:
         return sorted(report, key=lambda x: x['absent_count'], reverse=True)
 
     def generate_leave_report(
-        self,
-        year: int,
-        month: Optional[int] = None
+            self,
+            year: int,
+            month: Optional[int] = None
     ) -> List[Dict]:
         """
-        گزارش مرخصی‌ها
+        گزارش مرخصی‌ها - year: سال شمسی
         """
         from models.leave_request import LeaveRequest
+        import jdatetime
+
+        # ✅ تبدیل سال شمسی به میلادی
+        j_from = jdatetime.date(year, 1, 1)
+        j_to = jdatetime.date(year, 12, 29)
+        g_from = j_from.togregorian()
+        g_to = j_to.togregorian()
 
         query = self.db.query(LeaveRequest).filter(
             and_(
                 LeaveRequest.status == 'A',
-                func.extract('year', LeaveRequest.from_date) == year
+                LeaveRequest.from_date >= g_from,
+                LeaveRequest.from_date <= g_to
             )
         )
 
         if month:
-            query = query.filter(func.extract('month', LeaveRequest.from_date) == month)
+            # ✅ تبدیل ماه شمسی به بازه میلادی
+            j_month_from = jdatetime.date(year, month, 1)
+            if month == 12:
+                j_month_to = jdatetime.date(year, 12, 29)
+            else:
+                j_month_to = jdatetime.date(year, month + 1, 1) - timedelta(days=1)
+
+            g_month_from = j_month_from.togregorian()
+            g_month_to = j_month_to.togregorian()
+
+            query = query.filter(
+                and_(
+                    LeaveRequest.from_date >= g_month_from,
+                    LeaveRequest.from_date <= g_month_to
+                )
+            )
 
         requests = query.all()
 

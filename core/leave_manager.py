@@ -53,7 +53,9 @@ class LeaveManager:
         return balance.balance if balance else 0
 
     def get_all_balances(self, user_id: str, year: int) -> Dict:
-        """دریافت تمام مانده‌های مرخصی یک کاربر"""
+        """دریافت تمام مانده‌های مرخصی یک کاربر - year: سال شمسی"""
+        # ✅ سال شمسی و میلادی یکی هستند برای leave_balances
+        # چون سال فقط یک عدد است و تبدیل نیاز ندارد
         balances = self.db.query(LeaveBalance).filter(
             and_(
                 LeaveBalance.user_id == user_id,
@@ -77,7 +79,6 @@ class LeaveManager:
                 }
 
         return result
-
     def credit_leave(
             self,
             user_id: str,
@@ -259,7 +260,8 @@ class LeaveManager:
             year: int,
             leave_type: Optional[str] = None
     ) -> List[LeaveTransaction]:
-        """دریافت تراکنش‌های مرخصی"""
+        """دریافت تراکنش‌های مرخصی - year: سال شمسی"""
+        # ✅ سال شمسی و میلادی یکی هستند برای leave_transactions
         query = self.db.query(LeaveTransaction).filter(
             and_(
                 LeaveTransaction.user_id == user_id,

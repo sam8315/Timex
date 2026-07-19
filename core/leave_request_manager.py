@@ -267,22 +267,36 @@ class LeaveRequestManager:
         ).order_by(LeaveRequest.created_at.asc()).all()
 
     def get_user_requests(
-        self,
-        user_id: str,
-        year: Optional[int] = None,
-        status: Optional[str] = None
+            self,
+            user_id: str,
+            year: Optional[int] = None,
+            status: Optional[str] = None
     ) -> List[LeaveRequest]:
-        """دریافت درخواست‌های یک کاربر"""
+        """
+        دریافت درخواست‌های یک کاربر
+        year: سال شمسی
+        """
         query = self.db.query(LeaveRequest).filter(LeaveRequest.user_id == user_id)
 
         if year:
-            query = query.filter(func.extract('year', LeaveRequest.from_date) == year)
+            # ✅ تبدیل سال شمسی به میلادی
+            import jdatetime
+            j_from = jdatetime.date(year, 1, 1)
+            j_to = jdatetime.date(year, 12, 29)
+            g_from = j_from.togregorian()
+            g_to = j_to.togregorian()
+
+            query = query.filter(
+                and_(
+                    LeaveRequest.from_date >= g_from,
+                    LeaveRequest.from_date <= g_to
+                )
+            )
 
         if status:
             query = query.filter(LeaveRequest.status == status)
 
         return query.order_by(LeaveRequest.from_date.desc()).all()
-
     def get_all_requests(
         self,
         year: Optional[int] = None,
@@ -300,28 +314,42 @@ class LeaveRequestManager:
         return query.order_by(LeaveRequest.created_at.desc()).all()
 
     def get_request_statistics(self, year: int) -> Dict:
-        """آمار درخواست‌های مرخصی"""
+        """آمار درخواست‌های مرخصی - year: سال شمسی"""
+        import jdatetime
+
+        # ✅ تبدیل سال شمسی به میلادی
+        j_from = jdatetime.date(year, 1, 1)
+        j_to = jdatetime.date(year, 12, 29)
+        g_from = j_from.togregorian()
+        g_to = j_to.togregorian()
+
         total = self.db.query(LeaveRequest).filter(
-            func.extract('year', LeaveRequest.from_date) == year
+            and_(
+                LeaveRequest.from_date >= g_from,
+                LeaveRequest.from_date <= g_to
+            )
         ).count()
 
         pending = self.db.query(LeaveRequest).filter(
             and_(
-                func.extract('year', LeaveRequest.from_date) == year,
+                LeaveRequest.from_date >= g_from,
+                LeaveRequest.from_date <= g_to,
                 LeaveRequest.status == self.STATUS_PENDING
             )
         ).count()
 
         approved = self.db.query(LeaveRequest).filter(
             and_(
-                func.extract('year', LeaveRequest.from_date) == year,
+                LeaveRequest.from_date >= g_from,
+                LeaveRequest.from_date <= g_to,
                 LeaveRequest.status == self.STATUS_APPROVED
             )
         ).count()
 
         rejected = self.db.query(LeaveRequest).filter(
             and_(
-                func.extract('year', LeaveRequest.from_date) == year,
+                LeaveRequest.from_date >= g_from,
+                LeaveRequest.from_date <= g_to,
                 LeaveRequest.status == self.STATUS_REJECTED
             )
         ).count()
@@ -330,7 +358,8 @@ class LeaveRequestManager:
         by_type = {}
         requests = self.db.query(LeaveRequest).filter(
             and_(
-                func.extract('year', LeaveRequest.from_date) == year,
+                LeaveRequest.from_date >= g_from,
+                LeaveRequest.from_date <= g_to,
                 LeaveRequest.status == self.STATUS_APPROVED
             )
         ).all()
