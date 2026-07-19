@@ -275,15 +275,35 @@ class LeaveManager:
         return query.order_by(LeaveTransaction.created_at.desc()).all()
 
     def get_summary_for_user(self, user_id: str, year: int) -> Dict:
-        """خلاصه وضعیت مرخصی یک کاربر"""
+        """
+        خلاصه وضعیت مرخصی یک کاربر
+        year: سال شمسی
+        """
+        import jdatetime
+
         balances = self.get_all_balances(user_id, year)
 
-        # دریافت درخواست‌های تایید شده
+        # ✅ تبدیل سال شمسی به بازه میلادی
+        try:
+            j_from = jdatetime.date(year, 1, 1)
+            j_to = jdatetime.date(year, 12, 29)
+            g_from = j_from.togregorian()
+            g_to = j_to.togregorian()
+        except Exception as e:
+            return {
+                'balances': balances,
+                'used': {},
+                'approved_requests_count': 0,
+                'error': str(e)
+            }
+
+        # دریافت درخواست‌های تایید شده در بازه شمسی
         approved_requests = self.db.query(LeaveRequest).filter(
             and_(
                 LeaveRequest.user_id == user_id,
                 LeaveRequest.status == 'A',
-                func.extract('year', LeaveRequest.from_date) == year
+                LeaveRequest.from_date >= g_from,
+                LeaveRequest.from_date <= g_to
             )
         ).all()
 

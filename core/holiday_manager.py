@@ -114,28 +114,96 @@ class HolidayManager:
             self.db.rollback()
             return {'success': False, 'message': f'❌ خطا: {e}'}
 
-    def delete_holiday(self, holiday_id: int) -> Dict:
+    def _delete_holiday(self):
         """حذف تعطیلی"""
+        from core.holiday_manager import HolidayManager
+
+        print("\n" + "=" * 70)
+        print("  🗑️  حذف تعطیلی")
+        print("=" * 70)
+
+        today_j = jdatetime.date.today()
+        year_str = input(f"\n  📅 سال (شمسی) [پیش‌فرض: {today_j.year}]: ").strip()
+        year = int(year_str) if year_str else today_j.year
+
+        manager = HolidayManager()
         try:
-            holiday = self.db.query(Holiday).filter(Holiday.id == holiday_id).first()
-            if not holiday:
-                return {'success': False, 'message': '❌ تعطیلی یافت نشد'}
+            # ✅ تبدیل سال شمسی به بازه میلادی
+            j_from = jdatetime.date(year, 1, 1)
+            try:
+                j_to = jdatetime.date(year, 12, 30)
+            except ValueError:
+                j_to = jdatetime.date(year, 12, 29)
 
-            j_date = jdatetime.date.fromgregorian(date=holiday.holiday_date)
-            title = holiday.title
+            g_from = j_from.togregorian()
+            g_to = j_to.togregorian()
 
-            self.db.delete(holiday)
-            self.db.commit()
+            # ✅ دریافت تعطیلات ثبت شده در بازه میلادی
+            holidays = manager.db.query(Holiday).filter(
+                and_(
+                    Holiday.holiday_date >= g_from,
+                    Holiday.holiday_date <= g_to
+                )
+            ).order_by(Holiday.holiday_date).all()
 
-            return {
-                'success': True,
-                'message': f'✅ تعطیلی "{title}" ({j_date.strftime("%Y/%m/%d")}) حذف شد'
-            }
+            if not holidays:
+                print(f"\n  ⚠️  هیچ تعطیلی ثبت شده‌ای در سال {year} وجود ندارد")
+                print("  💡 توجه: جمعه‌ها به صورت خودکار تعطیل هستند و قابل حذف نیستند")
+                return
 
-        except Exception as e:
-            self.db.rollback()
-            return {'success': False, 'message': f'❌ خطا: {e}'}
+            # نمایش لیست
+            print(f"\n  📋 تعطیلات ثبت شده در سال {year} ({len(holidays)} مورد):")
+            print("  " + "-" * 70)
+            print(f"  {'#':<4} {'شناسه':<8} {'تاریخ شمسی':<12} {'روز هفته':<10} {'نوع':<8} {'عنوان':<25}")
+            print("  " + "-" * 70)
 
+            for i, h in enumerate(holidays, 1):
+                j_date = jdatetime.date.fromgregorian(date=h.holiday_date)
+                day_name = self._get_day_name(h.holiday_date)
+                national = "ملی" if h.is_national else "محدود"
+                print(f"  {i:<4} {h.id:<8} {j_date.strftime('%Y/%m/%d'):<12} {day_name:<10} {national:<8} {h.title:<25}")
+
+            print("  " + "-" * 70)
+
+            # انتخاب
+            choice = input("\n  شماره تعطیلی برای حذف (یا 0 برای انصراف): ").strip()
+            if choice == '0' or not choice:
+                print("  ❌ عملیات لغو شد")
+                return
+
+            try:
+                idx = int(choice) - 1
+            except ValueError:
+                print("  ❌ شماره نامعتبر")
+                return
+
+            if idx < 0 or idx >= len(holidays):
+                print("  ❌ شماره خارج از محدوده")
+                return
+
+            selected = holidays[idx]
+            j_selected = jdatetime.date.fromgregorian(date=selected.holiday_date)
+            day_name = self._get_day_name(selected.holiday_date)
+
+            # تایید نهایی
+            print("\n" + "-" * 70)
+            print("  ⚠️  آیا مطمئن هستید که می‌خواهید این تعطیلی را حذف کنید؟")
+            print(f"     • شناسه   : {selected.id}")
+            print(f"     • تاریخ   : {j_selected.strftime('%Y/%m/%d')} ({day_name})")
+            print(f"     • عنوان   : {selected.title}")
+            print(f"     • نوع     : {'ملی' if selected.is_national else 'محدود'}")
+            print("-" * 70)
+
+            confirm = input("  تایید حذف (بله/خیر): ").strip()
+            if confirm.lower() not in ['بله', 'yes', 'y']:
+                print("  ❌ عملیات لغو شد")
+                return
+
+            result = manager.delete_holiday(selected.id)
+            print(f"\n  {result['message']}")
+
+        finally:
+            manager.close()
     def get_holidays_in_range(
         self,
         from_date: date,
@@ -159,14 +227,30 @@ class HolidayManager:
         return sorted(holidays, key=lambda x: x['date'])
 
     def get_custom_holidays(self, year: Optional[int] = None) -> List[Holiday]:
-        """دریافت تعطیلات ثبت شده (غیر جمعه)"""
-        query = self.db.query(Holiday)
-
+        """
+        دریافت تعطیلات ثبت شده (غیر جمعه)
+        year: سال شمسی
+        """
         if year:
-            query = query.filter(extract('year', Holiday.holiday_date) == year)
+            # ✅ تبدیل سال شمسی به بازه میلادی
+            import jdatetime
+            j_from = jdatetime.date(year, 1, 1)
+            try:
+                j_to = jdatetime.date(year, 12, 30)
+            except ValueError:
+                j_to = jdatetime.date(year, 12, 29)
 
-        return query.order_by(Holiday.holiday_date).all()
+            g_from = j_from.togregorian()
+            g_to = j_to.togregorian()
 
+            return self.db.query(Holiday).filter(
+                and_(
+                    Holiday.holiday_date >= g_from,
+                    Holiday.holiday_date <= g_to
+                )
+            ).order_by(Holiday.holiday_date).all()
+
+        return self.db.query(Holiday).order_by(Holiday.holiday_date).all()
     def count_working_days(self, from_date: date, to_date: date) -> Dict:
         """شمارش روزهای کاری و تعطیل در یک بازه"""
         total_days = 0

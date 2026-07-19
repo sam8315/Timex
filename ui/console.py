@@ -1563,9 +1563,9 @@ class ConsoleUI:
             full_name = emp_manager.get_full_name(user_id)
             print(f"\n  👤 کاربر: {full_name} (کد: {user_id})")
 
-            print("\n  ┌──────┬────────────┬────────────┬────────────┬──────┬──────┬──────┬──────┬────────┐")
-            print("  │ ID   │ نوع        │ شروع       │ پایان      │ استحق│ استعل│ تشویق│ بدون │ وضعیت  │")
-            print("  ├──────┼────────────┼────────────┼────────────┼──────┼──────┼──────┼──────┼────────┤")
+            print("\n  ┌──────┬────────────────┬────────────┬────────────┬──────┬──────┬───────┬──────┬──────────┐")
+            print("  │ شماره │   نوع قرارداد  │   شروع    │   پایان    │ استحق│ استعل│ تشویق │ بدون │  وضعیت   │")
+            print("  ├──────┼────────────────┼────────────┼────────────┼──────┼──────┼───────┼──────┼──────────┤")
 
             for c in contracts:
                 j_start = jdatetime.date.fromgregorian(date=c.start_date)
@@ -1579,12 +1579,12 @@ class ConsoleUI:
 
                 status = "✅ فعال" if is_active else "⏸️ غیرفعال"
 
-                print(f"  │ {c.id:<4} │ {c.contract_type:<10} │ "
+                print(f"  │ {c.id:<4} │ {c.contract_type:<14} │ "
                       f"{j_start.strftime('%Y/%m/%d')} │ {end_str:<10} │ "
                       f"{c.annual_leave_days:<4} │ {c.sick_leave_days:<4} │ "
-                      f"{c.reward_leave_days:<4} │ {c.unpaid_leave_days:<4} │ {status:<6} │")
+                      f"{c.reward_leave_days:<4} │ {c.unpaid_leave_days:<4} │ {status:<8} │")
 
-            print("  └──────┴────────────┴────────────┴────────────┴──────┴──────┴──────┴──────┴────────┘")
+            print("  └──────┴────────────────┴────────────┴────────────┴──────┴──────┴───────┴──────┴──────────┘")
 
         finally:
             manager.close()
@@ -1592,6 +1592,7 @@ class ConsoleUI:
     def _initialize_yearly_leave(self):
         """شارژ مرخصی استحقاقی سالانه"""
         from core.contract_manager import ContractManager
+        import jdatetime
 
         print("\n" + "=" * 70)
         print("  💰 شارژ مرخصی استحقاقی سالانه")
@@ -1603,27 +1604,41 @@ class ConsoleUI:
         choice = input("  انتخاب [1/2]: ").strip()
 
         today_j = jdatetime.date.today()
-        year_str = input(f"  📅 سال [پیش‌فرض: {today_j.year}]: ").strip()
+        year_str = input(f"  📅 سال شمسی [پیش‌فرض: {today_j.year}]: ").strip()
         year = int(year_str) if year_str else today_j.year
 
         manager = ContractManager()
         try:
+            # ✅ تبدیل صحیح سال شمسی به تاریخ میلادی
+            j_year_start = jdatetime.date(year, 1, 1)
+            g_year_start = j_year_start.togregorian()
+
             if choice == '1':
                 user_id = input("  📛 کد پرسنلی کاربر: ").strip()
                 if not user_id:
                     print("  ❌ کد پرسنلی نمی‌تواند خالی باشد")
                     return
 
-                # پیش‌نمایش
-                contract = manager.get_active_contract(user_id, date(year, 1, 1))
+                # ✅ استفاده از تاریخ میلادی صحیح
+                contract = manager.get_active_contract(user_id, g_year_start)
                 if not contract:
-                    print(f"  ❌ قراردادی برای سال {year} یافت نشد")
+                    print(f"\n  ❌ قراردادی برای سال شمسی {year} یافت نشد")
+                    print("  💡 ابتدا برای این کاربر قرارداد ایجاد کنید (گزینه 6 → 1)")
                     return
 
+                # دریافت نام کامل کاربر
+                from core.employee_manager import EmployeeManager
+                emp_manager = EmployeeManager()
+                try:
+                    full_name = emp_manager.get_full_name(user_id)
+                finally:
+                    emp_manager.close()
+
                 print(f"\n  📋 پیش‌نمایش:")
-                print(f"     • کاربر: {user_id}")
-                print(f"     • قرارداد: {contract.contract_type}")
-                print(f"     • مرخصی استحقاقی: {contract.annual_leave_days} روز")
+                print(f"     • کاربر             : {full_name} ({user_id})")
+                print(f"     • قرارداد           : {contract.contract_type}")
+                print(f"     • سال شمسی          : {year}")
+                print(f"     • مرخصی استحقاقی    : {contract.annual_leave_days} روز")
 
                 confirm = input("\n  آیا تایید می‌کنید؟ (بله/خیر): ").strip()
                 if confirm.lower() not in ['بله', 'yes', 'y']:
@@ -1634,24 +1649,23 @@ class ConsoleUI:
                 print(f"\n  {result['message']}")
 
             elif choice == '2':
-                confirm = input(f"\n  ⚠️  آیا مطمئن هستید که می‌خواهید مرخصی همه کاربران را برای سال {year} شارژ کنید؟ (بله/خیر): ").strip()
+                confirm = input(f"\n  ⚠️  آیا مطمئن هستید که می‌خواهید مرخصی همه کاربران را برای سال شمسی {year} شارژ کنید؟ (بله/خیر): ").strip()
                 if confirm.lower() not in ['بله', 'yes', 'y']:
                     print("  ❌ عملیات لغو شد")
                     return
 
                 stats = manager.initialize_all_users_for_year(year)
                 print(f"\n  📊 نتیجه:")
-                print(f"     • کل کاربران      : {stats['total']}")
-                print(f"     • شارژ موفق       : {stats['success']} ✅")
-                print(f"     • قبلاً شارژ شده  : {stats['skipped']} ⚠️")
-                print(f"     • خطا (بدون قرارداد): {stats['failed']} ❌")
+                print(f"     • کل کاربران         : {stats['total']}")
+                print(f"     • شارژ موفق          : {stats['success']} ✅")
+                print(f"     • قبلاً شارژ شده     : {stats['skipped']} ⚠️")
+                print(f"     • خطا (بدون قرارداد) : {stats['failed']} ❌")
 
             else:
                 print("  ❌ انتخاب نامعتبر")
 
         finally:
             manager.close()
-
     def _show_contracts_summary(self):
         """نمایش آمار قراردادها"""
         from core.contract_manager import ContractManager
@@ -1812,6 +1826,7 @@ class ConsoleUI:
 
         finally:
             manager.close()
+
     def _delete_holiday(self):
         """حذف تعطیلی"""
         from core.holiday_manager import HolidayManager
@@ -1821,44 +1836,59 @@ class ConsoleUI:
         print("=" * 70)
 
         today_j = jdatetime.date.today()
-        year_str = input(f"\n  📅 سال [پیش‌فرض: {today_j.year}]: ").strip()
+        year_str = input(f"\n  📅 سال شمسی [پیش‌فرض: {today_j.year}]: ").strip()
         year = int(year_str) if year_str else today_j.year
 
         manager = HolidayManager()
         try:
+            # ✅ دریافت تعطیلات با سال شمسی
             holidays = manager.get_custom_holidays(year)
 
             if not holidays:
-                print(f"\n  ⚠️  هیچ تعطیلی ثبت شده‌ای در سال {year} وجود ندارد")
+                print(f"\n  ⚠️  هیچ تعطیلی ثبت شده‌ای در سال شمسی {year} وجود ندارد")
+                print("  💡 توجه: جمعه‌ها به صورت خودکار تعطیل هستند و قابل حذف نیستند")
                 return
 
-            print(f"\n  📋 تعطیلات ثبت شده در سال {year}:")
-            print("  " + "-" * 60)
-            print(f"  {'#':<4} {'شناسه':<8} {'تاریخ':<12} {'روز':<8} {'عنوان':<25}")
-            print("  " + "-" * 60)
+            # نمایش لیست
+            print(f"\n  📋 تعطیلات ثبت شده در سال شمسی {year} ({len(holidays)} مورد):")
+            print("  " + "-" * 75)
+            print(f"  {'#':<4} {'ID':<6} {'تاریخ شمسی':<12} {'روز':<10} {'نوع':<6} {'عنوان':<30}")
+            print("  " + "-" * 75)
 
             for i, h in enumerate(holidays, 1):
                 j_date = jdatetime.date.fromgregorian(date=h.holiday_date)
                 day_name = self._get_day_name(h.holiday_date)
-                print(f"  {i:<4} {h.id:<8} {j_date.strftime('%Y/%m/%d'):<12} {day_name:<8} {h.title:<25}")
+                national = "ملی" if h.is_national else "غیرملی"
+                print(
+                    f"  {i:<4} {h.id:<6} {j_date.strftime('%Y/%m/%d'):<12} {day_name:<10} {national:<6} {h.title:<30}")
 
-            print("  " + "-" * 60)
+            print("  " + "-" * 75)
 
-            choice = input("\n  شماره تعطیلی برای حذف (یا 0 برای انصراف): ").strip()
+            # انتخاب
+            choice = input("\n  شماره برای حذف (0 = انصراف): ").strip()
             if choice == '0' or not choice:
-                print("  ❌ عملیات لغو شد")
+                print("  ❌ لغو شد")
                 return
 
-            idx = int(choice) - 1
-            if idx < 0 or idx >= len(holidays):
-                print("  ❌ شماره نامعتبر")
+            try:
+                idx = int(choice) - 1
+                if idx < 0 or idx >= len(holidays):
+                    print("  ❌ شماره نامعتبر")
+                    return
+            except ValueError:
+                print("  ❌ ورودی نامعتبر")
                 return
 
             selected = holidays[idx]
+            j_selected = jdatetime.date.fromgregorian(date=selected.holiday_date)
 
-            confirm = input(f"\n  ⚠️  آیا مطمئن هستید؟ (بله/خیر): ").strip()
+            # تایید
+            print(f"\n  ⚠️  حذف تعطیلی: {selected.title}")
+            print(f"     تاریخ: {j_selected.strftime('%Y/%m/%d')} ({self._get_day_name(selected.holiday_date)})")
+
+            confirm = input("  تایید (بله/خیر): ").strip()
             if confirm.lower() not in ['بله', 'yes', 'y']:
-                print("  ❌ عملیات لغو شد")
+                print("  ❌ لغو شد")
                 return
 
             result = manager.delete_holiday(selected.id)
@@ -1866,7 +1896,6 @@ class ConsoleUI:
 
         finally:
             manager.close()
-
     def _check_holiday(self):
         """بررسی تعطیلی یک تاریخ"""
         from core.holiday_manager import HolidayManager
@@ -2071,10 +2100,11 @@ class ConsoleUI:
     def _show_leave_balance(self):
         """نمایش مانده مرخصی یک کاربر"""
         from core.leave_manager import LeaveManager
+        from core.employee_manager import EmployeeManager
 
-        print("\n" + "=" * 70)
+        print("\n" + "=" * 80)
         print("  💼 مانده مرخصی کاربر")
-        print("=" * 70)
+        print("=" * 80)
 
         user_id = input("\n  📛 کد پرسنلی کاربر: ").strip()
         if not user_id:
@@ -2082,40 +2112,73 @@ class ConsoleUI:
             return
 
         today_j = jdatetime.date.today()
-        year_str = input(f"  📅 سال [پیش‌فرض: {today_j.year}]: ").strip()
+        year_str = input(f"  📅 سال شمسی [پیش‌فرض: {today_j.year}]: ").strip()
         year = int(year_str) if year_str else today_j.year
 
         manager = LeaveManager()
+        emp_manager = EmployeeManager()
         try:
             user = manager.db.query(User).filter(User.user_id == user_id).first()
             if not user:
                 print(f"\n  ❌ کاربر {user_id} یافت نشد")
                 return
 
+            # دریافت نام کامل از جدول employee
+            full_name = emp_manager.get_full_name(user_id)
+
             balances = manager.get_all_balances(user_id, year)
             summary = manager.get_summary_for_user(user_id, year)
 
-            print(f"\n  👤 کاربر: {user.name} (کد: {user_id})")
-            print(f"  📅 سال: {year}")
+            print(f"\n  👤 کاربر: {full_name} (کد: {user_id})")
+            print(f"  📅 سال شمسی: {year}")
 
-            print("\n  ┌─────────────────────┬──────────────┬──────────────┐")
-            print("  │ نوع مرخصی           │ مانده فعلی   │ مصرف شده     │")
-            print("  ├─────────────────────┼──────────────┼──────────────┤")
+            # ✅ جدول با ستون مانده باقی‌مانده
+            print("\n  ┌─────────────────────┬──────────────┬──────────────┬──────────────┐")
+            print("  │ نوع مرخصی           │ شارژ اولیه   │ مصرف شده    │ مانده باقی   │")
+            print("  ├─────────────────────┼──────────────┼──────────────┼──────────────┤")
+
+            total_balance = 0
+            total_used = 0
+            total_remaining = 0
 
             for code, data in balances.items():
+                balance = data['balance']
                 used = summary['used'].get(code, 0)
-                print(f"  │ {data['name']:<19} │ {data['balance']:<12} │ {used:<12} │")
+                remaining = balance - used  # ✅ محاسبه مانده باقی‌مانده
 
-            print("  └─────────────────────┴──────────────┴──────────────┘")
+                # رنگ‌بندی بر اساس مانده
+                if remaining < 0:
+                    remaining_str = f"{remaining} ❌"  # منفی (بیشتر مصرف شده)
+                elif remaining == 0 and balance > 0:
+                    remaining_str = f"{remaining} ⚠️"  # تمام شده
+                else:
+                    remaining_str = f"{remaining} ✅"  # باقی‌مانده
 
+                print(f"  │ {data['name']:<19} │ {balance:<12} │ {used:<12} │ {remaining_str:<12} │")
+
+                total_balance += balance
+                total_used += used
+                total_remaining += remaining
+
+            print("  └─────────────────────┴──────────────┴──────────────┴──────────────┘")
+
+            # خلاصه
             print(f"\n  📊 تعداد درخواست‌های تایید شده: {summary['approved_requests_count']}")
+            print(f"  📊 مجموع شارژ اولیه: {total_balance} روز")
+            print(f"  📊 مجموع مصرف شده: {total_used} روز")
+
+            if total_remaining < 0:
+                print(f"  📊 مجموع مانده: {total_remaining} روز ❌ (بیشتر از مجاز مصرف شده)")
+            else:
+                print(f"  📊 مجموع مانده: {total_remaining} روز ✅")
 
         finally:
             manager.close()
-
+            emp_manager.close()
     def _show_leave_transactions(self):
         """نمایش تاریخچه تراکنش‌های مرخصی"""
         from core.leave_manager import LeaveManager
+        from core.employee_manager import EmployeeManager
 
         print("\n" + "=" * 70)
         print("  📜 تاریخچه تراکنش‌های مرخصی")
@@ -2127,18 +2190,24 @@ class ConsoleUI:
             return
 
         today_j = jdatetime.date.today()
-        year_str = input(f"  📅 سال [پیش‌فرض: {today_j.year}]: ").strip()
+        year_str = input(f"  📅 سال شمسی [پیش‌فرض: {today_j.year}]: ").strip()
         year = int(year_str) if year_str else today_j.year
 
         manager = LeaveManager()
+        emp_manager = EmployeeManager()
         try:
             transactions = manager.get_transactions(user_id, year)
 
+            # ✅ دریافت نام کامل
+            full_name = emp_manager.get_full_name(user_id)
+
             if not transactions:
-                print(f"\n  ⚠️  هیچ تراکنشی در سال {year} یافت نشد")
+                print(f"\n  ⚠️  هیچ تراکنشی در سال شمسی {year} یافت نشد")
                 return
 
-            print(f"\n  📊 تعداد تراکنش‌ها: {len(transactions)}")
+            print(f"\n  👤 کاربر: {full_name} (کد: {user_id})")
+            print(f"  📅 سال شمسی: {year}")
+            print(f"  📊 تعداد تراکنش‌ها: {len(transactions)}")
 
             print("\n  ┌────────────┬────────────┬──────┬──────────┬──────────────────────┐")
             print("  │ تاریخ      │ نوع مرخصی  │ مقدار│ نوع عمل  │ توضیحات              │")
@@ -2166,7 +2235,7 @@ class ConsoleUI:
 
         finally:
             manager.close()
-
+            emp_manager.close()
     # ============================================
     # درخواست مرخصی
     # ============================================
@@ -2366,6 +2435,7 @@ class ConsoleUI:
     def _show_user_requests(self):
         """نمایش درخواست‌های یک کاربر"""
         from core.leave_request_manager import LeaveRequestManager
+        from core.employee_manager import EmployeeManager
 
         print("\n" + "=" * 70)
         print("  📜 درخواست‌های مرخصی کاربر")
@@ -2377,22 +2447,23 @@ class ConsoleUI:
             return
 
         today_j = jdatetime.date.today()
-        year_str = input(f"  📅 سال [پیش‌فرض: {today_j.year}]: ").strip()
+        year_str = input(f"  📅 سال شمسی [پیش‌فرض: {today_j.year}]: ").strip()
         year = int(year_str) if year_str else today_j.year
 
         manager = LeaveRequestManager()
+        emp_manager = EmployeeManager()
         try:
             requests = manager.get_user_requests(user_id, year)
 
+            # ✅ دریافت نام کامل
+            full_name = emp_manager.get_full_name(user_id)
+
             if not requests:
-                print(f"\n  ⚠️  هیچ درخواستی برای کاربر {user_id} در سال {year} یافت نشد")
+                print(f"\n  ⚠️  هیچ درخواستی برای کاربر {full_name} در سال شمسی {year} یافت نشد")
                 return
 
-            user = manager.db.query(User).filter(User.user_id == user_id).first()
-            user_name = user.name if user else user_id
-
-            print(f"\n  👤 کاربر: {user_name}")
-            print(f"  📅 سال: {year}")
+            print(f"\n  👤 کاربر: {full_name} (کد: {user_id})")
+            print(f"  📅 سال شمسی: {year}")
             print(f"  📊 تعداد درخواست‌ها: {len(requests)}")
 
             print("\n  ┌──────┬────────────┬────────────┬──────┬────────────┬────────┐")
@@ -2413,9 +2484,14 @@ class ConsoleUI:
 
             print("  └──────┴────────────┴────────────┴──────┴────────────┴────────┘")
 
+            # ✅ نمایش مجموع روزهای مصرف شده
+            total_days = sum(req.days_count for req in requests if req.status == 'A')
+            if total_days > 0:
+                print(f"\n  📊 مجموع روزهای مصرف شده (تایید شده): {total_days} روز")
+
         finally:
             manager.close()
-
+            emp_manager.close()
     def _show_request_statistics(self):
         """نمایش آمار درخواست‌های مرخصی"""
         from core.leave_request_manager import LeaveRequestManager

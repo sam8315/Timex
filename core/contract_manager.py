@@ -92,7 +92,10 @@ class ContractManager:
             return {'success': False, 'message': f'❌ خطا: {e}'}
 
     def get_active_contract(self, user_id: str, target_date: Optional[date] = None) -> Optional[Contract]:
-        """دریافت قرارداد فعال یک کاربر در تاریخ مشخص"""
+        """
+        دریافت قرارداد فعال یک کاربر در تاریخ مشخص
+        target_date: تاریخ میلادی
+        """
         if not target_date:
             target_date = date.today()
 
@@ -108,7 +111,6 @@ class ContractManager:
         ).order_by(Contract.start_date.desc()).first()
 
         return contract
-
     def get_user_contracts(self, user_id: str) -> List[Contract]:
         """دریافت تمام قراردادهای یک کاربر"""
         return self.db.query(Contract).filter(
@@ -118,21 +120,28 @@ class ContractManager:
     def initialize_yearly_balances(self, user_id: str, year: int) -> Dict:
         """
         شارژ اولیه مرخصی استحقاقی بر اساس قرارداد برای یک سال
-
-        این تابع باید در ابتدای هر سال یا هنگام ایجاد قرارداد جدید اجرا شود
+        year: سال شمسی
         """
-        # دریافت قرارداد فعال در ابتدای سال
-        year_start = date(year, 1, 1)
-        contract = self.get_active_contract(user_id, year_start)
+        import jdatetime
+
+        # ✅ تبدیل سال شمسی به تاریخ میلادی ابتدای سال
+        try:
+            j_year_start = jdatetime.date(year, 1, 1)
+            g_year_start = j_year_start.togregorian()
+        except Exception as e:
+            return {'success': False, 'message': f'❌ خطا در تبدیل تاریخ: {e}'}
+
+        # دریافت قرارداد فعال در ابتدای سال شمسی
+        contract = self.get_active_contract(user_id, g_year_start)
 
         if not contract:
-            return {'success': False, 'message': f'❌ قراردادی برای سال {year} یافت نشد'}
+            return {'success': False, 'message': f'❌ قراردادی برای سال شمسی {year} یافت نشد'}
 
         # بررسی اینکه آیا قبلاً شارژ شده یا نه
         existing = self.db.query(LeaveBalance).filter(
             and_(
                 LeaveBalance.user_id == user_id,
-                LeaveBalance.year == year,
+                LeaveBalance.year == year,  # ✅ سال شمسی در leave_balances
                 LeaveBalance.leave_type == 'AL'
             )
         ).first()
@@ -140,14 +149,14 @@ class ContractManager:
         if existing:
             return {
                 'success': False,
-                'message': f'⚠️ مرخصی استحقاقی سال {year} قبلاً شارژ شده ({existing.balance} روز)'
+                'message': f'⚠️ مرخصی استحقاقی سال شمسی {year} قبلاً شارژ شده ({existing.balance} روز)'
             }
 
         try:
             # ایجاد مانده مرخصی استحقاقی
             balance = LeaveBalance(
                 user_id=user_id,
-                year=year,
+                year=year,  # ✅ سال شمسی
                 leave_type='AL',
                 balance=contract.annual_leave_days
             )
@@ -156,7 +165,7 @@ class ContractManager:
             # ثبت تراکنش
             transaction = LeaveTransaction(
                 user_id=user_id,
-                year=year,
+                year=year,  # ✅ سال شمسی
                 leave_type='AL',
                 amount=contract.annual_leave_days,
                 transaction_type='INITIAL',
@@ -168,15 +177,17 @@ class ContractManager:
 
             return {
                 'success': True,
-                'message': f'✅ مرخصی استحقاقی سال {year} شارژ شد: {contract.annual_leave_days} روز'
+                'message': f'✅ مرخصی استحقاقی سال شمسی {year} شارژ شد: {contract.annual_leave_days} روز'
             }
 
         except Exception as e:
             self.db.rollback()
             return {'success': False, 'message': f'❌ خطا: {e}'}
-
     def initialize_all_users_for_year(self, year: int) -> Dict:
-        """شارژ مرخصی استحقاقی همه کاربران برای یک سال"""
+        """
+        شارژ مرخصی استحقاقی همه کاربران برای یک سال
+        year: سال شمسی
+        """
         users = self.db.query(User).all()
         stats = {'total': 0, 'success': 0, 'failed': 0, 'skipped': 0}
 
@@ -191,7 +202,6 @@ class ContractManager:
                 stats['failed'] += 1
 
         return stats
-
     def get_contract_summary(self) -> Dict:
         """خلاصه آماری قراردادها"""
         total_contracts = self.db.query(Contract).count()
