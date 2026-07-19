@@ -190,3 +190,28 @@ class EmployeeManager:
             'single': single,
             'departments': departments
         }
+
+    def get_full_name(self, user_id: str) -> str:
+        """
+        دریافت نام کامل کاربر
+        اولویت با جدول employee است، اگر نبود از users استفاده می‌شود
+        """
+        employee = self.db.query(Employee).filter(Employee.user_id == user_id).first()
+        if employee:
+            return employee.full_name
+
+        # fallback به جدول users
+        user = self.db.query(User).filter(User.user_id == user_id).first()
+        return user.name if user else user_id
+
+    @staticmethod
+    def get_full_name_static(db: Session, user_id: str) -> str:
+        """نسخه استاتیک برای استفاده در جاهایی که instance نداریم"""
+        from models.employee import Employee
+
+        employee = db.query(Employee).filter(Employee.user_id == user_id).first()
+        if employee:
+            return employee.full_name
+
+        user = db.query(User).filter(User.user_id == user_id).first()
+        return user.name if user else user_id

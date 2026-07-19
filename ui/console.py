@@ -26,89 +26,40 @@ class ConsoleUI:
         print("=" * 60)
 
     def show_menu(self):
-        """نمایش منوی اصلی"""
+        """نمایش منوی اصلی (ساده و گروه‌بندی شده)"""
         self.clear()
-        self.header("سیستم مدیریت دستگاه حضور و غیاب ST-FACE 120")
+        self.header("سیستم مدیریت حضور و غیاب")
 
         status = "🟢 متصل" if self.connected else "🔴 قطع"
-        print(f"\n  وضعیت اتصال: {status}")
-        print(f"  دستگاه: {self.manager.ip}:{self.manager.port}")
+        print(f"\n  وضعیت: {status} | دستگاه: {self.manager.ip}:{self.manager.port}")
 
         print("\n┌─────────────────────────────────────────┐")
-        print("│  1. اتصال به دستگاه                      │")
-        print("│  2. قطع اتصال                            │")
-        print("│  3. اطلاعات دستگاه                        │")
-        print("│  4. لیست کاربران                         │")
-        print("│  5. جستجوی کاربر بر اساس کد پرسنلی       │")
-        print("│  6. جستجوی کاربر بر اساس نام             │")  # جدید
-        print("│  7. جستجوی چندگانه کاربران               │")  # جدید
-        print("│  8. رکوردهای تردد                        │")
-        print("│  9. رکوردهای یک روز خاص                  │")
-        print("│  10. پاک کردن رکوردها                    │")
-        print("│      دیتابیس و Migration                 │")
-        print("│  11. همگام‌سازی کاربران با دیتابیس        │")
-        print("│  12. همگام‌سازی رکوردهای تردد با دیتابیس  │")  # 🆕 گزینه جدید
-        print("│  13. انتقال کامل از MySQL (Migration)    │")
-        print("│  14. انتقال تدریجی از MySQL (Sync)       │")
-        print("│  15. تست اتصال به MySQL                  │")
-        print("│                                          │")
-        print("│              تنظیمات                     │")
-        print("│  16. همگام‌سازی زمان                      │")
-        print("│  17. ریستارت دستگاه                      │")
-        print("│                                          │")
-        print("│  🔍 تحلیل و گزارش                       │")
-        print("│  18. بررسی ترددهای ناقص                       │")  # 🆕
-        print("│  19. آمار کلی ترددها                          │")  # 🆕
-        print("│  20. جزئیات تردد یک کاربر                     │")  # 🆕
-        print("│  ✏️  ویرایش ترددها                              │")
-        print("│  21. افزودن رکورد تردد دستی                    │")  # 🆕
-        print("│  22. حذف رکورد تردد                             │")  # 🆕
-        print("│  23. تغییر وضعیت (ورود/خروج) رکورد             │")  # 🆕
-        print("│  24. ♻️  بازیابی رکورد حذف شده                  │")  # 🆕
-        print("│  📑 مدیریت قراردادها و مرخصی                  │")
-        print("│  25. افزودن قرارداد جدید                     │")  # 🆕
-        print("│  26. مشاهده قراردادهای یک کاربر               │")  # 🆕
-        print("│  27. شارژ مرخصی استحقاقی سالانه               │")  # 🆕
-        print("│  28. آمار قرارداد‌ها                          │")  # 🆕
-        print("│  🏖️  مدیریت تعطیلات                          │")
-        print("│  29. افزودن تعطیلی                           │")  # 🆕
-        print("│  30. لیست تعطیلات سال                        │")  # 🆕
-        print("│  31. حذف تعطیلی                              │")  # 🆕
-        print("│  32. بررسی تعطیلی یک تاریخ                   │")  # 🆕
-        print("│                                               │")
-        print("│  💰 شارژ مرخصی (توسط مدیر)                   │")
-        print("│  33. شارژ مرخصی استعلاجی/تشویقی/بدون حقوق    │")  # 🆕
-        print("│  34. انتقال مانده از سال قبل                 │")  # 🆕
-        print("│  35. مشاهده مانده مرخصی کاربر                │")  # 🆕
-        print("│  36. تاریخچه تراکنش‌های مرخصی                │")  # 🆕
-        print("│  📝 درخواست مرخصی                             │")
-        print("│  37. ثبت درخواست مرخصی جدید                  │")  # 🆕
-        print("│  38. لیست درخواست‌های در انتظار تایید         │")  # 🆕
-        print("│  39. تایید/رد درخواست مرخصی                   │")  # 🆕
-        print("│  40. مشاهده درخواست‌های یک کاربر              │")  # 🆕
-        print("│  41. آمار درخواست‌های مرخصی                   │")  # 🆕
-        print("│                                               │")
-        print("│  📅 وضعیت روزانه                             │")
-        print("│  401. تعیین دستی وضعیت روزانه                 │")  # 🆕
-        print("│  411. گزارش وضعیت یک روز                      │")  # 🆕
-        print("│  42. گزارش ماهانه یک کاربر                   │")  # 🆕
-        print("│  43. گزارش ماهانه همه کاربران                │")  # 🆕
-        print("│  44. گزارش غیبت‌ها                            │")  # 🆕
-        print("│  45. گزارش مرخصی‌ها                           │")  # 🆕
-        print("│                                               │")
-        print("│  📤 خروجی اکسل                                │")
-        print("│  46. خروجی گزارش ماهانه به اکسل              │")  # 🆕
-        print("│  47. خروجی گزارش غیبت‌ها به اکسل              │")  # 🆕
-        print("│  48. خروجی گزارش مرخصی‌ها به اکسل             │")  # 🆕
-        print("│  👥 مدیریت اطلاعات کارمندان                   │")
-        print("│  49. افزودن اطلاعات کارمند                   │")  # 🆕
-        print("│  50. ویرایش اطلاعات کارمند                   │")  # 🆕
-        print("│  51. مشاهده اطلاعات کارمند                   │")  # 🆕
-        print("│  52. لیست کارمندان                            │")  # 🆕
-        print("│  53. جستجو در اطلاعات کارمندان                │")  # 🆕
-        print("│  54. آمار کارمندان                            │")  # 🆕
-        print("│  0. خروج                                 │")
-        print("└─────────────────────────────────────────────────┘")
+        print("│  🔌 مدیریت دستگاه                       │")
+        print("│  1. اتصال/قطع/اطلاعات/تنظیمات دستگاه    │")
+        print("│                                         │")
+        print("│  👥 کاربران و رکوردها                   │")
+        print("│  2. مدیریت کاربران دستگاه               │")
+        print("│  3. مدیریت رکوردهای تردد                │")
+        print("│                                         │")
+        print("│  🗄️  دیتابیس                            │")
+        print("│  4. دیتابیس و Migration                 │")
+        print("│                                         │")
+        print("│  🔍 تحلیل و ویرایش                      │")
+        print("│  5. تحلیل و ویرایش ترددها               │")
+        print("│                                         │")
+        print("│  📑 مدیریت مرخصی                        │")
+        print("│  6. قراردادها                           │")
+        print("│  7. تعطیلات، شارژ و درخواست مرخصی       │")
+        print("│                                         │")
+        print("│  📅 گزارش‌ها                             │")
+        print("│  8. گزارش‌ها و وضعیت روزانه             │")
+        print("│  9. خروجی اکسل                          │")
+        print("│                                         │")
+        print("│  👥 سایر                                │")
+        print("│  10. اطلاعات کارمندان                   │")
+        print("│                                         │")
+        print("│  0. خروج                                │")
+        print("└─────────────────────────────────────────┘")
 
         return input("\n  انتخاب شما: ").strip()
 
@@ -118,117 +69,25 @@ class ConsoleUI:
             choice = self.show_menu()
 
             if choice == '1':
-                self._connect()
+                self._device_menu()
             elif choice == '2':
-                self._disconnect()
+                self._users_menu()
             elif choice == '3':
-                self._show_device_info()
+                self._attendance_menu()
             elif choice == '4':
-                self._show_users()
+                self._database_menu()
             elif choice == '5':
-                self._find_user_by_user_id()  # تغییر نام
+                self._analysis_menu()
             elif choice == '6':
-                self._find_user_by_code()  # جدید
+                self._contracts_menu()
             elif choice == '7':
-                self._search_users()  # جدید
+                self._leave_menu()
             elif choice == '8':
-                self._show_attendance()
+                self._reports_menu()
             elif choice == '9':
-                self._show_attendance_by_date()
+                self._excel_menu()
             elif choice == '10':
-                self._clear_attendance()
-            elif choice == '11':
-                self._sync_users_to_db()
-            elif choice == '12':  # یا شماره‌ای که انتخاب کردید
-                self._sync_attendance_to_db()
-            elif choice == '13':
-                self._migrate_from_mysql()  # 🆕
-            elif choice == '14':
-                self._sync_from_mysql()  # 🆕
-            elif choice == '15':
-                self._test_mysql_connection()  # 🆕
-            elif choice == '16':
-                self._sync_time()
-            elif choice == '17':
-                self._restart()
-            elif choice == '18':
-                self._show_incomplete_attendances()
-            elif choice == '19':
-                self._show_attendance_statistics()
-            elif choice == '20':
-                self._show_user_attendance_detail()
-            elif choice == '21':
-                self._add_attendance_record()
-            elif choice == '22':
-                self._delete_attendance_record()
-            elif choice == '23':
-                self._update_attendance_punch()
-            elif choice == '24':
-                pass
-            elif choice == '25':
-                self._add_contract()
-            elif choice == '26':
-                self._show_user_contracts()
-            elif choice == '27':
-                self._initialize_yearly_leave()
-            elif choice == '28':
-                self._show_contracts_summary()
-            elif choice == '29':
-                self._add_holiday()
-            elif choice == '30':
-                self._show_year_holidays()
-            elif choice == '31':
-                self._delete_holiday()
-            elif choice == '32':
-                self._check_holiday()
-            elif choice == '33':
-                self._credit_leave()
-            elif choice == '34':
-                self._carryover_leave()
-            elif choice == '35':
-                self._show_leave_balance()
-            elif choice == '36':
-                self._show_leave_transactions()
-            elif choice == '37':
-                self._create_leave_request()
-            elif choice == '38':
-                self._show_pending_requests()
-            elif choice == '39':
-                self._approve_reject_request()
-            elif choice == '40':
-                self._show_user_requests()
-            elif choice == '41':
-                self._show_request_statistics()
-            elif choice == '401':
-                self._set_manual_status()
-            elif choice == '411':
-                self._show_daily_report()
-            elif choice == '42':
-                self._show_user_monthly_report()
-            elif choice == '43':
-                self._show_all_users_monthly_report()
-            elif choice == '44':
-                self._show_absent_report()
-            elif choice == '45':
-                self._show_leave_report()
-            elif choice == '46':
-                self._export_monthly_to_excel()
-            elif choice == '47':
-                self._export_absent_to_excel()
-            elif choice == '48':
-                self._export_leave_to_excel()
-            elif choice == '49':
-                self._add_employee_info()
-            elif choice == '50':
-                self._update_employee_info()
-            elif choice == '51':
-                self._show_employee_info()
-            elif choice == '52':
-                self._list_all_employees()
-            elif choice == '53':
-                self._search_employees()
-            elif choice == '54':
-                self._show_employee_statistics()
+                self._employee_menu()
             elif choice == '0':
                 self._disconnect()
                 print("\n👋 خدانگهدار!")
@@ -237,6 +96,249 @@ class ConsoleUI:
                 print("\n❌ انتخاب نامعتبر")
 
             input("\n⏎ برای ادامه Enter بزنید...")
+
+    # ============================================
+    # زیرمنوها
+    # ============================================
+
+    def _device_menu(self):
+        """زیرمنوی مدیریت دستگاه"""
+        while True:
+            self.clear()
+            self.header("🔌 مدیریت دستگاه")
+            print("\n  1. اتصال به دستگاه")
+            print("  2. قطع اتصال")
+            print("  3. اطلاعات دستگاه")
+            print("  4. همگام‌سازی زمان")
+            print("  5. ریستارت دستگاه")
+            print("  0. بازگشت")
+
+            choice = input("\n  انتخاب: ").strip()
+            if choice == '1': self._connect()
+            elif choice == '2': self._disconnect()
+            elif choice == '3': self._show_device_info()
+            elif choice == '4': self._sync_time()
+            elif choice == '5': self._restart()
+            elif choice == '0': break
+            else: print("\n❌ انتخاب نامعتبر")
+            input("\n⏎ Enter...")
+
+    def _users_menu(self):
+        """زیرمنوی کاربران دستگاه"""
+        while True:
+            self.clear()
+            self.header("👥 کاربران دستگاه")
+            print("\n  1. لیست کاربران")
+            print("  2. جستجو بر اساس UID")
+            print("  3. جستجو بر اساس کد پرسنلی")
+            print("  4. جستجوی چندگانه")
+            print("  5. همگام‌سازی کاربران با دیتابیس")
+            print("  0. بازگشت")
+
+            choice = input("\n  انتخاب: ").strip()
+            if choice == '1': self._show_users()
+            elif choice == '2': self._find_user_by_user_id()
+            elif choice == '3': self._find_user_by_code()
+            elif choice == '4': self._search_users()
+            elif choice == '5': self._sync_users_to_db()
+            elif choice == '0': break
+            else: print("\n❌ انتخاب نامعتبر")
+            input("\n⏎ Enter...")
+
+    def _attendance_menu(self):
+        """زیرمنوی رکوردهای تردد"""
+        while True:
+            self.clear()
+            self.header("📊 رکوردهای تردد")
+            print("\n  1. رکوردهای تردد")
+            print("  2. رکوردهای یک روز خاص")
+            print("  3. پاک کردن رکوردها")
+            print("  4. همگام‌سازی رکوردها با دیتابیس")
+            print("  0. بازگشت")
+
+            choice = input("\n  انتخاب: ").strip()
+            if choice == '1': self._show_attendance()
+            elif choice == '2': self._show_attendance_by_date()
+            elif choice == '3': self._clear_attendance()
+            elif choice == '4': self._sync_attendance_to_db()
+            elif choice == '0': break
+            else: print("\n❌ انتخاب نامعتبر")
+            input("\n⏎ Enter...")
+
+    def _database_menu(self):
+        """زیرمنوی دیتابیس"""
+        while True:
+            self.clear()
+            self.header("🗄️  دیتابیس و Migration")
+            print("\n  1. انتقال کامل از MySQL")
+            print("  2. همگام‌سازی تدریجی از MySQL")
+            print("  3. تست اتصال به MySQL")
+            print("  0. بازگشت")
+
+            choice = input("\n  انتخاب: ").strip()
+            if choice == '1': self._migrate_from_mysql()
+            elif choice == '2': self._sync_from_mysql()
+            elif choice == '3': self._test_mysql_connection()
+            elif choice == '0': break
+            else: print("\n❌ انتخاب نامعتبر")
+            input("\n⏎ Enter...")
+
+    def _analysis_menu(self):
+        """زیرمنوی تحلیل و ویرایش"""
+        while True:
+            self.clear()
+            self.header("🔍 تحلیل و ویرایش ترددها")
+            print("\n  📊 تحلیل:")
+            print("  1. بررسی ترددهای ناقص")
+            print("  2. آمار کلی ترددها")
+            print("  3. جزئیات تردد یک کاربر (با ویرایش)")
+            print("\n  ✏️  ویرایش مستقیم:")
+            print("  4. افزودن رکورد دستی")
+            print("  5. حذف رکورد")
+            print("  6. تغییر وضعیت (ورود/خروج)")
+            print("  7. بازیابی رکورد حذف شده")
+            print("  0. بازگشت")
+
+            choice = input("\n  انتخاب: ").strip()
+            if choice == '1': self._show_incomplete_attendances()
+            elif choice == '2': self._show_attendance_statistics()
+            elif choice == '3': self._show_user_attendance_detail()
+            elif choice == '4': self._add_attendance_record()
+            elif choice == '5': self._delete_attendance_record()
+            elif choice == '6': self._update_attendance_punch()
+            elif choice == '7': pass  # بازیابی
+            elif choice == '0': break
+            else: print("\n❌ انتخاب نامعتبر")
+            input("\n⏎ Enter...")
+
+    def _contracts_menu(self):
+        """زیرمنوی قراردادها"""
+        while True:
+            self.clear()
+            self.header("📑 مدیریت قراردادها")
+            print("\n  1. افزودن قرارداد جدید")
+            print("  2. مشاهده قراردادهای یک کاربر")
+            print("  3. شارژ مرخصی استحقاقی سالانه")
+            print("  4. آمار قراردادها")
+            print("  0. بازگشت")
+
+            choice = input("\n  انتخاب: ").strip()
+            if choice == '1': self._add_contract()
+            elif choice == '2': self._show_user_contracts()
+            elif choice == '3': self._initialize_yearly_leave()
+            elif choice == '4': self._show_contracts_summary()
+            elif choice == '0': break
+            else: print("\n❌ انتخاب نامعتبر")
+            input("\n⏎ Enter...")
+
+    def _leave_menu(self):
+        """زیرمنوی تعطیلات و مرخصی"""
+        while True:
+            self.clear()
+            self.header("🏖️  تعطیلات، شارژ و درخواست مرخصی")
+            print("\n  🏖️  تعطیلات:")
+            print("  1. افزودن تعطیلی")
+            print("  2. لیست تعطیلات سال")
+            print("  3. حذف تعطیلی")
+            print("  4. بررسی تعطیلی یک تاریخ")
+            print("\n  💰 شارژ مرخصی:")
+            print("  5. شارژ استعلاجی/تشویقی/بدون حقوق")
+            print("  6. انتقال مانده از سال قبل")
+            print("  7. مشاهده مانده مرخصی")
+            print("  8. تاریخچه تراکنش‌ها")
+            print("\n  📝 درخواست مرخصی:")
+            print("  9. ثبت درخواست جدید")
+            print("  10. لیست درخواست‌های در انتظار")
+            print("  11. تایید/رد درخواست")
+            print("  12. درخواست‌های یک کاربر")
+            print("  13. آمار درخواست‌ها")
+            print("  0. بازگشت")
+
+            choice = input("\n  انتخاب: ").strip()
+            if choice == '1': self._add_holiday()
+            elif choice == '2': self._show_year_holidays()
+            elif choice == '3': self._delete_holiday()
+            elif choice == '4': self._check_holiday()
+            elif choice == '5': self._credit_leave()
+            elif choice == '6': self._carryover_leave()
+            elif choice == '7': self._show_leave_balance()
+            elif choice == '8': self._show_leave_transactions()
+            elif choice == '9': self._create_leave_request()
+            elif choice == '10': self._show_pending_requests()
+            elif choice == '11': self._approve_reject_request()
+            elif choice == '12': self._show_user_requests()
+            elif choice == '13': self._show_request_statistics()
+            elif choice == '0': break
+            else: print("\n❌ انتخاب نامعتبر")
+            input("\n⏎ Enter...")
+
+    def _reports_menu(self):
+        """زیرمنوی گزارش‌ها"""
+        while True:
+            self.clear()
+            self.header("📅 گزارش‌ها و وضعیت روزانه")
+            print("\n  📅 وضعیت روزانه:")
+            print("  1. تعیین دستی وضعیت")
+            print("  2. گزارش وضعیت یک روز")
+            print("  3. گزارش ماهانه یک کاربر")
+            print("  4. گزارش ماهانه همه کاربران")
+            print("\n  📊 گزارش‌های تحلیلی:")
+            print("  5. گزارش غیبت‌ها")
+            print("  6. گزارش مرخصی‌ها")
+            print("  0. بازگشت")
+
+            choice = input("\n  انتخاب: ").strip()
+            if choice == '1': self._set_manual_status()
+            elif choice == '2': self._show_daily_report()
+            elif choice == '3': self._show_user_monthly_report()
+            elif choice == '4': self._show_all_users_monthly_report()
+            elif choice == '5': self._show_absent_report()
+            elif choice == '6': self._show_leave_report()
+            elif choice == '0': break
+            else: print("\n❌ انتخاب نامعتبر")
+            input("\n⏎ Enter...")
+
+    def _excel_menu(self):
+        """زیرمنوی خروجی اکسل"""
+        while True:
+            self.clear()
+            self.header("📤 خروجی اکسل")
+            print("\n  1. گزارش ماهانه")
+            print("  2. گزارش غیبت‌ها")
+            print("  3. گزارش مرخصی‌ها")
+            print("  0. بازگشت")
+
+            choice = input("\n  انتخاب: ").strip()
+            if choice == '1': self._export_monthly_to_excel()
+            elif choice == '2': self._export_absent_to_excel()
+            elif choice == '3': self._export_leave_to_excel()
+            elif choice == '0': break
+            else: print("\n❌ انتخاب نامعتبر")
+            input("\n⏎ Enter...")
+
+    def _employee_menu(self):
+        """زیرمنوی اطلاعات کارمندان"""
+        while True:
+            self.clear()
+            self.header("👥 اطلاعات کارمندان")
+            print("\n  1. افزودن اطلاعات کارمند")
+            print("  2. ویرایش اطلاعات کارمند")
+            print("  3. مشاهده اطلاعات کارمند")
+            print("  4. لیست کارمندان")
+            print("  5. جستجو در اطلاعات")
+            print("  6. آمار کارمندان")
+            print("  0. بازگشت")
+
+            choice = input("\n  انتخاب: ").strip()
+            if choice == '1': self._add_employee_info()
+            elif choice == '2': self._update_employee_info()
+            elif choice == '3': self._show_employee_info()
+            elif choice == '4': self._list_all_employees()
+            elif choice == '5': self._search_employees()
+            elif choice == '6': self._show_employee_statistics()
+            elif choice == '0': break
+            else: print("\n❌ انتخاب نامعتبر")
+            input("\n⏎ Enter...")
     # ============================================
     # متدهای عملیاتی
     # ============================================
@@ -2413,9 +2515,9 @@ class ConsoleUI:
         """گزارش وضعیت یک روز"""
         from core.daily_status_manager import DailyStatusManager
 
-        print("\n" + "=" * 90)
+        print("\n" + "=" * 100)
         print("  📅 گزارش وضعیت روزانه")
-        print("=" * 90)
+        print("=" * 100)
 
         date_str = input("\n  📅 تاریخ (شمسی) [پیش‌فرض: امروز]: ").strip()
         try:
@@ -2456,14 +2558,27 @@ class ConsoleUI:
             for code, count in sorted(status_counts.items()):
                 print(f"     • {manager.get_status_name(code):<15} : {count}")
 
-            print("\n  ┌──────┬────────┬────────────┬────────────┬──────────────────────┐")
-            print("  │ ردیف │ کد     │ نام        │ گروه       │ وضعیت                │")
-            print("  ├──────┼────────┼────────────┼────────────┼──────────────────────┤")
+            # ✅ جدول با ستون‌های جدید
+            print("\n  ┌──────┬────────┬──────────────────────┬────────────┬──────────────────────┐")
+            print("  │ ردیف │ کد     │ نام و نام خانوادگی   │ گروه       │ وضعیت                │")
+            print("  ├──────┼────────┼──────────────────────┼────────────┼──────────────────────┤")
 
             for i, r in enumerate(report, 1):
-                print(f"  │ {i:<4} │ {r['user_id']:<6} │ {r['name'][:10]:<10} │ {r['group_id'] or '-':<10} │ {r['status_name']:<20} │")
+                # ✅ استفاده از full_name به جای name
+                full_name = r['full_name'][:20]
+                group_map = {
+                    '0': 'بدون گروه',
+                    '1': 'رسمی',
+                    '2': 'وظیفه',
+                    '3': 'خریدخدمت',
+                    '4': 'قراردادی',
+                    '5': 'پزشک'
+                }
+                group_name = group_map.get(r['group_id'], r['group_id'] or '-')
 
-            print("  └──────┴────────┴────────────┴────────────┴──────────────────────┘")
+                print(f"  │ {i:<4} │ {r['user_id']:<6} │ {full_name:<20} │ {group_name:<10} │ {r['status_name']:<20} │")
+
+            print("  └──────┴────────┴──────────────────────┴────────────┴──────────────────────┘")
 
         finally:
             manager.close()

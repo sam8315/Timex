@@ -208,37 +208,47 @@ class DailyStatusManager:
         """
         گزارش وضعیت روزانه همه کاربران در یک روز
         """
+        from core.employee_manager import EmployeeManager
+
         users = self.db.query(User)
         if group_id is not None:
             users = users.filter(User.group_id == str(group_id))
         users = users.all()
 
+        emp_manager = EmployeeManager()
         report = []
-        for user in users:
-            status_info = self.detect_status(user.user_id, target_date)
 
-            # دریافت آمار تردد
-            attendance_count = self.db.query(Attendance).filter(
-                and_(
-                    Attendance.user_id == user.user_id,
-                    func.date(Attendance.timestamp) == target_date,
-                    Attendance.is_deleted == False
-                )
-            ).count()
+        try:
+            for user in users:
+                status_info = self.detect_status(user.user_id, target_date)
 
-            report.append({
-                'user_id': user.user_id,
-                'name': user.name,
-                'group_id': user.group_id,
-                'status': status_info['status'],
-                'status_name': self.get_status_name(status_info['status']),
-                'source': status_info['source'],
-                'description': status_info['description'],
-                'attendance_count': attendance_count
-            })
+                # دریافت آمار تردد
+                attendance_count = self.db.query(Attendance).filter(
+                    and_(
+                        Attendance.user_id == user.user_id,
+                        func.date(Attendance.timestamp) == target_date,
+                        Attendance.is_deleted == False
+                    )
+                ).count()
 
-        return sorted(report, key=lambda x: x['name'])
+                # ✅ دریافت نام کامل از جدول employee
+                full_name = emp_manager.get_full_name(user.user_id)
 
+                report.append({
+                    'user_id': user.user_id,
+                    'name': user.name,  # نام سیستمی (از دستگاه)
+                    'full_name': full_name,  # ✅ نام کامل (از employee)
+                    'group_id': user.group_id,
+                    'status': status_info['status'],
+                    'status_name': self.get_status_name(status_info['status']),
+                    'source': status_info['source'],
+                    'description': status_info['description'],
+                    'attendance_count': attendance_count
+                })
+        finally:
+            emp_manager.close()
+
+        return sorted(report, key=lambda x: x['full_name'])
     def get_monthly_report(self, user_id: str, year: int, month: int) -> Dict:
         """
         گزارش ماهانه یک کاربر
