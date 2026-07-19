@@ -87,6 +87,19 @@ class ConsoleUI:
         print("│  39. تایید/رد درخواست مرخصی                   │")  # 🆕
         print("│  40. مشاهده درخواست‌های یک کاربر              │")  # 🆕
         print("│  41. آمار درخواست‌های مرخصی                   │")  # 🆕
+        print("│                                               │")
+        print("│  📅 وضعیت روزانه                             │")
+        print("│  401. تعیین دستی وضعیت روزانه                 │")  # 🆕
+        print("│  411. گزارش وضعیت یک روز                      │")  # 🆕
+        print("│  42. گزارش ماهانه یک کاربر                   │")  # 🆕
+        print("│  43. گزارش ماهانه همه کاربران                │")  # 🆕
+        print("│  44. گزارش غیبت‌ها                            │")  # 🆕
+        print("│  45. گزارش مرخصی‌ها                           │")  # 🆕
+        print("│                                               │")
+        print("│  📤 خروجی اکسل                                │")
+        print("│  46. خروجی گزارش ماهانه به اکسل              │")  # 🆕
+        print("│  47. خروجی گزارش غیبت‌ها به اکسل              │")  # 🆕
+        print("│  48. خروجی گزارش مرخصی‌ها به اکسل             │")  # 🆕
         print("│  0. خروج                                 │")
         print("└─────────────────────────────────────────────────┘")
 
@@ -179,6 +192,24 @@ class ConsoleUI:
                 self._show_user_requests()
             elif choice == '41':
                 self._show_request_statistics()
+            elif choice == '401':
+                self._set_manual_status()
+            elif choice == '411':
+                self._show_daily_report()
+            elif choice == '42':
+                self._show_user_monthly_report()
+            elif choice == '43':
+                self._show_all_users_monthly_report()
+            elif choice == '44':
+                self._show_absent_report()
+            elif choice == '45':
+                self._show_leave_report()
+            elif choice == '46':
+                self._export_monthly_to_excel()
+            elif choice == '47':
+                self._export_absent_to_excel()
+            elif choice == '48':
+                self._export_leave_to_excel()
             elif choice == '0':
                 self._disconnect()
                 print("\n👋 خدانگهدار!")
@@ -2292,3 +2323,427 @@ class ConsoleUI:
 
         finally:
             manager.close()
+
+    # ============================================
+    # وضعیت روزانه
+    # ============================================
+
+    def _set_manual_status(self):
+        """تعیین دستی وضعیت روزانه"""
+        from core.daily_status_manager import DailyStatusManager
+
+        print("\n" + "=" * 70)
+        print("  📝 تعیین دستی وضعیت روزانه")
+        print("=" * 70)
+
+        user_id = input("\n  📛 کد پرسنلی کاربر: ").strip()
+        if not user_id:
+            print("  ❌ کد پرسنلی نمی‌تواند خالی باشد")
+            return
+
+        date_str = input("  📅 تاریخ (شمسی): ").strip()
+        try:
+            j_date = jdatetime.datetime.strptime(date_str, "%Y/%m/%d").date()
+            g_date = j_date.togregorian()
+        except Exception as e:
+            print(f"  ❌ خطا در تبدیل تاریخ: {e}")
+            return
+
+        print("\n  📋 نوع وضعیت:")
+        print("    1. 💼 ماموریت (M)")
+        print("    2. ⏰ حضور کم/تاخیر (LP)")
+        print("    3. 🎓 ویژه - کلاس/اردو (S)")
+        print("    4. ❌ غیبت (A)")
+        print("    5. ✅ حاضر (P)")
+        choice = input("  انتخاب [1-5]: ").strip()
+
+        status_map = {
+            '1': ('M', 'ماموریت'),
+            '2': ('LP', 'حضور کم'),
+            '3': ('S', 'ویژه'),
+            '4': ('A', 'غیبت'),
+            '5': ('P', 'حاضر')
+        }
+
+        if choice not in status_map:
+            print("  ❌ انتخاب نامعتبر")
+            return
+
+        status_code, status_name = status_map[choice]
+        description = input("  📝 توضیحات (اختیاری): ").strip()
+
+        manager = DailyStatusManager()
+        try:
+            # نمایش وضعیت فعلی
+            current = manager.detect_status(user_id, g_date)
+            print(f"\n  📊 وضعیت فعلی: {manager.get_status_name(current['status'])}")
+            print(f"     (منبع: {'خودکار' if current['source'] == 'auto' else 'دستی'})")
+
+            confirm = input(f"\n  ⚠️  آیا می‌خواهید وضعیت را به '{status_name}' تغییر دهید؟ (بله/خیر): ").strip()
+            if confirm.lower() not in ['بله', 'yes', 'y']:
+                print("  ❌ عملیات لغو شد")
+                return
+
+            result = manager.set_manual_status(user_id, g_date, status_code, description)
+            print(f"\n  {result['message']}")
+
+        finally:
+            manager.close()
+
+    def _show_daily_report(self):
+        """گزارش وضعیت یک روز"""
+        from core.daily_status_manager import DailyStatusManager
+
+        print("\n" + "=" * 90)
+        print("  📅 گزارش وضعیت روزانه")
+        print("=" * 90)
+
+        date_str = input("\n  📅 تاریخ (شمسی) [پیش‌فرض: امروز]: ").strip()
+        try:
+            if date_str:
+                j_date = jdatetime.datetime.strptime(date_str, "%Y/%m/%d").date()
+                g_date = j_date.togregorian()
+            else:
+                g_date = date.today()
+                j_date = jdatetime.date.fromgregorian(date=g_date)
+        except Exception as e:
+            print(f"  ❌ خطا در تبدیل تاریخ: {e}")
+            return
+
+        print("\n  📋 فیلتر بر اساس گروه:")
+        print("    0. همه گروه‌ها")
+        print("    1. رسمی")
+        print("    2. وظیفه")
+        print("    3. خریدخدمت")
+        print("    4. قراردادی")
+        print("    5. پزشک")
+        group_choice = input("  انتخاب [0-5]: ").strip()
+        group_id = int(group_choice) if group_choice != '0' else None
+
+        manager = DailyStatusManager()
+        try:
+            report = manager.get_daily_report(g_date, group_id)
+
+            print(f"\n  📅 تاریخ: {j_date.strftime('%Y/%m/%d')} ({self._get_day_name(g_date)})")
+            print(f"  👥 تعداد کاربران: {len(report)}")
+
+            # شمارش وضعیت‌ها
+            status_counts = {}
+            for r in report:
+                code = r['status']
+                status_counts[code] = status_counts.get(code, 0) + 1
+
+            print("\n  📊 خلاصه:")
+            for code, count in sorted(status_counts.items()):
+                print(f"     • {manager.get_status_name(code):<15} : {count}")
+
+            print("\n  ┌──────┬────────┬────────────┬────────────┬──────────────────────┐")
+            print("  │ ردیف │ کد     │ نام        │ گروه       │ وضعیت                │")
+            print("  ├──────┼────────┼────────────┼────────────┼──────────────────────┤")
+
+            for i, r in enumerate(report, 1):
+                print(f"  │ {i:<4} │ {r['user_id']:<6} │ {r['name'][:10]:<10} │ {r['group_id'] or '-':<10} │ {r['status_name']:<20} │")
+
+            print("  └──────┴────────┴────────────┴────────────┴──────────────────────┘")
+
+        finally:
+            manager.close()
+
+    def _show_user_monthly_report(self):
+        """گزارش ماهانه یک کاربر"""
+        from core.daily_status_manager import DailyStatusManager
+
+        print("\n" + "=" * 70)
+        print("  📊 گزارش ماهانه یک کاربر")
+        print("=" * 70)
+
+        user_id = input("\n  📛 کد پرسنلی کاربر: ").strip()
+        if not user_id:
+            print("  ❌ کد پرسنلی نمی‌تواند خالی باشد")
+            return
+
+        today_j = jdatetime.date.today()
+        year_str = input(f"  📅 سال [پیش‌فرض: {today_j.year}]: ").strip()
+        year = int(year_str) if year_str else today_j.year
+
+        month_str = input(f"  📅 ماه (1-12) [پیش‌فرض: {today_j.month}]: ").strip()
+        month = int(month_str) if month_str else today_j.month
+
+        manager = DailyStatusManager()
+        try:
+            report = manager.get_monthly_report(user_id, year, month)
+            user = manager.db.query(User).filter(User.user_id == user_id).first()
+
+            print(f"\n  👤 کاربر: {user.name if user else user_id}")
+            print(f"  📅 ماه: {self._get_jalali_month_name(month)} {year}")
+
+            print("\n  📋 وضعیت روزها:")
+            print("  " + "-" * 50)
+            for code, count in sorted(report['status_counts'].items()):
+                if count > 0:
+                    print(f"  • {manager.get_status_name(code):<15} : {count} روز")
+            print("  " + "-" * 50)
+
+            work_h = int(report['total_work_hours'])
+            work_m = int((report['total_work_hours'] - work_h) * 60)
+            night_h = int(report['total_night_hours'])
+            night_m = int((report['total_night_hours'] - night_h) * 60)
+
+            print(f"\n  ⏱️  آمار ساعات:")
+            print(f"     • مجموع ساعات کاری   : {work_h} ساعت و {work_m} دقیقه")
+            print(f"     • مجموع ساعات شب‌کاری : {night_h} ساعت و {night_m} دقیقه 🌙")
+
+        finally:
+            manager.close()
+
+    def _show_all_users_monthly_report(self):
+        """گزارش ماهانه همه کاربران"""
+        from core.report_generator import ReportGenerator
+
+        print("\n" + "=" * 120)
+        print("  📊 گزارش ماهانه همه کاربران")
+        print("=" * 120)
+
+        today_j = jdatetime.date.today()
+        year_str = input(f"\n  📅 سال [پیش‌فرض: {today_j.year}]: ").strip()
+        year = int(year_str) if year_str else today_j.year
+
+        month_str = input(f"  📅 ماه (1-12) [پیش‌فرض: {today_j.month}]: ").strip()
+        month = int(month_str) if month_str else today_j.month
+
+        generator = ReportGenerator()
+        try:
+            reports = generator.generate_monthly_report_for_all(year, month)
+
+            print(f"\n  📅 ماه: {self._get_jalali_month_name(month)} {year}")
+            print(f"  👥 تعداد کاربران: {len(reports)}")
+
+            print("\n  ┌──────┬────────┬────────────┬────┬────┬────┬────┬────┬────┬────┬────┬────┬────────┐")
+            print("  │ ردیف │ کد     │ نام        │حاضر│غایب│تعطیل│استحق│استعل│تشویق│بدون ح│مامور│حضورک│ ساعت   │")
+            print("  ├──────┼────────┼────────────┼────┼────┼────┼────┼────┼────┼────┼────┼────┼────────┤")
+
+            for i, r in enumerate(reports, 1):
+                work_str = f"{int(r['work_hours'])}:{int((r['work_hours'] % 1) * 60):02d}"
+                print(f"  │ {i:<4} │ {r['user_id']:<6} │ {r['name'][:10]:<10} │ "
+                      f"{r['present_days']:<2} │ {r['absent_days']:<2} │ {r['holiday_days']:<3} │ "
+                      f"{r['annual_leave']:<2} │ {r['sick_leave']:<3} │ {r['reward_leave']:<3} │ "
+                      f"{r['unpaid_leave']:<3} │ {r['mission_days']:<2} │ {r['late_days']:<2} │ {work_str:<6} │")
+
+            print("  └──────┴────────┴────────────┴────┴────┴────┴────┴────┴────┴────┴────┴────┴────────┘")
+
+        finally:
+            generator.close()
+
+    def _show_absent_report(self):
+        """گزارش غیبت‌ها"""
+        from core.report_generator import ReportGenerator
+
+        print("\n" + "=" * 70)
+        print("  ❌ گزارش غیبت‌ها")
+        print("=" * 70)
+
+        today_j = jdatetime.date.today()
+        from_str = input(f"\n  📅 از تاریخ (شمسی) [پیش‌فرض: {today_j.strftime('%Y/%m/01')}]: ").strip()
+        to_str = input(f"  📅 تا تاریخ (شمسی) [پیش‌فرض: {today_j.strftime('%Y/%m/%d')}]: ").strip()
+
+        try:
+            if from_str:
+                j_from = jdatetime.datetime.strptime(from_str, "%Y/%m/%d").date()
+                g_from = j_from.togregorian()
+            else:
+                g_from = date(today_j.year, today_j.month, 1)
+
+            if to_str:
+                j_to = jdatetime.datetime.strptime(to_str, "%Y/%m/%d").date()
+                g_to = j_to.togregorian()
+            else:
+                g_to = today_j.togregorian()
+        except Exception as e:
+            print(f"  ❌ خطا در تبدیل تاریخ: {e}")
+            return
+
+        generator = ReportGenerator()
+        try:
+            reports = generator.generate_absent_report(g_from, g_to)
+
+            if not reports:
+                print("\n  ✅ هیچ غیبتی در این بازه ثبت نشده است")
+                return
+
+            print(f"\n  📊 تعداد افراد غایب: {len(reports)}")
+
+            print("\n  ┌──────┬────────┬────────────┬──────────┬──────────────────────────────────────┐")
+            print("  │ ردیف │ کد     │ نام        │ تعداد    │ تاریخ‌های غیبت                        │")
+            print("  ├──────┼────────┼────────────┼──────────┼──────────────────────────────────────┤")
+
+            for i, r in enumerate(reports, 1):
+                dates_str = ', '.join([
+                    jdatetime.date.fromgregorian(date=d).strftime('%Y/%m/%d')
+                    for d in r['absent_dates'][:5]
+                ])
+                if len(r['absent_dates']) > 5:
+                    dates_str += f" ... (+{len(r['absent_dates']) - 5})"
+
+                print(f"  │ {i:<4} │ {r['user_id']:<6} │ {r['name'][:10]:<10} │ {r['absent_count']:<8} │ {dates_str:<36} │")
+
+            print("  └──────┴────────┴────────────┴──────────┴──────────────────────────────────────┘")
+
+        finally:
+            generator.close()
+
+    def _show_leave_report(self):
+        """گزارش مرخصی‌ها"""
+        from core.report_generator import ReportGenerator
+
+        print("\n" + "=" * 90)
+        print("  🏖️  گزارش مرخصی‌ها")
+        print("=" * 90)
+
+        today_j = jdatetime.date.today()
+        year_str = input(f"\n  📅 سال [پیش‌فرض: {today_j.year}]: ").strip()
+        year = int(year_str) if year_str else today_j.year
+
+        month_str = input(f"  📅 ماه (1-12) [خالی = کل سال]: ").strip()
+        month = int(month_str) if month_str else None
+
+        generator = ReportGenerator()
+        try:
+            reports = generator.generate_leave_report(year, month)
+
+            if not reports:
+                print("\n  ⚠️  هیچ مرخصی تایید شده‌ای یافت نشد")
+                return
+
+            print(f"\n  📊 تعداد کاربران دارای مرخصی: {len(reports)}")
+
+            print("\n  ┌──────┬────────┬────────────┬────────┬────────┬────────┬────────┬──────┬──────┐")
+            print("  │ ردیف │ کد     │ نام        │ استحقاق│ استعلال│ تشویقی │ بدون ح │ مجموع│ تعداد│")
+            print("  ├──────┼────────┼────────────┼────────┼────────┼────────┼────────┼──────┼──────┤")
+
+            for i, r in enumerate(reports, 1):
+                print(f"  │ {i:<4} │ {r['user_id']:<6} │ {r['name'][:10]:<10} │ "
+                      f"{r['annual_leave']:<6} │ {r['sick_leave']:<6} │ {r['reward_leave']:<6} │ "
+                      f"{r['unpaid_leave']:<6} │ {r['total_days']:<4} │ {r['total_requests']:<4} │")
+
+            print("  └──────┴────────┴────────────┴────────┴────────┴────────┴────────┴──────┴──────┘")
+
+        finally:
+            generator.close()
+
+    # ============================================
+    # خروجی اکسل
+    # ============================================
+
+    def _export_monthly_to_excel(self):
+        """خروجی گزارش ماهانه به اکسل"""
+        from core.report_generator import ReportGenerator
+        from core.excel_exporter import ExcelExporter
+
+        print("\n" + "=" * 70)
+        print("  📤 خروجی گزارش ماهانه به اکسل")
+        print("=" * 70)
+
+        today_j = jdatetime.date.today()
+        year_str = input(f"\n  📅 سال [پیش‌فرض: {today_j.year}]: ").strip()
+        year = int(year_str) if year_str else today_j.year
+
+        month_str = input(f"  📅 ماه (1-12) [پیش‌فرض: {today_j.month}]: ").strip()
+        month = int(month_str) if month_str else today_j.month
+
+        generator = ReportGenerator()
+        try:
+            print("\n  ⏳ در حال تولید گزارش...")
+            reports = generator.generate_monthly_report_for_all(year, month)
+
+            exporter = ExcelExporter()
+            filename = exporter.export_monthly_report(reports, year, month)
+
+            print(f"\n  ✅ فایل اکسل با موفقیت ایجاد شد:")
+            print(f"     📁 {filename}")
+            print(f"     📊 تعداد ردیف‌ها: {len(reports)}")
+
+        finally:
+            generator.close()
+
+    def _export_absent_to_excel(self):
+        """خروجی گزارش غیبت‌ها به اکسل"""
+        from core.report_generator import ReportGenerator
+        from core.excel_exporter import ExcelExporter
+
+        print("\n" + "=" * 70)
+        print("  📤 خروجی گزارش غیبت‌ها به اکسل")
+        print("=" * 70)
+
+        today_j = jdatetime.date.today()
+        from_str = input(f"\n  📅 از تاریخ (شمسی) [پیش‌فرض: اول ماه]: ").strip()
+        to_str = input(f"  📅 تا تاریخ (شمسی) [پیش‌فرض: امروز]: ").strip()
+
+        try:
+            if from_str:
+                j_from = jdatetime.datetime.strptime(from_str, "%Y/%m/%d").date()
+                g_from = j_from.togregorian()
+            else:
+                g_from = date(today_j.year, today_j.month, 1)
+
+            if to_str:
+                j_to = jdatetime.datetime.strptime(to_str, "%Y/%m/%d").date()
+                g_to = j_to.togregorian()
+            else:
+                g_to = today_j.togregorian()
+        except Exception as e:
+            print(f"  ❌ خطا: {e}")
+            return
+
+        generator = ReportGenerator()
+        try:
+            print("\n  ⏳ در حال تولید گزارش...")
+            reports = generator.generate_absent_report(g_from, g_to)
+
+            exporter = ExcelExporter()
+            filename = exporter.export_absent_report(reports, g_from, g_to)
+
+            print(f"\n  ✅ فایل اکسل ایجاد شد:")
+            print(f"     📁 {filename}")
+
+        finally:
+            generator.close()
+
+    def _export_leave_to_excel(self):
+        """خروجی گزارش مرخصی‌ها به اکسل"""
+        from core.report_generator import ReportGenerator
+        from core.excel_exporter import ExcelExporter
+
+        print("\n" + "=" * 70)
+        print("  📤 خروجی گزارش مرخصی‌ها به اکسل")
+        print("=" * 70)
+
+        today_j = jdatetime.date.today()
+        year_str = input(f"\n  📅 سال [پیش‌فرض: {today_j.year}]: ").strip()
+        year = int(year_str) if year_str else today_j.year
+
+        month_str = input(f"  📅 ماه (1-12) [خالی = کل سال]: ").strip()
+        month = int(month_str) if month_str else None
+
+        generator = ReportGenerator()
+        try:
+            print("\n  ⏳ در حال تولید گزارش...")
+            reports = generator.generate_leave_report(year, month)
+
+            exporter = ExcelExporter()
+            filename = exporter.export_leave_report(reports, year, month)
+
+            print(f"\n  ✅ فایل اکسل ایجاد شد:")
+            print(f"     📁 {filename}")
+
+        finally:
+            generator.close()
+
+    def _get_jalali_month_name(self, month: int) -> str:
+        """دریافت نام ماه شمسی"""
+        names = {
+            1: 'فروردین', 2: 'اردیبهشت', 3: 'خرداد',
+            4: 'تیر', 5: 'مرداد', 6: 'شهریور',
+            7: 'مهر', 8: 'آبان', 9: 'آذر',
+            10: 'دی', 11: 'بهمن', 12: 'اسفند'
+        }
+        return names.get(month, '')
