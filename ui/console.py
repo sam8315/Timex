@@ -5,6 +5,7 @@ from core.device_manager import DeviceManager
 from core.attendance_analyzer import AttendanceAnalyzer
 from models.user import User
 from models.contract import Contract
+from models.leave_request import LeaveRequest
 
 
 class ConsoleUI:
@@ -69,6 +70,23 @@ class ConsoleUI:
         print("│  26. مشاهده قراردادهای یک کاربر               │")  # 🆕
         print("│  27. شارژ مرخصی استحقاقی سالانه               │")  # 🆕
         print("│  28. آمار قرارداد‌ها                          │")  # 🆕
+        print("│  🏖️  مدیریت تعطیلات                          │")
+        print("│  29. افزودن تعطیلی                           │")  # 🆕
+        print("│  30. لیست تعطیلات سال                        │")  # 🆕
+        print("│  31. حذف تعطیلی                              │")  # 🆕
+        print("│  32. بررسی تعطیلی یک تاریخ                   │")  # 🆕
+        print("│                                               │")
+        print("│  💰 شارژ مرخصی (توسط مدیر)                   │")
+        print("│  33. شارژ مرخصی استعلاجی/تشویقی/بدون حقوق    │")  # 🆕
+        print("│  34. انتقال مانده از سال قبل                 │")  # 🆕
+        print("│  35. مشاهده مانده مرخصی کاربر                │")  # 🆕
+        print("│  36. تاریخچه تراکنش‌های مرخصی                │")  # 🆕
+        print("│  📝 درخواست مرخصی                             │")
+        print("│  37. ثبت درخواست مرخصی جدید                  │")  # 🆕
+        print("│  38. لیست درخواست‌های در انتظار تایید         │")  # 🆕
+        print("│  39. تایید/رد درخواست مرخصی                   │")  # 🆕
+        print("│  40. مشاهده درخواست‌های یک کاربر              │")  # 🆕
+        print("│  41. آمار درخواست‌های مرخصی                   │")  # 🆕
         print("│  0. خروج                                 │")
         print("└─────────────────────────────────────────────────┘")
 
@@ -135,6 +153,32 @@ class ConsoleUI:
                 self._initialize_yearly_leave()
             elif choice == '28':
                 self._show_contracts_summary()
+            elif choice == '29':
+                self._add_holiday()
+            elif choice == '30':
+                self._show_year_holidays()
+            elif choice == '31':
+                self._delete_holiday()
+            elif choice == '32':
+                self._check_holiday()
+            elif choice == '33':
+                self._credit_leave()
+            elif choice == '34':
+                self._carryover_leave()
+            elif choice == '35':
+                self._show_leave_balance()
+            elif choice == '36':
+                self._show_leave_transactions()
+            elif choice == '37':
+                self._create_leave_request()
+            elif choice == '38':
+                self._show_pending_requests()
+            elif choice == '39':
+                self._approve_reject_request()
+            elif choice == '40':
+                self._show_user_requests()
+            elif choice == '41':
+                self._show_request_statistics()
             elif choice == '0':
                 self._disconnect()
                 print("\n👋 خدانگهدار!")
@@ -1475,6 +1519,776 @@ class ConsoleUI:
 
                 if len(users_without) > 10:
                     print(f"     ... و {len(users_without) - 10} نفر دیگر")
+
+        finally:
+            manager.close()
+
+    # ============================================
+    # مدیریت تعطیلات
+    # ============================================
+
+    def _add_holiday(self):
+        """افزودن تعطیلی"""
+        from core.holiday_manager import HolidayManager
+
+        print("\n" + "=" * 70)
+        print("  🏖️  افزودن تعطیلی")
+        print("=" * 70)
+
+        date_str = input("\n  📅 تاریخ (شمسی - مثال: 1405/05/15): ").strip()
+        if not date_str:
+            print("  ❌ تاریخ نمی‌تواند خالی باشد")
+            return
+
+        try:
+            # ✅ تبدیل صحیح: jdatetime → gregorian
+            j_date = jdatetime.datetime.strptime(date_str, "%Y/%m/%d").date()
+            g_date = j_date.togregorian()  # این خط حیاتی است!
+
+            # ✅ بررسی تبدیل
+            print(f"  🔍 تاریخ شمسی: {j_date.strftime('%Y/%m/%d')}")
+            print(f"  🔍 تاریخ میلادی: {g_date}")
+
+        except Exception as e:
+            print(f"  ❌ خطا در تبدیل تاریخ: {e}")
+            return
+
+        # بررسی جمعه بودن
+        if g_date.weekday() == 4:
+            print("  ⚠️  این تاریخ جمعه است و به طور خودکار تعطیل محسوب می‌شود")
+            return
+
+        title = input("  📝 عنوان تعطیلی: ").strip()
+        if not title:
+            print("  ❌ عنوان نمی‌تواند خالی باشد")
+            return
+
+        national = input("  تعطیل ملی است؟ (بله/خیر) [پیش‌فرض: بله]: ").strip()
+        is_national = national.lower() not in ['خیر', 'no', 'n']
+
+        # پیش‌نمایش
+        day_name = self._get_day_name(g_date)
+        print("\n" + "-" * 70)
+        print("  📋 پیش‌نمایش:")
+        print(f"     • تاریخ شمسی : {j_date.strftime('%Y/%m/%d')} ({day_name})")
+        print(f"     • تاریخ میلادی: {g_date}")
+        print(f"     • عنوان      : {title}")
+        print(f"     • نوع        : {'ملی' if is_national else 'محدود'}")
+        print("-" * 70)
+
+        confirm = input("\n  آیا تایید می‌کنید؟ (بله/خیر): ").strip()
+        if confirm.lower() not in ['بله', 'yes', 'y']:
+            print("  ❌ عملیات لغو شد")
+            return
+
+        manager = HolidayManager()
+        try:
+            # ✅ ارسال g_date (میلادی) نه j_date (شمسی)
+            result = manager.add_holiday(g_date, title, is_national)
+            print(f"\n  {result['message']}")
+        finally:
+            manager.close()
+
+    def _show_year_holidays(self):
+        """نمایش تعطیلات یک سال"""
+        from core.holiday_manager import HolidayManager
+
+        print("\n" + "=" * 70)
+        print("  📅 لیست تعطیلات سال")
+        print("=" * 70)
+
+        today_j = jdatetime.date.today()
+        year_str = input(f"\n  📅 سال (شمسی) [پیش‌فرض: {today_j.year}]: ").strip()
+        year = int(year_str) if year_str else today_j.year
+
+        manager = HolidayManager()
+        try:
+            # ✅ اصلاح: تبدیل سال شمسی به میلادی
+            j_from = jdatetime.date(year, 1, 1)
+            # روز آخر سال شمسی: 29 اسفند (یا 30 در سال کبیسه)
+            try:
+                j_to = jdatetime.date(year, 12, 30)
+            except ValueError:
+                j_to = jdatetime.date(year, 12, 29)
+
+            from_date = j_from.togregorian()
+            to_date = j_to.togregorian()
+
+            print(f"\n  🔍 جستجو از {from_date} تا {to_date} (میلادی)")
+            print(f"  🔍 معادل شمسی: {j_from.strftime('%Y/%m/%d')} تا {j_to.strftime('%Y/%m/%d')}")
+
+            holidays = manager.get_holidays_in_range(from_date, to_date)
+
+            if not holidays:
+                print(f"\n  ⚠️  هیچ تعطیلی در سال {year} یافت نشد (فقط جمعه‌ها)")
+                return
+
+            print(f"\n  📊 تعداد کل تعطیلات: {len(holidays)}")
+            print(f"     • جمعه‌ها          : {sum(1 for h in holidays if h['type'] == 'friday')}")
+            print(f"     • تعطیلات ثبت شده : {sum(1 for h in holidays if h['type'] == 'custom')}")
+
+            print("\n  ┌────────────┬─────────┬──────────────────────────────────────┐")
+            print("  │ تاریخ      │ روز     │ عنوان                                │")
+            print("  ├────────────┼─────────┼──────────────────────────────────────┤")
+
+            for h in holidays:
+                j_date = jdatetime.date.fromgregorian(date=h['date'])
+                day_name = self._get_day_name(h['date'])
+                icon = "🟡" if h['type'] == 'friday' else "🔴"
+
+                print(f"  │ {j_date.strftime('%Y/%m/%d')} │ {day_name:<7} │ {icon} {h['title']:<35} │")
+
+            print("  └────────────┴─────────┴──────────────────────────────────────┘")
+
+            # آمار روزهای کاری
+            stats = manager.count_working_days(from_date, to_date)
+            print(f"\n  📈 آمار سال {year}:")
+            print(f"     • کل روزها       : {stats['total_days']}")
+            print(f"     • روزهای کاری    : {stats['working_days']} ✅")
+            print(f"     • جمعه‌ها         : {stats['fridays']} 🟡")
+            print(f"     • سایر تعطیلات   : {stats['holidays']} 🔴")
+
+        finally:
+            manager.close()
+    def _delete_holiday(self):
+        """حذف تعطیلی"""
+        from core.holiday_manager import HolidayManager
+
+        print("\n" + "=" * 70)
+        print("  🗑️  حذف تعطیلی")
+        print("=" * 70)
+
+        today_j = jdatetime.date.today()
+        year_str = input(f"\n  📅 سال [پیش‌فرض: {today_j.year}]: ").strip()
+        year = int(year_str) if year_str else today_j.year
+
+        manager = HolidayManager()
+        try:
+            holidays = manager.get_custom_holidays(year)
+
+            if not holidays:
+                print(f"\n  ⚠️  هیچ تعطیلی ثبت شده‌ای در سال {year} وجود ندارد")
+                return
+
+            print(f"\n  📋 تعطیلات ثبت شده در سال {year}:")
+            print("  " + "-" * 60)
+            print(f"  {'#':<4} {'شناسه':<8} {'تاریخ':<12} {'روز':<8} {'عنوان':<25}")
+            print("  " + "-" * 60)
+
+            for i, h in enumerate(holidays, 1):
+                j_date = jdatetime.date.fromgregorian(date=h.holiday_date)
+                day_name = self._get_day_name(h.holiday_date)
+                print(f"  {i:<4} {h.id:<8} {j_date.strftime('%Y/%m/%d'):<12} {day_name:<8} {h.title:<25}")
+
+            print("  " + "-" * 60)
+
+            choice = input("\n  شماره تعطیلی برای حذف (یا 0 برای انصراف): ").strip()
+            if choice == '0' or not choice:
+                print("  ❌ عملیات لغو شد")
+                return
+
+            idx = int(choice) - 1
+            if idx < 0 or idx >= len(holidays):
+                print("  ❌ شماره نامعتبر")
+                return
+
+            selected = holidays[idx]
+
+            confirm = input(f"\n  ⚠️  آیا مطمئن هستید؟ (بله/خیر): ").strip()
+            if confirm.lower() not in ['بله', 'yes', 'y']:
+                print("  ❌ عملیات لغو شد")
+                return
+
+            result = manager.delete_holiday(selected.id)
+            print(f"\n  {result['message']}")
+
+        finally:
+            manager.close()
+
+    def _check_holiday(self):
+        """بررسی تعطیلی یک تاریخ"""
+        from core.holiday_manager import HolidayManager
+
+        print("\n" + "=" * 70)
+        print("  🔍 بررسی تعطیلی یک تاریخ")
+        print("=" * 70)
+
+        date_str = input("\n  📅 تاریخ (شمسی): ").strip()
+        if not date_str:
+            print("  ❌ تاریخ نمی‌تواند خالی باشد")
+            return
+
+        try:
+            j_date = jdatetime.datetime.strptime(date_str, "%Y/%m/%d").date()
+            g_date = j_date.togregorian()
+        except Exception as e:
+            print(f"  ❌ خطا در تبدیل تاریخ: {e}")
+            return
+
+        manager = HolidayManager()
+        try:
+            info = manager.get_holiday_info(g_date)
+            day_name = self._get_day_name(g_date)
+
+            print("\n" + "-" * 70)
+            print(f"  📅 تاریخ: {j_date.strftime('%Y/%m/%d')} ({day_name})")
+            print("-" * 70)
+
+            if info['is_holiday']:
+                if info['type'] == 'friday':
+                    print("  🟡 این روز تعطیل است (جمعه)")
+                else:
+                    national = "ملی" if info.get('is_national') else "محدود"
+                    print(f"  🔴 این روز تعطیل است: {info['title']} ({national})")
+            else:
+                print("  ✅ این روز کاری است")
+
+            print("-" * 70)
+
+        finally:
+            manager.close()
+
+    def _get_day_name(self, d: date) -> str:
+        """دریافت نام روز هفته به فارسی"""
+        # 0=دوشنبه، 1=سه‌شنبه، ... 4=جمعه، 5=شنبه، 6=یکشنبه
+        names = {
+            0: 'دوشنبه', 1: 'سه‌شنبه', 2: 'چهارشنبه',
+            3: 'پنجشنبه', 4: 'جمعه', 5: 'شنبه', 6: 'یکشنبه'
+        }
+        return names.get(d.weekday(), '')
+
+    # ============================================
+    # شارژ مرخصی
+    # ============================================
+
+    def _credit_leave(self):
+        """شارژ مرخصی توسط مدیر"""
+        from core.leave_manager import LeaveManager
+
+        print("\n" + "=" * 70)
+        print("  💰 شارژ مرخصی توسط مدیر")
+        print("=" * 70)
+
+        user_id = input("\n  📛 کد پرسنلی کاربر: ").strip()
+        if not user_id:
+            print("  ❌ کد پرسنلی نمی‌تواند خالی باشد")
+            return
+
+        print("\n  📋 نوع مرخصی:")
+        print("    1. استعلاجی (SL)")
+        print("    2. تشویقی (RL)")
+        print("    3. بدون حقوق (UL)")
+        type_choice = input("  انتخاب [1-3]: ").strip()
+
+        type_map = {'1': 'SL', '2': 'RL', '3': 'UL'}
+        leave_type = type_map.get(type_choice)
+
+        if not leave_type:
+            print("  ❌ انتخاب نامعتبر")
+            return
+
+        today_j = jdatetime.date.today()
+        year_str = input(f"  📅 سال [پیش‌فرض: {today_j.year}]: ").strip()
+        year = int(year_str) if year_str else today_j.year
+
+        amount_str = input("  🔢 تعداد روز: ").strip()
+        try:
+            amount = int(amount_str)
+            if amount <= 0:
+                print("  ❌ تعداد باید مثبت باشد")
+                return
+        except ValueError:
+            print("  ❌ تعداد نامعتبر")
+            return
+
+        description = input("  📝 توضیحات (مثلاً: گواهی پزشکی، پاداش): ").strip()
+
+        manager = LeaveManager()
+        try:
+            # نمایش مانده فعلی
+            current_balance = manager.get_balance(user_id, year, leave_type)
+            type_name = manager.get_leave_type_name(leave_type)
+
+            print("\n" + "-" * 70)
+            print("  📋 پیش‌نمایش:")
+            print(f"     • کاربر         : {user_id}")
+            print(f"     • نوع مرخصی     : {type_name}")
+            print(f"     • سال           : {year}")
+            print(f"     • تعداد         : {amount} روز")
+            print(f"     • مانده فعلی    : {current_balance} روز")
+            print(f"     • مانده جدید    : {current_balance + amount} روز")
+            if description:
+                print(f"     • توضیحات       : {description}")
+            print("-" * 70)
+
+            confirm = input("\n  آیا تایید می‌کنید؟ (بله/خیر): ").strip()
+            if confirm.lower() not in ['بله', 'yes', 'y']:
+                print("  ❌ عملیات لغو شد")
+                return
+
+            result = manager.credit_leave(
+                user_id=user_id,
+                year=year,
+                leave_type=leave_type,
+                amount=amount,
+                transaction_type='CREDIT',
+                description=description
+            )
+            print(f"\n  {result['message']}")
+
+        finally:
+            manager.close()
+
+    def _carryover_leave(self):
+        """انتقال مانده از سال قبل"""
+        from core.leave_manager import LeaveManager
+
+        print("\n" + "=" * 70)
+        print("  🔄 انتقال مانده مرخصی از سال قبل")
+        print("=" * 70)
+
+        today_j = jdatetime.date.today()
+        to_year_str = input(f"\n  📅 سال مقصد [پیش‌فرض: {today_j.year}]: ").strip()
+        to_year = int(to_year_str) if to_year_str else today_j.year
+        from_year = to_year - 1
+
+        print("\n  📋 نوع انتقال:")
+        print("    1. یک کاربر خاص")
+        print("    2. همه کاربران")
+        choice = input("  انتخاب [1/2]: ").strip()
+
+        manager = LeaveManager()
+        try:
+            if choice == '1':
+                user_id = input("  📛 کد پرسنلی کاربر: ").strip()
+                if not user_id:
+                    print("  ❌ کد پرسنلی نمی‌تواند خالی باشد")
+                    return
+
+                # نمایش مانده سال قبل
+                al_balance = manager.get_balance(user_id, from_year, 'AL')
+                cw_balance = manager.get_balance(user_id, from_year, 'CW')
+                total = al_balance + cw_balance
+
+                print(f"\n  📊 مانده سال {from_year}:")
+                print(f"     • استحقاقی باقی‌مانده : {al_balance} روز")
+                print(f"     • ذخیره قبلی         : {cw_balance} روز")
+                print(f"     • مجموع قابل انتقال  : {total} روز")
+
+                if total <= 0:
+                    print("\n  ⚠️  مانده‌ای برای انتقال وجود ندارد")
+                    return
+
+                confirm = input(f"\n  آیا تایید می‌کنید؟ (بله/خیر): ").strip()
+                if confirm.lower() not in ['بله', 'yes', 'y']:
+                    print("  ❌ عملیات لغو شد")
+                    return
+
+                stats = manager.carryover_to_new_year(from_year, to_year, user_id)
+                print(f"\n  ✅ انتقال انجام شد: {total} روز به سال {to_year}")
+
+            elif choice == '2':
+                confirm = input(f"\n  ⚠️  انتقال مانده همه کاربران از {from_year} به {to_year}؟ (بله/خیر): ").strip()
+                if confirm.lower() not in ['بله', 'yes', 'y']:
+                    print("  ❌ عملیات لغو شد")
+                    return
+
+                stats = manager.carryover_to_new_year(from_year, to_year)
+                print(f"\n  📊 نتیجه:")
+                print(f"     • کل کاربران      : {stats['total']}")
+                print(f"     • انتقال موفق     : {stats['success']} ✅")
+                print(f"     • بدون مانده      : {stats['no_balance']} ⚠️")
+                print(f"     • خطا             : {stats['failed']} ❌")
+
+            else:
+                print("  ❌ انتخاب نامعتبر")
+
+        finally:
+            manager.close()
+
+    def _show_leave_balance(self):
+        """نمایش مانده مرخصی یک کاربر"""
+        from core.leave_manager import LeaveManager
+
+        print("\n" + "=" * 70)
+        print("  💼 مانده مرخصی کاربر")
+        print("=" * 70)
+
+        user_id = input("\n  📛 کد پرسنلی کاربر: ").strip()
+        if not user_id:
+            print("  ❌ کد پرسنلی نمی‌تواند خالی باشد")
+            return
+
+        today_j = jdatetime.date.today()
+        year_str = input(f"  📅 سال [پیش‌فرض: {today_j.year}]: ").strip()
+        year = int(year_str) if year_str else today_j.year
+
+        manager = LeaveManager()
+        try:
+            user = manager.db.query(User).filter(User.user_id == user_id).first()
+            if not user:
+                print(f"\n  ❌ کاربر {user_id} یافت نشد")
+                return
+
+            balances = manager.get_all_balances(user_id, year)
+            summary = manager.get_summary_for_user(user_id, year)
+
+            print(f"\n  👤 کاربر: {user.name} (کد: {user_id})")
+            print(f"  📅 سال: {year}")
+
+            print("\n  ┌─────────────────────┬──────────────┬──────────────┐")
+            print("  │ نوع مرخصی           │ مانده فعلی   │ مصرف شده     │")
+            print("  ├─────────────────────┼──────────────┼──────────────┤")
+
+            for code, data in balances.items():
+                used = summary['used'].get(code, 0)
+                print(f"  │ {data['name']:<19} │ {data['balance']:<12} │ {used:<12} │")
+
+            print("  └─────────────────────┴──────────────┴──────────────┘")
+
+            print(f"\n  📊 تعداد درخواست‌های تایید شده: {summary['approved_requests_count']}")
+
+        finally:
+            manager.close()
+
+    def _show_leave_transactions(self):
+        """نمایش تاریخچه تراکنش‌های مرخصی"""
+        from core.leave_manager import LeaveManager
+
+        print("\n" + "=" * 70)
+        print("  📜 تاریخچه تراکنش‌های مرخصی")
+        print("=" * 70)
+
+        user_id = input("\n  📛 کد پرسنلی کاربر: ").strip()
+        if not user_id:
+            print("  ❌ کد پرسنلی نمی‌تواند خالی باشد")
+            return
+
+        today_j = jdatetime.date.today()
+        year_str = input(f"  📅 سال [پیش‌فرض: {today_j.year}]: ").strip()
+        year = int(year_str) if year_str else today_j.year
+
+        manager = LeaveManager()
+        try:
+            transactions = manager.get_transactions(user_id, year)
+
+            if not transactions:
+                print(f"\n  ⚠️  هیچ تراکنشی در سال {year} یافت نشد")
+                return
+
+            print(f"\n  📊 تعداد تراکنش‌ها: {len(transactions)}")
+
+            print("\n  ┌────────────┬────────────┬──────┬──────────┬──────────────────────┐")
+            print("  │ تاریخ      │ نوع مرخصی  │ مقدار│ نوع عمل  │ توضیحات              │")
+            print("  ├────────────┼────────────┼──────┼──────────┼──────────────────────┤")
+
+            type_names = {
+                'CREDIT': '➕ شارژ',
+                'DEBIT': '➖ برداشت',
+                'CARRYOVER': '🔄 انتقال',
+                'INITIAL': '💰 اولیه'
+            }
+
+            for t in transactions:
+                j_date = jdatetime.date.fromgregorian(date=t.created_at.date())
+                type_name = manager.get_leave_type_name(t.leave_type)
+                operation = type_names.get(t.transaction_type, t.transaction_type)
+                desc = (t.description or '')[:20]
+
+                sign = "+" if t.amount > 0 else ""
+                amount_str = f"{sign}{t.amount}"
+
+                print(f"  │ {j_date.strftime('%Y/%m/%d')} │ {type_name:<10} │ {amount_str:<4} │ {operation:<8} │ {desc:<20} │")
+
+            print("  └────────────┴────────────┴──────┴──────────┴──────────────────────┘")
+
+        finally:
+            manager.close()
+
+    # ============================================
+    # درخواست مرخصی
+    # ============================================
+
+    def _create_leave_request(self):
+        """ثبت درخواست مرخصی جدید"""
+        from core.leave_request_manager import LeaveRequestManager
+
+        print("\n" + "=" * 70)
+        print("  📝 ثبت درخواست مرخصی")
+        print("=" * 70)
+
+        user_id = input("\n  📛 کد پرسنلی کاربر: ").strip()
+        if not user_id:
+            print("  ❌ کد پرسنلی نمی‌تواند خالی باشد")
+            return
+
+        print("\n  📋 نوع مرخصی:")
+        print("    1. استحقاقی (AL)")
+        print("    2. استعلاجی (SL)")
+        print("    3. تشویقی (RL)")
+        print("    4. بدون حقوق (UL)")
+        type_choice = input("  انتخاب [1-4]: ").strip()
+
+        type_map = {'1': 'AL', '2': 'SL', '3': 'RL', '4': 'UL'}
+        leave_type = type_map.get(type_choice)
+
+        if not leave_type:
+            print("  ❌ انتخاب نامعتبر")
+            return
+
+        from_str = input("  📅 از تاریخ (شمسی - مثال: 1405/05/10): ").strip()
+        to_str = input("  📅 تا تاریخ (شمسی - مثال: 1405/05/12): ").strip()
+
+        try:
+            j_from = jdatetime.datetime.strptime(from_str, "%Y/%m/%d").date()
+            j_to = jdatetime.datetime.strptime(to_str, "%Y/%m/%d").date()
+            g_from = j_from.togregorian()
+            g_to = j_to.togregorian()
+        except Exception as e:
+            print(f"  ❌ خطا در تبدیل تاریخ: {e}")
+            return
+
+        reason = input("  📝 دلیل مرخصی (اختیاری): ").strip()
+
+        manager = LeaveRequestManager()
+        try:
+            # محاسبه تعداد روزهای کاری
+            days_count = manager.calculate_working_days(g_from, g_to)
+            leave_type_name = manager.leave_manager.get_leave_type_name(leave_type)
+
+            print("\n" + "-" * 70)
+            print("  📋 پیش‌نمایش درخواست:")
+            print(f"     • کاربر         : {user_id}")
+            print(f"     • نوع مرخصی     : {leave_type_name}")
+            print(f"     • از تاریخ      : {j_from.strftime('%Y/%m/%d')}")
+            print(f"     • تا تاریخ      : {j_to.strftime('%Y/%m/%d')}")
+            print(f"     • تعداد روز کاری: {days_count} روز")
+            if reason:
+                print(f"     • دلیل          : {reason}")
+            print("-" * 70)
+
+            confirm = input("\n  آیا تایید می‌کنید؟ (بله/خیر): ").strip()
+            if confirm.lower() not in ['بله', 'yes', 'y']:
+                print("  ❌ عملیات لغو شد")
+                return
+
+            result = manager.create_request(
+                user_id=user_id,
+                leave_type=leave_type,
+                from_date=g_from,
+                to_date=g_to,
+                reason=reason
+            )
+            print(f"\n  {result['message']}")
+
+        finally:
+            manager.close()
+
+    def _show_pending_requests(self):
+        """نمایش درخواست‌های در انتظار تایید"""
+        from core.leave_request_manager import LeaveRequestManager
+
+        print("\n" + "=" * 70)
+        print("  ⏳ درخواست‌های در انتظار تایید")
+        print("=" * 70)
+
+        manager = LeaveRequestManager()
+        try:
+            requests = manager.get_pending_requests()
+
+            if not requests:
+                print("\n  ✅ هیچ درخواست در انتظاری وجود ندارد")
+                return
+
+            print(f"\n  📊 تعداد درخواست‌ها: {len(requests)}")
+
+            print("\n  ┌──────┬────────┬────────────┬────────────┬──────┬────────────┬──────────────────────┐")
+            print("  │ ID   │ کاربر  │ از         │ تا         │ روز  │ نوع        │ دلیل                 │")
+            print("  ├──────┼────────┼────────────┼────────────┼──────┼────────────┼──────────────────────┤")
+
+            for req in requests:
+                user = manager.db.query(User).filter(User.user_id == req.user_id).first()
+                user_name = user.name if user else req.user_id
+
+                j_from = jdatetime.date.fromgregorian(date=req.from_date)
+                j_to = jdatetime.date.fromgregorian(date=req.to_date)
+
+                type_name = manager.leave_manager.get_leave_type_name(req.leave_type)
+                reason = (req.reason or '')[:20]
+
+                print(f"  │ {req.id:<4} │ {user_name[:6]:<6} │ {j_from.strftime('%Y/%m/%d')} │ "
+                      f"{j_to.strftime('%Y/%m/%d')} │ {req.days_count:<4} │ {type_name:<10} │ {reason:<20} │")
+
+            print("  └──────┴────────┴────────────┴────────────┴──────┴────────────┴──────────────────────┘")
+
+        finally:
+            manager.close()
+
+    def _approve_reject_request(self):
+        """تایید یا رد درخواست مرخصی"""
+        from core.leave_request_manager import LeaveRequestManager
+
+        print("\n" + "=" * 70)
+        print("  ✅ تایید / ❌ رد درخواست مرخصی")
+        print("=" * 70)
+
+        request_id_str = input("\n  🔢 شناسه درخواست: ").strip()
+        if not request_id_str:
+            print("  ❌ شناسه نمی‌تواند خالی باشد")
+            return
+
+        try:
+            request_id = int(request_id_str)
+        except ValueError:
+            print("  ❌ شناسه نامعتبر")
+            return
+
+        manager = LeaveRequestManager()
+        try:
+            # دریافت اطلاعات درخواست
+            request = manager.db.query(LeaveRequest).filter(LeaveRequest.id == request_id).first()
+            if not request:
+                print("  ❌ درخواست یافت نشد")
+                return
+
+            user = manager.db.query(User).filter(User.user_id == request.user_id).first()
+            user_name = user.name if user else request.user_id
+
+            j_from = jdatetime.date.fromgregorian(date=request.from_date)
+            j_to = jdatetime.date.fromgregorian(date=request.to_date)
+            type_name = manager.leave_manager.get_leave_type_name(request.leave_type)
+            status_name = manager.STATUS_NAMES.get(request.status, request.status)
+
+            print("\n" + "-" * 70)
+            print("  📋 اطلاعات درخواست:")
+            print(f"     • شناسه      : {request.id}")
+            print(f"     • کاربر      : {user_name} ({request.user_id})")
+            print(f"     • نوع مرخصی  : {type_name}")
+            print(f"     • از تاریخ   : {j_from.strftime('%Y/%m/%d')}")
+            print(f"     • تا تاریخ   : {j_to.strftime('%Y/%m/%d')}")
+            print(f"     • تعداد روز  : {request.days_count}")
+            print(f"     • وضعیت فعلی : {status_name}")
+            if request.reason:
+                print(f"     • دلیل       : {request.reason}")
+            print("-" * 70)
+
+            print("\n  🎯 عملیات:")
+            print("    1. ✅ تایید")
+            print("    2. ❌ رد")
+            print("    0. انصراف")
+            action = input("  انتخاب [0-2]: ").strip()
+
+            if action == '0':
+                print("  ❌ عملیات لغو شد")
+                return
+            elif action == '1':
+                confirm = input("\n  ⚠️  آیا مطمئن هستید؟ (بله/خیر): ").strip()
+                if confirm.lower() not in ['بله', 'yes', 'y']:
+                    print("  ❌ عملیات لغو شد")
+                    return
+
+                result = manager.approve_request(request_id)
+                print(f"\n  {result['message']}")
+
+            elif action == '2':
+                reason = input("  📝 دلیل رد (اختیاری): ").strip()
+                result = manager.reject_request(request_id, reason)
+                print(f"\n  {result['message']}")
+
+            else:
+                print("  ❌ انتخاب نامعتبر")
+
+        finally:
+            manager.close()
+
+    def _show_user_requests(self):
+        """نمایش درخواست‌های یک کاربر"""
+        from core.leave_request_manager import LeaveRequestManager
+
+        print("\n" + "=" * 70)
+        print("  📜 درخواست‌های مرخصی کاربر")
+        print("=" * 70)
+
+        user_id = input("\n  📛 کد پرسنلی کاربر: ").strip()
+        if not user_id:
+            print("  ❌ کد پرسنلی نمی‌تواند خالی باشد")
+            return
+
+        today_j = jdatetime.date.today()
+        year_str = input(f"  📅 سال [پیش‌فرض: {today_j.year}]: ").strip()
+        year = int(year_str) if year_str else today_j.year
+
+        manager = LeaveRequestManager()
+        try:
+            requests = manager.get_user_requests(user_id, year)
+
+            if not requests:
+                print(f"\n  ⚠️  هیچ درخواستی برای کاربر {user_id} در سال {year} یافت نشد")
+                return
+
+            user = manager.db.query(User).filter(User.user_id == user_id).first()
+            user_name = user.name if user else user_id
+
+            print(f"\n  👤 کاربر: {user_name}")
+            print(f"  📅 سال: {year}")
+            print(f"  📊 تعداد درخواست‌ها: {len(requests)}")
+
+            print("\n  ┌──────┬────────────┬────────────┬──────┬────────────┬────────┐")
+            print("  │ ID   │ از         │ تا         │ روز  │ نوع        │ وضعیت  │")
+            print("  ├──────┼────────────┼────────────┼──────┼────────────┼────────┤")
+
+            for req in requests:
+                j_from = jdatetime.date.fromgregorian(date=req.from_date)
+                j_to = jdatetime.date.fromgregorian(date=req.to_date)
+                type_name = manager.leave_manager.get_leave_type_name(req.leave_type)
+                status_name = manager.STATUS_NAMES.get(req.status, req.status)
+
+                # آیکون وضعیت
+                status_icon = "⏳" if req.status == 'P' else ("✅" if req.status == 'A' else "❌")
+
+                print(f"  │ {req.id:<4} │ {j_from.strftime('%Y/%m/%d')} │ {j_to.strftime('%Y/%m/%d')} │ "
+                      f"{req.days_count:<4} │ {type_name:<10} │ {status_icon} {status_name:<5} │")
+
+            print("  └──────┴────────────┴────────────┴──────┴────────────┴────────┘")
+
+        finally:
+            manager.close()
+
+    def _show_request_statistics(self):
+        """نمایش آمار درخواست‌های مرخصی"""
+        from core.leave_request_manager import LeaveRequestManager
+
+        print("\n" + "=" * 70)
+        print("  📊 آمار درخواست‌های مرخصی")
+        print("=" * 70)
+
+        today_j = jdatetime.date.today()
+        year_str = input(f"\n  📅 سال [پیش‌فرض: {today_j.year}]: ").strip()
+        year = int(year_str) if year_str else today_j.year
+
+        manager = LeaveRequestManager()
+        try:
+            stats = manager.get_request_statistics(year)
+
+            print(f"\n  📅 سال: {year}")
+            print("\n" + "-" * 70)
+            print(f"  📈 آمار کلی:")
+            print(f"     • کل درخواست‌ها    : {stats['total']}")
+            print(f"     • در انتظار تایید  : {stats['pending']} ⏳")
+            print(f"     • تایید شده        : {stats['approved']} ✅")
+            print(f"     • رد شده           : {stats['rejected']} ❌")
+
+            if stats['by_type']:
+                print("\n  📋 آمار بر اساس نوع مرخصی (تایید شده‌ها):")
+                print("  " + "-" * 66)
+                print(f"  {'نوع مرخصی':<20} {'تعداد درخواست':<15} {'مجموع روز':<15}")
+                print("  " + "-" * 66)
+
+                for leave_type, data in stats['by_type'].items():
+                    type_name = manager.leave_manager.get_leave_type_name(leave_type)
+                    print(f"  {type_name:<20} {data['count']:<15} {data['days']:<15}")
+
+                print("  " + "-" * 66)
 
         finally:
             manager.close()
