@@ -100,6 +100,13 @@ class ConsoleUI:
         print("│  46. خروجی گزارش ماهانه به اکسل              │")  # 🆕
         print("│  47. خروجی گزارش غیبت‌ها به اکسل              │")  # 🆕
         print("│  48. خروجی گزارش مرخصی‌ها به اکسل             │")  # 🆕
+        print("│  👥 مدیریت اطلاعات کارمندان                   │")
+        print("│  49. افزودن اطلاعات کارمند                   │")  # 🆕
+        print("│  50. ویرایش اطلاعات کارمند                   │")  # 🆕
+        print("│  51. مشاهده اطلاعات کارمند                   │")  # 🆕
+        print("│  52. لیست کارمندان                            │")  # 🆕
+        print("│  53. جستجو در اطلاعات کارمندان                │")  # 🆕
+        print("│  54. آمار کارمندان                            │")  # 🆕
         print("│  0. خروج                                 │")
         print("└─────────────────────────────────────────────────┘")
 
@@ -210,6 +217,18 @@ class ConsoleUI:
                 self._export_absent_to_excel()
             elif choice == '48':
                 self._export_leave_to_excel()
+            elif choice == '49':
+                self._add_employee_info()
+            elif choice == '50':
+                self._update_employee_info()
+            elif choice == '51':
+                self._show_employee_info()
+            elif choice == '52':
+                self._list_all_employees()
+            elif choice == '53':
+                self._search_employees()
+            elif choice == '54':
+                self._show_employee_statistics()
             elif choice == '0':
                 self._disconnect()
                 print("\n👋 خدانگهدار!")
@@ -2747,3 +2766,287 @@ class ConsoleUI:
             10: 'دی', 11: 'بهمن', 12: 'اسفند'
         }
         return names.get(month, '')
+
+    # ============================================
+    # مدیریت اطلاعات کارمندان
+    # ============================================
+
+    def _add_employee_info(self):
+        """افزودن اطلاعات تکمیلی کارمند"""
+        from core.employee_manager import EmployeeManager
+
+        print("\n" + "=" * 70)
+        print("  👤 افزودن اطلاعات تکمیلی کارمند")
+        print("=" * 70)
+
+        user_id = input("\n  📛 کد پرسنلی: ").strip()
+        if not user_id:
+            print("  ❌ کد پرسنلی نمی‌تواند خالی باشد")
+            return
+
+        first_name = input("  👤 نام: ").strip()
+        last_name = input("  👤 نام خانوادگی: ").strip()
+
+        if not first_name or not last_name:
+            print("  ❌ نام و نام خانوادگی الزامی است")
+            return
+
+        national_code = input("  🆔 کد ملی (اختیاری): ").strip() or None
+        father_name = input("  👨 نام پدر (اختیاری): ").strip() or None
+
+        # تاریخ تولد
+        birth_str = input("  🎂 تاریخ تولد (شمسی - مثال: 1370/05/15) [اختیاری]: ").strip()
+        birth_date = None
+        if birth_str:
+            try:
+                j_birth = jdatetime.datetime.strptime(birth_str, "%Y/%m/%d").date()
+                birth_date = j_birth.togregorian()
+            except:
+                print("  ⚠️  تاریخ تولد نامعتبر - نادیده گرفته شد")
+
+        # جنسیت
+        print("\n  ⚧ جنسیت:")
+        print("    1. مرد")
+        print("    2. زن")
+        gender_choice = input("  انتخاب [1/2] [اختیاری]: ").strip()
+        gender = 'M' if gender_choice == '1' else ('F' if gender_choice == '2' else None)
+
+        # وضعیت تاهل
+        print("\n  💍 وضعیت تاهل:")
+        print("    1. مجرد")
+        print("    2. متاهل")
+        marital_choice = input("  انتخاب [1/2] [اختیاری]: ").strip()
+        marital_status = 'S' if marital_choice == '1' else ('M' if marital_choice == '2' else None)
+
+        email = input("  📧 ایمیل (اختیاری): ").strip() or None
+
+        # تاریخ استخدام
+        hire_str = input("  📅 تاریخ استخدام (شمسی) [اختیاری]: ").strip()
+        hire_date = None
+        if hire_str:
+            try:
+                j_hire = jdatetime.datetime.strptime(hire_str, "%Y/%m/%d").date()
+                hire_date = j_hire.togregorian()
+            except:
+                print("  ⚠️  تاریخ استخدام نامعتبر - نادیده گرفته شد")
+
+        department = input("  🏢 دپارتمان (اختیاری): ").strip() or None
+        position = input("  💼 سمت (اختیاری): ").strip() or None
+        notes = input("  📝 یادداشت (اختیاری): ").strip() or None
+
+        # پیش‌نمایش
+        print("\n" + "-" * 70)
+        print("  📋 پیش‌نمایش:")
+        print(f"     • کد پرسنلی    : {user_id}")
+        print(f"     • نام کامل     : {first_name} {last_name}")
+        if national_code:
+            print(f"     • کد ملی       : {national_code}")
+        if father_name:
+            print(f"     • نام پدر      : {father_name}")
+        if birth_date:
+            j_birth = jdatetime.date.fromgregorian(date=birth_date)
+            print(f"     • تاریخ تولد   : {j_birth.strftime('%Y/%m/%d')}")
+        if gender:
+            print(f"     • جنسیت        : {'مرد' if gender == 'M' else 'زن'}")
+        if marital_status:
+            print(f"     • وضعیت تاهل   : {'مجرد' if marital_status == 'S' else 'متاهل'}")
+        if email:
+            print(f"     • ایمیل        : {email}")
+        if hire_date:
+            j_hire = jdatetime.date.fromgregorian(date=hire_date)
+            print(f"     • تاریخ استخدام: {j_hire.strftime('%Y/%m/%d')}")
+        if department:
+            print(f"     • دپارتمان     : {department}")
+        if position:
+            print(f"     • سمت          : {position}")
+        print("-" * 70)
+
+        confirm = input("\n  آیا تایید می‌کنید؟ (بله/خیر): ").strip()
+        if confirm.lower() not in ['بله', 'yes', 'y']:
+            print("  ❌ عملیات لغو شد")
+            return
+
+        manager = EmployeeManager()
+        try:
+            result = manager.add_employee(
+                user_id=user_id,
+                first_name=first_name,
+                last_name=last_name,
+                national_code=national_code,
+                father_name=father_name,
+                birth_date=birth_date,
+                gender=gender,
+                marital_status=marital_status,
+                email=email,
+                hire_date=hire_date,
+                department=department,
+                position=position,
+                notes=notes
+            )
+            print(f"\n  {result['message']}")
+        finally:
+            manager.close()
+
+    def _show_employee_info(self):
+        """نمایش اطلاعات کارمند"""
+        from core.employee_manager import EmployeeManager
+
+        print("\n" + "=" * 70)
+        print("  👤 اطلاعات تکمیلی کارمند")
+        print("=" * 70)
+
+        user_id = input("\n  📛 کد پرسنلی: ").strip()
+        if not user_id:
+            print("  ❌ کد پرسنلی نمی‌تواند خالی باشد")
+            return
+
+        manager = EmployeeManager()
+        try:
+            employee = manager.get_employee(user_id)
+
+            if not employee:
+                print(f"\n  ⚠️  اطلاعاتی برای کاربر {user_id} ثبت نشده است")
+                return
+
+            user = manager.db.query(User).filter(User.user_id == user_id).first()
+
+            print(f"\n  👤 اطلاعات کاربر:")
+            print(f"     • کد پرسنلی    : {user_id}")
+            print(f"     • نام سیستمی   : {user.name if user else '-'}")
+            print(f"     • گروه         : {user.group_id if user else '-'}")
+
+            print(f"\n  📋 اطلاعات تکمیلی:")
+            print(f"     • نام کامل     : {employee.full_name}")
+            if employee.national_code:
+                print(f"     • کد ملی       : {employee.national_code}")
+            if employee.father_name:
+                print(f"     • نام پدر      : {employee.father_name}")
+            if employee.birth_date:
+                j_birth = jdatetime.date.fromgregorian(date=employee.birth_date)
+                print(f"     • تاریخ تولد   : {j_birth.strftime('%Y/%m/%d')}")
+            if employee.gender:
+                print(f"     • جنسیت        : {employee.gender_name}")
+            if employee.marital_status:
+                print(f"     • وضعیت تاهل   : {employee.marital_status_name}")
+            if employee.email:
+                print(f"     • ایمیل        : {employee.email}")
+            if employee.hire_date:
+                j_hire = jdatetime.date.fromgregorian(date=employee.hire_date)
+                print(f"     • تاریخ استخدام: {j_hire.strftime('%Y/%m/%d')}")
+            if employee.department:
+                print(f"     • دپارتمان     : {employee.department}")
+            if employee.position:
+                print(f"     • سمت          : {employee.position}")
+            if employee.notes:
+                print(f"     • یادداشت      : {employee.notes}")
+
+        finally:
+            manager.close()
+
+    def _list_all_employees(self):
+        """لیست تمام کارمندان"""
+        from core.employee_manager import EmployeeManager
+
+        print("\n" + "=" * 100)
+        print("  👥 لیست کارمندان")
+        print("=" * 100)
+
+        manager = EmployeeManager()
+        try:
+            employees = manager.get_all_employees()
+
+            if not employees:
+                print("\n  ⚠️  هیچ کارمندی ثبت نشده است")
+                return
+
+            print(f"\n  📊 تعداد کارمندان: {len(employees)}")
+
+            print("\n  ┌──────┬────────┬──────────────────┬────────────┬────────────┬────────────┐")
+            print("  │ ردیف │ کد     │ نام کامل         │ دپارتمان   │ سمت        │ جنسیت      │")
+            print("  ├──────┼────────┼──────────────────┼────────────┼────────────┼────────────┤")
+
+            for i, emp in enumerate(employees, 1):
+                print(f"  │ {i:<4} │ {emp.user_id:<6} │ {emp.full_name[:16]:<16} │ "
+                      f"{emp.department or '-':<10} │ {emp.position or '-':<10} │ "
+                      f"{emp.gender_name:<10} │")
+
+            print("  └──────┴────────┴──────────────────┴────────────┴────────────┴────────────┘")
+
+        finally:
+            manager.close()
+
+    def _search_employees(self):
+        """جستجو در اطلاعات کارمندان"""
+        from core.employee_manager import EmployeeManager
+
+        print("\n" + "=" * 70)
+        print("  🔍 جستجو در اطلاعات کارمندان")
+        print("=" * 70)
+
+        query = input("\n  🔎 عبارت جستجو: ").strip()
+        if not query:
+            print("  ❌ عبارت جستجو نمی‌تواند خالی باشد")
+            return
+
+        print("\n  📋 جستجو در:")
+        print("    1. همه فیلدها")
+        print("    2. نام")
+        print("    3. کد ملی")
+        print("    4. دپارتمان")
+        print("    5. سمت")
+        choice = input("  انتخاب [1-5] [پیش‌فرض: 1]: ").strip() or '1'
+
+        field_map = {'1': 'all', '2': 'name', '3': 'national_code', '4': 'department', '5': 'position'}
+        field = field_map.get(choice, 'all')
+
+        manager = EmployeeManager()
+        try:
+            results = manager.search_employees(query, field)
+
+            if not results:
+                print(f"\n  ⚠️  نتیجه‌ای یافت نشد")
+                return
+
+            print(f"\n  📊 تعداد نتایج: {len(results)}")
+
+            print("\n  ┌──────┬────────┬──────────────────┬────────────┬────────────┐")
+            print("  │ ردیف │ کد     │ نام کامل         │ دپارتمان   │ سمت        │")
+            print("  ├──────┼────────┼──────────────────┼────────────┼────────────┤")
+
+            for i, emp in enumerate(results, 1):
+                print(f"  │ {i:<4} │ {emp.user_id:<6} │ {emp.full_name[:16]:<16} │ "
+                      f"{emp.department or '-':<10} │ {emp.position or '-':<10} │")
+
+            print("  └──────┴────────┴──────────────────┴────────────┴────────────┘")
+
+        finally:
+            manager.close()
+
+    def _show_employee_statistics(self):
+        """نمایش آمار کارمندان"""
+        from core.employee_manager import EmployeeManager
+
+        print("\n" + "=" * 70)
+        print("  📊 آمار کارمندان")
+        print("=" * 70)
+
+        manager = EmployeeManager()
+        try:
+            stats = manager.get_statistics()
+
+            print(f"\n  👥 آمار کلی:")
+            print(f"     • کل کارمندان           : {stats['total']}")
+            print(f"     • دارای کد ملی          : {stats['with_national_code']}")
+            print(f"     • دارای ایمیل           : {stats['with_email']}")
+            print(f"     • تعداد دپارتمان‌ها      : {stats['departments']}")
+
+            print(f"\n  ⚧ آمار جنسیت:")
+            print(f"     • مرد                   : {stats['males']}")
+            print(f"     • زن                    : {stats['females']}")
+
+            print(f"\n  💍 آمار تاهل:")
+            print(f"     • مجرد                  : {stats['single']}")
+            print(f"     • متاهل                 : {stats['married']}")
+
+        finally:
+            manager.close()
