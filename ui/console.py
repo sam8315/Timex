@@ -3,6 +3,8 @@ from datetime import datetime, timedelta,date
 import jdatetime
 from core.device_manager import DeviceManager
 from core.attendance_analyzer import AttendanceAnalyzer
+from models.user import User
+from models.contract import Contract
 
 
 class ConsoleUI:
@@ -62,6 +64,11 @@ class ConsoleUI:
         print("│  22. حذف رکورد تردد                             │")  # 🆕
         print("│  23. تغییر وضعیت (ورود/خروج) رکورد             │")  # 🆕
         print("│  24. ♻️  بازیابی رکورد حذف شده                  │")  # 🆕
+        print("│  📑 مدیریت قراردادها و مرخصی                  │")
+        print("│  25. افزودن قرارداد جدید                     │")  # 🆕
+        print("│  26. مشاهده قراردادهای یک کاربر               │")  # 🆕
+        print("│  27. شارژ مرخصی استحقاقی سالانه               │")  # 🆕
+        print("│  28. آمار قرارداد‌ها                          │")  # 🆕
         print("│  0. خروج                                 │")
         print("└─────────────────────────────────────────────────┘")
 
@@ -120,6 +127,14 @@ class ConsoleUI:
                 self._update_attendance_punch()
             elif choice == '24':
                 pass
+            elif choice == '25':
+                self._add_contract()
+            elif choice == '26':
+                self._show_user_contracts()
+            elif choice == '27':
+                self._initialize_yearly_leave()
+            elif choice == '28':
+                self._show_contracts_summary()
             elif choice == '0':
                 self._disconnect()
                 print("\n👋 خدانگهدار!")
@@ -1193,3 +1208,273 @@ class ConsoleUI:
             print(f"\n  ❌ خطا: {e}")
         except Exception as e:
             print(f"\n  ❌ خطا: {e}")
+
+    def _add_contract(self):
+        """افزودن قرارداد جدید"""
+        from core.contract_manager import ContractManager
+
+        print("\n" + "=" * 70)
+        print("  📝 افزودن قرارداد جدید")
+        print("=" * 70)
+
+        user_id = input("\n  📛 کد پرسنلی کاربر: ").strip()
+        if not user_id:
+            print("  ❌ کد پرسنلی نمی‌تواند خالی باشد")
+            return
+
+        # انواع قرارداد
+        print("\n  📋 انواع قرارداد:")
+        print("    1. رسمی")
+        print("    2. وظیفه")
+        print("    3. خریدخدمت")
+        print("    4. قراردادی")
+        print("    5. پزشک")
+        print("    6. سایر (دستی)")
+        type_choice = input("  انتخاب [1-6]: ").strip()
+
+        type_map = {
+            '1': 'رسمی', '2': 'وظیفه', '3': 'خریدخدمت',
+            '4': 'قراردادی', '5': 'پزشک'
+        }
+        contract_type = type_map.get(type_choice, input("  نام قرارداد: ").strip())
+
+        if not contract_type:
+            print("  ❌ نوع قرارداد نمی‌تواند خالی باشد")
+            return
+
+        # تاریخ شروع
+        today_j = jdatetime.date.today()
+        start_str = input(f"  📅 تاریخ شروع (شمسی) [پیش‌فرض: {today_j.strftime('%Y/%m/%d')}]: ").strip()
+        try:
+            if start_str:
+                start_date = jdatetime.datetime.strptime(start_str, "%Y/%m/%d").date().togregorian()
+            else:
+                start_date = today_j.togregorian()
+        except Exception as e:
+            print(f"  ❌ خطا در تبدیل تاریخ: {e}")
+            return
+
+        # تاریخ پایان
+        end_str = input("  📅 تاریخ پایان (شمسی) [خالی = نامحدود]: ").strip()
+        end_date = None
+        if end_str:
+            try:
+                end_date = jdatetime.datetime.strptime(end_str, "%Y/%m/%d").date().togregorian()
+            except Exception as e:
+                print(f"  ❌ خطا در تبدیل تاریخ: {e}")
+                return
+
+        # مقادیر پیش‌فرض بر اساس نوع قرارداد
+        defaults = {
+            'رسمی': (30, 30, 5, 0),
+            'وظیفه': (15, 15, 2, 0),
+            'خریدخدمت': (20, 20, 3, 0),
+            'قراردادی': (25, 25, 4, 0),
+            'پزشک': (35, 35, 5, 0),
+        }
+
+        default_values = defaults.get(contract_type, (0, 0, 0, 0))
+
+        print(f"\n  💡 مقادیر پیش‌فرض برای قرارداد {contract_type}:")
+        print(f"     • مرخصی استحقاقی سالانه: {default_values[0]} روز")
+        print(f"     • مرخصی استعلاجی: {default_values[1]} روز")
+        print(f"     • مرخصی تشویقی: {default_values[2]} روز")
+        print(f"     • مرخصی بدون حقوق: {default_values[3]} روز")
+
+        annual = input(f"  مرخصی استحقاقی [{default_values[0]}]: ").strip()
+        annual = int(annual) if annual else default_values[0]
+
+        sick = input(f"  مرخصی استعلاجی [{default_values[1]}]: ").strip()
+        sick = int(sick) if sick else default_values[1]
+
+        reward = input(f"  مرخصی تشویقی [{default_values[2]}]: ").strip()
+        reward = int(reward) if reward else default_values[2]
+
+        unpaid = input(f"  مرخصی بدون حقوق [{default_values[3]}]: ").strip()
+        unpaid = int(unpaid) if unpaid else default_values[3]
+
+        description = input("  📝 توضیحات (اختیاری): ").strip()
+
+        # پیش‌نمایش
+        j_start = jdatetime.date.fromgregorian(date=start_date)
+        j_end = jdatetime.date.fromgregorian(date=end_date) if end_date else "نامحدود"
+
+        print("\n" + "-" * 70)
+        print("  📋 پیش‌نمایش قرارداد:")
+        print(f"     • کاربر           : {user_id}")
+        print(f"     • نوع قرارداد     : {contract_type}")
+        print(f"     • تاریخ شروع      : {j_start.strftime('%Y/%m/%d')}")
+        print(f"     • تاریخ پایان     : {j_end if isinstance(j_end, str) else j_end.strftime('%Y/%m/%d')}")
+        print(f"     • استحقاقی سالانه : {annual} روز")
+        print(f"     • استعلاجی        : {sick} روز")
+        print(f"     • تشویقی          : {reward} روز")
+        print(f"     • بدون حقوق       : {unpaid} روز")
+        if description:
+            print(f"     • توضیحات         : {description}")
+        print("-" * 70)
+
+        confirm = input("\n  آیا تایید می‌کنید؟ (بله/خیر): ").strip()
+        if confirm.lower() not in ['بله', 'yes', 'y']:
+            print("  ❌ عملیات لغو شد")
+            return
+
+        manager = ContractManager()
+        try:
+            result = manager.add_contract(
+                user_id=user_id,
+                contract_type=contract_type,
+                start_date=start_date,
+                end_date=end_date,
+                annual_leave=annual,
+                sick_leave=sick,
+                reward_leave=reward,
+                unpaid_leave=unpaid,
+                description=description
+            )
+            print(f"\n  {result['message']}")
+        finally:
+            manager.close()
+
+    def _show_user_contracts(self):
+        """نمایش قراردادهای یک کاربر"""
+        from core.contract_manager import ContractManager
+
+        print("\n" + "=" * 70)
+        print("  📑 قراردادهای کاربر")
+        print("=" * 70)
+
+        user_id = input("\n  📛 کد پرسنلی کاربر: ").strip()
+        if not user_id:
+            print("  ❌ کد پرسنلی نمی‌تواند خالی باشد")
+            return
+
+        manager = ContractManager()
+        try:
+            contracts = manager.get_user_contracts(user_id)
+
+            if not contracts:
+                print(f"\n  ⚠️  هیچ قراردادی برای کاربر {user_id} یافت نشد")
+                return
+
+            user = manager.db.query(User).filter(User.user_id == user_id).first()
+            print(f"\n  👤 کاربر: {user.name if user else user_id}")
+
+            print("\n  ┌──────┬────────────┬────────────┬────────────┬──────┬──────┬──────┬──────┐")
+            print("  │ ID   │ نوع        │ شروع       │ پایان      │ استحق│ استعل│ تشویق│ بدون │")
+            print("  ├──────┼────────────┼────────────┼────────────┼──────┼──────┼──────┼──────┤")
+
+            for c in contracts:
+                j_start = jdatetime.date.fromgregorian(date=c.start_date)
+                j_end = jdatetime.date.fromgregorian(date=c.end_date) if c.end_date else "نامحدود"
+
+                end_str = j_end if isinstance(j_end, str) else j_end.strftime("%Y/%m/%d")
+
+                # بررسی فعال بودن
+                active = "✅" if manager.get_active_contract(user_id, date.today()) and \
+                             manager.get_active_contract(user_id, date.today()).id == c.id else "  "
+
+                print(f"  │ {active}{c.id:<3} │ {c.contract_type:<10} │ "
+                      f"{j_start.strftime('%Y/%m/%d')} │ {end_str:<10} │ "
+                      f"{c.annual_leave_days:<4} │ {c.sick_leave_days:<4} │ "
+                      f"{c.reward_leave_days:<4} │ {c.unpaid_leave_days:<4} │")
+
+            print("  └──────┴────────────┴────────────┴────────────┴──────┴──────┴──────┴──────┘")
+
+        finally:
+            manager.close()
+
+    def _initialize_yearly_leave(self):
+        """شارژ مرخصی استحقاقی سالانه"""
+        from core.contract_manager import ContractManager
+
+        print("\n" + "=" * 70)
+        print("  💰 شارژ مرخصی استحقاقی سالانه")
+        print("=" * 70)
+
+        print("\n  📋 نوع شارژ:")
+        print("    1. یک کاربر خاص")
+        print("    2. همه کاربران")
+        choice = input("  انتخاب [1/2]: ").strip()
+
+        today_j = jdatetime.date.today()
+        year_str = input(f"  📅 سال [پیش‌فرض: {today_j.year}]: ").strip()
+        year = int(year_str) if year_str else today_j.year
+
+        manager = ContractManager()
+        try:
+            if choice == '1':
+                user_id = input("  📛 کد پرسنلی کاربر: ").strip()
+                if not user_id:
+                    print("  ❌ کد پرسنلی نمی‌تواند خالی باشد")
+                    return
+
+                # پیش‌نمایش
+                contract = manager.get_active_contract(user_id, date(year, 1, 1))
+                if not contract:
+                    print(f"  ❌ قراردادی برای سال {year} یافت نشد")
+                    return
+
+                print(f"\n  📋 پیش‌نمایش:")
+                print(f"     • کاربر: {user_id}")
+                print(f"     • قرارداد: {contract.contract_type}")
+                print(f"     • مرخصی استحقاقی: {contract.annual_leave_days} روز")
+
+                confirm = input("\n  آیا تایید می‌کنید؟ (بله/خیر): ").strip()
+                if confirm.lower() not in ['بله', 'yes', 'y']:
+                    print("  ❌ عملیات لغو شد")
+                    return
+
+                result = manager.initialize_yearly_balances(user_id, year)
+                print(f"\n  {result['message']}")
+
+            elif choice == '2':
+                confirm = input(f"\n  ⚠️  آیا مطمئن هستید که می‌خواهید مرخصی همه کاربران را برای سال {year} شارژ کنید؟ (بله/خیر): ").strip()
+                if confirm.lower() not in ['بله', 'yes', 'y']:
+                    print("  ❌ عملیات لغو شد")
+                    return
+
+                stats = manager.initialize_all_users_for_year(year)
+                print(f"\n  📊 نتیجه:")
+                print(f"     • کل کاربران      : {stats['total']}")
+                print(f"     • شارژ موفق       : {stats['success']} ✅")
+                print(f"     • قبلاً شارژ شده  : {stats['skipped']} ⚠️")
+                print(f"     • خطا (بدون قرارداد): {stats['failed']} ❌")
+
+            else:
+                print("  ❌ انتخاب نامعتبر")
+
+        finally:
+            manager.close()
+
+    def _show_contracts_summary(self):
+        """نمایش آمار قراردادها"""
+        from core.contract_manager import ContractManager
+
+        print("\n" + "=" * 70)
+        print("  📊 آمار قراردادها")
+        print("=" * 70)
+
+        manager = ContractManager()
+        try:
+            summary = manager.get_contract_summary()
+
+            print(f"\n  📋 وضعیت قراردادها:")
+            print(f"     • کل قراردادها          : {summary['total_contracts']}")
+            print(f"     • قراردادهای فعال       : {summary['active_contracts']} ✅")
+            print(f"     • کاربران دارای قرارداد : {summary['users_with_contract']}")
+            print(f"     • کاربران بدون قرارداد  : {summary['users_without_contract']} ⚠️")
+
+            if summary['users_without_contract'] > 0:
+                print("\n  ⚠️  کاربران بدون قرارداد:")
+                users_without = manager.db.query(User).filter(
+                    ~User.user_id.in_(manager.db.query(Contract.user_id))
+                ).all()
+
+                for u in users_without[:10]:  # فقط ۱۰ نفر اول
+                    print(f"     • {u.user_id} - {u.name}")
+
+                if len(users_without) > 10:
+                    print(f"     ... و {len(users_without) - 10} نفر دیگر")
+
+        finally:
+            manager.close()
