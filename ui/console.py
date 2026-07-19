@@ -218,19 +218,24 @@ class ConsoleUI:
             self.header("📑 مدیریت قراردادها")
             print("\n  1. افزودن قرارداد جدید")
             print("  2. مشاهده قراردادهای یک کاربر")
-            print("  3. شارژ مرخصی استحقاقی سالانه")
-            print("  4. آمار قراردادها")
+            print("  3. مشاهده تمام قراردادها")
+            print("  4. ویرایش قرارداد")
+            print("  5. قراردادهای نزدیک به پایان")
+            print("  6. شارژ مرخصی استحقاقی سالانه")
+            print("  7. آمار قراردادها")
             print("  0. بازگشت")
 
             choice = input("\n  انتخاب: ").strip()
             if choice == '1': self._add_contract()
             elif choice == '2': self._show_user_contracts()
-            elif choice == '3': self._initialize_yearly_leave()
-            elif choice == '4': self._show_contracts_summary()
+            elif choice == '3': self._show_all_contracts()
+            elif choice == '4': self._update_contract()
+            elif choice == '5': self._show_expiring_contracts()
+            elif choice == '6': self._initialize_yearly_leave()
+            elif choice == '7': self._show_contracts_summary()
             elif choice == '0': break
             else: print("\n❌ انتخاب نامعتبر")
             input("\n⏎ Enter...")
-
     def _leave_menu(self):
         """زیرمنوی تعطیلات و مرخصی"""
         while True:
@@ -1534,10 +1539,11 @@ class ConsoleUI:
     def _show_user_contracts(self):
         """نمایش قراردادهای یک کاربر"""
         from core.contract_manager import ContractManager
+        from core.employee_manager import EmployeeManager
 
-        print("\n" + "=" * 70)
+        print("\n" + "=" * 80)
         print("  📑 قراردادهای کاربر")
-        print("=" * 70)
+        print("=" * 80)
 
         user_id = input("\n  📛 کد پرسنلی کاربر: ").strip()
         if not user_id:
@@ -1545,6 +1551,7 @@ class ConsoleUI:
             return
 
         manager = ContractManager()
+        emp_manager = EmployeeManager()
         try:
             contracts = manager.get_user_contracts(user_id)
 
@@ -1552,12 +1559,13 @@ class ConsoleUI:
                 print(f"\n  ⚠️  هیچ قراردادی برای کاربر {user_id} یافت نشد")
                 return
 
-            user = manager.db.query(User).filter(User.user_id == user_id).first()
-            print(f"\n  👤 کاربر: {user.name if user else user_id}")
+            # ✅ دریافت نام کامل
+            full_name = emp_manager.get_full_name(user_id)
+            print(f"\n  👤 کاربر: {full_name} (کد: {user_id})")
 
-            print("\n  ┌──────┬────────────┬────────────┬────────────┬──────┬──────┬──────┬──────┐")
-            print("  │ ID   │ نوع        │ شروع       │ پایان      │ استحق│ استعل│ تشویق│ بدون │")
-            print("  ├──────┼────────────┼────────────┼────────────┼──────┼──────┼──────┼──────┤")
+            print("\n  ┌──────┬────────────┬────────────┬────────────┬──────┬──────┬──────┬──────┬────────┐")
+            print("  │ ID   │ نوع        │ شروع       │ پایان      │ استحق│ استعل│ تشویق│ بدون │ وضعیت  │")
+            print("  ├──────┼────────────┼────────────┼────────────┼──────┼──────┼──────┼──────┼────────┤")
 
             for c in contracts:
                 j_start = jdatetime.date.fromgregorian(date=c.start_date)
@@ -1566,19 +1574,21 @@ class ConsoleUI:
                 end_str = j_end if isinstance(j_end, str) else j_end.strftime("%Y/%m/%d")
 
                 # بررسی فعال بودن
-                active = "✅" if manager.get_active_contract(user_id, date.today()) and \
-                             manager.get_active_contract(user_id, date.today()).id == c.id else "  "
+                is_active = manager.get_active_contract(user_id, date.today()) and \
+                            manager.get_active_contract(user_id, date.today()).id == c.id
 
-                print(f"  │ {active}{c.id:<3} │ {c.contract_type:<10} │ "
+                status = "✅ فعال" if is_active else "⏸️ غیرفعال"
+
+                print(f"  │ {c.id:<4} │ {c.contract_type:<10} │ "
                       f"{j_start.strftime('%Y/%m/%d')} │ {end_str:<10} │ "
                       f"{c.annual_leave_days:<4} │ {c.sick_leave_days:<4} │ "
-                      f"{c.reward_leave_days:<4} │ {c.unpaid_leave_days:<4} │")
+                      f"{c.reward_leave_days:<4} │ {c.unpaid_leave_days:<4} │ {status:<6} │")
 
-            print("  └──────┴────────────┴────────────┴────────────┴──────┴──────┴──────┴──────┘")
+            print("  └──────┴────────────┴────────────┴────────────┴──────┴──────┴──────┴──────┴────────┘")
 
         finally:
             manager.close()
-
+            emp_manager.close()
     def _initialize_yearly_leave(self):
         """شارژ مرخصی استحقاقی سالانه"""
         from core.contract_manager import ContractManager
@@ -3162,6 +3172,205 @@ class ConsoleUI:
             print(f"\n  💍 آمار تاهل:")
             print(f"     • مجرد                  : {stats['single']}")
             print(f"     • متاهل                 : {stats['married']}")
+
+        finally:
+            manager.close()
+
+    def _show_all_contracts(self):
+        """نمایش تمام قراردادها"""
+        from core.contract_manager import ContractManager
+
+        print("\n" + "=" * 100)
+        print("  📑 تمام قراردادها")
+        print("=" * 100)
+
+        manager = ContractManager()
+        try:
+            contracts = manager.get_all_contracts()
+
+            if not contracts:
+                print("\n  ⚠️  هیچ قراردادی ثبت نشده است")
+                return
+
+            print(f"\n  📊 تعداد قراردادها: {len(contracts)}")
+
+            # شمارش قراردادها
+            active_count = sum(1 for c in contracts if c['is_active'])
+            print(f"     • فعال   : {active_count} ✅")
+            print(f"     • غیرفعال: {len(contracts) - active_count} ⏸️")
+
+            print("\n  ┌──────┬────────┬──────────────────────┬────────────┬────────────┬────────┬────────┐")
+            print("  │ ID   │ کد     │ نام و نام خانوادگی   │ نوع        │ شروع       │ پایان  │ وضعیت  │")
+            print("  ├──────┼────────┼──────────────────────┼────────────┼────────────┼────────┼────────┤")
+
+            for c in contracts:
+                contract = c['contract']
+                j_start = jdatetime.date.fromgregorian(date=contract.start_date)
+                j_end = jdatetime.date.fromgregorian(date=contract.end_date) if contract.end_date else "نامحدود"
+                end_str = j_end if isinstance(j_end, str) else j_end.strftime("%Y/%m/%d")
+
+                status = "✅ فعال" if c['is_active'] else "⏸️ غیرفعال"
+
+                print(f"  │ {contract.id:<4} │ {c['user_id']:<6} │ {c['full_name'][:20]:<20} │ "
+                      f"{contract.contract_type:<10} │ {j_start.strftime('%Y/%m/%d')} │ {end_str:<6} │ {status:<6} │")
+
+            print("  └──────┴────────┴──────────────────────┴────────────┴────────────┴────────┴────────┘")
+
+        finally:
+            manager.close()
+
+    def _update_contract(self):
+        """ویرایش قرارداد"""
+        from core.contract_manager import ContractManager
+
+        print("\n" + "=" * 70)
+        print("  ✏️  ویرایش قرارداد")
+        print("=" * 70)
+
+        contract_id_str = input("\n  🔢 شناسه قرارداد: ").strip()
+        if not contract_id_str:
+            print("  ❌ شناسه نمی‌تواند خالی باشد")
+            return
+
+        try:
+            contract_id = int(contract_id_str)
+        except ValueError:
+            print("  ❌ شناسه نامعتبر")
+            return
+
+        manager = ContractManager()
+        try:
+            contract = manager.db.query(Contract).filter(Contract.id == contract_id).first()
+            if not contract:
+                print("  ❌ قرارداد یافت نشد")
+                return
+
+            # نمایش اطلاعات فعلی
+            j_start = jdatetime.date.fromgregorian(date=contract.start_date)
+            j_end = jdatetime.date.fromgregorian(date=contract.end_date) if contract.end_date else None
+
+            print("\n" + "-" * 70)
+            print("  📋 اطلاعات فعلی:")
+            print(f"     • شناسه           : {contract.id}")
+            print(f"     • کد پرسنلی       : {contract.user_id}")
+            print(f"     • نوع قرارداد     : {contract.contract_type}")
+            print(f"     • تاریخ شروع      : {j_start.strftime('%Y/%m/%d')}")
+            print(f"     • تاریخ پایان     : {j_end.strftime('%Y/%m/%d') if j_end else 'نامحدود'}")
+            print(f"     • استحقاقی سالانه : {contract.annual_leave_days} روز")
+            print(f"     • استعلاجی        : {contract.sick_leave_days} روز")
+            print(f"     • تشویقی          : {contract.reward_leave_days} روز")
+            print(f"     • بدون حقوق       : {contract.unpaid_leave_days} روز")
+            print("-" * 70)
+
+            print("\n  💡 برای تغییر ندهید، فقط Enter بزنید")
+
+            # دریافت مقادیر جدید
+            contract_type = input(f"  نوع قرارداد [{contract.contract_type}]: ").strip()
+            if not contract_type:
+                contract_type = contract.contract_type
+
+            end_str = input("  تاریخ پایان (شمسی) [خالی = نامحدود]: ").strip()
+            if end_str:
+                try:
+                    j_end_new = jdatetime.datetime.strptime(end_str, "%Y/%m/%d").date()
+                    end_date = j_end_new.togregorian()
+                except:
+                    print("  ⚠️  تاریخ نامعتبر - بدون تغییر")
+                    end_date = contract.end_date
+            else:
+                end_date = contract.end_date
+
+            annual = input(f"  استحقاقی [{contract.annual_leave_days}]: ").strip()
+            annual = int(annual) if annual else contract.annual_leave_days
+
+            sick = input(f"  استعلاجی [{contract.sick_leave_days}]: ").strip()
+            sick = int(sick) if sick else contract.sick_leave_days
+
+            reward = input(f"  تشویقی [{contract.reward_leave_days}]: ").strip()
+            reward = int(reward) if reward else contract.reward_leave_days
+
+            unpaid = input(f"  بدون حقوق [{contract.unpaid_leave_days}]: ").strip()
+            unpaid = int(unpaid) if unpaid else contract.unpaid_leave_days
+
+            description = input(f"  توضیحات [{contract.description or ''}]: ").strip()
+            if not description:
+                description = contract.description
+
+            # پیش‌نمایش
+            print("\n" + "-" * 70)
+            print("  📋 پیش‌نمایش تغییرات:")
+            print(f"     • نوع قرارداد     : {contract_type}")
+            print(
+                f"     • تاریخ پایان     : {jdatetime.date.fromgregorian(date=end_date).strftime('%Y/%m/%d') if end_date else 'نامحدود'}")
+            print(f"     • استحقاقی سالانه : {annual} روز")
+            print(f"     • استعلاجی        : {sick} روز")
+            print(f"     • تشویقی          : {reward} روز")
+            print(f"     • بدون حقوق       : {unpaid} روز")
+            print("-" * 70)
+
+            confirm = input("\n  آیا تایید می‌کنید؟ (بله/خیر): ").strip()
+            if confirm.lower() not in ['بله', 'yes', 'y']:
+                print("  ❌ عملیات لغو شد")
+                return
+
+            result = manager.update_contract(
+                contract_id,
+                contract_type=contract_type,
+                end_date=end_date,
+                annual_leave_days=annual,
+                sick_leave_days=sick,
+                reward_leave_days=reward,
+                unpaid_leave_days=unpaid,
+                description=description
+            )
+            print(f"\n  {result['message']}")
+
+        finally:
+            manager.close()
+
+    def _show_expiring_contracts(self):
+        """نمایش قراردادهای نزدیک به پایان"""
+        from core.contract_manager import ContractManager
+
+        print("\n" + "=" * 90)
+        print("  ⚠️  قراردادهای نزدیک به پایان")
+        print("=" * 90)
+
+        days_str = input("\n  🔢 تعداد روز برای هشدار [پیش‌فرض: 30]: ").strip()
+        days_threshold = int(days_str) if days_str else 30
+
+        manager = ContractManager()
+        try:
+            contracts = manager.get_expiring_contracts(days_threshold)
+
+            if not contracts:
+                print(f"\n  ✅ هیچ قراردادی در {days_threshold} روز آینده منقضی نمی‌شود")
+                return
+
+            print(f"\n  📊 تعداد قراردادهای نزدیک به پایان: {len(contracts)}")
+
+            print("\n  ┌──────┬────────┬──────────────────────┬────────────┬────────────┬──────────┐")
+            print("  │ ID   │ کد     │ نام و نام خانوادگی   │ نوع        │ پایان      │ روز باقی │")
+            print("  ├──────┼────────┼──────────────────────┼────────────┼────────────┼──────────┤")
+
+            for c in contracts:
+                contract = c['contract']
+                j_end = jdatetime.date.fromgregorian(date=c['end_date'])
+
+                # رنگ بر اساس روزهای باقی‌مانده
+                if c['days_remaining'] <= 7:
+                    icon = "🔴"
+                elif c['days_remaining'] <= 15:
+                    icon = "🟡"
+                else:
+                    icon = "🟢"
+
+                print(f"  │ {contract.id:<4} │ {c['user_id']:<6} │ {c['full_name'][:20]:<20} │ "
+                      f"{contract.contract_type:<10} │ {j_end.strftime('%Y/%m/%d')} │ {icon} {c['days_remaining']:<7} │")
+
+            print("  └──────┴────────┴──────────────────────┴────────────┴────────────┴──────────┘")
+
+            print(f"\n  💡 راهنما: 🔴 کمتر از 7 روز | 🟡 کمتر از 15 روز | 🟢 بیشتر از 15 روز")
 
         finally:
             manager.close()

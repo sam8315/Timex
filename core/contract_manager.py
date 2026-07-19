@@ -1,7 +1,7 @@
 """
 ماژول مدیریت قراردادها و محاسبه مرخصی استحقاقی
 """
-from datetime import date
+from datetime import date, timedelta
 from typing import List, Dict, Optional
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
@@ -216,3 +216,102 @@ class ContractManager:
             'users_with_contract': users_with_contract,
             'users_without_contract': users_without_contract
         }
+
+    def get_all_contracts(self) -> List[Dict]:
+        """دریافت تمام قراردادها با اطلاعات کاربر"""
+        from core.employee_manager import EmployeeManager
+
+        contracts = self.db.query(Contract).order_by(
+            Contract.start_date.desc()
+        ).all()
+
+        emp_manager = EmployeeManager()
+        result = []
+
+        try:
+            for c in contracts:
+                user = self.db.query(User).filter(User.user_id == c.user_id).first()
+                full_name = emp_manager.get_full_name(c.user_id)
+
+                # بررسی فعال بودن
+                is_active = (
+                        c.start_date <= date.today() and
+                        (c.end_date is None or c.end_date >= date.today())
+                )
+
+                # محاسبه روزهای باقی‌مانده
+                days_remaining = None
+                if c.end_date:
+                    delta = c.end_date - date.today()
+                    days_remaining = delta.days if delta.days >= 0 else 0
+
+                result.append({
+                    'contract': c,
+                    'user_id': c.user_id,
+                    'full_name': full_name,
+                    'user_name': user.name if user else c.user_id,
+                    'is_active': is_active,
+                    'days_remaining': days_remaining
+                })
+        finally:
+            emp_manager.close()
+
+        return result
+
+    def update_contract(self, contract_id: int, **kwargs) -> Dict:
+        """به‌روزرسانی قرارداد"""
+        contract = self.db.query(Contract).filter(Contract.id == contract_id).first()
+        if not contract:
+            return {'success': False, 'message': '❌ قرارداد یافت نشد'}
+
+        try:
+            for key, value in kwargs.items():
+                if hasattr(contract, key) and key not in ['id', 'user_id', 'created_at']:
+                    setattr(contract, key, value)
+
+            self.db.commit()
+            return {'success': True, 'message': '✅ قرارداد با موفقیت به‌روز شد'}
+
+        except Exception as e:
+            self.db.rollback()
+            return {'success': False, 'message': f'❌ خطا: {e}'}
+
+    def get_expiring_contracts(self, days_threshold: int = 30) -> List[Dict]:
+        """
+        دریافت قراردادهای نزدیک به پایان
+
+        Args:
+            days_threshold: تعداد روز برای هشدار (پیش‌فرض: 30 روز)
+        """
+        from core.employee_manager import EmployeeManager
+
+        today = date.today()
+        threshold_date = today + timedelta(days=days_threshold)
+
+        contracts = self.db.query(Contract).filter(
+            and_(
+                Contract.end_date != None,
+                Contract.end_date >= today,
+                Contract.end_date <= threshold_date
+            )
+        ).order_by(Contract.end_date.asc()).all()
+
+        emp_manager = EmployeeManager()
+        result = []
+
+        try:
+            for c in contracts:
+                full_name = emp_manager.get_full_name(c.user_id)
+                delta = c.end_date - today
+
+                result.append({
+                    'contract': c,
+                    'user_id': c.user_id,
+                    'full_name': full_name,
+                    'end_date': c.end_date,
+                    'days_remaining': delta.days
+                })
+        finally:
+            emp_manager.close()
+
+        return result
