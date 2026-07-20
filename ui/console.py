@@ -291,6 +291,7 @@ class ConsoleUI:
             print("\n  📊 گزارش‌های تحلیلی:")
             print("  5. گزارش غیبت‌ها")
             print("  6. گزارش مرخصی‌ها")
+            print("  7. 📊 گزارش تحلیلی ماهانه (جدید) 🆕")  # 🆕
             print("  0. بازگشت")
 
             choice = input("\n  انتخاب: ").strip()
@@ -300,6 +301,7 @@ class ConsoleUI:
             elif choice == '4': self._show_all_users_monthly_report()
             elif choice == '5': self._show_absent_report()
             elif choice == '6': self._show_leave_report()
+            elif choice == '7': self._show_analytical_monthly_report()  # 🆕
             elif choice == '0': break
             else: print("\n❌ انتخاب نامعتبر")
             input("\n⏎ Enter...")
@@ -3788,3 +3790,120 @@ class ConsoleUI:
 
         finally:
             manager.close()
+
+    def _show_analytical_monthly_report(self):
+        """نمایش گزارش تحلیلی ماهانه"""
+        from core.analytical_report import AnalyticalReportGenerator
+
+        print("\n" + "=" * 150)
+        print("  📊 گزارش تحلیلی ماهانه")
+        print("=" * 150)
+
+        today_j = jdatetime.date.today()
+        year_str = input(f"\n  📅 سال شمسی [پیش‌فرض: {today_j.year}]: ").strip()
+        year = int(year_str) if year_str else today_j.year
+
+        month_str = input(f"  📅 ماه (1-12) [پیش‌فرض: {today_j.month}]: ").strip()
+        month = int(month_str) if month_str else today_j.month
+
+        generator = AnalyticalReportGenerator()
+        try:
+            report = generator.generate_monthly_report(year, month)
+            month_info = report['month_info']
+
+            print(f"\n  📅 ماه: {report['month_name']} {year}")
+            print(
+                f"  📆 بازه: {jdatetime.date.fromgregorian(date=month_info['start_date']).strftime('%Y/%m/%d')} تا {jdatetime.date.fromgregorian(date=month_info['end_date']).strftime('%Y/%m/%d')}")
+            print(
+                f"  📊 کل روزها: {month_info['total_days']} | جمعه‌ها: {month_info['fridays']} | تعطیلات: {month_info['holidays']} | روزهای کاری: {month_info['working_days']}")
+
+            # نمایش به تفکیک گروه
+            for group_name, users in report['groups'].items():
+                print(f"\n{'=' * 150}")
+                print(f"  👥 گروه: {group_name} ({len(users)} کاربر)")
+                print(f"{'=' * 150}")
+
+                # جدول
+                print(
+                    "\n  ┌────┬────────┬──────────────────────┬──────┬──────┬──────┬──────┬──────────┬────────┬────────┬────────┬──────────┬──────────┐")
+                print(
+                    "  │ #  │ کد     │ نام کامل             │ حاضر │ غایب │ مرخصی│ روز  │ ساعت     │ صبح    │ عصر    │ شب     │ کل       │ کسری/+   │")
+                print(
+                    "  ├────┼────────┼──────────────────────┼──────┼──────┼──────┼──────┼──────────┼────────┼────────┼────────┼──────────┼──────────┤")
+
+                for i, u in enumerate(users, 1):
+                    # فرمت ساعات
+                    def fmt_hours(h):
+                        if h == 0:
+                            return "  --    "
+                        hours = int(h)
+                        minutes = int((h - hours) * 60)
+                        return f"{hours:03d}:{minutes:02d}"
+
+                    # فرمت کسری/اضافی
+                    diff = u['difference']
+                    if diff > 0:
+                        diff_str = f"+{fmt_hours(diff)} ✅"
+                    elif diff < 0:
+                        diff_str = f"{fmt_hours(diff)} ❌"
+                    else:
+                        diff_str = f"{fmt_hours(diff)} ✅"
+
+                    print(f"  │ {i:<2} │ {u['user_id']:<6} │ {u['full_name'][:20]:<20} │ "
+                          f"{u['present_days']:<4} │ {u['absent_days']:<4} │ {u['leave_days']:<4} │ "
+                          f"{u['required_days']:<4} │ {fmt_hours(u['required_hours'])} │ "
+                          f"{fmt_hours(u['morning_hours'])} │ {fmt_hours(u['evening_hours'])} │ "
+                          f"{fmt_hours(u['night_hours'])} │ {fmt_hours(u['total_hours'])} │ {diff_str:<8} │")
+
+                print(
+                    "  └────┴────────┴──────────────────────┴──────┴──────┴──────┴──────┴──────────┴────────┴────────┴────────┴──────────┴──────────┘")
+
+                # خلاصه گروه
+                avg_work = sum(u['total_hours'] for u in users) / len(users) if users else 0
+                avg_diff = sum(u['difference'] for u in users) / len(users) if users else 0
+
+                max_positive = max(users, key=lambda x: x['difference'])
+                max_negative = min(users, key=lambda x: x['difference'])
+
+                print(f"\n  📊 خلاصه گروه {group_name}:")
+                print(f"     • میانگین ساعات کاری: {int(avg_work)}:{int((avg_work - int(avg_work)) * 60):02d}")
+                print(f"     • میانگین کسری/اضافی: {int(avg_diff)}:{int((avg_diff - int(avg_diff)) * 60):02d}")
+                print(
+                    f"     • بیشترین اضافی: {max_positive['full_name']} (+{int(max_positive['difference'])}:{int((max_positive['difference'] - int(max_positive['difference'])) * 60):02d})")
+                print(
+                    f"     • بیشترین کسری: {max_negative['full_name']} ({int(max_negative['difference'])}:{int((max_negative['difference'] - int(max_negative['difference'])) * 60):02d})")
+
+        finally:
+            generator.close()
+
+    def _export_analytical_to_excel(self):
+        """خروجی گزارش تحلیلی به اکسل"""
+        from core.analytical_report import AnalyticalReportGenerator
+        from core.excel_analytical_export import AnalyticalExcelExporter
+
+        print("\n" + "=" * 70)
+        print("  📤 خروجی گزارش تحلیلی به اکسل")
+        print("=" * 70)
+
+        today_j = jdatetime.date.today()
+        year_str = input(f"\n  📅 سال شمسی [پیش‌فرض: {today_j.year}]: ").strip()
+        year = int(year_str) if year_str else today_j.year
+
+        month_str = input(f"  📅 ماه (1-12) [پیش‌فرض: {today_j.month}]: ").strip()
+        month = int(month_str) if month_str else today_j.month
+
+        generator = AnalyticalReportGenerator()
+        try:
+            print("\n  ⏳ در حال تولید گزارش...")
+            report = generator.generate_monthly_report(year, month)
+
+            exporter = AnalyticalExcelExporter()
+            filename = exporter.export_analytical_report(report)
+
+            print(f"\n  ✅ فایل اکسل با موفقیت ایجاد شد:")
+            print(f"     📁 {filename}")
+            print(f"     📊 تعداد گروه‌ها: {len(report['groups'])}")
+            print(f"     📊 تعداد کاربران: {sum(len(u) for u in report['groups'].values())}")
+
+        finally:
+            generator.close()
