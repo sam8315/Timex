@@ -3834,12 +3834,28 @@ class ConsoleUI:
                 for i, u in enumerate(users, 1):
                     # فرمت ساعات
                     def fmt_hours(h):
+                        """فرمت‌بندی ساعات (پشتیبانی از اعداد منفی)"""
                         if h == 0:
                             return "  --    "
-                        hours = int(h)
-                        minutes = int((h - hours) * 60)
-                        return f"{hours:03d}:{minutes:02d}"
+                        # ✅ استفاده از abs برای محاسبه دقیقه
+                        sign = "-" if h < 0 else ""
+                        abs_h = abs(h)
+                        hours = int(abs_h)
+                        minutes = int(round((abs_h - hours) * 60))
+                        # ✅ اصلاح سرریز دقیقه
+                        if minutes >= 60:
+                            hours += 1
+                            minutes = 0
+                        return f"{sign}{hours:02d}:{minutes:02d}"
 
+                    # فرمت کسری/اضافی
+                    diff = u['difference']
+                    if diff > 0.5:
+                        diff_str = f"+{fmt_hours(diff)} ✅"
+                    elif diff < -0.5:
+                        diff_str = f"{fmt_hours(diff)} ❌"
+                    else:
+                        diff_str = f" 00:00 ✅"
                     # فرمت کسری/اضافی
                     diff = u['difference']
                     if diff > 0:

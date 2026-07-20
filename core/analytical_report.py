@@ -90,9 +90,6 @@ class AnalyticalReportGenerator:
     ) -> Dict:
         """
         تولید گزارش تحلیلی ماهانه
-
-        Returns:
-            Dict: شامل لیست کاربران به تفکیک گروه
         """
         month_info = self.get_month_days_info(year, month)
         g_start = month_info['start_date']
@@ -105,13 +102,21 @@ class AnalyticalReportGenerator:
 
         users = users_query.all()
 
-        # گروه‌بندی بر اساس group_id
         groups = {}
 
         for user in users:
-            # دریافت اطلاعات کاربر
             employee = self.db.query(Employee).filter(Employee.user_id == user.user_id).first()
             full_name = employee.full_name if employee else user.name
+
+            # دریافت تمام رکوردهای تردد ماه
+            attendances = self.db.query(Attendance).filter(
+                and_(
+                    Attendance.user_id == user.user_id,
+                    func.date(Attendance.timestamp) >= g_start,
+                    func.date(Attendance.timestamp) <= g_end,
+                    Attendance.is_deleted == False
+                )
+            ).order_by(Attendance.timestamp).all()
 
             # دریافت وضعیت‌های روزانه ماه
             daily_statuses = self.db.query(DailyStatus).filter(
@@ -122,45 +127,9 @@ class AnalyticalReportGenerator:
                 )
             ).all()
 
-            # شمارش وضعیت‌ها
-            status_counts = {
-                'P': 0, 'A': 0, 'H': 0, 'AL': 0, 'SL': 0,
-                'RL': 0, 'UL': 0, 'M': 0, 'LP': 0, 'S': 0
-            }
+            statuses_by_date = {ds.status_date: ds.status_code for ds in daily_statuses}
 
-            leave_days = 0
-            for ds in daily_statuses:
-                if ds.status_code in status_counts:
-                    status_counts[ds.status_code] += 1
-
-                # شمارش روزهای مرخصی
-                if ds.status_code in self.LEAVE_CODES:
-                    leave_days += 1
-
-            # ماموریت و حضور کم جزو حاضر
-            present_days = status_counts['P'] + status_counts['M'] + status_counts['LP']
-            absent_days = status_counts['A']
-            total_leave = sum(status_counts[code] for code in self.LEAVE_CODES)
-
-            # اگر کاربر هیچ ترددی نداشته، رد کن
-            attendances = self.db.query(Attendance).filter(
-                and_(
-                    Attendance.user_id == user.user_id,
-                    func.date(Attendance.timestamp) >= g_start,
-                    func.date(Attendance.timestamp) <= g_end,
-                    Attendance.is_deleted == False
-                )
-            ).all()
-
-            if not attendances and present_days == 0:
-                continue  # کاربر بدون تردد
-
-            # محاسبه ساعات کاری تفکیکی
-            total_morning = 0.0
-            total_evening = 0.0
-            total_night = 0.0
-            total_work = 0.0
-
+            # ✅ اگر daily_status خالی بود، از attendances بساز
             # گروه‌بندی تردد بر اساس روز
             attendances_by_day = {}
             for att in attendances:
@@ -169,7 +138,49 @@ class AnalyticalReportGenerator:
                     attendances_by_day[day] = []
                 attendances_by_day[day].append(att)
 
-            # محاسبه برای هر روز
+            # ✅ شمارش وضعیت‌ها با fallback به attendances
+            status_counts = {
+                'P': 0, 'A': 0, 'H': 0, 'AL': 0, 'SL': 0,
+                'RL': 0, 'UL': 0, 'M': 0, 'LP': 0, 'S': 0
+            }
+
+            current = g_start
+            while current <= g_end:
+                if current in statuses_by_date:
+                    # استفاده از daily_status ثبت شده
+                    code = statuses_by_date[current]
+                    if code in status_counts:
+                        status_counts[code] += 1
+                elif current.weekday() == 4:
+                    # جمعه
+                    status_counts['H'] += 1
+                elif self._is_holiday(current):
+                    # تعطیل
+                    status_counts['H'] += 1
+                elif current in attendances_by_day:
+                    # ✅ کاربر تردد دارد ولی daily_status ثبت نشده → حاضر
+                    status_counts['P'] += 1
+                else:
+                    # ✅ بدون تردد و بدون مرخصی → غایب
+                    status_counts['A'] += 1
+
+                current += timedelta(days=1)
+
+            # ماموریت و حضور کم جزو حاضر
+            present_days = status_counts['P'] + status_counts['M'] + status_counts['LP']
+            absent_days = status_counts['A']
+            total_leave = sum(status_counts[code] for code in self.LEAVE_CODES)
+
+            # اگر کاربر هیچ ترددی نداشته و حضوری هم ندارد، رد کن
+            if not attendances and present_days == 0:
+                continue
+
+            # محاسبه ساعات کاری تفکیکی
+            total_morning = 0.0
+            total_evening = 0.0
+            total_night = 0.0
+            total_work = 0.0
+
             for day, day_attendances in attendances_by_day.items():
                 enters = [a for a in day_attendances if a.punch == 0]
                 exits = [a for a in day_attendances if a.punch == 1]
@@ -186,14 +197,15 @@ class AnalyticalReportGenerator:
                         total_work += shift_hours['total']
 
             # محاسبه موظفی
-            required_days = month_info['working_days'] - leave_days
+            required_days = month_info['working_days'] - total_leave
+            if required_days < 0:
+                required_days = 0
             daily_required = self.DAILY_REQUIRED_HOURS.get(user.group_id, 7.33)
             required_hours = required_days * daily_required
 
             # محاسبه کسری/اضافی
             difference = total_work - required_hours
 
-            # ساخت رکورد کاربر
             user_record = {
                 'user_id': user.user_id,
                 'full_name': full_name,
@@ -201,6 +213,7 @@ class AnalyticalReportGenerator:
                 'present_days': present_days,
                 'absent_days': absent_days,
                 'leave_days': total_leave,
+                'holiday_days': status_counts['H'],
                 'required_days': required_days,
                 'required_hours': round(required_hours, 2),
                 'morning_hours': round(total_morning, 2),
@@ -210,13 +223,11 @@ class AnalyticalReportGenerator:
                 'difference': round(difference, 2)
             }
 
-            # اضافه به گروه
             group_name = self._get_group_name(user.group_id)
             if group_name not in groups:
                 groups[group_name] = []
             groups[group_name].append(user_record)
 
-        # مرتب‌سازی کاربران در هر گروه بر اساس نام
         for group_name in groups:
             groups[group_name].sort(key=lambda x: x['full_name'])
 
@@ -227,6 +238,14 @@ class AnalyticalReportGenerator:
             'month_info': month_info,
             'groups': groups
         }
+
+    def _is_holiday(self, target_date: date) -> bool:
+        """بررسی تعطیل بودن یک تاریخ"""
+        from models.holiday import Holiday
+        holiday = self.db.query(Holiday).filter(
+            Holiday.holiday_date == target_date
+        ).first()
+        return holiday is not None
 
     def _get_group_name(self, group_id: str) -> str:
         """دریافت نام گروه"""

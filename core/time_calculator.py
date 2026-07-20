@@ -1,18 +1,16 @@
 """
 ماژول محاسبه ساعات کاری تفکیکی (صبح/عصر/شب)
+بازه‌ها:
+  صبح: 06:00 تا 14:00
+  عصر: 14:00 تا 22:00
+  شب: 22:00 تا 06:00
 """
 from datetime import datetime, timedelta
 
 
 def calculate_shift_hours(start_time: datetime, end_time: datetime) -> dict:
     """
-    محاسبه ساعات کاری تفکیکی بر اساس بازه‌های:
-    - صبح: 06:00 تا 14:00
-    - عصر: 14:00 تا 22:00
-    - شب: 22:00 تا 06:00
-
-    Returns:
-        dict: شامل morning, evening, night, total
+    محاسبه ساعات کاری تفکیکی
     """
     if not start_time or not end_time or start_time >= end_time:
         return {'morning': 0.0, 'evening': 0.0, 'night': 0.0, 'total': 0.0}
@@ -21,53 +19,37 @@ def calculate_shift_hours(start_time: datetime, end_time: datetime) -> dict:
     evening_hours = 0.0
     night_hours = 0.0
 
+    # ✅ تعریف بازه‌های روزانه
+    # هر روز 3 بازه دارد: صبح(6-14)، عصر(14-22)، شب(22-6فردا)
+
+    # محاسبه تعداد روزهای درگیر
+    total_seconds = (end_time - start_time).total_seconds()
+
+    # ✅ روش ساده‌تر: هر دقیقه را بررسی کن
     current = start_time
+    step = timedelta(minutes=1)
 
     while current < end_time:
-        # تعیین بازه فعلی
-        if current.hour < 6:
-            # شب: 22:00 تا 06:00
-            shift_start = (current - timedelta(days=1)).replace(hour=22, minute=0, second=0)
-            shift_end = current.replace(hour=6, minute=0, second=0)
-            shift_type = 'night'
-        elif current.hour < 14:
-            # صبح: 06:00 تا 14:00
-            shift_start = current.replace(hour=6, minute=0, second=0)
-            shift_end = current.replace(hour=14, minute=0, second=0)
-            shift_type = 'morning'
-        elif current.hour < 22:
-            # عصر: 14:00 تا 22:00
-            shift_start = current.replace(hour=14, minute=0, second=0)
-            shift_end = current.replace(hour=22, minute=0, second=0)
-            shift_type = 'evening'
-        else:
-            # شب: 22:00 تا 06:00
-            shift_start = current.replace(hour=22, minute=0, second=0)
-            shift_end = (current + timedelta(days=1)).replace(hour=6, minute=0, second=0)
-            shift_type = 'night'
+        hour = current.hour
 
-        # محاسبه اشتراک
-        intersect_start = max(current, shift_start)
-        intersect_end = min(end_time, shift_end)
+        if 6 <= hour < 14:
+            morning_hours += 1
+        elif 14 <= hour < 22:
+            evening_hours += 1
+        else:  # 22-23 یا 0-5
+            night_hours += 1
 
-        if intersect_start < intersect_end:
-            delta = (intersect_end - intersect_start).total_seconds() / 3600.0
+        current += step
 
-            if shift_type == 'morning':
-                morning_hours += delta
-            elif shift_type == 'evening':
-                evening_hours += delta
-            else:  # night
-                night_hours += delta
-
-        # حرکت به پایان این بازه
-        current = shift_end
-
-    total = morning_hours + evening_hours + night_hours
+    # تبدیل دقیقه به ساعت
+    morning_hours = round(morning_hours / 60, 2)
+    evening_hours = round(evening_hours / 60, 2)
+    night_hours = round(night_hours / 60, 2)
+    total = round(morning_hours + evening_hours + night_hours, 2)
 
     return {
-        'morning': round(morning_hours, 2),
-        'evening': round(evening_hours, 2),
-        'night': round(night_hours, 2),
-        'total': round(total, 2)
+        'morning': morning_hours,
+        'evening': evening_hours,
+        'night': night_hours,
+        'total': total
     }
