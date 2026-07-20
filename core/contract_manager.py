@@ -117,10 +117,11 @@ class ContractManager:
             Contract.user_id == user_id
         ).order_by(Contract.start_date.desc()).all()
 
-    def initialize_yearly_balances(self, user_id: str, year: int) -> Dict:
+    def initialize_yearly_balances(self, user_id: str, year: int, force_reset: bool = False) -> Dict:
         """
-        شارژ اولیه مرخصی بر اساس تمام قراردادهای سال (proportionate)
+        شارژ اولیه مرخصی بر اساس تمام قراردادهای سال
         year: سال شمسی
+        force_reset: اگر True باشد، شارژ قبلی را حذف و مجدد شارژ می‌کند
         """
         # محاسبه مرخصی سالانه
         calc = self.calculate_yearly_leave(user_id, year)
@@ -137,14 +138,39 @@ class ContractManager:
             )
         ).first()
 
-        if existing:
+        if existing and not force_reset:
             return {
                 'success': False,
+                'already_charged': True,
+                'current_balance': existing.balance,
+                'new_amount': calc['total_annual'],
                 'message': f'⚠️ مرخصی استحقاقی سال شمسی {year} قبلاً شارژ شده ({existing.balance} روز)'
             }
 
         try:
-            # ایجاد مانده مرخصی استحقاقی
+            # ✅ اگر force_reset باشد، شارژ قبلی را حذف کن
+            if existing and force_reset:
+                old_balance = existing.balance
+
+                # حذف مانده قبلی
+                self.db.delete(existing)
+
+                # حذف تراکنش INITIAL قبلی
+                old_transactions = self.db.query(LeaveTransaction).filter(
+                    and_(
+                        LeaveTransaction.user_id == user_id,
+                        LeaveTransaction.year == year,
+                        LeaveTransaction.leave_type == 'AL',
+                        LeaveTransaction.transaction_type == 'INITIAL'
+                    )
+                ).all()
+
+                for t in old_transactions:
+                    self.db.delete(t)
+
+                self.db.flush()
+
+            # ایجاد مانده مرخصی استحقاقی جدید
             balance = LeaveBalance(
                 user_id=user_id,
                 year=year,
@@ -158,6 +184,9 @@ class ContractManager:
             if calc['contracts_count'] > 1:
                 types = ', '.join([c['contract_type'] for c in calc['contracts']])
                 description += f' ({types})'
+
+            if force_reset and 'old_balance' in locals():
+                description += f' [بازنشانی از {old_balance} روز]'
 
             transaction = LeaveTransaction(
                 user_id=user_id,
@@ -372,11 +401,8 @@ class ContractManager:
 
     def calculate_yearly_leave(self, user_id: str, year: int) -> Dict:
         """
-        محاسبه مرخصی سالانه بر اساس تمام قراردادهای سال (به صورت proportionate)
+        محاسبه مرخصی سالانه بر اساس جمع مقادیر تمام قراردادهای سال
         year: سال شمسی
-
-        Returns:
-            Dict: شامل مقادیر محاسبه شده و جزئیات
         """
         import jdatetime
 
@@ -389,14 +415,7 @@ class ContractManager:
                 'contracts': []
             }
 
-        # محاسبه مجموع روزهای سال شمسی
-        j_year_start = jdatetime.date(year, 1, 1)
-        j_year_end = jdatetime.date(year, 12, 29)
-        g_year_start = j_year_start.togregorian()
-        g_year_end = j_year_end.togregorian()
-        total_year_days = (g_year_end - g_year_start).days + 1
-
-        # محاسبه proportionate برای هر قرارداد
+        # ✅ جمع ساده مقادیر هر قرارداد
         total_annual = 0
         total_sick = 0
         total_reward = 0
@@ -405,35 +424,26 @@ class ContractManager:
         details = []
         for info in contracts_info:
             c = info['contract']
-            ratio = info['days_in_year'] / total_year_days
 
-            annual = round(c.annual_leave_days * ratio)
-            sick = round(c.sick_leave_days * ratio)
-            reward = round(c.reward_leave_days * ratio)
-            unpaid = round(c.unpaid_leave_days * ratio)
-
-            total_annual += annual
-            total_sick += sick
-            total_reward += reward
-            total_unpaid += unpaid
+            total_annual += c.annual_leave_days
+            total_sick += c.sick_leave_days
+            total_reward += c.reward_leave_days
+            total_unpaid += c.unpaid_leave_days
 
             details.append({
                 'contract_id': c.id,
                 'contract_type': c.contract_type,
                 'start_date': info['effective_start'],
                 'end_date': info['effective_end'],
-                'days_in_year': info['days_in_year'],
-                'ratio': ratio,
-                'annual': annual,
-                'sick': sick,
-                'reward': reward,
-                'unpaid': unpaid
+                'annual': c.annual_leave_days,
+                'sick': c.sick_leave_days,
+                'reward': c.reward_leave_days,
+                'unpaid': c.unpaid_leave_days
             })
 
         return {
             'success': True,
             'year': year,
-            'total_year_days': total_year_days,
             'total_annual': total_annual,
             'total_sick': total_sick,
             'total_reward': total_reward,

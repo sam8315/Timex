@@ -1657,22 +1657,19 @@ class ConsoleUI:
 
                 if calc['contracts_count'] > 1:
                     print("\n  📋 جزئیات محاسبه:")
-                    print("  " + "-" * 66)
-                    print(f"  {'نوع قرارداد':<15} {'روزهای فعال':<12} {'نسبت':<10} {'استحقاقی':<10}")
-                    print("  " + "-" * 66)
+                    print("  " + "-" * 55)
+                    print(f"  {'نوع قرارداد':<15} {'استحقاقی':<10} {'استعلاجی':<10} {'تشویقی':<10}")
+                    print("  " + "-" * 55)
 
                     for c in calc['contracts']:
-                        j_start = jdatetime.date.fromgregorian(date=c['start_date'])
-                        j_end = jdatetime.date.fromgregorian(date=c['end_date'])
-                        print(f"  {c['contract_type']:<15} {c['days_in_year']:<12} "
-                              f"{c['ratio']:.1%}      {c['annual']:<10}")
+                        print(f"  {c['contract_type']:<15} {c['annual']:<10} {c['sick']:<10} {c['reward']:<10}")
 
-                    print("  " + "-" * 66)
-                    print(f"  {'مجموع':<15} {calc['total_year_days']:<12} {'100%':<10} {calc['total_annual']:<10}")
-                    print("  " + "-" * 66)
+                    print("  " + "-" * 55)
+                    print(
+                        f"  {'مجموع':<15} {calc['total_annual']:<10} {calc['total_sick']:<10} {calc['total_reward']:<10}")
+                    print("  " + "-" * 55)
                 else:
-                    c = calc['contracts'][0]
-                    print(f"\n  📋 قرارداد: {c['contract_type']}")
+                    print(f"\n  📋 قرارداد: {calc['contracts'][0]['contract_type']}")
                     print(f"     • استحقاقی سالانه : {calc['total_annual']} روز")
                     print(f"     • استعلاجی        : {calc['total_sick']} روز")
                     print(f"     • تشویقی          : {calc['total_reward']} روز")
@@ -1686,7 +1683,21 @@ class ConsoleUI:
                     return
 
                 result = manager.initialize_yearly_balances(user_id, year)
-                print(f"\n  {result['message']}")
+
+                # ✅ اگر قبلاً شارژ شده، از کاربر بپرس
+                if not result['success'] and result.get('already_charged'):
+                    print(f"\n  {result['message']}")
+                    print(f"  💡 مقدار جدید محاسبه شده: {result['new_amount']} روز")
+                    print(f"  💡 تفاوت: {result['new_amount'] - result['current_balance']} روز")
+
+                    reset_confirm = input("\n  ⚠️  آیا می‌خواهید بازنشانی و شارژ مجدد کنید؟ (بله/خیر): ").strip()
+                    if reset_confirm.lower() in ['بله', 'yes', 'y']:
+                        result = manager.initialize_yearly_balances(user_id, year, force_reset=True)
+                        print(f"\n  {result['message']}")
+                    else:
+                        print("  ❌ عملیات لغو شد")
+                else:
+                    print(f"\n  {result['message']}")
 
             elif choice == '2':
                 confirm = input(f"\n  ⚠️  شارژ مرخصی همه کاربران برای سال شمسی {year}؟ (بله/خیر): ").strip()
