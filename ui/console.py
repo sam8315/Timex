@@ -2192,9 +2192,11 @@ class ConsoleUI:
             manager.close()
 
     def _show_leave_balance(self):
-        """نمایش مانده مرخصی یک کاربر"""
+        """نمایش مانده مرخصی یک کاربر با چک صحت داده‌ها"""
         from core.leave_manager import LeaveManager
         from core.employee_manager import EmployeeManager
+        from sqlalchemy import and_, func
+        from models.leave_transaction import LeaveTransaction
 
         print("\n" + "=" * 80)
         print("  💼 مانده مرخصی کاربر")
@@ -2217,66 +2219,175 @@ class ConsoleUI:
                 print(f"\n  ❌ کاربر {user_id} یافت نشد")
                 return
 
-            # دریافت نام کامل از جدول employee
             full_name = emp_manager.get_full_name(user_id)
 
+            # ✅ دریافت مانده فعلی از leave_balances
             balances = manager.get_all_balances(user_id, year)
             summary = manager.get_summary_for_user(user_id, year)
+
+            # ✅ محاسبه "کل" و "مصرف" از تراکنش‌ها برای هر نوع مرخصی
+            leave_types = ['AL', 'SL', 'RL', 'UL', 'CW']
+            calculated_data = {}
+
+            for leave_type in leave_types:
+                # مجموع تراکنش‌های مثبت (شارژ)
+                total_credit = manager.db.query(
+                    func.coalesce(func.sum(LeaveTransaction.amount), 0)
+                ).filter(
+                    and_(
+                        LeaveTransaction.user_id == user_id,
+                        LeaveTransaction.year == year,
+                        LeaveTransaction.leave_type == leave_type,
+                        LeaveTransaction.amount > 0
+                    )
+                ).scalar()
+
+                # مجموع تراکنش‌های منفی (برداشت)
+                total_debit = manager.db.query(
+                    func.coalesce(func.sum(LeaveTransaction.amount), 0)
+                ).filter(
+                    and_(
+                        LeaveTransaction.user_id == user_id,
+                        LeaveTransaction.year == year,
+                        LeaveTransaction.leave_type == leave_type,
+                        LeaveTransaction.amount < 0
+                    )
+                ).scalar()
+
+                # تبدیل به عدد مثبت
+                total_debit = abs(total_debit)
+
+                # محاسبه مانده از تراکنش‌ها
+                calculated_balance = total_credit - total_debit
+
+                # دریافت balance واقعی از جدول
+                actual_balance = balances.get(leave_type, {}).get('balance', 0)
+
+                calculated_data[leave_type] = {
+                    'total_credit': total_credit,
+                    'total_debit': total_debit,
+                    'calculated_balance': calculated_balance,
+                    'actual_balance': actual_balance,
+                    'is_valid': calculated_balance == actual_balance
+                }
 
             print(f"\n  👤 کاربر: {full_name} (کد: {user_id})")
             print(f"  📅 سال شمسی: {year}")
 
-            # ✅ جدول با ستون مانده باقی‌مانده
-            print("\n  ┌─────────────────────┬──────────────┬──────────────┬──────────────┐")
-            print("  │ نوع مرخصی           │ شارژ اولیه   │ مصرف شده    │ مانده باقی   │")
-            print("  ├─────────────────────┼──────────────┼──────────────┼──────────────┤")
+            # ✅ جدول با چک صحت
+            print("\n  ┌─────────────────────┬──────────────┬──────────────┬──────────────┬────────┐")
+            print("  │ نوع مرخصی           │ کل (شارژ)    │ استفاده شده │ مانده        │ وضعیت  │")
+            print("  ├─────────────────────┼──────────────┼──────────────┼──────────────┼────────┤")
 
-            total_balance = 0
-            total_used = 0
-            total_remaining = 0
+            negative_balances = []
+            invalid_balances = []
+            total_charged_sum = 0
+            total_used_sum = 0
+            total_remaining_sum = 0
 
             for code, data in balances.items():
-                balance = data['balance']
-                used = summary['used'].get(code, 0)
-                remaining = balance - used  # ✅ محاسبه مانده باقی‌مانده
+                calc = calculated_data.get(code, {
+                    'total_credit': 0,
+                    'total_debit': 0,
+                    'calculated_balance': 0,
+                    'actual_balance': data['balance'],
+                    'is_valid': True
+                })
 
-                # رنگ‌بندی بر اساس مانده
+                charged = calc['total_credit']
+                used = calc['total_debit']
+                remaining = calc['actual_balance']  # استفاده از balance واقعی
+                is_valid = calc['is_valid']
+
+                # ✅ رنگ‌بندی مانده
                 if remaining < 0:
-                    remaining_str = f"{remaining} ❌"  # منفی (بیشتر مصرف شده)
-                elif remaining == 0 and balance > 0:
-                    remaining_str = f"{remaining} ⚠️"  # تمام شده
+                    remaining_str = f"{remaining} ❌⚠️"
+                    negative_balances.append({
+                        'code': code,
+                        'name': data['name'],
+                        'remaining': remaining
+                    })
+                elif remaining == 0 and charged > 0:
+                    remaining_str = f"{remaining} ⚠️"
+                elif remaining == 0 and charged == 0 and used == 0:
+                    remaining_str = f"{remaining} —"
                 else:
-                    remaining_str = f"{remaining} ✅"  # باقی‌مانده
+                    remaining_str = f"{remaining} ✅"
 
-                print(f"  │ {data['name']:<19} │ {balance:<12} │ {used:<12} │ {remaining_str:<12} │")
+                # ✅ وضعیت صحت
+                status = "✅" if is_valid else "❌ نامعتبر"
 
-                total_balance += balance
-                total_used += used
-                total_remaining += remaining
+                if not is_valid:
+                    invalid_balances.append({
+                        'code': code,
+                        'name': data['name'],
+                        'calculated': calc['calculated_balance'],
+                        'actual': calc['actual_balance']
+                    })
 
-            print("  └─────────────────────┴──────────────┴──────────────┴──────────────┘")
+                print(f"  │ {data['name']:<19} │ {charged:<12} │ {used:<12} │ {remaining_str:<12} │ {status:<6} │")
+
+                total_charged_sum += charged
+                total_used_sum += used
+                total_remaining_sum += remaining
+
+            print("  └─────────────────────┴──────────────┴──────────────┴──────────────┴────────┘")
+
+            # ✅ هشدار برای عدم تطابق
+            if invalid_balances:
+                print("\n  " + "=" * 76)
+                print("  ❌ هشدار: عدم تطابق در داده‌ها شناسایی شد!")
+                print("  " + "=" * 76)
+                for inv in invalid_balances:
+                    print(f"     • {inv['name']}:")
+                    print(f"       - محاسبه شده از تراکنش‌ها: {inv['calculated']} روز")
+                    print(f"       - موجود در جدول balance   : {inv['actual']} روز")
+                    print(f"       - تفاوت                    : {inv['calculated'] - inv['actual']} روز")
+                print("\n  💡 راه‌حل:")
+                print("     • اسکریپت 'fix_migrated_leaves.py' را اجرا کنید")
+                print("     • یا داده‌ها را دستی اصلاح کنید")
+                print("  " + "=" * 76)
+
+            # ✅ هشدار برای مانده‌های منفی
+            if negative_balances:
+                print("\n  " + "=" * 76)
+                print("  ⚠️  هشدار: مانده منفی شناسایی شد!")
+                print("  " + "=" * 76)
+                for nb in negative_balances:
+                    print(f"     • {nb['name']}: {nb['remaining']} روز (بیشتر از مجاز مصرف شده)")
+                print("\n  💡 راه‌حل:")
+                print("     • از گزینه 'شارژ مرخصی توسط مدیر' (گزینه 7 → 5) استفاده کنید")
+                print("  " + "=" * 76)
 
             # خلاصه
             print(f"\n  📊 تعداد درخواست‌های تایید شده: {summary['approved_requests_count']}")
-            print(f"  📊 مجموع شارژ اولیه: {total_balance} روز")
-            print(f"  📊 مجموع مصرف شده: {total_used} روز")
+            print(f"  📊 مجموع کل (شارژ): {total_charged_sum} روز")
+            print(f"  📊 مجموع استفاده شده: {total_used_sum} روز")
 
-            if total_remaining < 0:
-                print(f"  📊 مجموع مانده: {total_remaining} روز ❌ (بیشتر از مجاز مصرف شده)")
+            if total_remaining_sum < 0:
+                print(f"  📊 مجموع مانده: {total_remaining_sum} روز ❌")
             else:
-                print(f"  📊 مجموع مانده: {total_remaining} روز ✅")
+                print(f"  📊 مجموع مانده: {total_remaining_sum} روز ✅")
+
+            if invalid_balances:
+                print(f"\n  ❌ تعداد عدم تطابق: {len(invalid_balances)}")
+            else:
+                print(f"\n  ✅ تمام داده‌ها معتبر هستند")
 
         finally:
             manager.close()
             emp_manager.close()
+
+
+
     def _show_leave_transactions(self):
         """نمایش تاریخچه تراکنش‌های مرخصی"""
         from core.leave_manager import LeaveManager
         from core.employee_manager import EmployeeManager
 
-        print("\n" + "=" * 70)
+        print("\n" + "=" * 90)
         print("  📜 تاریخچه تراکنش‌های مرخصی")
-        print("=" * 70)
+        print("=" * 90)
 
         user_id = input("\n  📛 کد پرسنلی کاربر: ").strip()
         if not user_id:
@@ -2292,7 +2403,6 @@ class ConsoleUI:
         try:
             transactions = manager.get_transactions(user_id, year)
 
-            # ✅ دریافت نام کامل
             full_name = emp_manager.get_full_name(user_id)
 
             if not transactions:
@@ -2303,34 +2413,61 @@ class ConsoleUI:
             print(f"  📅 سال شمسی: {year}")
             print(f"  📊 تعداد تراکنش‌ها: {len(transactions)}")
 
-            print("\n  ┌────────────┬────────────┬──────┬──────────┬──────────────────────┐")
-            print("  │ تاریخ      │ نوع مرخصی  │ مقدار│ نوع عمل  │ توضیحات              │")
-            print("  ├────────────┼────────────┼──────┼──────────┼──────────────────────┤")
+            # ✅ مرتب‌سازی از قدیم به جدید برای محاسبه مانده تجمعی
+            sorted_transactions = sorted(transactions, key=lambda t: t.created_at)
 
-            type_names = {
-                'CREDIT': '➕ شارژ',
-                'DEBIT': '➖ برداشت',
-                'CARRYOVER': '🔄 انتقال',
-                'INITIAL': '💰 اولیه'
-            }
+            # محاسبه مانده تجمعی برای هر نوع مرخصی
+            running_balance = {}
 
-            for t in transactions:
+            print("\n  ┌────────────┬────────────┬──────┬──────────┬────────────┬──────────────────────┐")
+            print("  │ تاریخ      │ نوع مرخصی  │ مقدار│ نوع عمل  │ مانده بعد  │ توضیحات              │")
+            print("  ├────────────┼────────────┼──────┼──────────┼────────────┼──────────────────────┤")
+
+            for t in sorted_transactions:
                 j_date = jdatetime.date.fromgregorian(date=t.created_at.date())
                 type_name = manager.get_leave_type_name(t.leave_type)
-                operation = type_names.get(t.transaction_type, t.transaction_type)
+                operation = {
+                    'CREDIT': '➕ شارژ',
+                    'DEBIT': '➖ برداشت',
+                    'CARRYOVER': '🔄 انتقال',
+                    'INITIAL': '💰 اولیه'
+                }.get(t.transaction_type, t.transaction_type)
+
                 desc = (t.description or '')[:20]
 
                 sign = "+" if t.amount > 0 else ""
                 amount_str = f"{sign}{t.amount}"
 
-                print(f"  │ {j_date.strftime('%Y/%m/%d')} │ {type_name:<10} │ {amount_str:<4} │ {operation:<8} │ {desc:<20} │")
+                # ✅ محاسبه مانده تجمعی
+                if t.leave_type not in running_balance:
+                    running_balance[t.leave_type] = 0
+                running_balance[t.leave_type] += t.amount
 
-            print("  └────────────┴────────────┴──────┴──────────┴──────────────────────┘")
+                balance_after = running_balance[t.leave_type]
+
+                # رنگ‌بندی بر اساس مانده
+                if balance_after < 0:
+                    balance_str = f"{balance_after} ❌"
+                elif balance_after == 0:
+                    balance_str = f"{balance_after} ⚠️"
+                else:
+                    balance_str = f"{balance_after} ✅"
+
+                print(
+                    f"  │ {j_date.strftime('%Y/%m/%d')} │ {type_name:<10} │ {amount_str:<4} │ {operation:<8} │ {balance_str:<10} │ {desc:<20} │")
+
+            print("  └────────────┴────────────┴──────┴──────────┴────────────┴──────────────────────┘")
+
+            # ✅ نمایش مانده نهایی
+            print("\n  📊 مانده نهایی:")
+            for leave_type, balance in running_balance.items():
+                type_name = manager.get_leave_type_name(leave_type)
+                status = "✅" if balance >= 0 else "❌"
+                print(f"     • {type_name:<15} : {balance} روز {status}")
 
         finally:
             manager.close()
-            emp_manager.close()
-    # ============================================
+            emp_manager.close()    # ============================================
     # درخواست مرخصی
     # ============================================
 
@@ -2811,12 +2948,13 @@ class ConsoleUI:
             manager.close()
 
     def _show_user_monthly_report(self):
-        """گزارش ماهانه یک کاربر"""
+        """گزارش ماهانه یک کاربر - روز به روز"""
         from core.daily_status_manager import DailyStatusManager
+        from core.employee_manager import EmployeeManager
 
-        print("\n" + "=" * 70)
-        print("  📊 گزارش ماهانه یک کاربر")
-        print("=" * 70)
+        print("\n" + "=" * 130)
+        print("  📊 گزارش ماهانه یک کاربر (روز به روز)")
+        print("=" * 130)
 
         user_id = input("\n  📛 کد پرسنلی کاربر: ").strip()
         if not user_id:
@@ -2824,39 +2962,98 @@ class ConsoleUI:
             return
 
         today_j = jdatetime.date.today()
-        year_str = input(f"  📅 سال [پیش‌فرض: {today_j.year}]: ").strip()
+        year_str = input(f"  📅 سال شمسی [پیش‌فرض: {today_j.year}]: ").strip()
         year = int(year_str) if year_str else today_j.year
 
         month_str = input(f"  📅 ماه (1-12) [پیش‌فرض: {today_j.month}]: ").strip()
         month = int(month_str) if month_str else today_j.month
 
         manager = DailyStatusManager()
+        emp_manager = EmployeeManager()
         try:
-            report = manager.get_monthly_report(user_id, year, month)
-            user = manager.db.query(User).filter(User.user_id == user_id).first()
+            report = manager.get_daily_details_for_month(user_id, year, month)
+            full_name = emp_manager.get_full_name(user_id)
 
-            print(f"\n  👤 کاربر: {user.name if user else user_id}")
-            print(f"  📅 ماه: {self._get_jalali_month_name(month)} {year}")
+            print(f"\n  👤 کاربر: {full_name} (کد: {user_id})")
+            print(f"  📅 ماه: {report['month_name']} {year}")
+            print(
+                f"  📆 بازه: {jdatetime.date.fromgregorian(date=report['from_date']).strftime('%Y/%m/%d')} تا {jdatetime.date.fromgregorian(date=report['to_date']).strftime('%Y/%m/%d')}")
 
-            print("\n  📋 وضعیت روزها:")
-            print("  " + "-" * 50)
-            for code, count in sorted(report['status_counts'].items()):
-                if count > 0:
-                    print(f"  • {manager.get_status_name(code):<15} : {count} روز")
-            print("  " + "-" * 50)
+            days = report['days']
+            summary = report['summary']
 
-            work_h = int(report['total_work_hours'])
-            work_m = int((report['total_work_hours'] - work_h) * 60)
-            night_h = int(report['total_night_hours'])
-            night_m = int((report['total_night_hours'] - night_h) * 60)
+            # ✅ جدول روز به روز
+            print("\n  ┌────┬────────────┬──────────┬──────────────┬────────┬────────┬────────┬──────────────┐")
+            print("  │ #  │ تاریخ      │ روز      │ وضعیت        │ ورود   │ خروج   │ کار    │ شب‌کاری       │")
+            print("  ├────┼────────────┼──────────┼──────────────┼────────┼────────┼────────┼──────────────┤")
 
-            print(f"\n  ⏱️  آمار ساعات:")
+            for day in days:
+                # فرمت ساعت کاری
+                if day['work_hours'] > 0:
+                    work_h = int(day['work_hours'])
+                    work_m = int((day['work_hours'] - work_h) * 60)
+                    work_str = f"{work_h:02d}:{work_m:02d}"
+                else:
+                    work_str = '  --  '
+
+                # فرمت شب‌کاری
+                if day['night_hours'] > 0:
+                    night_h = int(day['night_hours'])
+                    night_m = int((day['night_hours'] - night_h) * 60)
+                    night_str = f"🌙{night_h:02d}:{night_m:02d}"
+                else:
+                    night_str = '  --    '
+
+                # فرمت ورود/خروج
+                first_enter = day['first_enter'].strftime('%H:%M') if day['first_enter'] else '  --  '
+                last_exit = day['last_exit'].strftime('%H:%M') if day['last_exit'] else '  --  '
+
+                # وضعیت (کوتاه شده)
+                status_name = day['status_name']
+                status_short = status_name.split(' ', 1)[1] if ' ' in status_name else status_name
+                status_short = status_short[:12]
+
+                # آیکون جمعه
+                friday_icon = "🟡" if day['is_friday'] else "  "
+
+                print(
+                    f"  │ {day['day_of_month']:<2} │ {day['jalali_date']} │ {friday_icon}{day['day_name']:<6} │ {status_short:<12} │ {first_enter} │ {last_exit} │ {work_str} │ {night_str:<12} │")
+
+            print("  └────┴────────────┴──────────┴──────────────┴────────┴────────┴────────┴──────────────┘")
+
+            # ✅ خلاصه آماری
+            print("\n  " + "-" * 126)
+            print("  📊 خلاصه ماهانه:")
+            print("  " + "-" * 126)
+            print(f"     • کل روزهای ماه      : {summary['total_days']}")
+            print(f"     • روزهای کاری        : {summary['working_days']}")
+            print(f"     • روزهای حاضر        : {summary['present_days']} ✅")
+
+            print("\n  📋 تفکیک وضعیت‌ها:")
+            for code, count in sorted(summary['status_counts'].items()):
+                status_name = manager.get_status_name(code)
+                print(f"     • {status_name:<20} : {count} روز")
+
+            work_h = int(summary['total_work_hours'])
+            work_m = int((summary['total_work_hours'] - work_h) * 60)
+            night_h = int(summary['total_night_hours'])
+            night_m = int((summary['total_night_hours'] - night_h) * 60)
+
+            print(f"\n  ⏱️  ساعات:")
             print(f"     • مجموع ساعات کاری   : {work_h} ساعت و {work_m} دقیقه")
             print(f"     • مجموع ساعات شب‌کاری : {night_h} ساعت و {night_m} دقیقه 🌙")
 
+            if summary['working_days'] > 0:
+                avg_work = summary['total_work_hours'] / summary['working_days']
+                avg_h = int(avg_work)
+                avg_m = int((avg_work - avg_h) * 60)
+                print(f"     • میانگین روزانه     : {avg_h} ساعت و {avg_m} دقیقه")
+
+            print("  " + "-" * 126)
+
         finally:
             manager.close()
-
+            emp_manager.close()
     def _show_all_users_monthly_report(self):
         """گزارش ماهانه همه کاربران"""
         from core.report_generator import ReportGenerator

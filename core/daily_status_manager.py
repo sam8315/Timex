@@ -384,3 +384,184 @@ class DailyStatusManager:
         """گزارش غایبین یک روز"""
         report = self.get_daily_report(target_date)
         return [r for r in report if r['status'] == self.STATUS_ABSENT]
+
+    def get_daily_details_for_month(self, user_id: str, year: int, month: int) -> Dict:
+        """
+        دریافت جزئیات روز به روز یک کاربر در یک ماه شمسی
+
+        Returns:
+            Dict: شامل لیست روزها و خلاصه
+        """
+        import jdatetime
+        from core.attendance_analyzer import calculate_night_hours
+        from core.employee_manager import EmployeeManager
+
+        # محاسبه بازه ماه شمسی
+        j_month_start = jdatetime.date(year, month, 1)
+        if month == 12:
+            try:
+                j_month_end = jdatetime.date(year, 12, 30)
+            except ValueError:
+                j_month_end = jdatetime.date(year, 12, 29)
+        else:
+            j_month_end = jdatetime.date(year, month + 1, 1) - timedelta(days=1)
+
+        g_start = j_month_start.togregorian()
+        g_end = j_month_end.togregorian()
+
+        # دریافت تمام رکوردهای تردد ماه
+        attendances = self.db.query(Attendance).filter(
+            and_(
+                Attendance.user_id == user_id,
+                func.date(Attendance.timestamp) >= g_start,
+                func.date(Attendance.timestamp) <= g_end,
+                Attendance.is_deleted == False
+            )
+        ).order_by(Attendance.timestamp).all()
+
+        # گروه‌بندی بر اساس روز
+        attendances_by_day = {}
+        for att in attendances:
+            day = att.timestamp.date()
+            if day not in attendances_by_day:
+                attendances_by_day[day] = []
+            attendances_by_day[day].append(att)
+
+        # دریافت تمام وضعیت‌های روزانه ماه
+        daily_statuses = self.db.query(DailyStatus).filter(
+            and_(
+                DailyStatus.user_id == user_id,
+                DailyStatus.status_date >= g_start,
+                DailyStatus.status_date <= g_end
+            )
+        ).all()
+
+        statuses_by_day = {ds.status_date: ds for ds in daily_statuses}
+
+        # دریافت درخواست‌های مرخصی تایید شده
+        from models.leave_request import LeaveRequest
+        approved_leaves = self.db.query(LeaveRequest).filter(
+            and_(
+                LeaveRequest.user_id == user_id,
+                LeaveRequest.status == 'A',
+                LeaveRequest.from_date <= g_end,
+                LeaveRequest.to_date >= g_start
+            )
+        ).all()
+
+        # ساخت لیست روزها
+        days = []
+        current = g_start
+        while current <= g_end:
+            j_date = jdatetime.date.fromgregorian(date=current)
+            day_name = self._get_day_name(current)
+
+            # تعیین وضعیت روز
+            status_info = self.detect_status(user_id, current)
+
+            # محاسبه ساعات کاری
+            day_attendances = attendances_by_day.get(current, [])
+            enters = [a for a in day_attendances if a.punch == 0]
+            exits = [a for a in day_attendances if a.punch == 1]
+
+            work_hours = 0.0
+            night_hours = 0.0
+            first_enter = None
+            last_exit = None
+            attendance_status = '—'
+
+            if enters and exits:
+                first_enter = min(e.timestamp for e in enters)
+                last_exit = max(e.timestamp for e in exits)
+
+                if last_exit > first_enter:
+                    delta = (last_exit - first_enter).total_seconds() / 3600
+                    work_hours = round(delta, 2)
+                    night_hours = round(calculate_night_hours(first_enter, last_exit), 2)
+
+                    if len(enters) == 1 and len(exits) == 1:
+                        attendance_status = '✅ کامل'
+                    else:
+                        attendance_status = f'🔄 {len(enters)}و/{len(exits)}خ'
+            elif enters and not exits:
+                attendance_status = '⚠️ بدون خروج'
+                first_enter = min(e.timestamp for e in enters)
+            elif exits and not enters:
+                attendance_status = '❌ بدون ورود'
+                last_exit = max(e.timestamp for e in exits)
+
+            days.append({
+                'date': current,
+                'jalali_date': j_date.strftime('%Y/%m/%d'),
+                'day_of_month': j_date.day,
+                'day_name': day_name,
+                'is_friday': current.weekday() == 4,
+                'status': status_info['status'],
+                'status_name': self.get_status_name(status_info['status']),
+                'status_source': status_info['source'],
+                'work_hours': work_hours,
+                'night_hours': night_hours,
+                'first_enter': first_enter,
+                'last_exit': last_exit,
+                'enters_count': len(enters),
+                'exits_count': len(exits),
+                'attendance_status': attendance_status,
+                'has_attendance': len(day_attendances) > 0
+            })
+
+            current += timedelta(days=1)
+
+        # محاسبه خلاصه
+        status_counts = {}
+        total_work = 0.0
+        total_night = 0.0
+        working_days = 0
+        present_days = 0
+
+        for day in days:
+            code = day['status']
+            status_counts[code] = status_counts.get(code, 0) + 1
+
+            if not day['is_friday']:
+                working_days += 1
+                if code == 'P':
+                    present_days += 1
+
+            total_work += day['work_hours']
+            total_night += day['night_hours']
+
+        return {
+            'user_id': user_id,
+            'year': year,
+            'month': month,
+            'month_name': self._get_jalali_month_name(month),
+            'from_date': g_start,
+            'to_date': g_end,
+            'days': days,
+            'summary': {
+                'total_days': len(days),
+                'working_days': working_days,
+                'present_days': present_days,
+                'status_counts': status_counts,
+                'total_work_hours': round(total_work, 2),
+                'total_night_hours': round(total_night, 2)
+            }
+        }
+
+    def _get_day_name(self, d: date) -> str:
+        """دریافت نام روز هفته به فارسی"""
+        names = {
+            0: 'دوشنبه', 1: 'سه‌شنبه', 2: 'چهارشنبه',
+            3: 'پنجشنبه', 4: 'جمعه', 5: 'شنبه', 6: 'یکشنبه'
+        }
+        return names.get(d.weekday(), '')
+
+    def _get_jalali_month_name(self, month: int) -> str:
+        """دریافت نام ماه شمسی"""
+        names = {
+            1: 'فروردین', 2: 'اردیبهشت', 3: 'خرداد',
+            4: 'تیر', 5: 'مرداد', 6: 'شهریور',
+            7: 'مهر', 8: 'آبان', 9: 'آذر',
+            10: 'دی', 11: 'بهمن', 12: 'اسفند'
+        }
+        return names.get(month, '')
