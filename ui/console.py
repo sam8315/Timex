@@ -1978,6 +1978,7 @@ class ConsoleUI:
     def _credit_leave(self):
         """شارژ مرخصی توسط مدیر"""
         from core.leave_manager import LeaveManager
+        from core.employee_manager import EmployeeManager
 
         print("\n" + "=" * 70)
         print("  💰 شارژ مرخصی توسط مدیر")
@@ -1988,13 +1989,15 @@ class ConsoleUI:
             print("  ❌ کد پرسنلی نمی‌تواند خالی باشد")
             return
 
+        # ✅ اضافه شدن گزینه ذخیره سال قبل
         print("\n  📋 نوع مرخصی:")
         print("    1. استعلاجی (SL)")
         print("    2. تشویقی (RL)")
         print("    3. بدون حقوق (UL)")
-        type_choice = input("  انتخاب [1-3]: ").strip()
+        print("    4. ذخیره سال قبل (CW)")
+        type_choice = input("  انتخاب [1-4]: ").strip()
 
-        type_map = {'1': 'SL', '2': 'RL', '3': 'UL'}
+        type_map = {'1': 'SL', '2': 'RL', '3': 'UL', '4': 'CW'}
         leave_type = type_map.get(type_choice)
 
         if not leave_type:
@@ -2002,7 +2005,7 @@ class ConsoleUI:
             return
 
         today_j = jdatetime.date.today()
-        year_str = input(f"  📅 سال [پیش‌فرض: {today_j.year}]: ").strip()
+        year_str = input(f"  📅 سال شمسی [پیش‌فرض: {today_j.year}]: ").strip()
         year = int(year_str) if year_str else today_j.year
 
         amount_str = input("  🔢 تعداد روز: ").strip()
@@ -2015,19 +2018,21 @@ class ConsoleUI:
             print("  ❌ تعداد نامعتبر")
             return
 
-        description = input("  📝 توضیحات (مثلاً: گواهی پزشکی، پاداش): ").strip()
+        description = input("  📝 توضیحات (مثلاً: ذخیره از سال 1404): ").strip()
 
         manager = LeaveManager()
+        emp_manager = EmployeeManager()
         try:
             # نمایش مانده فعلی
             current_balance = manager.get_balance(user_id, year, leave_type)
             type_name = manager.get_leave_type_name(leave_type)
+            full_name = emp_manager.get_full_name(user_id)
 
             print("\n" + "-" * 70)
             print("  📋 پیش‌نمایش:")
-            print(f"     • کاربر         : {user_id}")
+            print(f"     • کاربر         : {full_name} ({user_id})")
             print(f"     • نوع مرخصی     : {type_name}")
-            print(f"     • سال           : {year}")
+            print(f"     • سال شمسی      : {year}")
             print(f"     • تعداد         : {amount} روز")
             print(f"     • مانده فعلی    : {current_balance} روز")
             print(f"     • مانده جدید    : {current_balance + amount} روز")
@@ -2052,7 +2057,7 @@ class ConsoleUI:
 
         finally:
             manager.close()
-
+            emp_manager.close()
     def _carryover_leave(self):
         """انتقال مانده از سال قبل"""
         from core.leave_manager import LeaveManager
