@@ -1699,18 +1699,54 @@ class ConsoleUI:
                 else:
                     print(f"\n  {result['message']}")
 
+
             elif choice == '2':
-                confirm = input(f"\n  ⚠️  شارژ مرخصی همه کاربران برای سال شمسی {year}؟ (بله/خیر): ").strip()
+
+                # ✅ پرسش اول: آیا بازنشانی انجام شود؟
+
+                print("\n  📋 حالت شارژ:")
+
+                print("    1. فقط کاربرانی که هنوز شارژ نشده‌اند")
+
+                print("    2. بازنشانی همه کاربران (شارژ قبلی حذف و مجدد شارژ می‌شود)")
+
+                mode = input("  انتخاب [1/2] [پیش‌فرض: 1]: ").strip() or '1'
+
+                force_reset = (mode == '2')
+
+                if force_reset:
+
+                    confirm_msg = f"\n  ⚠️  هشدار: شارژ قبلی همه کاربران حذف و با مقادیر جدید جایگزین می‌شود!"
+
+                    confirm_msg += f"\n  ⚠️  آیا مطمئن هستید؟ (بله/خیر): "
+
+                else:
+
+                    confirm_msg = f"\n  ⚠️  شارژ مرخصی کاربران شارژ نشده برای سال شمسی {year}؟ (بله/خیر): "
+
+                confirm = input(confirm_msg).strip()
+
                 if confirm.lower() not in ['بله', 'yes', 'y']:
                     print("  ❌ عملیات لغو شد")
+
                     return
 
-                stats = manager.initialize_all_users_for_year(year)
+                print("\n  ⏳ در حال پردازش...")
+
+                stats = manager.initialize_all_users_for_year(year, force_reset=force_reset)
+
                 print(f"\n  📊 نتیجه:")
-                print(f"     • کل کاربران         : {stats['total']}")
-                print(f"     • شارژ موفق          : {stats['success']} ✅")
-                print(f"     • قبلاً شارژ شده     : {stats['skipped']} ⚠️")
-                print(f"     • خطا (بدون قرارداد) : {stats['failed']} ❌")
+
+                print(f"     • کل کاربران           : {stats['total']}")
+
+                print(f"     • شارژ موفق (جدید)     : {stats['success'] - stats['reset']} ✅")
+
+                if stats['reset'] > 0:
+                    print(f"     • بازنشانی شده         : {stats['reset']} 🔄")
+
+                print(f"     • قبلاً شارژ شده (رد)  : {stats['skipped']} ⚠️")
+
+                print(f"     • خطا (بدون قرارداد)   : {stats['failed']} ❌")
 
             else:
                 print("  ❌ انتخاب نامعتبر")

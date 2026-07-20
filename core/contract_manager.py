@@ -209,25 +209,38 @@ class ContractManager:
         except Exception as e:
             self.db.rollback()
             return {'success': False, 'message': f'❌ خطا: {e}'}
-    def initialize_all_users_for_year(self, year: int) -> Dict:
+
+    def initialize_all_users_for_year(self, year: int, force_reset: bool = False) -> Dict:
         """
         شارژ مرخصی استحقاقی همه کاربران برای یک سال
         year: سال شمسی
+        force_reset: اگر True باشد، شارژهای قبلی را بازنشانی می‌کند
         """
         users = self.db.query(User).all()
-        stats = {'total': 0, 'success': 0, 'failed': 0, 'skipped': 0}
+        stats = {
+            'total': 0,
+            'success': 0,
+            'failed': 0,
+            'skipped': 0,
+            'reset': 0  # ✅ شمارش بازنشانی‌ها
+        }
 
         for user in users:
             stats['total'] += 1
-            result = self.initialize_yearly_balances(user.user_id, year)
+            result = self.initialize_yearly_balances(user.user_id, year, force_reset=force_reset)
+
             if result['success']:
                 stats['success'] += 1
+                # ✅ اگر بازنشانی شده بود، در آمار reset هم اضافه کن
+                if 'بازنشانی' in result.get('message', ''):
+                    stats['reset'] += 1
             elif 'قبلاً شارژ شده' in result['message']:
                 stats['skipped'] += 1
             else:
                 stats['failed'] += 1
 
         return stats
+
     def get_contract_summary(self) -> Dict:
         """خلاصه آماری قراردادها"""
         total_contracts = self.db.query(Contract).count()
