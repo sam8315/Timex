@@ -68,16 +68,16 @@ class LeaveRequestManager:
         return days
 
     def create_request(
-        self,
-        user_id: str,
-        leave_type: str,
-        from_date: date,
-        to_date: date,
-        reason: str = ""
+            self,
+            user_id: str,
+            leave_type: str,
+            from_date: date,
+            to_date: date,
+            reason: str = ""
     ) -> Dict:
-        """
-        ثبت درخواست مرخصی جدید
-        """
+        """ثبت درخواست مرخصی جدید"""
+        import jdatetime
+
         # بررسی وجود کاربر
         user = self.db.query(User).filter(User.user_id == user_id).first()
         if not user:
@@ -93,10 +93,16 @@ class LeaveRequestManager:
         if days_count == 0:
             return {'success': False, 'message': '⚠️  تمام روزهای انتخاب شده تعطیل هستند'}
 
+        # ✅ تبدیل تاریخ میلادی به شمسی برای دریافت سال صحیح
+        try:
+            j_from = jdatetime.date.fromgregorian(date=from_date)
+            jalali_year = j_from.year  # ✅ سال شمسی
+        except Exception as e:
+            return {'success': False, 'message': f'❌ خطا در تبدیل تاریخ: {e}'}
+
         # بررسی مانده مرخصی (فقط برای استحقاقی)
         if leave_type == 'AL':
-            year = from_date.year
-            balance = self.leave_manager.get_balance(user_id, year, 'AL')
+            balance = self.leave_manager.get_balance(user_id, jalali_year, 'AL')
 
             if balance < days_count:
                 return {
@@ -108,13 +114,9 @@ class LeaveRequestManager:
         overlapping = self.db.query(LeaveRequest).filter(
             and_(
                 LeaveRequest.user_id == user_id,
-                LeaveRequest.status != 'R',  # رد شده‌ها را نادیده بگیر
-                or_(
-                    and_(
-                        LeaveRequest.from_date <= to_date,
-                        LeaveRequest.to_date >= from_date
-                    )
-                )
+                LeaveRequest.status != 'R',
+                LeaveRequest.from_date <= to_date,
+                LeaveRequest.to_date >= from_date
             )
         ).first()
 
@@ -137,9 +139,6 @@ class LeaveRequestManager:
             self.db.add(request)
             self.db.commit()
 
-            j_from = jdatetime.date.fromgregorian(date=from_date)
-            j_to = jdatetime.date.fromgregorian(date=to_date)
-
             return {
                 'success': True,
                 'message': f'✅ درخواست مرخصی ثبت شد (ID: {request.id})',
@@ -152,11 +151,9 @@ class LeaveRequestManager:
             return {'success': False, 'message': f'❌ خطا: {e}'}
 
     def approve_request(self, request_id: int, approved_by: str = "admin") -> Dict:
-        """
-        تایید درخواست مرخصی
-        - به‌روزرسانی وضعیت روزانه
-        - کسر از مانده مرخصی
-        """
+        """تایید درخواست مرخصی"""
+        import jdatetime
+
         request = self.db.query(LeaveRequest).filter(LeaveRequest.id == request_id).first()
 
         if not request:
@@ -168,9 +165,15 @@ class LeaveRequestManager:
         if request.status == self.STATUS_REJECTED:
             return {'success': False, 'message': '⚠️  این درخواست قبلاً رد شده است'}
 
+        # ✅ تبدیل تاریخ میلادی به شمسی برای دریافت سال صحیح
+        try:
+            j_from = jdatetime.date.fromgregorian(date=request.from_date)
+            jalali_year = j_from.year  # ✅ سال شمسی
+        except Exception as e:
+            return {'success': False, 'message': f'❌ خطا در تبدیل تاریخ: {e}'}
+
         # بررسی مانده مرخصی
-        year = request.from_date.year
-        balance = self.leave_manager.get_balance(request.user_id, year, request.leave_type)
+        balance = self.leave_manager.get_balance(request.user_id, jalali_year, request.leave_type)
 
         if balance < request.days_count:
             return {
@@ -187,9 +190,7 @@ class LeaveRequestManager:
             # به‌روزرسانی وضعیت روزانه
             current = request.from_date
             while current <= request.to_date:
-                # فقط روزهای کاری
                 if current.weekday() != 4 and not self.holiday_manager.is_holiday(current):
-                    # بررسی وجود وضعیت قبلی
                     existing = self.db.query(DailyStatus).filter(
                         and_(
                             DailyStatus.user_id == request.user_id,
@@ -214,7 +215,7 @@ class LeaveRequestManager:
             # کسر از مانده مرخصی
             result = self.leave_manager.debit_leave(
                 user_id=request.user_id,
-                year=year,
+                year=jalali_year,  # ✅ سال شمسی
                 leave_type=request.leave_type,
                 amount=request.days_count,
                 description=f'تایید درخواست مرخصی شماره {request.id}',

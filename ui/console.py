@@ -2809,6 +2809,7 @@ class ConsoleUI:
 
         finally:
             manager.close()
+
     def _show_user_monthly_report(self):
         """گزارش ماهانه یک کاربر"""
         from core.daily_status_manager import DailyStatusManager

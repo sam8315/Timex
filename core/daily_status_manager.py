@@ -280,9 +280,9 @@ class DailyStatusManager:
                 elif enters and not exits:
                     attendance_status = '⚠️ بدون خروج'
                     # محاسبه ساعت تا الان
-                    first_in = min(e.timestamp for e in enters)
-                    delta = (datetime.now(first_in.tzinfo) - first_in).total_seconds() / 3600
-                    work_hours = round(delta, 2)
+                    # first_in = min(e.timestamp for e in enters)
+                    # delta = (datetime.now(first_in.tzinfo) - first_in).total_seconds() / 3600
+                    # work_hours = round(delta, 2)
                 elif exits and not enters:
                     attendance_status = '❌ بدون ورود'
                 else:
