@@ -1612,10 +1612,11 @@ class ConsoleUI:
         finally:
             manager.close()
             emp_manager.close()
+
     def _initialize_yearly_leave(self):
         """شارژ مرخصی استحقاقی سالانه"""
         from core.contract_manager import ContractManager
-        import jdatetime
+        from core.employee_manager import EmployeeManager
 
         print("\n" + "=" * 70)
         print("  💰 شارژ مرخصی استحقاقی سالانه")
@@ -1631,37 +1632,53 @@ class ConsoleUI:
         year = int(year_str) if year_str else today_j.year
 
         manager = ContractManager()
+        emp_manager = EmployeeManager()
         try:
-            # ✅ تبدیل صحیح سال شمسی به تاریخ میلادی
-            j_year_start = jdatetime.date(year, 1, 1)
-            g_year_start = j_year_start.togregorian()
-
             if choice == '1':
                 user_id = input("  📛 کد پرسنلی کاربر: ").strip()
                 if not user_id:
                     print("  ❌ کد پرسنلی نمی‌تواند خالی باشد")
                     return
 
-                # ✅ استفاده از تاریخ میلادی صحیح
-                contract = manager.get_active_contract(user_id, g_year_start)
-                if not contract:
-                    print(f"\n  ❌ قراردادی برای سال شمسی {year} یافت نشد")
-                    print("  💡 ابتدا برای این کاربر قرارداد ایجاد کنید (گزینه 6 → 1)")
+                # ✅ محاسبه مرخصی با در نظر گرفتن تمام قراردادها
+                calc = manager.calculate_yearly_leave(user_id, year)
+
+                if not calc['success']:
+                    print(f"\n  {calc['message']}")
                     return
 
-                # دریافت نام کامل کاربر
-                from core.employee_manager import EmployeeManager
-                emp_manager = EmployeeManager()
-                try:
-                    full_name = emp_manager.get_full_name(user_id)
-                finally:
-                    emp_manager.close()
+                full_name = emp_manager.get_full_name(user_id)
 
-                print(f"\n  📋 پیش‌نمایش:")
-                print(f"     • کاربر             : {full_name} ({user_id})")
-                print(f"     • قرارداد           : {contract.contract_type}")
-                print(f"     • سال شمسی          : {year}")
-                print(f"     • مرخصی استحقاقی    : {contract.annual_leave_days} روز")
+                # نمایش پیش‌نمایش دقیق
+                print("\n" + "-" * 70)
+                print(f"  👤 کاربر: {full_name} (کد: {user_id})")
+                print(f"  📅 سال شمسی: {year}")
+                print(f"  📊 تعداد قراردادهای فعال در سال: {calc['contracts_count']}")
+
+                if calc['contracts_count'] > 1:
+                    print("\n  📋 جزئیات محاسبه:")
+                    print("  " + "-" * 66)
+                    print(f"  {'نوع قرارداد':<15} {'روزهای فعال':<12} {'نسبت':<10} {'استحقاقی':<10}")
+                    print("  " + "-" * 66)
+
+                    for c in calc['contracts']:
+                        j_start = jdatetime.date.fromgregorian(date=c['start_date'])
+                        j_end = jdatetime.date.fromgregorian(date=c['end_date'])
+                        print(f"  {c['contract_type']:<15} {c['days_in_year']:<12} "
+                              f"{c['ratio']:.1%}      {c['annual']:<10}")
+
+                    print("  " + "-" * 66)
+                    print(f"  {'مجموع':<15} {calc['total_year_days']:<12} {'100%':<10} {calc['total_annual']:<10}")
+                    print("  " + "-" * 66)
+                else:
+                    c = calc['contracts'][0]
+                    print(f"\n  📋 قرارداد: {c['contract_type']}")
+                    print(f"     • استحقاقی سالانه : {calc['total_annual']} روز")
+                    print(f"     • استعلاجی        : {calc['total_sick']} روز")
+                    print(f"     • تشویقی          : {calc['total_reward']} روز")
+                    print(f"     • بدون حقوق       : {calc['total_unpaid']} روز")
+
+                print("-" * 70)
 
                 confirm = input("\n  آیا تایید می‌کنید؟ (بله/خیر): ").strip()
                 if confirm.lower() not in ['بله', 'yes', 'y']:
@@ -1672,7 +1689,7 @@ class ConsoleUI:
                 print(f"\n  {result['message']}")
 
             elif choice == '2':
-                confirm = input(f"\n  ⚠️  آیا مطمئن هستید که می‌خواهید مرخصی همه کاربران را برای سال شمسی {year} شارژ کنید؟ (بله/خیر): ").strip()
+                confirm = input(f"\n  ⚠️  شارژ مرخصی همه کاربران برای سال شمسی {year}؟ (بله/خیر): ").strip()
                 if confirm.lower() not in ['بله', 'yes', 'y']:
                     print("  ❌ عملیات لغو شد")
                     return
@@ -1689,6 +1706,8 @@ class ConsoleUI:
 
         finally:
             manager.close()
+            emp_manager.close()
+
     def _show_contracts_summary(self):
         """نمایش آمار قراردادها"""
         from core.contract_manager import ContractManager

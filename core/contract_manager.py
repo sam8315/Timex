@@ -119,29 +119,20 @@ class ContractManager:
 
     def initialize_yearly_balances(self, user_id: str, year: int) -> Dict:
         """
-        شارژ اولیه مرخصی استحقاقی بر اساس قرارداد برای یک سال
+        شارژ اولیه مرخصی بر اساس تمام قراردادهای سال (proportionate)
         year: سال شمسی
         """
-        import jdatetime
+        # محاسبه مرخصی سالانه
+        calc = self.calculate_yearly_leave(user_id, year)
 
-        # ✅ تبدیل سال شمسی به تاریخ میلادی ابتدای سال
-        try:
-            j_year_start = jdatetime.date(year, 1, 1)
-            g_year_start = j_year_start.togregorian()
-        except Exception as e:
-            return {'success': False, 'message': f'❌ خطا در تبدیل تاریخ: {e}'}
-
-        # دریافت قرارداد فعال در ابتدای سال شمسی
-        contract = self.get_active_contract(user_id, g_year_start)
-
-        if not contract:
-            return {'success': False, 'message': f'❌ قراردادی برای سال شمسی {year} یافت نشد'}
+        if not calc['success']:
+            return calc
 
         # بررسی اینکه آیا قبلاً شارژ شده یا نه
         existing = self.db.query(LeaveBalance).filter(
             and_(
                 LeaveBalance.user_id == user_id,
-                LeaveBalance.year == year,  # ✅ سال شمسی در leave_balances
+                LeaveBalance.year == year,
                 LeaveBalance.leave_type == 'AL'
             )
         ).first()
@@ -156,20 +147,25 @@ class ContractManager:
             # ایجاد مانده مرخصی استحقاقی
             balance = LeaveBalance(
                 user_id=user_id,
-                year=year,  # ✅ سال شمسی
+                year=year,
                 leave_type='AL',
-                balance=contract.annual_leave_days
+                balance=calc['total_annual']
             )
             self.db.add(balance)
 
             # ثبت تراکنش
+            description = f'شارژ اولیه استحقاقی بر اساس {calc["contracts_count"]} قرارداد'
+            if calc['contracts_count'] > 1:
+                types = ', '.join([c['contract_type'] for c in calc['contracts']])
+                description += f' ({types})'
+
             transaction = LeaveTransaction(
                 user_id=user_id,
-                year=year,  # ✅ سال شمسی
+                year=year,
                 leave_type='AL',
-                amount=contract.annual_leave_days,
+                amount=calc['total_annual'],
                 transaction_type='INITIAL',
-                description=f'شارژ اولیه استحقاقی بر اساس قرارداد ({contract.contract_type})'
+                description=description
             )
             self.db.add(transaction)
 
@@ -177,7 +173,8 @@ class ContractManager:
 
             return {
                 'success': True,
-                'message': f'✅ مرخصی استحقاقی سال شمسی {year} شارژ شد: {contract.annual_leave_days} روز'
+                'message': f'✅ مرخصی استحقاقی سال شمسی {year} شارژ شد: {calc["total_annual"]} روز (از {calc["contracts_count"]} قرارداد)',
+                'calculation': calc
             }
 
         except Exception as e:
@@ -325,3 +322,122 @@ class ContractManager:
             emp_manager.close()
 
         return result
+
+    def get_contracts_in_year(self, user_id: str, year: int) -> List[Dict]:
+        """
+        دریافت تمام قراردادهای یک کاربر که در طول سال فعال بوده‌اند
+        year: سال شمسی
+
+        Returns:
+            List[Dict]: لیست اطلاعات قراردادها با بازه فعال در سال
+        """
+        import jdatetime
+
+        # تبدیل سال شمسی به بازه میلادی
+        j_year_start = jdatetime.date(year, 1, 1)
+        j_year_end = jdatetime.date(year, 12, 29)
+        g_year_start = j_year_start.togregorian()
+        g_year_end = j_year_end.togregorian()
+
+        # دریافت تمام قراردادهایی که با سال همپوشانی دارند
+        contracts = self.db.query(Contract).filter(
+            and_(
+                Contract.user_id == user_id,
+                Contract.start_date <= g_year_end,
+                or_(
+                    Contract.end_date == None,
+                    Contract.end_date >= g_year_start
+                )
+            )
+        ).order_by(Contract.start_date).all()
+
+        result = []
+        for c in contracts:
+            # محاسبه بازه فعال در سال
+            effective_start = max(c.start_date, g_year_start)
+            effective_end = c.end_date if c.end_date else g_year_end
+            effective_end = min(effective_end, g_year_end)
+
+            # محاسبه تعداد روزهای فعال
+            total_days = (effective_end - effective_start).days + 1
+
+            result.append({
+                'contract': c,
+                'effective_start': effective_start,
+                'effective_end': effective_end,
+                'days_in_year': total_days
+            })
+
+        return result
+
+    def calculate_yearly_leave(self, user_id: str, year: int) -> Dict:
+        """
+        محاسبه مرخصی سالانه بر اساس تمام قراردادهای سال (به صورت proportionate)
+        year: سال شمسی
+
+        Returns:
+            Dict: شامل مقادیر محاسبه شده و جزئیات
+        """
+        import jdatetime
+
+        contracts_info = self.get_contracts_in_year(user_id, year)
+
+        if not contracts_info:
+            return {
+                'success': False,
+                'message': f'❌ قراردادی برای سال شمسی {year} یافت نشد',
+                'contracts': []
+            }
+
+        # محاسبه مجموع روزهای سال شمسی
+        j_year_start = jdatetime.date(year, 1, 1)
+        j_year_end = jdatetime.date(year, 12, 29)
+        g_year_start = j_year_start.togregorian()
+        g_year_end = j_year_end.togregorian()
+        total_year_days = (g_year_end - g_year_start).days + 1
+
+        # محاسبه proportionate برای هر قرارداد
+        total_annual = 0
+        total_sick = 0
+        total_reward = 0
+        total_unpaid = 0
+
+        details = []
+        for info in contracts_info:
+            c = info['contract']
+            ratio = info['days_in_year'] / total_year_days
+
+            annual = round(c.annual_leave_days * ratio)
+            sick = round(c.sick_leave_days * ratio)
+            reward = round(c.reward_leave_days * ratio)
+            unpaid = round(c.unpaid_leave_days * ratio)
+
+            total_annual += annual
+            total_sick += sick
+            total_reward += reward
+            total_unpaid += unpaid
+
+            details.append({
+                'contract_id': c.id,
+                'contract_type': c.contract_type,
+                'start_date': info['effective_start'],
+                'end_date': info['effective_end'],
+                'days_in_year': info['days_in_year'],
+                'ratio': ratio,
+                'annual': annual,
+                'sick': sick,
+                'reward': reward,
+                'unpaid': unpaid
+            })
+
+        return {
+            'success': True,
+            'year': year,
+            'total_year_days': total_year_days,
+            'total_annual': total_annual,
+            'total_sick': total_sick,
+            'total_reward': total_reward,
+            'total_unpaid': total_unpaid,
+            'contracts': details,
+            'contracts_count': len(details)
+        }
