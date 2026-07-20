@@ -3,6 +3,7 @@ from datetime import datetime, timedelta,date
 import jdatetime
 from core.device_manager import DeviceManager
 from core.attendance_analyzer import AttendanceAnalyzer
+from core.employee_manager import EmployeeManager
 from models.user import User
 from models.contract import Contract
 from models.leave_request import LeaveRequest
@@ -1423,6 +1424,19 @@ class ConsoleUI:
             print("  ❌ کد پرسنلی نمی‌تواند خالی باشد")
             return
 
+        # ✅ دریافت نام کاربر قبل از ادامه
+        emp_manager = EmployeeManager()
+        try:
+            full_name = emp_manager.get_full_name(user_id)
+
+            # بررسی وجود کاربر در جدول users
+            user = emp_manager.db.query(User).filter(User.user_id == user_id).first()
+            if not user:
+                print(f"\n  ❌ کاربر با کد {user_id} یافت نشد")
+                return
+        finally:
+            emp_manager.close()
+
         # انواع قرارداد
         print("\n  📋 انواع قرارداد:")
         print("    1. رسمی")
@@ -1445,33 +1459,41 @@ class ConsoleUI:
 
         # تاریخ شروع
         today_j = jdatetime.date.today()
-        start_str = input(f"  📅 تاریخ شروع (شمسی) [پیش‌فرض: {today_j.strftime('%Y/%m/%d')}]: ").strip()
+        first_day_j = jdatetime.date(jdatetime.date.today().year, 1, 1)
+        start_str = input(f"  📅 تاریخ شروع (شمسی) [پیش‌فرض: {first_day_j.strftime('%Y/%m/%d')}]: ").strip()
         try:
             if start_str:
                 start_date = jdatetime.datetime.strptime(start_str, "%Y/%m/%d").date().togregorian()
             else:
-                start_date = today_j.togregorian()
+                start_date = first_day_j.togregorian()
         except Exception as e:
             print(f"  ❌ خطا در تبدیل تاریخ: {e}")
             return
 
-        # تاریخ پایان
-        end_str = input("  📅 تاریخ پایان (شمسی) [خالی = نامحدود]: ").strip()
-        end_date = None
-        if end_str:
-            try:
+        # تاریخ پایان (آخرین روز سال جاری)
+        year = today_j.year
+        next_year_start = jdatetime.date(year + 1, 1, 1)
+        last_day_j = next_year_start - timedelta(days=1)  # آخرین روز سال جاری (۲۹ یا ۳۰ اسفند)
+
+        # نمایش پیش‌فرض به کاربر
+        default_end_str = last_day_j.strftime('%Y/%m/%d')
+        end_str = input(f"  📅 تاریخ پایان (شمسی) [پیش‌فرض: {default_end_str}]: ").strip()
+        try:
+            if end_str:
                 end_date = jdatetime.datetime.strptime(end_str, "%Y/%m/%d").date().togregorian()
-            except Exception as e:
-                print(f"  ❌ خطا در تبدیل تاریخ: {e}")
-                return
+            else:
+                end_date = last_day_j.togregorian()  # استفاده از پیش‌فرض (آخر سال)
+        except Exception as e:
+            print(f"  ❌ خطا در تبدیل تاریخ: {e}")
+            return
 
         # مقادیر پیش‌فرض بر اساس نوع قرارداد
         defaults = {
-            'رسمی': (30, 30, 5, 0),
-            'وظیفه': (15, 15, 2, 0),
-            'خریدخدمت': (20, 20, 3, 0),
-            'قراردادی': (25, 25, 4, 0),
-            'پزشک': (35, 35, 5, 0),
+            'رسمی': (35, 0, 0, 0),
+            'وظیفه': (36, 0, 0, 0),
+            'خریدخدمت': (30, 0, 0, 0),
+            'قراردادی': (30, 0, 0, 0),
+            'پزشک': (0, 0, 0, 0),
         }
 
         default_values = defaults.get(contract_type, (0, 0, 0, 0))
@@ -1502,7 +1524,8 @@ class ConsoleUI:
 
         print("\n" + "-" * 70)
         print("  📋 پیش‌نمایش قرارداد:")
-        print(f"     • کاربر           : {user_id}")
+        print(f"     • کد پرسنلی       : {user_id}")
+        print(f"     • 👤 نام کاربر    : {full_name}")  # ✅ نمایش نام کاربر
         print(f"     • نوع قرارداد     : {contract_type}")
         print(f"     • تاریخ شروع      : {j_start.strftime('%Y/%m/%d')}")
         print(f"     • تاریخ پایان     : {j_end if isinstance(j_end, str) else j_end.strftime('%Y/%m/%d')}")
