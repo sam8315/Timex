@@ -3795,9 +3795,9 @@ class ConsoleUI:
         """نمایش گزارش تحلیلی ماهانه"""
         from core.analytical_report import AnalyticalReportGenerator
 
-        print("\n" + "=" * 150)
+        print("\n" + "=" * 180)
         print("  📊 گزارش تحلیلی ماهانه")
-        print("=" * 150)
+        print("=" * 180)
 
         today_j = jdatetime.date.today()
         year_str = input(f"\n  📅 سال شمسی [پیش‌فرض: {today_j.year}]: ").strip()
@@ -3819,34 +3819,49 @@ class ConsoleUI:
 
             # نمایش به تفکیک گروه
             for group_name, users in report['groups'].items():
-                print(f"\n{'=' * 150}")
+                print(f"\n{'=' * 180}")
                 print(f"  👥 گروه: {group_name} ({len(users)} کاربر)")
-                print(f"{'=' * 150}")
+                print(f"{'=' * 180}")
 
-                # جدول
+                # ✅ جدول با فاصله بیشتر و ستون‌های درصد
                 print(
-                    "\n  ┌────┬────────┬──────────────────────┬──────┬──────┬──────┬──────┬──────────┬────────┬────────┬────────┬──────────┬──────────┐")
+                    "\n  ┌────┬────────┬────────────────────────┬──────┬──────┬──────┬──────┬──────────┬──────────┬──────────┬──────────┬──────────┬──────────┐")
                 print(
-                    "  │ #  │ کد     │ نام کامل             │ حاضر │ غایب │ مرخصی│ روز  │ ساعت     │ صبح    │ عصر    │ شب     │ کل       │ کسری/+   │")
+                    "  │ #  │ کد     │ نام کامل               │ حاضر │ غایب │ مرخصی│ روز  │ ساعت     │ صبح      │ عصر      │ شب       │ کل       │ کسری/+   │")
                 print(
-                    "  ├────┼────────┼──────────────────────┼──────┼──────┼──────┼──────┼──────────┼────────┼────────┼────────┼──────────┼──────────┤")
+                    "  │    │        │                        │      │      │      │ موظفی│ موظفی    │ (درصد)   │ (درصد)   │ (درصد)   │          │          │")
+                print(
+                    "  ├────┼────────┼────────────────────────┼──────┼──────┼──────┼──────┼──────────┼──────────┼──────────┼──────────┼──────────┼──────────┤")
 
                 for i, u in enumerate(users, 1):
                     # فرمت ساعات
                     def fmt_hours(h):
-                        """فرمت‌بندی ساعات (پشتیبانی از اعداد منفی)"""
                         if h == 0:
                             return "  --    "
-                        # ✅ استفاده از abs برای محاسبه دقیقه
                         sign = "-" if h < 0 else ""
                         abs_h = abs(h)
                         hours = int(abs_h)
                         minutes = int(round((abs_h - hours) * 60))
-                        # ✅ اصلاح سرریز دقیقه
                         if minutes >= 60:
                             hours += 1
                             minutes = 0
                         return f"{sign}{hours:02d}:{minutes:02d}"
+
+                    # ✅ محاسبه درصد
+                    total = u['total_hours']
+                    if total > 0:
+                        morning_pct = (u['morning_hours'] / total) * 100
+                        evening_pct = (u['evening_hours'] / total) * 100
+                        night_pct = (u['night_hours'] / total) * 100
+                    else:
+                        morning_pct = 0
+                        evening_pct = 0
+                        night_pct = 0
+
+                    # فرمت ساعت با درصد
+                    morning_str = f"{fmt_hours(u['morning_hours'])} ({morning_pct:4.1f}%)"
+                    evening_str = f"{fmt_hours(u['evening_hours'])} ({evening_pct:4.1f}%)"
+                    night_str = f"{fmt_hours(u['night_hours'])} ({night_pct:4.1f}%)"
 
                     # فرمت کسری/اضافی
                     diff = u['difference']
@@ -3856,23 +3871,17 @@ class ConsoleUI:
                         diff_str = f"{fmt_hours(diff)} ❌"
                     else:
                         diff_str = f" 00:00 ✅"
-                    # فرمت کسری/اضافی
-                    diff = u['difference']
-                    if diff > 0:
-                        diff_str = f"+{fmt_hours(diff)} ✅"
-                    elif diff < 0:
-                        diff_str = f"{fmt_hours(diff)} ❌"
-                    else:
-                        diff_str = f"{fmt_hours(diff)} ✅"
 
-                    print(f"  │ {i:<2} │ {u['user_id']:<6} │ {u['full_name'][:20]:<20} │ "
+                    # ✅ نام کامل با فاصله بیشتر (22 کاراکتر)
+                    full_name = u['full_name'][:22]
+
+                    print(f"  │ {i:<2} │ {u['user_id']:<6} │ {full_name:<22} │ "
                           f"{u['present_days']:<4} │ {u['absent_days']:<4} │ {u['leave_days']:<4} │ "
                           f"{u['required_days']:<4} │ {fmt_hours(u['required_hours'])} │ "
-                          f"{fmt_hours(u['morning_hours'])} │ {fmt_hours(u['evening_hours'])} │ "
-                          f"{fmt_hours(u['night_hours'])} │ {fmt_hours(u['total_hours'])} │ {diff_str:<8} │")
+                          f"{morning_str:<8} │ {evening_str:<8} │ {night_str:<8} │ {fmt_hours(u['total_hours'])} │ {diff_str:<8} │")
 
                 print(
-                    "  └────┴────────┴──────────────────────┴──────┴──────┴──────┴──────┴──────────┴────────┴────────┴────────┴──────────┴──────────┘")
+                    "  └────┴────────┴────────────────────────┴──────┴──────┴──────┴──────┴──────────┴──────────┴──────────┴──────────┴──────────┴──────────┘")
 
                 # خلاصه گروه
                 avg_work = sum(u['total_hours'] for u in users) / len(users) if users else 0
