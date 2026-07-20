@@ -2695,9 +2695,9 @@ class ConsoleUI:
         """گزارش وضعیت یک روز"""
         from core.daily_status_manager import DailyStatusManager
 
-        print("\n" + "=" * 100)
+        print("\n" + "=" * 130)
         print("  📅 گزارش وضعیت روزانه")
-        print("=" * 100)
+        print("=" * 130)
 
         date_str = input("\n  📅 تاریخ (شمسی) [پیش‌فرض: امروز]: ").strip()
         try:
@@ -2734,18 +2734,39 @@ class ConsoleUI:
                 code = r['status']
                 status_counts[code] = status_counts.get(code, 0) + 1
 
-            print("\n  📊 خلاصه:")
+            print("\n  📊 خلاصه وضعیت:")
             for code, count in sorted(status_counts.items()):
                 print(f"     • {manager.get_status_name(code):<15} : {count}")
 
-            # ✅ جدول با ستون‌های جدید
-            print("\n  ┌──────┬────────┬──────────────────────┬────────────┬──────────────────────┐")
-            print("  │ ردیف │ کد     │ نام و نام خانوادگی   │ گروه       │ وضعیت                │")
-            print("  ├──────┼────────┼──────────────────────┼────────────┼──────────────────────┤")
+            # آمار قرارداد
+            with_contract = sum(1 for r in report if r['contract']['has_contract'])
+            without_contract = len(report) - with_contract
+            print(f"\n  📑 قرارداد:")
+            print(f"     • دارای قرارداد فعال : {with_contract} ✅")
+            print(f"     • بدون قرارداد       : {without_contract} ❌")
+
+            # آمار تردد
+            worked = sum(1 for r in report if r['work_hours'] > 0)
+            total_work = sum(r['work_hours'] for r in report)
+            total_night = sum(r['night_hours'] for r in report)
+            print(f"\n  ⏱️  کارکرد:")
+            print(f"     • کاربران حاضر     : {worked}")
+            print(
+                f"     • مجموع ساعات کاری : {int(total_work)} ساعت و {int((total_work - int(total_work)) * 60)} دقیقه")
+            print(
+                f"     • مجموع شب‌کاری     : {int(total_night)} ساعت و {int((total_night - int(total_night)) * 60)} دقیقه 🌙")
+
+            # جدول اصلی
+            print(
+                "\n  ┌──────┬────────┬──────────────────────┬────────────┬────────────┬────────────┬────────┬────────┬──────────────┐")
+            print(
+                "  │ ردیف │ کد     │ نام و نام خانوادگی   │ گروه       │ قرارداد    │ وضعیت      │ ورود   │ خروج   │ ساعت کاری    │")
+            print(
+                "  ├──────┼────────┼──────────────────────┼────────────┼────────────┼────────────┼────────┼────────┼──────────────┤")
 
             for i, r in enumerate(report, 1):
-                # ✅ استفاده از full_name به جای name
                 full_name = r['full_name'][:20]
+
                 group_map = {
                     '0': 'بدون گروه',
                     '1': 'رسمی',
@@ -2755,14 +2776,39 @@ class ConsoleUI:
                     '5': 'پزشک'
                 }
                 group_name = group_map.get(r['group_id'], r['group_id'] or '-')
+                group_name = group_name[:10]
 
-                print(f"  │ {i:<4} │ {r['user_id']:<6} │ {full_name:<20} │ {group_name:<10} │ {r['status_name']:<20} │")
+                contract_display = r['contract']['type'][:10] if r['contract']['has_contract'] else '❌ ندارد'
 
-            print("  └──────┴────────┴──────────────────────┴────────────┴──────────────────────┘")
+                # وضعیت کلی (ترکیب وضعیت روز + وضعیت تردد)
+                status_display = r['status_name'][:10]
+                if r['attendance_status'] != '—':
+                    status_display = f"{status_display[:6]}|{r['attendance_status'][:3]}"
+
+                # زمان ورود و خروج
+                first_enter = r['first_enter'].strftime('%H:%M') if r['first_enter'] else '  --  '
+                last_exit = r['last_exit'].strftime('%H:%M') if r['last_exit'] else '  --  '
+
+                # ساعت کاری
+                if r['work_hours'] > 0:
+                    work_h = int(r['work_hours'])
+                    work_m = int((r['work_hours'] - work_h) * 60)
+                    work_str = f"{work_h:02d}:{work_m:02d}"
+                    if r['night_hours'] > 0:
+                        night_h = int(r['night_hours'])
+                        night_m = int((r['night_hours'] - night_h) * 60)
+                        work_str += f" 🌙{night_h:02d}:{night_m:02d}"
+                else:
+                    work_str = '  --    '
+
+                print(
+                    f"  │ {i:<4} │ {r['user_id']:<6} │ {full_name:<20} │ {group_name:<10} │ {contract_display:<10} │ {status_display:<10} │ {first_enter:<6} │ {last_exit:<6} │ {work_str:<12} │")
+
+            print(
+                "  └──────┴────────┴──────────────────────┴────────────┴────────────┴────────────┴────────┴────────┴──────────────┘")
 
         finally:
             manager.close()
-
     def _show_user_monthly_report(self):
         """گزارش ماهانه یک کاربر"""
         from core.daily_status_manager import DailyStatusManager
