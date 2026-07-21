@@ -331,8 +331,15 @@ class HolidayManager:
 
         return query.order_by(Holiday.holiday_date).all()
 
-    def count_working_days(self, from_date: date, to_date: date) -> Dict:
-        """شمارش روزهای کاری و تعطیل در یک بازه"""
+    def count_working_days(self, from_date: date, to_date: date, user_group_id: Optional[str] = None) -> Dict:
+        """
+        شمارش روزهای کاری و تعطیل در یک بازه
+
+        Args:
+            from_date: تاریخ شروع
+            to_date: تاریخ پایان
+            user_group_id: گروه کاربر (اختیاری)
+        """
         total_days = 0
         working_days = 0
         holidays_count = 0
@@ -343,7 +350,7 @@ class HolidayManager:
             total_days += 1
             if self.is_friday(current):
                 fridays_count += 1
-            elif self.is_holiday(current):
+            elif self.is_holiday(current, user_group_id):  # ✅ اضافه کردن group_id
                 holidays_count += 1
             else:
                 working_days += 1

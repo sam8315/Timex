@@ -71,17 +71,14 @@ class DailyStatusManager:
     def detect_status(self, user_id: str, target_date: date) -> Dict:
         """
         تشخیص خودکار وضعیت یک کاربر در یک روز
-
-        اولویت:
-        1. تعطیلی (جمعه یا تعطیل ثبت شده)
-        2. درخواست مرخصی تایید شده
-        3. وضعیت دستی ثبت شده
-        4. حضور (اگر تردد دارد)
-        5. غیبت (اگر تردد ندارد)
         """
-        # 1. بررسی تعطیلی
-        if self.holiday_manager.is_holiday(target_date):
-            info = self.holiday_manager.get_holiday_info(target_date)
+        # ✅ دریافت گروه کاربر
+        user = self.db.query(User).filter(User.user_id == user_id).first()
+        user_group_id = user.group_id if user else None
+
+        # 1. بررسی تعطیلی (با در نظر گرفتن گروه کاربر)
+        if self.holiday_manager.is_holiday(target_date, user_group_id):
+            info = self.holiday_manager.get_holiday_info(target_date, user_group_id)
             return {
                 'status': self.STATUS_HOLIDAY,
                 'source': 'auto',
@@ -312,15 +309,19 @@ class DailyStatusManager:
 
         return sorted(report, key=lambda x: x['full_name'])
 
-
     def get_monthly_report(self, user_id: str, year: int, month: int) -> Dict:
-        """
-        گزارش ماهانه یک کاربر
-        """
+        """گزارش ماهانه یک کاربر"""
+        # ✅ دریافت گروه کاربر
+        user = self.db.query(User).filter(User.user_id == user_id).first()
+        user_group_id = user.group_id if user else None
+
         # محاسبه بازه ماه
         j_month_start = jdatetime.date(year, month, 1)
         if month == 12:
-            j_month_end = jdatetime.date(year, 12, 29 if jdatetime.JalaliCalendar.isleap(year) else 30)
+            try:
+                j_month_end = jdatetime.date(year, 12, 30)
+            except ValueError:
+                j_month_end = jdatetime.date(year, 12, 29)
         else:
             j_month_end = jdatetime.date(year, month + 1, 1) - timedelta(days=1)
 
@@ -349,7 +350,6 @@ class DailyStatusManager:
             )
         ).order_by(Attendance.timestamp).all()
 
-        # گروه‌بندی بر اساس روز
         from core.attendance_analyzer import calculate_night_hours
         days_dict = {}
         for att in attendances:

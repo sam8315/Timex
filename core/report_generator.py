@@ -69,9 +69,7 @@ class ReportGenerator:
         to_date: date,
         group_id: Optional[int] = None
     ) -> List[Dict]:
-        """
-        گزارش غیبت‌ها در یک بازه زمانی
-        """
+        """گزارش غیبت‌ها در یک بازه زمانی"""
         users = self.db.query(User)
         if group_id is not None:
             users = users.filter(User.group_id == str(group_id))
@@ -82,6 +80,7 @@ class ReportGenerator:
             absent_dates = []
             current = from_date
             while current <= to_date:
+                # ✅ detect_status به صورت خودکار گروه کاربر را در نظر می‌گیرد
                 status_info = self.status_manager.detect_status(user.user_id, current)
                 if status_info['status'] == 'A':
                     absent_dates.append(current)

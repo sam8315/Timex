@@ -3,7 +3,7 @@
 """
 from datetime import date, timedelta
 from typing import List, Dict, Optional
-from sqlalchemy import and_, func
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 import jdatetime
 
@@ -40,8 +40,15 @@ class AnalyticalReportGenerator:
         if self.db:
             self.db.close()
 
-    def get_month_days_info(self, year: int, month: int) -> Dict:
-        """دریافت اطلاعات روزهای ماه"""
+    def get_month_days_info(self, year: int, month: int, user_group_id: Optional[str] = None) -> Dict:
+        """
+        دریافت اطلاعات روزهای ماه
+
+        Args:
+            year: سال شمسی
+            month: ماه شمسی
+            user_group_id: گروه کاربر (اختیاری)
+        """
         j_month_start = jdatetime.date(year, month, 1)
         if month == 12:
             try:
@@ -58,15 +65,19 @@ class AnalyticalReportGenerator:
         fridays = 0
         current = g_start
         while current <= g_end:
-            if current.weekday() == 4:  # جمعه
+            if current.weekday() == 4:
                 fridays += 1
             current += timedelta(days=1)
 
-        # دریافت تعطیلات ثبت شده
+        # ✅ دریافت تعطیلات ثبت شده (ملی + گروهی)
         holidays = self.db.query(Holiday).filter(
             and_(
                 Holiday.holiday_date >= g_start,
-                Holiday.holiday_date <= g_end
+                Holiday.holiday_date <= g_end,
+                or_(
+                    Holiday.group_id == None,  # تعطیلات ملی
+                    Holiday.group_id == user_group_id  # تعطیلات گروهی کاربر
+                )
             )
         ).count()
 
@@ -107,6 +118,7 @@ class AnalyticalReportGenerator:
         for user in users:
             employee = self.db.query(Employee).filter(Employee.user_id == user.user_id).first()
             full_name = employee.full_name if employee else user.name
+            month_info = self.get_month_days_info(year, month, user.group_id)
 
             # دریافت تمام رکوردهای تردد ماه
             attendances = self.db.query(Attendance).filter(
