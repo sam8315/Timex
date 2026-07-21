@@ -3185,10 +3185,11 @@ class ConsoleUI:
     def _show_absent_report(self):
         """گزارش غیبت‌ها"""
         from core.report_generator import ReportGenerator
+        from core.employee_manager import EmployeeManager
 
-        print("\n" + "=" * 70)
+        print("\n" + "=" * 100)
         print("  ❌ گزارش غیبت‌ها")
-        print("=" * 70)
+        print("=" * 100)
 
         today_j = jdatetime.date.today()
         from_str = input(f"\n  📅 از تاریخ (شمسی) [پیش‌فرض: {today_j.strftime('%Y/%m/01')}]: ").strip()
@@ -3211,7 +3212,9 @@ class ConsoleUI:
             return
 
         generator = ReportGenerator()
+        emp_manager = EmployeeManager()
         try:
+            print("\n  ⏳ در حال محاسبه...")
             reports = generator.generate_absent_report(g_from, g_to)
 
             if not reports:
@@ -3220,11 +3223,30 @@ class ConsoleUI:
 
             print(f"\n  📊 تعداد افراد غایب: {len(reports)}")
 
-            print("\n  ┌──────┬────────┬────────────┬──────────┬──────────────────────────────────────┐")
-            print("  │ ردیف │ کد     │ نام        │ تعداد    │ تاریخ‌های غیبت                        │")
-            print("  ├──────┼────────┼────────────┼──────────┼──────────────────────────────────────┤")
+            # ✅ جدول با نام کامل و گروه
+            print(
+                "\n  ┌──────┬────────┬────────────────────────┬────────────┬──────────┬──────────────────────────────────────┐")
+            print(
+                "  │ ردیف │ کد     │ نام کامل               │ گروه       │ تعداد    │ تاریخ‌های غیبت                        │")
+            print(
+                "  ├──────┼────────┼────────────────────────┼────────────┼──────────┼──────────────────────────────────────┤")
+
+            group_map = {
+                '0': 'بدون گروه',
+                '1': 'رسمی',
+                '2': 'وظیفه',
+                '3': 'خریدخدمت',
+                '4': 'قراردادی',
+                '5': 'پزشک'
+            }
 
             for i, r in enumerate(reports, 1):
+                # ✅ دریافت نام کامل
+                full_name = emp_manager.get_full_name(r['user_id'])
+
+                # ✅ دریافت گروه
+                group_name = group_map.get(r['group_id'], r['group_id'] or '-')
+
                 dates_str = ', '.join([
                     jdatetime.date.fromgregorian(date=d).strftime('%Y/%m/%d')
                     for d in r['absent_dates'][:5]
@@ -3232,12 +3254,25 @@ class ConsoleUI:
                 if len(r['absent_dates']) > 5:
                     dates_str += f" ... (+{len(r['absent_dates']) - 5})"
 
-                print(f"  │ {i:<4} │ {r['user_id']:<6} │ {r['name'][:10]:<10} │ {r['absent_count']:<8} │ {dates_str:<36} │")
+                print(
+                    f"  │ {i:<4} │ {r['user_id']:<6} │ {full_name[:22]:<22} │ {group_name:<10} │ {r['absent_count']:<8} │ {dates_str:<36} │")
 
-            print("  └──────┴────────┴────────────┴──────────┴──────────────────────────────────────┘")
+            print(
+                "  └──────┴────────┴────────────────────────┴────────────┴──────────┴──────────────────────────────────────┘")
+
+            # ✅ خلاصه بر اساس گروه
+            group_counts = {}
+            for r in reports:
+                g_name = group_map.get(r['group_id'], r['group_id'] or '-')
+                group_counts[g_name] = group_counts.get(g_name, 0) + r['absent_count']
+
+            print(f"\n  📊 خلاصه بر اساس گروه:")
+            for g_name, count in sorted(group_counts.items(), key=lambda x: x[1], reverse=True):
+                print(f"     • {g_name:<15} : {count} روز غیبت")
 
         finally:
             generator.close()
+            emp_manager.close()
 
     def _show_leave_report(self):
         """گزارش مرخصی‌ها"""

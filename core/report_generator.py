@@ -64,10 +64,10 @@ class ReportGenerator:
         return sorted(reports, key=lambda x: x['name'])
 
     def generate_absent_report(
-        self,
-        from_date: date,
-        to_date: date,
-        group_id: Optional[int] = None
+            self,
+            from_date: date,
+            to_date: date,
+            group_id: Optional[int] = None
     ) -> List[Dict]:
         """گزارش غیبت‌ها در یک بازه زمانی"""
         users = self.db.query(User)
@@ -80,7 +80,6 @@ class ReportGenerator:
             absent_dates = []
             current = from_date
             while current <= to_date:
-                # ✅ detect_status به صورت خودکار گروه کاربر را در نظر می‌گیرد
                 status_info = self.status_manager.detect_status(user.user_id, current)
                 if status_info['status'] == 'A':
                     absent_dates.append(current)
@@ -90,7 +89,7 @@ class ReportGenerator:
                 report.append({
                     'user_id': user.user_id,
                     'name': user.name,
-                    'group_id': user.group_id,
+                    'group_id': user.group_id,  # ✅ اضافه کردن group_id
                     'absent_count': len(absent_dates),
                     'absent_dates': absent_dates
                 })
