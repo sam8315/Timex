@@ -115,12 +115,7 @@ class EmployeeManager:
         return self.db.query(Employee).filter(Employee.user_id == user_id).first()
 
     def get_all_employees(self, active_only: bool = False) -> List[Employee]:
-        """
-        دریافت تمام کارمندان
-
-        Args:
-            active_only: اگر True باشد، فقط کارمندان فعال را برمی‌گرداند
-        """
+        """دریافت تمام کارمندان"""
         query = self.db.query(Employee)
         if active_only:
             query = query.filter(Employee.is_active == True)
@@ -226,16 +221,25 @@ class EmployeeManager:
 
     def get_full_name(self, user_id: str) -> str:
         """
-        دریافت نام کامل کاربر
-        اولویت با جدول employee است، اگر نبود از users استفاده می‌شود
+        دریافت نام کامل کاربر از جدول employee
         """
         employee = self.db.query(Employee).filter(Employee.user_id == user_id).first()
         if employee:
             return employee.full_name
 
-        # fallback به جدول users
-        user = self.db.query(User).filter(User.user_id == user_id).first()
-        return user.name if user else user_id
+        # اگر در employee نبود، کد پرسنلی را برگردان
+        return f"کاربر {user_id}"
+
+    @staticmethod
+    def get_full_name_static(db: Session, user_id: str) -> str:
+        """نسخه استاتیک"""
+        from models.employee import Employee
+
+        employee = db.query(Employee).filter(Employee.user_id == user_id).first()
+        if employee:
+            return employee.full_name
+
+        return f"کاربر {user_id}"
 
     @staticmethod
     def get_full_name_static(db: Session, user_id: str) -> str:
@@ -248,6 +252,27 @@ class EmployeeManager:
 
         user = db.query(User).filter(User.user_id == user_id).first()
         return user.name if user else user_id
+
+    def get_group_name(self, user_id: str) -> str:
+        """
+        دریافت نام گروه از فیلد department جدول employee
+        """
+        employee = self.db.query(Employee).filter(Employee.user_id == user_id).first()
+        if employee and employee.department:
+            return employee.department
+
+        return "بدون گروه"
+
+    @staticmethod
+    def get_group_name_static(db: Session, user_id: str) -> str:
+        """نسخه استاتیک"""
+        from models.employee import Employee
+
+        employee = db.query(Employee).filter(Employee.user_id == user_id).first()
+        if employee and employee.department:
+            return employee.department
+
+        return "بدون گروه"
 
     def set_employee_status(
             self,

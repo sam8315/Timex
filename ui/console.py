@@ -763,26 +763,14 @@ class ConsoleUI:
             imbalance = 0
 
             # ✅ شمارش بر اساس گروه
-            group_counts = {}
+            dept_counts = {}
 
             for item in incomplete:
-                # ✅ دریافت نام کامل
+                # ✅ دریافت نام کامل و department از employee
                 full_name = emp_manager.get_full_name(item['user_id'])
+                department = emp_manager.get_group_name(item['user_id'])
 
-                # ✅ دریافت گروه کاربر
-                user = analyzer.db.query(User).filter(User.user_id == item['user_id']).first()
-                group_id = user.group_id if user else '-'
-                group_map = {
-                    '0': 'بدون گروه',
-                    '1': 'رسمی',
-                    '2': 'وظیفه',
-                    '3': 'خریدخدمت',
-                    '4': 'قراردادی',
-                    '5': 'پزشک'
-                }
-                group_name = group_map.get(group_id, f'گروه {group_id}')
-
-                # ✅ شمارش
+                # شمارش
                 if item['issue'] == 'missing_enter':
                     missing_enter += 1
                 elif item['issue'] == 'missing_exit':
@@ -790,13 +778,12 @@ class ConsoleUI:
                 elif item['issue'] == 'imbalance':
                     imbalance += 1
 
-                group_counts[group_name] = group_counts.get(group_name, 0) + 1
+                dept_counts[department] = dept_counts.get(department, 0) + 1
 
-                # تبدیل تاریخ میلادی به شمسی برای نمایش
                 j_date = jdatetime.date.fromgregorian(date=item['date'])
                 date_str = j_date.strftime("%Y/%m/%d")
 
-                print(f"  {date_str:<12} {item['user_id']:<8} {full_name[:20]:<22} {group_name:<12} "
+                print(f"  {date_str:<12} {item['user_id']:<8} {full_name[:20]:<22} {department:<12} "
                       f"{item['type']:<25} {item['enter_count']:<6} {item['exit_count']:<6}")
 
             # خلاصه بر اساس نوع مشکل
@@ -807,9 +794,9 @@ class ConsoleUI:
             print(f"     • عدم تعادل       : {imbalance}")
 
             # ✅ خلاصه بر اساس گروه
-            if group_counts:
+            if dept_counts:
                 print(f"\n  📊 خلاصه بر اساس گروه:")
-                for g_name, count in sorted(group_counts.items(), key=lambda x: x[1], reverse=True):
+                for g_name, count in sorted(dept_counts.items(), key=lambda x: x[1], reverse=True):
                     print(f"     • {g_name:<15} : {count} مورد")
 
             print("-" * 105)
@@ -2999,16 +2986,8 @@ class ConsoleUI:
             for i, r in enumerate(report, 1):
                 full_name = r['full_name'][:20]
 
-                group_map = {
-                    '0': 'بدون گروه',
-                    '1': 'رسمی',
-                    '2': 'وظیفه',
-                    '3': 'خریدخدمت',
-                    '4': 'قراردادی',
-                    '5': 'پزشک'
-                }
-                group_name = group_map.get(r['group_id'], r['group_id'] or '-')
-                group_name = group_name[:10]
+                # ✅ استفاده مستقیم از department
+                department = r['department'][:10]
 
                 contract_display = r['contract']['type'][:10] if r['contract']['has_contract'] else '❌ ندارد'
 
@@ -3034,7 +3013,7 @@ class ConsoleUI:
                     work_str = '  --    '
 
                 print(
-                    f"  │ {i:<4} │ {r['user_id']:<6} │ {full_name:<20} │ {group_name:<10} │ {contract_display:<10} │ {status_display:<10} │ {first_enter:<6} │ {last_exit:<6} │ {work_str:<12} │")
+                    f"  │ {i:<4} │ {r['user_id']:<6} │ {full_name:<20} │ {department:<10} │ {contract_display:<10} │ {status_display:<10} │ {first_enter:<6} │ {last_exit:<6} │ {work_str:<12} │")
 
             print(
                 "  └──────┴────────┴──────────────────────┴────────────┴────────────┴────────────┴────────┴────────┴──────────────┘")
@@ -3149,13 +3128,15 @@ class ConsoleUI:
         finally:
             manager.close()
             emp_manager.close()
-    def _show_all_users_monthly_report(self):
-        """گزارش ماهانه همه کاربران"""
-        from core.report_generator import ReportGenerator
 
-        print("\n" + "=" * 120)
+    def _show_all_users_monthly_report(self):
+        """گزارش ماهانه همه کاربران - فقط از employee"""
+        from core.report_generator import ReportGenerator
+        from core.employee_manager import EmployeeManager
+
+        print("\n" + "=" * 140)
         print("  📊 گزارش ماهانه همه کاربران")
-        print("=" * 120)
+        print("=" * 140)
 
         today_j = jdatetime.date.today()
         year_str = input(f"\n  📅 سال [پیش‌فرض: {today_j.year}]: ").strip()
@@ -3164,28 +3145,73 @@ class ConsoleUI:
         month_str = input(f"  📅 ماه (1-12) [پیش‌فرض: {today_j.month}]: ").strip()
         month = int(month_str) if month_str else today_j.month
 
+        # ✅ فیلتر بر اساس دپارتمان
+        print("\n  📋 فیلتر بر اساس دپارتمان:")
+        print("    0. همه دپارتمان‌ها")
+        print("    1. رسمی")
+        print("    2. وظیفه")
+        print("    3. خریدخدمت")
+        print("    4. قراردادی")
+        print("    5. پزشک")
+        dept_choice = input("  انتخاب [0-5]: ").strip()
+        department = dept_choice if dept_choice != '0' else None
+
         generator = ReportGenerator()
+        emp_manager = EmployeeManager()
         try:
-            reports = generator.generate_monthly_report_for_all(year, month)
+            reports = generator.generate_monthly_report_for_all(year, month, department)
 
             print(f"\n  📅 ماه: {self._get_jalali_month_name(month)} {year}")
             print(f"  👥 تعداد کاربران: {len(reports)}")
 
-            print("\n  ┌──────┬────────┬────────────┬────┬────┬────┬────┬────┬────┬────┬────┬────┬────────┐")
-            print("  │ ردیف │ کد     │ نام        │حاضر│غایب│تعطیل│استحق│استعل│تشویق│بدون ح│مامور│حضورک│ ساعت   │")
-            print("  ├──────┼────────┼────────────┼────┼────┼────┼────┼────┼────┼────┼────┼────┼────────┤")
+            if not reports:
+                print("\n  ⚠️  هیچ کاربری یافت نشد")
+                return
 
-            for i, r in enumerate(reports, 1):
-                work_str = f"{int(r['work_hours'])}:{int((r['work_hours'] % 1) * 60):02d}"
-                print(f"  │ {i:<4} │ {r['user_id']:<6} │ {r['name'][:10]:<10} │ "
-                      f"{r['present_days']:<2} │ {r['absent_days']:<2} │ {r['holiday_days']:<3} │ "
-                      f"{r['annual_leave']:<2} │ {r['sick_leave']:<3} │ {r['reward_leave']:<3} │ "
-                      f"{r['unpaid_leave']:<3} │ {r['mission_days']:<2} │ {r['late_days']:<2} │ {work_str:<6} │")
+            # ✅ گروه‌بندی بر اساس department
+            by_department = {}
+            for r in reports:
+                dept = r['department']
+                if dept not in by_department:
+                    by_department[dept] = []
+                by_department[dept].append(r)
 
-            print("  └──────┴────────┴────────────┴────┴────┴────┴────┴────┴────┴────┴────┴────┴────────┘")
+            # نمایش به تفکیک دپارتمان
+            for dept, dept_reports in sorted(by_department.items()):
+                print(f"\n{'=' * 140}")
+                print(f"  🏢 دپارتمان: {dept} ({len(dept_reports)} کاربر)")
+                print(f"{'=' * 140}")
+
+                print(
+                    "\n  ┌──────┬────────┬──────────────────────┬────┬────┬────┬────┬────┬────┬────┬────┬────┬────┬────────┐")
+                print(
+                    "  │ ردیف │ کد     │ نام کامل             │حاضر│غایب│تعطیل│استحق│استعل│تشویق│بدون ح│مامور│حضورک│ویژه│ ساعت   │")
+                print(
+                    "  ├──────┼────────┼──────────────────────┼────┼────┼────┼────┼────┼────┼────┼────┼────┼────┼────────┤")
+
+                for i, r in enumerate(dept_reports, 1):
+                    work_str = f"{int(r['work_hours'])}:{int((r['work_hours'] % 1) * 60):02d}"
+                    print(f"  │ {i:<4} │ {r['user_id']:<6} │ {r['full_name'][:20]:<20} │ "
+                          f"{r['present_days']:<2} │ {r['absent_days']:<2} │ {r['holiday_days']:<2} │ "
+                          f"{r['annual_leave']:<2} │ {r['sick_leave']:<3} │ {r['reward_leave']:<3} │ "
+                          f"{r['unpaid_leave']:<3} │ {r['mission_days']:<2} │ {r['late_days']:<2} │ {r['special_days']:<2} │ {work_str:<6} │")
+
+                print(
+                    "  └──────┴────────┴──────────────────────┴────┴────┴────┴────┴────┴────┴────┴────┴────┴────┴────────┘")
+
+                # خلاصه دپارتمان
+                total_work = sum(r['work_hours'] for r in dept_reports)
+                total_present = sum(r['present_days'] for r in dept_reports)
+                total_absent = sum(r['absent_days'] for r in dept_reports)
+
+                print(f"\n  📊 خلاصه دپارتمان {dept}:")
+                print(f"     • مجموع ساعات کاری: {int(total_work)}:{int((total_work % 1) * 60):02d}")
+                print(f"     • مجموع روزهای حاضر: {total_present}")
+                print(f"     • مجموع روزهای غایب: {total_absent}")
 
         finally:
             generator.close()
+            emp_manager.close()
 
     def _show_absent_report(self):
         """گزارش غیبت‌ها"""
@@ -3244,13 +3270,10 @@ class ConsoleUI:
                 '4': 'قراردادی',
                 '5': 'پزشک'
             }
-
             for i, r in enumerate(reports, 1):
-                # ✅ دریافت نام کامل
-                full_name = emp_manager.get_full_name(r['user_id'])
-
-                # ✅ دریافت گروه
-                group_name = group_map.get(r['group_id'], r['group_id'] or '-')
+                # ✅ استفاده مستقیم از full_name و department
+                full_name = r['full_name']
+                department = r['department'][:10]
 
                 dates_str = ', '.join([
                     jdatetime.date.fromgregorian(date=d).strftime('%Y/%m/%d')
@@ -3260,21 +3283,20 @@ class ConsoleUI:
                     dates_str += f" ... (+{len(r['absent_dates']) - 5})"
 
                 print(
-                    f"  │ {i:<4} │ {r['user_id']:<6} │ {full_name[:22]:<22} │ {group_name:<10} │ {r['absent_count']:<8} │ {dates_str:<36} │")
+                    f"  │ {i:<4} │ {r['user_id']:<6} │ {full_name[:22]:<22} │ {department:<10} │ {r['absent_count']:<8} │ {dates_str:<36} │")
 
             print(
                 "  └──────┴────────┴────────────────────────┴────────────┴──────────┴──────────────────────────────────────┘")
 
-            # ✅ خلاصه بر اساس گروه
-            group_counts = {}
+            # ✅ خلاصه بر اساس department
+            dept_counts = {}
             for r in reports:
-                g_name = group_map.get(r['group_id'], r['group_id'] or '-')
-                group_counts[g_name] = group_counts.get(g_name, 0) + r['absent_count']
+                dept = r['department']
+                dept_counts[dept] = dept_counts.get(dept, 0) + r['absent_count']
 
-            print(f"\n  📊 خلاصه بر اساس گروه:")
-            for g_name, count in sorted(group_counts.items(), key=lambda x: x[1], reverse=True):
-                print(f"     • {g_name:<15} : {count} روز غیبت")
-
+            print(f"\n  📊 خلاصه بر اساس دپارتمان:")
+            for dept, count in sorted(dept_counts.items(), key=lambda x: x[1], reverse=True):
+                print(f"     • {dept:<15} : {count} روز غیبت")
         finally:
             generator.close()
             emp_manager.close()
@@ -3283,9 +3305,9 @@ class ConsoleUI:
         """گزارش مرخصی‌ها"""
         from core.report_generator import ReportGenerator
 
-        print("\n" + "=" * 90)
-        print("  🏖️  گزارش مرخصی‌ها")
-        print("=" * 90)
+        print("\n" + "=" * 120)
+        print("  🌴 گزارش مرخصی‌ها")
+        print("=" * 120)
 
         today_j = jdatetime.date.today()
         year_str = input(f"\n  📅 سال [پیش‌فرض: {today_j.year}]: ").strip()
@@ -3298,22 +3320,44 @@ class ConsoleUI:
         try:
             reports = generator.generate_leave_report(year, month)
 
+            period = f"{self._get_jalali_month_name(month)} {year}" if month else f"سال {year}"
+            print(f"\n  📅 دوره: {period}")
+            print(f"  👥 تعداد کاربران: {len(reports)}")
+
             if not reports:
                 print("\n  ⚠️  هیچ مرخصی تایید شده‌ای یافت نشد")
                 return
 
-            print(f"\n  📊 تعداد کاربران دارای مرخصی: {len(reports)}")
+            # ✅ گروه‌بندی بر اساس دپارتمان
+            by_department = {}
+            for r in reports:
+                dept = r['department']
+                if dept not in by_department:
+                    by_department[dept] = []
+                by_department[dept].append(r)
 
-            print("\n  ┌──────┬────────┬────────────┬────────┬────────┬────────┬────────┬──────┬──────┐")
-            print("  │ ردیف │ کد     │ نام        │ استحقاق│ استعلال│ تشویقی │ بدون ح │ مجموع│ تعداد│")
-            print("  ├──────┼────────┼────────────┼────────┼────────┼────────┼────────┼──────┼──────┤")
+            for dept, dept_reports in sorted(by_department.items()):
+                print(f"\n{'=' * 120}")
+                print(f"  🏢 دپارتمان: {dept} ({len(dept_reports)} کاربر)")
+                print(f"{'=' * 120}")
 
-            for i, r in enumerate(reports, 1):
-                print(f"  │ {i:<4} │ {r['user_id']:<6} │ {r['name'][:10]:<10} │ "
-                      f"{r['annual_leave']:<6} │ {r['sick_leave']:<6} │ {r['reward_leave']:<6} │ "
-                      f"{r['unpaid_leave']:<6} │ {r['total_days']:<4} │ {r['total_requests']:<4} │")
+                print("\n  ┌──────┬────────┬──────────────────────┬────────┬────────┬────────┬──────────┬────────┬──────────┐")
+                print("  │ ردیف │ کد     │ نام کامل             │ استحقاق│ استعلاج│ تشویق  │ بدون حقوق│ مجموع  │ تعداد    │")
+                print("  ├──────┼────────┼──────────────────────┼────────┼────────┼────────┼──────────┼────────┼──────────┤")
 
-            print("  └──────┴────────┴────────────┴────────┴────────┴────────┴────────┴──────┴──────┘")
+                for i, r in enumerate(dept_reports, 1):
+                    print(f"  │ {i:<4} │ {r['user_id']:<6} │ {r['full_name'][:20]:<20} │ "
+                          f"{r['annual_leave']:<6} │ {r['sick_leave']:<6} │ {r['reward_leave']:<6} │ "
+                          f"{r['unpaid_leave']:<8} │ {r['total_days']:<6} │ {r['total_requests']:<8} │")
+
+                print("  └──────┴────────┴──────────────────────┴────────┴────────┴────────┴──────────┴────────┴──────────┘")
+
+                # خلاصه دپارتمان
+                total_days = sum(r['total_days'] for r in dept_reports)
+                total_requests = sum(r['total_requests'] for r in dept_reports)
+                print(f"\n  📊 خلاصه دپارتمان {dept}:")
+                print(f"     • مجموع روزهای مرخصی: {total_days}")
+                print(f"     • مجموع درخواست‌ها: {total_requests}")
 
         finally:
             generator.close()
@@ -3343,12 +3387,16 @@ class ConsoleUI:
             print("\n  ⏳ در حال تولید گزارش...")
             reports = generator.generate_monthly_report_for_all(year, month)
 
+            if not reports:
+                print("\n  ⚠️  هیچ داده‌ای برای خروجی یافت نشد")
+                return
+
             exporter = ExcelExporter()
             filename = exporter.export_monthly_report(reports, year, month)
 
             print(f"\n  ✅ فایل اکسل با موفقیت ایجاد شد:")
             print(f"     📁 {filename}")
-            print(f"     📊 تعداد ردیف‌ها: {len(reports)}")
+            print(f"     📊 تعداد کاربران: {len(reports)}")
 
         finally:
             generator.close()
@@ -3579,10 +3627,10 @@ class ConsoleUI:
 
             user = manager.db.query(User).filter(User.user_id == user_id).first()
 
-            print(f"\n  👤 اطلاعات کاربر:")
+            print(f"\n  👤 اطلاعات کارمند:")
             print(f"     • کد پرسنلی    : {user_id}")
-            print(f"     • نام سیستمی   : {user.name if user else '-'}")
-            print(f"     • گروه         : {user.group_id if user else '-'}")
+            print(f"     • نام کامل     : {employee.full_name}")
+            print(f"     • دپارتمان     : {employee.department or 'بدون گروه'}")
 
             print(f"\n  📋 اطلاعات تکمیلی:")
             print(f"     • نام کامل     : {employee.full_name}")

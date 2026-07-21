@@ -10,6 +10,7 @@ from sqlalchemy import and_, or_, func  # ✅ اضافه شدن or_
 from sqlalchemy.orm import Session
 import jdatetime
 
+from core.attendance_analyzer import calculate_night_hours
 from database.engine import SessionLocal
 from models import Employee
 from models.user import User
@@ -204,47 +205,35 @@ class DailyStatusManager:
             self,
             target_date: date,
             group_id: Optional[int] = None,
-            active_only: bool = True  # ✅ پیش‌فرض فقط فعال‌ها
+            active_only: bool = True
     ) -> List[Dict]:
-        """
-        گزارش وضعیت روزانه همه کاربران در یک روز
-        شامل: وضعیت، قرارداد، ساعات کاری
-        """
+        """گزارش وضعیت روزانه - فقط از employee استفاده می‌کند"""
         from core.employee_manager import EmployeeManager
-        from core.attendance_analyzer import calculate_night_hours
 
-        users = self.db.query(User)
-        if group_id is not None:
-            users = users.filter(User.group_id == str(group_id))
+        # ✅ دریافت فقط کارمندان فعال از employee
+        employees_query = self.db.query(Employee)
         if active_only:
-            active_user_ids = [
-                e.user_id for e in self.db.query(Employee).filter(Employee.is_active == True).all()
-            ]
-            # فقط کاربرانی که در employee ثبت نشده‌اند یا فعال هستند
-            users = users.filter(
-                or_(
-                    ~User.user_id.in_(
-                        [e.user_id for e in self.db.query(Employee).filter(Employee.is_active == False).all()]
-                    ),
-                    User.user_id.in_(active_user_ids)
-                )
-            )
-        users = users.all()
+            employees_query = employees_query.filter(Employee.is_active == True)
+
+        employees = employees_query.all()
 
         emp_manager = EmployeeManager()
         report = []
 
         try:
-            for user in users:
-                status_info = self.detect_status(user.user_id, target_date)
+            for emp in employees:
+                # ✅ فیلتر بر اساس department (گروه)
+                if group_id is not None:
+                    # department باید با group_id مطابقت داشته باشد
+                    if emp.department != str(group_id):
+                        continue
 
-                # ✅ دریافت نام کامل
-                full_name = emp_manager.get_full_name(user.user_id)
+                status_info = self.detect_status(emp.user_id, target_date)
 
                 # ✅ دریافت اطلاعات قرارداد
                 contract = self.db.query(Contract).filter(
                     and_(
-                        Contract.user_id == user.user_id,
+                        Contract.user_id == emp.user_id,
                         Contract.start_date <= target_date,
                         or_(
                             Contract.end_date == None,
@@ -259,10 +248,10 @@ class DailyStatusManager:
                     'status': '✅ فعال' if contract else '❌ بدون قرارداد'
                 }
 
-                # ✅ دریافت رکوردهای تردد روز
+                # دریافت رکوردهای تردد روز
                 attendances = self.db.query(Attendance).filter(
                     and_(
-                        Attendance.user_id == user.user_id,
+                        Attendance.user_id == emp.user_id,
                         func.date(Attendance.timestamp) == target_date,
                         Attendance.is_deleted == False
                     )
@@ -274,7 +263,7 @@ class DailyStatusManager:
 
                 work_hours = 0.0
                 night_hours = 0.0
-                attendance_status = '—'  # پیش‌فرض: بدون تردد
+                attendance_status = '—'
 
                 if enters and exits:
                     first_in = min(e.timestamp for e in enters)
@@ -291,20 +280,13 @@ class DailyStatusManager:
                             attendance_status = f'🔄 {len(enters)}و/{len(exits)}خ'
                 elif enters and not exits:
                     attendance_status = '⚠️ بدون خروج'
-                    # محاسبه ساعت تا الان
-                    # first_in = min(e.timestamp for e in enters)
-                    # delta = (datetime.now(first_in.tzinfo) - first_in).total_seconds() / 3600
-                    # work_hours = round(delta, 2)
                 elif exits and not enters:
                     attendance_status = '❌ بدون ورود'
-                else:
-                    attendance_status = '— بدون تردد'
 
                 report.append({
-                    'user_id': user.user_id,
-                    'name': user.name,
-                    'full_name': full_name,
-                    'group_id': user.group_id,
+                    'user_id': emp.user_id,
+                    'full_name': emp.full_name,  # ✅ از employee
+                    'department': emp.department or 'بدون گروه',  # ✅ از employee
                     'status': status_info['status'],
                     'status_name': self.get_status_name(status_info['status']),
                     'source': status_info['source'],
@@ -323,6 +305,8 @@ class DailyStatusManager:
             emp_manager.close()
 
         return sorted(report, key=lambda x: x['full_name'])
+
+
 
     def get_monthly_report(self, user_id: str, year: int, month: int) -> Dict:
         """گزارش ماهانه یک کاربر"""
