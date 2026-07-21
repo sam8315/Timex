@@ -405,7 +405,7 @@ class ConsoleUI:
 
         for user in users:
             print(f"  {user['uid']:<8}  {user['user_id']:<8} {user['name']:<12} {user['password']:<8} "
-                  f"{user['card'] or '-':<15} {user['group_id'] or '-':<6} {user['privilege'] or '-':<6}")
+                  f"{user['card']:<15} {user['group_id']:<6} {user['privilege']:<6}")
 
     def _find_user(self):
         if not self.connected:
@@ -1849,14 +1849,8 @@ class ConsoleUI:
             return
 
         try:
-            # ✅ تبدیل صحیح: jdatetime → gregorian
             j_date = jdatetime.datetime.strptime(date_str, "%Y/%m/%d").date()
-            g_date = j_date.togregorian()  # این خط حیاتی است!
-
-            # ✅ بررسی تبدیل
-            print(f"  🔍 تاریخ شمسی: {j_date.strftime('%Y/%m/%d')}")
-            print(f"  🔍 تاریخ میلادی: {g_date}")
-
+            g_date = j_date.togregorian()
         except Exception as e:
             print(f"  ❌ خطا در تبدیل تاریخ: {e}")
             return
@@ -1871,17 +1865,47 @@ class ConsoleUI:
             print("  ❌ عنوان نمی‌تواند خالی باشد")
             return
 
-        national = input("  تعطیل ملی است؟ (بله/خیر) [پیش‌فرض: بله]: ").strip()
-        is_national = national.lower() not in ['خیر', 'no', 'n']
+        # 🆕 انتخاب نوع تعطیلی
+        print("\n  📋 نوع تعطیلی:")
+        print("    1. ملی (برای همه گروه‌ها)")
+        print("    2. گروهی (فقط برای یک گروه خاص)")
+        type_choice = input("  انتخاب [1/2] [پیش‌فرض: 1]: ").strip() or '1'
+
+        is_national = True
+        group_id = None
+        group_name_display = "ملی (همه)"
+
+        if type_choice == '2':
+            is_national = False
+            print("\n  👥 انتخاب گروه:")
+            print("    1. رسمی")
+            print("    2. وظیفه")
+            print("    3. خریدخدمت")
+            print("    4. قراردادی")
+            print("    5. پزشک")
+            group_choice = input("  انتخاب [1-5]: ").strip()
+
+            group_map = {
+                '1': ('1', 'رسمی'),
+                '2': ('2', 'وظیفه'),
+                '3': ('3', 'خریدخدمت'),
+                '4': ('4', 'قراردادی'),
+                '5': ('5', 'پزشک')
+            }
+
+            if group_choice not in group_map:
+                print("  ❌ انتخاب نامعتبر")
+                return
+
+            group_id, group_name_display = group_map[group_choice]
 
         # پیش‌نمایش
         day_name = self._get_day_name(g_date)
         print("\n" + "-" * 70)
         print("  📋 پیش‌نمایش:")
-        print(f"     • تاریخ شمسی : {j_date.strftime('%Y/%m/%d')} ({day_name})")
-        print(f"     • تاریخ میلادی: {g_date}")
-        print(f"     • عنوان      : {title}")
-        print(f"     • نوع        : {'ملی' if is_national else 'محدود'}")
+        print(f"     • تاریخ شمسی    : {j_date.strftime('%Y/%m/%d')} ({day_name})")
+        print(f"     • عنوان         : {title}")
+        print(f"     • نوع           : {group_name_display}")
         print("-" * 70)
 
         confirm = input("\n  آیا تایید می‌کنید؟ (بله/خیر): ").strip()
@@ -1891,8 +1915,12 @@ class ConsoleUI:
 
         manager = HolidayManager()
         try:
-            # ✅ ارسال g_date (میلادی) نه j_date (شمسی)
-            result = manager.add_holiday(g_date, title, is_national)
+            result = manager.add_holiday(
+                holiday_date=g_date,
+                title=title,
+                is_national=is_national,
+                group_id=group_id
+            )
             print(f"\n  {result['message']}")
         finally:
             manager.close()
@@ -1901,9 +1929,9 @@ class ConsoleUI:
         """نمایش تعطیلات یک سال"""
         from core.holiday_manager import HolidayManager
 
-        print("\n" + "=" * 70)
+        print("\n" + "=" * 90)
         print("  📅 لیست تعطیلات سال")
-        print("=" * 70)
+        print("=" * 90)
 
         today_j = jdatetime.date.today()
         year_str = input(f"\n  📅 سال (شمسی) [پیش‌فرض: {today_j.year}]: ").strip()
@@ -1911,9 +1939,7 @@ class ConsoleUI:
 
         manager = HolidayManager()
         try:
-            # ✅ اصلاح: تبدیل سال شمسی به میلادی
             j_from = jdatetime.date(year, 1, 1)
-            # روز آخر سال شمسی: 29 اسفند (یا 30 در سال کبیسه)
             try:
                 j_to = jdatetime.date(year, 12, 30)
             except ValueError:
@@ -1922,31 +1948,53 @@ class ConsoleUI:
             from_date = j_from.togregorian()
             to_date = j_to.togregorian()
 
-            print(f"\n  🔍 جستجو از {from_date} تا {to_date} (میلادی)")
-            print(f"  🔍 معادل شمسی: {j_from.strftime('%Y/%m/%d')} تا {j_to.strftime('%Y/%m/%d')}")
-
             holidays = manager.get_holidays_in_range(from_date, to_date)
 
             if not holidays:
                 print(f"\n  ⚠️  هیچ تعطیلی در سال {year} یافت نشد (فقط جمعه‌ها)")
                 return
 
-            print(f"\n  📊 تعداد کل تعطیلات: {len(holidays)}")
-            print(f"     • جمعه‌ها          : {sum(1 for h in holidays if h['type'] == 'friday')}")
-            print(f"     • تعطیلات ثبت شده : {sum(1 for h in holidays if h['type'] == 'custom')}")
+            # شمارش
+            fridays_count = sum(1 for h in holidays if h['type'] == 'friday')
+            national_count = sum(1 for h in holidays if h['type'] == 'custom')
+            group_count = sum(1 for h in holidays if h['type'] == 'group')
 
-            print("\n  ┌────────────┬─────────┬──────────────────────────────────────┐")
-            print("  │ تاریخ      │ روز     │ عنوان                                │")
-            print("  ├────────────┼─────────┼──────────────────────────────────────┤")
+            print(f"\n  📊 تعداد کل تعطیلات: {len(holidays)}")
+            print(f"     • جمعه‌ها            : {fridays_count}")
+            print(f"     • تعطیلات ملی       : {national_count}")
+            print(f"     • تعطیلات گروهی     : {group_count}")
+
+            # ✅ جدول با ستون گروه
+            print("\n  ┌────────────┬─────────┬────────────────────┬──────────────┐")
+            print("  │ تاریخ      │ روز     │ عنوان              │ گروه         │")
+            print("  ├────────────┼─────────┼────────────────────┼──────────────┤")
+
+            group_map = {
+                '1': 'رسمی',
+                '2': 'وظیفه',
+                '3': 'خریدخدمت',
+                '4': 'قراردادی',
+                '5': 'پزشک'
+            }
 
             for h in holidays:
                 j_date = jdatetime.date.fromgregorian(date=h['date'])
                 day_name = self._get_day_name(h['date'])
-                icon = "🟡" if h['type'] == 'friday' else "🔴"
 
-                print(f"  │ {j_date.strftime('%Y/%m/%d')} │ {day_name:<7} │ {icon} {h['title']:<35} │")
+                if h['type'] == 'friday':
+                    icon = "🟡"
+                    group_display = "همه"
+                elif h['type'] == 'custom':
+                    icon = "🔴"
+                    group_display = "ملی (همه)"
+                else:  # group
+                    icon = "🔵"
+                    group_display = group_map.get(h.get('group_id', ''), h.get('group_id', ''))
 
-            print("  └────────────┴─────────┴──────────────────────────────────────┘")
+                print(
+                    f"  │ {j_date.strftime('%Y/%m/%d')} │ {day_name:<7} │ {icon} {h['title'][:17]:<17} │ {group_display:<12} │")
+
+            print("  └────────────┴─────────┴────────────────────┴──────────────┘")
 
             # آمار روزهای کاری
             stats = manager.count_working_days(from_date, to_date)
@@ -1958,7 +2006,6 @@ class ConsoleUI:
 
         finally:
             manager.close()
-
     def _delete_holiday(self):
         """حذف تعطیلی"""
         from core.holiday_manager import HolidayManager

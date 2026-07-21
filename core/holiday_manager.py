@@ -27,56 +27,90 @@ class HolidayManager:
         """بررسی اینکه آیا یک تاریخ جمعه است"""
         return target_date.weekday() == 4  # 0=دوشنبه ... 4=جمعه
 
-    def is_holiday(self, target_date: date) -> bool:
+    def is_holiday(self, target_date: date, user_group_id: Optional[str] = None) -> bool:
         """
         بررسی اینکه آیا یک تاریخ تعطیل است
-        (جمعه یا تعطیل ثبت شده)
+
+        Args:
+            target_date: تاریخ مورد بررسی
+            user_group_id: گروه کاربر (اختیاری)
         """
         # جمعه همیشه تعطیل است
         if self.is_friday(target_date):
             return True
 
         # بررسی تعطیلات ثبت شده
-        holiday = self.db.query(Holiday).filter(
+        holidays = self.db.query(Holiday).filter(
             Holiday.holiday_date == target_date
-        ).first()
+        ).all()
 
-        return holiday is not None
+        for holiday in holidays:
+            # اگر تعطیل ملی باشد (group_id = None)
+            if holiday.group_id is None:
+                return True
+            # اگر تعطیل گروهی باشد و گروه کاربر مطابقت داشته باشد
+            elif user_group_id and holiday.group_id == user_group_id:
+                return True
 
-    def get_holiday_info(self, target_date: date) -> Dict:
+        return False
+
+    def get_holiday_info(self, target_date: date, user_group_id: Optional[str] = None) -> Dict:
         """دریافت اطلاعات تعطیلی یک تاریخ"""
         if self.is_friday(target_date):
             return {
                 'is_holiday': True,
                 'type': 'friday',
-                'title': 'جمعه'
+                'title': 'جمعه',
+                'group_id': None
             }
 
-        holiday = self.db.query(Holiday).filter(
+        holidays = self.db.query(Holiday).filter(
             Holiday.holiday_date == target_date
-        ).first()
+        ).all()
 
-        if holiday:
-            return {
-                'is_holiday': True,
-                'type': 'custom',
-                'title': holiday.title,
-                'is_national': holiday.is_national
-            }
+        for holiday in holidays:
+            # تعطیل ملی
+            if holiday.group_id is None:
+                return {
+                    'is_holiday': True,
+                    'type': 'custom',
+                    'title': holiday.title,
+                    'is_national': holiday.is_national,
+                    'group_id': None
+                }
+            # تعطیل گروهی
+            elif user_group_id and holiday.group_id == user_group_id:
+                return {
+                    'is_holiday': True,
+                    'type': 'group',
+                    'title': holiday.title,
+                    'is_national': False,
+                    'group_id': holiday.group_id
+                }
 
         return {
             'is_holiday': False,
             'type': None,
-            'title': None
+            'title': None,
+            'group_id': None
         }
 
     def add_holiday(
-        self,
-        holiday_date: date,
-        title: str,
-        is_national: bool = True
+            self,
+            holiday_date: date,
+            title: str,
+            is_national: bool = True,
+            group_id: Optional[str] = None
     ) -> Dict:
-        """افزودن تعطیلی"""
+        """
+        افزودن تعطیلی
+
+        Args:
+            holiday_date: تاریخ تعطیلی
+            title: عنوان
+            is_national: آیا ملی است؟
+            group_id: شناسه گروه (اگر تعطیل گروهی باشد)
+        """
         # بررسی جمعه بودن
         if self.is_friday(holiday_date):
             return {
@@ -84,30 +118,44 @@ class HolidayManager:
                 'message': '⚠️  این تاریخ جمعه است و به طور خودکار تعطیل محسوب می‌شود'
             }
 
-        # بررسی تکراری بودن
-        existing = self.db.query(Holiday).filter(
-            Holiday.holiday_date == holiday_date
-        ).first()
+        # بررسی تکراری بودن (همان تاریخ و همان گروه)
+        if group_id:
+            existing = self.db.query(Holiday).filter(
+                and_(
+                    Holiday.holiday_date == holiday_date,
+                    Holiday.group_id == group_id
+                )
+            ).first()
+        else:
+            existing = self.db.query(Holiday).filter(
+                and_(
+                    Holiday.holiday_date == holiday_date,
+                    Holiday.group_id == None
+                )
+            ).first()
 
         if existing:
             return {
                 'success': False,
-                'message': f'⚠️  این تاریخ قبلاً به عنوان تعطیلی ثبت شده: {existing.title}'
+                'message': f'⚠️  این تعطیلی قبلاً ثبت شده: {existing.title}'
             }
 
         try:
             holiday = Holiday(
                 holiday_date=holiday_date,
                 title=title,
-                is_national=is_national
+                is_national=is_national,
+                group_id=group_id
             )
             self.db.add(holiday)
             self.db.commit()
 
             j_date = jdatetime.date.fromgregorian(date=holiday_date)
+            group_display = "ملی" if group_id is None else f"گروه {group_id}"
+
             return {
                 'success': True,
-                'message': f'✅ تعطیلی "{title}" برای تاریخ {j_date.strftime("%Y/%m/%d")} ثبت شد'
+                'message': f'✅ تعطیلی "{title}" برای {j_date.strftime("%Y/%m/%d")} ({group_display}) ثبت شد'
             }
 
         except Exception as e:
@@ -204,35 +252,63 @@ class HolidayManager:
 
         finally:
             manager.close()
+
     def get_holidays_in_range(
-        self,
-        from_date: date,
-        to_date: date
+            self,
+            from_date: date,
+            to_date: date
     ) -> List[Dict]:
         """دریافت تعطیلات در یک بازه زمانی (شامل جمعه‌ها)"""
         holidays = []
         current = from_date
 
         while current <= to_date:
-            info = self.get_holiday_info(current)
-            if info['is_holiday']:
+            if self.is_friday(current):
                 holidays.append({
                     'date': current,
-                    'type': info['type'],
-                    'title': info['title'],
-                    'is_national': info.get('is_national', True)
+                    'type': 'friday',
+                    'title': 'جمعه',
+                    'group_id': None
                 })
+            else:
+                # دریافت تمام تعطیلات این روز
+                day_holidays = self.db.query(Holiday).filter(
+                    Holiday.holiday_date == current
+                ).all()
+
+                for h in day_holidays:
+                    if h.group_id is None:
+                        holidays.append({
+                            'date': current,
+                            'type': 'custom',
+                            'title': h.title,
+                            'is_national': h.is_national,
+                            'group_id': None
+                        })
+                    else:
+                        holidays.append({
+                            'date': current,
+                            'type': 'group',
+                            'title': h.title,
+                            'is_national': False,
+                            'group_id': h.group_id
+                        })
+
             current += timedelta(days=1)
 
         return sorted(holidays, key=lambda x: x['date'])
 
-    def get_custom_holidays(self, year: Optional[int] = None) -> List[Holiday]:
+    def get_custom_holidays(self, year: Optional[int] = None, group_id: Optional[str] = None) -> List[Holiday]:
         """
         دریافت تعطیلات ثبت شده (غیر جمعه)
-        year: سال شمسی
+
+        Args:
+            year: سال شمسی
+            group_id: فیلتر بر اساس گروه (None = همه)
         """
+        query = self.db.query(Holiday)
+
         if year:
-            # ✅ تبدیل سال شمسی به بازه میلادی
             import jdatetime
             j_from = jdatetime.date(year, 1, 1)
             try:
@@ -243,14 +319,18 @@ class HolidayManager:
             g_from = j_from.togregorian()
             g_to = j_to.togregorian()
 
-            return self.db.query(Holiday).filter(
+            query = query.filter(
                 and_(
                     Holiday.holiday_date >= g_from,
                     Holiday.holiday_date <= g_to
                 )
-            ).order_by(Holiday.holiday_date).all()
+            )
 
-        return self.db.query(Holiday).order_by(Holiday.holiday_date).all()
+        if group_id is not None:
+            query = query.filter(Holiday.group_id == group_id)
+
+        return query.order_by(Holiday.holiday_date).all()
+
     def count_working_days(self, from_date: date, to_date: date) -> Dict:
         """شمارش روزهای کاری و تعطیل در یک بازه"""
         total_days = 0

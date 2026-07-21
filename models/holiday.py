@@ -2,6 +2,7 @@
 مدل جدول تعطیلات
 """
 from datetime import date
+from typing import Optional
 from sqlalchemy import Integer, String, Date, Boolean
 from sqlalchemy.orm import Mapped, mapped_column
 from models.base import Base, TimestampMixin
@@ -15,6 +16,21 @@ class Holiday(TimestampMixin, Base):
     holiday_date: Mapped[date] = mapped_column(Date, nullable=False, unique=True, index=True)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     is_national: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    group_id: Mapped[Optional[str]] = mapped_column(String(10), nullable=True, index=True)  # 🆕
 
     def __repr__(self) -> str:
-        return f"<Holiday(date={self.holiday_date}, title='{self.title}')>"
+        return f"<Holiday(date={self.holiday_date}, title='{self.title}', group='{self.group_id}')>"
+
+    @property
+    def group_name(self) -> str:
+        """دریافت نام گروه"""
+        if self.group_id is None:
+            return "ملی (همه)"
+        group_names = {
+            '1': 'رسمی',
+            '2': 'وظیفه',
+            '3': 'خریدخدمت',
+            '4': 'قراردادی',
+            '5': 'پزشک'
+        }
+        return group_names.get(self.group_id, f'گروه {self.group_id}')
