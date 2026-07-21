@@ -708,10 +708,11 @@ class ConsoleUI:
     def _show_incomplete_attendances(self):
         """نمایش ترددهای ناقص"""
         from core.attendance_analyzer import AttendanceAnalyzer
+        from core.employee_manager import EmployeeManager
 
-        print("\n" + "=" * 60)
+        print("\n" + "=" * 110)
         print("  🔍 بررسی ترددهای ناقص")
-        print("=" * 60)
+        print("=" * 110)
 
         # دریافت بازه زمانی
         print("\n📅 بازه زمانی را مشخص کنید:")
@@ -719,7 +720,6 @@ class ConsoleUI:
         to_date_str = input("  تا تاریخ (شمسی - مثال: 1405/04/24) [پیش‌فرض: امروز]: ").strip()
 
         try:
-            # تبدیل تاریخ شمسی به میلادی
             if from_date_str:
                 j_from = jdatetime.datetime.strptime(from_date_str, "%Y/%m/%d").date()
                 from_date = j_from.togregorian()
@@ -738,6 +738,7 @@ class ConsoleUI:
             return
 
         analyzer = AttendanceAnalyzer()
+        emp_manager = EmployeeManager()
         try:
             incomplete = analyzer.get_incomplete_attendances(from_date, to_date)
 
@@ -746,31 +747,71 @@ class ConsoleUI:
                 return
 
             print(f"\n⚠️  تعداد {len(incomplete)} تردد ناقص یافت شد:\n")
-            print(f"  {'تاریخ':<12} {'کد پرسنلی':<12} {'نام':<20} {'وضعیت':<25} {'ورود':<6} {'خروج':<6}")
-            print("  " + "-" * 85)
+
+            # ✅ جدول با ستون‌های جدید
+            print(f"  {'تاریخ':<12} {'کد':<8} {'نام کامل':<22} {'گروه':<12} {'وضعیت':<25} {'ورود':<6} {'خروج':<6}")
+            print("  " + "-" * 105)
+
+            # ✅ شمارش بر اساس نوع مشکل
+            missing_enter = 0
+            missing_exit = 0
+            imbalance = 0
+
+            # ✅ شمارش بر اساس گروه
+            group_counts = {}
 
             for item in incomplete:
+                # ✅ دریافت نام کامل
+                full_name = emp_manager.get_full_name(item['user_id'])
+
+                # ✅ دریافت گروه کاربر
+                user = analyzer.db.query(User).filter(User.user_id == item['user_id']).first()
+                group_id = user.group_id if user else '-'
+                group_map = {
+                    '0': 'بدون گروه',
+                    '1': 'رسمی',
+                    '2': 'وظیفه',
+                    '3': 'خریدخدمت',
+                    '4': 'قراردادی',
+                    '5': 'پزشک'
+                }
+                group_name = group_map.get(group_id, f'گروه {group_id}')
+
+                # ✅ شمارش
+                if item['issue'] == 'missing_enter':
+                    missing_enter += 1
+                elif item['issue'] == 'missing_exit':
+                    missing_exit += 1
+                elif item['issue'] == 'imbalance':
+                    imbalance += 1
+
+                group_counts[group_name] = group_counts.get(group_name, 0) + 1
+
                 # تبدیل تاریخ میلادی به شمسی برای نمایش
                 j_date = jdatetime.date.fromgregorian(date=item['date'])
                 date_str = j_date.strftime("%Y/%m/%d")
 
-                print(f"  {date_str:<12} {item['user_id']:<12} {item['name']:<20} "
+                print(f"  {date_str:<12} {item['user_id']:<8} {full_name[:20]:<22} {group_name:<12} "
                       f"{item['type']:<25} {item['enter_count']:<6} {item['exit_count']:<6}")
 
             # خلاصه بر اساس نوع مشکل
-            missing_enter = sum(1 for i in incomplete if i['issue'] == 'missing_enter')
-            missing_exit = sum(1 for i in incomplete if i['issue'] == 'missing_exit')
-            imbalance = sum(1 for i in incomplete if i['issue'] == 'imbalance')
-
-            print("\n" + "-" * 85)
-            print(f"  📊 خلاصه:")
+            print("\n" + "-" * 105)
+            print(f"  📊 خلاصه بر اساس نوع مشکل:")
             print(f"     • خروج بدون ورود   : {missing_enter}")
             print(f"     • ورود بدون خروج   : {missing_exit}")
             print(f"     • عدم تعادل       : {imbalance}")
-            print("-" * 85)
+
+            # ✅ خلاصه بر اساس گروه
+            if group_counts:
+                print(f"\n  📊 خلاصه بر اساس گروه:")
+                for g_name, count in sorted(group_counts.items(), key=lambda x: x[1], reverse=True):
+                    print(f"     • {g_name:<15} : {count} مورد")
+
+            print("-" * 105)
 
         finally:
             analyzer.close()
+            emp_manager.close()
 
     def _show_user_attendance_detail(self):
         """نمایش جزئیات تردد یک کاربر در بازه زمانی با قابلیت ویرایش"""
