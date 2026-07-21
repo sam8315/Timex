@@ -293,6 +293,7 @@ class ConsoleUI:
             print("  5. گزارش غیبت‌ها")
             print("  6. گزارش مرخصی‌ها")
             print("  7. 📊 گزارش تحلیلی ماهانه (جدید) 🆕")  # 🆕
+            print("  8. 📊 گزارش تفصیلی ماهانه کارمند (جدید) 🆕")
             print("  0. بازگشت")
 
             choice = input("\n  انتخاب: ").strip()
@@ -303,6 +304,8 @@ class ConsoleUI:
             elif choice == '5': self._show_absent_report()
             elif choice == '6': self._show_leave_report()
             elif choice == '7': self._show_analytical_monthly_report()  # 🆕
+            elif choice == '8':
+                self._show_detailed_monthly_report()
             elif choice == '0': break
             else: print("\n❌ انتخاب نامعتبر")
             input("\n⏎ Enter...")
@@ -4303,3 +4306,155 @@ class ConsoleUI:
 
         finally:
             manager.close()
+
+    def _show_detailed_monthly_report(self):
+        """نمایش گزارش تفصیلی ماهانه"""
+        from core.detailed_monthly_report import DetailedMonthlyReportGenerator
+
+        print("\n" + "=" * 150)
+        print("  📊 گزارش تفصیلی ماهانه کارمند - گروه قراردادی")
+        print("=" * 150)
+
+        today_j = jdatetime.date.today()
+        year_str = input(f"\n  📅 سال شمسی [پیش‌فرض: {today_j.year}]: ").strip()
+        year = int(year_str) if year_str else today_j.year
+
+        month_str = input(f"  📅 ماه (1-12) [پیش‌فرض: {today_j.month}]: ").strip()
+        month = int(month_str) if month_str else today_j.month
+
+        generator = DetailedMonthlyReportGenerator()
+        try:
+            # دریافت کارمندان گروه قراردادی
+            employees = generator.get_employees_by_department('4')
+
+            if not employees:
+                print("\n  ⚠️  هیچ کارمند فعالی در گروه قراردادی یافت نشد")
+                return
+
+            print(f"\n  📋 انتخاب کارمند:")
+            for i, emp in enumerate(employees, 1):
+                print(f"    {i}. {emp.full_name} ({emp.user_id})")
+
+            choice_str = input("\n  انتخاب: ").strip()
+            try:
+                choice = int(choice_str)
+                if choice < 1 or choice > len(employees):
+                    print("  ❌ انتخاب نامعتبر")
+                    return
+            except ValueError:
+                print("  ❌ عدد نامعتبر")
+                return
+
+            selected_emp = employees[choice - 1]
+
+            # تولید گزارش
+            print("\n  ⏳ در حال تولید گزارش...")
+            report = generator.generate_detailed_report(selected_emp.user_id, year, month)
+
+            if not report['success']:
+                print(f"\n  {report['message']}")
+                return
+
+            # نمایش گزارش
+            self._display_detailed_report(report)
+
+            # سوال برای خروجی
+            print("\n  📤 خروجی:")
+            print("    1. اکسل")
+            print("    2. PDF")
+            print("    3. هر دو")
+            print("    0. بدون خروجی")
+            export_choice = input("  انتخاب [0-3]: ").strip()
+
+            if export_choice in ['1', '3']:
+                from core.excel_detailed_export import DetailedExcelExporter
+                exporter = DetailedExcelExporter()
+                filename = exporter.export_detailed_report(report)
+                print(f"\n  ✅ فایل اکسل: {filename}")
+
+            if export_choice in ['2', '3']:
+                from core.pdf_detailed_export import DetailedPDFExporter
+                exporter = DetailedPDFExporter()
+                filename = exporter.export_detailed_report(report)
+                print(f"\n  ✅ فایل PDF: {filename}")
+
+        finally:
+            generator.close()
+
+    def _display_detailed_report(self, report: Dict):
+        """نمایش گزارش تفصیلی در کنسول"""
+        emp = report['employee']
+        summary = report['summary']
+
+        print(f"\n{'=' * 150}")
+        print(f"  👤 گزارش تفصیلی: {emp['full_name']} ({emp['user_id']})")
+        print(f"  📅 {report['month_name']} {report['year']} | 🏢 گروه قراردادی")
+        print(f"{'=' * 150}")
+
+        # جدول روزانه
+        print("\n  ┌────────────┬──────────┬──────────┬──────────┬────────┬────────┬────────┬────────┬────────┐")
+        print("  │ تاریخ      │ روز      │ وضعیت روز│ وضعیت    │ ورود   │ خروج   │ تردد   │ کارکرد │ اضافه  │")
+        print("  ├────────────┼──────────┼──────────┼──────────┼────────┼────────┼────────┼────────┼────────┤")
+
+        for day in report['days']:
+            def fmt_time(dt):
+                return dt.strftime('%H:%M') if dt else '  --  '
+
+            def fmt_hours(h):
+                if h == 0:
+                    return '  --  '
+                hours = int(h)
+                minutes = int((h - hours) * 60)
+                return f"{hours:02d}:{minutes:02d}"
+
+            attendance_str = '  --  '
+            if day['attendance_count'] > 4:
+                enters = day['attendance_count'] // 2
+                exits = day['attendance_count'] - enters
+                attendance_str = f"{enters}و/{exits}خ"
+
+            print(
+                f"  │ {day['jalali_date']} │ {day['day_name']:<8} │ {day['day_status']:<8} │ {day['person_status_name']:<8} │ "
+                f"{fmt_time(day['first_enter'])} │ {fmt_time(day['last_exit'])} │ {attendance_str:<6} │ {fmt_hours(day['work_hours'])} │ {fmt_hours(day['overtime'])} │")
+
+        print("  └────────────┴──────────┴──────────┴──────────┴────────┴────────┴────────┴────────┴────────┘")
+
+        # خلاصه ماهانه
+        print(f"\n{'=' * 150}")
+        print(f"  📊 خلاصه ماهانه - {emp['full_name']}")
+        print(f"{'=' * 150}")
+
+        def fmt_hours_summary(h):
+            hours = int(h)
+            minutes = int((h - hours) * 60)
+            return f"{hours:03d}:{minutes:02d}"
+
+        print(f"\n  📅 موظفی:")
+        print(f"     • روزهای موظفی        : {summary['duty_days']} روز")
+        print(f"     • ساعات موظفی         : {fmt_hours_summary(summary['duty_hours'])} ساعت")
+
+        print(f"\n  📊 وضعیت روزها:")
+        print(f"     • حضور                : {summary['present_days']} روز ✅")
+        print(f"     • مرخصی               : {summary['leave_days']} روز 🌴")
+        print(f"     • غیبت                : {summary['absent_days']} روز ❌")
+        print(f"     • استراحت             : {summary['rest_days']} روز 🛌")
+        print(f"     • جمعه کاری           : {summary['friday_work_days']} روز 🏢")
+        print(f"     • تعطیل کاری          : {summary['holiday_work_days']} روز 🎉")
+
+        print(f"\n  ⏱️  ساعات کاری:")
+        print(f"     • کارکرد ماهانه       : {fmt_hours_summary(summary['total_work_hours'])} ساعت")
+        print(f"     • ساعات صبح (6-14)    : {fmt_hours_summary(summary['total_morning'])} ساعت")
+        print(f"     • ساعات عصر (14-22)   : {fmt_hours_summary(summary['total_evening'])} ساعت")
+        print(f"     • ساعات شب (22-6)     : {fmt_hours_summary(summary['total_night'])} ساعت")
+
+        print(f"\n  💰 اضافه کاری:")
+        print(f"     • اضافه کاری روزانه   : {fmt_hours_summary(summary['daily_overtime'])} ساعت")
+        print(f"     • اضافه کاری هفتگی    : {fmt_hours_summary(summary['weekly_overtime'])} ساعت")
+        print(f"     • جمعه کاری           : {fmt_hours_summary(summary['friday_work_hours'])} ساعت")
+        print(f"     • تعطیل کاری          : {fmt_hours_summary(summary['holiday_work_hours'])} ساعت")
+
+        print(f"\n  ⚖️  کسری و اضافی (بدون تهاتر):")
+        print(f"     • مجموع کسری          : {fmt_hours_summary(summary['deficit'])} ساعت ❌")
+        print(f"     • مجموع اضافی         : {fmt_hours_summary(summary['surplus'])} ساعت ✅")
+
+        print(f"{'=' * 150}")
