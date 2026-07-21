@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 import jdatetime
 
 from database.engine import SessionLocal
+from models import Employee
 from models.user import User
 from models.daily_status import DailyStatus
 from models.attendance import Attendance
@@ -202,7 +203,8 @@ class DailyStatusManager:
     def get_daily_report(
             self,
             target_date: date,
-            group_id: Optional[int] = None
+            group_id: Optional[int] = None,
+            active_only: bool = True  # ✅ پیش‌فرض فقط فعال‌ها
     ) -> List[Dict]:
         """
         گزارش وضعیت روزانه همه کاربران در یک روز
@@ -214,6 +216,19 @@ class DailyStatusManager:
         users = self.db.query(User)
         if group_id is not None:
             users = users.filter(User.group_id == str(group_id))
+        if active_only:
+            active_user_ids = [
+                e.user_id for e in self.db.query(Employee).filter(Employee.is_active == True).all()
+            ]
+            # فقط کاربرانی که در employee ثبت نشده‌اند یا فعال هستند
+            users = users.filter(
+                or_(
+                    ~User.user_id.in_(
+                        [e.user_id for e in self.db.query(Employee).filter(Employee.is_active == False).all()]
+                    ),
+                    User.user_id.in_(active_user_ids)
+                )
+            )
         users = users.all()
 
         emp_manager = EmployeeManager()

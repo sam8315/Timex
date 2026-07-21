@@ -3,7 +3,7 @@
 """
 from datetime import date
 from typing import Optional
-from sqlalchemy import Integer, String, Date, ForeignKey, Text
+from sqlalchemy import Integer, String, Date, Boolean, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from models.base import Base, TimestampMixin
 
@@ -40,6 +40,11 @@ class Employee(TimestampMixin, Base):
     department: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
     position: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
 
+    # ✅ فیلدهای جدید: وضعیت فعال و ترک کار
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
+    termination_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    termination_reason: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+
     # یادداشت
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
@@ -47,7 +52,8 @@ class Employee(TimestampMixin, Base):
     user = relationship("User", backref="employee")
 
     def __repr__(self) -> str:
-        return f"<Employee(user_id='{self.user_id}', name='{self.first_name} {self.last_name}')>"
+        status = "فعال" if self.is_active else "غیرفعال"
+        return f"<Employee(user_id='{self.user_id}', name='{self.first_name} {self.last_name}', status='{status}')>"
 
     @property
     def full_name(self) -> str:
@@ -63,6 +69,11 @@ class Employee(TimestampMixin, Base):
     def marital_status_name(self) -> str:
         """نام وضعیت تاهل"""
         return "مجرد" if self.marital_status == 'S' else "متاهل" if self.marital_status == 'M' else "نامشخص"
+
+    @property
+    def status_name(self) -> str:
+        """نام وضعیت فعال/غیرفعال"""
+        return "✅ فعال" if self.is_active else "❌ غیرفعال"
 
     def to_dict(self) -> dict:
         """تبدیل مدل به دیکشنری"""
@@ -82,6 +93,10 @@ class Employee(TimestampMixin, Base):
             'hire_date': self.hire_date,
             'department': self.department,
             'position': self.position,
+            'is_active': self.is_active,
+            'status_name': self.status_name,
+            'termination_date': self.termination_date,
+            'termination_reason': self.termination_reason,
             'notes': self.notes,
             'created_at': self.created_at,
             'updated_at': self.updated_at,

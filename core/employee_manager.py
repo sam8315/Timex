@@ -114,9 +114,17 @@ class EmployeeManager:
         """دریافت اطلاعات کارمند"""
         return self.db.query(Employee).filter(Employee.user_id == user_id).first()
 
-    def get_all_employees(self) -> List[Employee]:
-        """دریافت تمام کارمندان"""
-        return self.db.query(Employee).order_by(Employee.last_name, Employee.first_name).all()
+    def get_all_employees(self, active_only: bool = False) -> List[Employee]:
+        """
+        دریافت تمام کارمندان
+
+        Args:
+            active_only: اگر True باشد، فقط کارمندان فعال را برمی‌گرداند
+        """
+        query = self.db.query(Employee)
+        if active_only:
+            query = query.filter(Employee.is_active == True)
+        return query.order_by(Employee.last_name, Employee.first_name).all()
 
     def search_employees(
             self,
@@ -166,22 +174,47 @@ class EmployeeManager:
     def get_statistics(self) -> Dict:
         """آمار کارمندان"""
         total = self.db.query(Employee).count()
-        with_national_code = self.db.query(Employee).filter(Employee.national_code != None).count()
-        with_email = self.db.query(Employee).filter(Employee.email != None).count()
+        active = self.db.query(Employee).filter(Employee.is_active == True).count()
+        inactive = total - active
 
-        # آمار جنسیت
-        males = self.db.query(Employee).filter(Employee.gender == 'M').count()
-        females = self.db.query(Employee).filter(Employee.gender == 'F').count()
+        with_national_code = self.db.query(Employee).filter(
+            Employee.national_code != None,
+            Employee.is_active == True
+        ).count()
+        with_email = self.db.query(Employee).filter(
+            Employee.email != None,
+            Employee.is_active == True
+        ).count()
 
-        # آمار تاهل
-        married = self.db.query(Employee).filter(Employee.marital_status == 'M').count()
-        single = self.db.query(Employee).filter(Employee.marital_status == 'S').count()
+        # آمار جنسیت (فقط فعال‌ها)
+        males = self.db.query(Employee).filter(
+            Employee.gender == 'M',
+            Employee.is_active == True
+        ).count()
+        females = self.db.query(Employee).filter(
+            Employee.gender == 'F',
+            Employee.is_active == True
+        ).count()
 
-        # تعداد دپارتمان‌ها
-        departments = self.db.query(Employee.department).distinct().count()
+        # آمار تاهل (فقط فعال‌ها)
+        married = self.db.query(Employee).filter(
+            Employee.marital_status == 'M',
+            Employee.is_active == True
+        ).count()
+        single = self.db.query(Employee).filter(
+            Employee.marital_status == 'S',
+            Employee.is_active == True
+        ).count()
+
+        # تعداد دپارتمان‌ها (فقط فعال‌ها)
+        departments = self.db.query(Employee.department).filter(
+            Employee.is_active == True
+        ).distinct().count()
 
         return {
             'total': total,
+            'active': active,
+            'inactive': inactive,
             'with_national_code': with_national_code,
             'with_email': with_email,
             'males': males,
@@ -215,3 +248,41 @@ class EmployeeManager:
 
         user = db.query(User).filter(User.user_id == user_id).first()
         return user.name if user else user_id
+
+    def set_employee_status(
+            self,
+            user_id: str,
+            is_active: bool,
+            termination_date: Optional[date] = None,
+            termination_reason: Optional[str] = None
+    ) -> Dict:
+        """
+        تغییر وضعیت فعال/غیرفعال کارمند
+        """
+        employee = self.db.query(Employee).filter(Employee.user_id == user_id).first()
+        if not employee:
+            return {'success': False, 'message': '❌ اطلاعات کارمند یافت نشد'}
+
+        try:
+            employee.is_active = is_active
+
+            if not is_active:
+                # اگر غیرفعال شد، تاریخ ترک کار را ثبت کن
+                employee.termination_date = termination_date or date.today()
+                employee.termination_reason = termination_reason
+            else:
+                # اگر فعال شد، تاریخ ترک کار را پاک کن
+                employee.termination_date = None
+                employee.termination_reason = None
+
+            self.db.commit()
+
+            status_name = "فعال" if is_active else "غیرفعال"
+            return {
+                'success': True,
+                'message': f'✅ وضعیت کارمند به "{status_name}" تغییر کرد'
+            }
+
+        except Exception as e:
+            self.db.rollback()
+            return {'success': False, 'message': f'❌ خطا: {e}'}

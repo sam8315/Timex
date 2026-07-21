@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 import jdatetime
 
 from database.engine import SessionLocal
+from models import Employee
 from models.user import User
 from models.attendance import Attendance
 from core.daily_status_manager import DailyStatusManager
@@ -70,9 +71,14 @@ class ReportGenerator:
             group_id: Optional[int] = None
     ) -> List[Dict]:
         """گزارش غیبت‌ها در یک بازه زمانی"""
+        inactive_user_ids = [
+            e.user_id for e in self.db.query(Employee).filter(Employee.is_active == False).all()
+        ]
         users = self.db.query(User)
         if group_id is not None:
             users = users.filter(User.group_id == str(group_id))
+        if inactive_user_ids:
+            users = users.filter(~User.user_id.in_(inactive_user_ids))
         users = users.all()
 
         report = []

@@ -106,10 +106,21 @@ class AnalyticalReportGenerator:
         g_start = month_info['start_date']
         g_end = month_info['end_date']
 
+
+        # ✅ دریافت لیست کاربران غیرفعال
+        inactive_user_ids = [
+            e.user_id for e in self.db.query(Employee).filter(Employee.is_active == False).all()
+        ]
+
         # دریافت کاربران
         users_query = self.db.query(User)
         if group_id is not None:
             users_query = users_query.filter(User.group_id == str(group_id))
+
+
+        # ✅ حذف کاربران غیرفعال
+        if inactive_user_ids:
+            users_query = users_query.filter(~User.user_id.in_(inactive_user_ids))
 
         users = users_query.all()
 

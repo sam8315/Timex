@@ -332,18 +332,22 @@ class ConsoleUI:
             print("\n  1. افزودن اطلاعات کارمند")
             print("  2. ویرایش اطلاعات کارمند")
             print("  3. مشاهده اطلاعات کارمند")
-            print("  4. لیست کارمندان")
-            print("  5. جستجو در اطلاعات")
-            print("  6. آمار کارمندان")
+            print("  4. لیست کارمندان فعال")
+            print("  5. لیست کارمندان غیرفعال")
+            print("  6. تغییر وضعیت کارمند (فعال/غیرفعال)")
+            print("  7. جستجو در اطلاعات")
+            print("  8. آمار کارمندان")
             print("  0. بازگشت")
 
             choice = input("\n  انتخاب: ").strip()
             if choice == '1': self._add_employee_info()
             elif choice == '2': self._update_employee_info()
             elif choice == '3': self._show_employee_info()
-            elif choice == '4': self._list_all_employees()
-            elif choice == '5': self._search_employees()
-            elif choice == '6': self._show_employee_statistics()
+            elif choice == '4': self._list_active_employees()
+            elif choice == '5': self._list_inactive_employees()
+            elif choice == '6': self._set_employee_status()
+            elif choice == '7': self._search_employees()
+            elif choice == '8': self._show_employee_statistics()
             elif choice == '0': break
             else: print("\n❌ انتخاب نامعتبر")
             input("\n⏎ Enter...")
@@ -3581,6 +3585,7 @@ class ConsoleUI:
 
             print(f"\n  📋 اطلاعات تکمیلی:")
             print(f"     • نام کامل     : {employee.full_name}")
+            print(f"     • وضعیت        : {employee.status_name}")  # ✅ جدید
             if employee.national_code:
                 print(f"     • کد ملی       : {employee.national_code}")
             if employee.father_name:
@@ -3601,6 +3606,16 @@ class ConsoleUI:
                 print(f"     • دپارتمان     : {employee.department}")
             if employee.position:
                 print(f"     • سمت          : {employee.position}")
+
+            # ✅ اطلاعات ترک کار
+            if not employee.is_active:
+                print(f"\n  ❌ اطلاعات ترک کار:")
+                if employee.termination_date:
+                    j_term = jdatetime.date.fromgregorian(date=employee.termination_date)
+                    print(f"     • تاریخ ترک    : {j_term.strftime('%Y/%m/%d')}")
+                if employee.termination_reason:
+                    print(f"     • دلیل         : {employee.termination_reason}")
+
             if employee.notes:
                 print(f"     • یادداشت      : {employee.notes}")
 
@@ -3700,15 +3715,17 @@ class ConsoleUI:
 
             print(f"\n  👥 آمار کلی:")
             print(f"     • کل کارمندان           : {stats['total']}")
-            print(f"     • دارای کد ملی          : {stats['with_national_code']}")
-            print(f"     • دارای ایمیل           : {stats['with_email']}")
+            print(f"     • فعال                  : {stats['active']} ✅")
+            print(f"     • غیرفعال (ترک کار)     : {stats['inactive']} ❌")
+            print(f"     • دارای کد ملی (فعال)   : {stats['with_national_code']}")
+            print(f"     • دارای ایمیل (فعال)    : {stats['with_email']}")
             print(f"     • تعداد دپارتمان‌ها      : {stats['departments']}")
 
-            print(f"\n  ⚧ آمار جنسیت:")
+            print(f"\n  ⚧ آمار جنسیت (فعال):")
             print(f"     • مرد                   : {stats['males']}")
             print(f"     • زن                    : {stats['females']}")
 
-            print(f"\n  💍 آمار تاهل:")
+            print(f"\n  💍 آمار تاهل (فعال):")
             print(f"     • مجرد                  : {stats['single']}")
             print(f"     • متاهل                 : {stats['married']}")
 
@@ -4055,3 +4072,185 @@ class ConsoleUI:
 
         finally:
             generator.close()
+
+    def _list_active_employees(self):
+        """لیست کارمندان فعال"""
+        from core.employee_manager import EmployeeManager
+
+        print("\n" + "=" * 110)
+        print("  👥 لیست کارمندان فعال")
+        print("=" * 110)
+
+        manager = EmployeeManager()
+        try:
+            employees = manager.get_all_employees(active_only=True)
+
+            if not employees:
+                print("\n  ⚠️  هیچ کارمند فعالی ثبت نشده است")
+                return
+
+            print(f"\n  📊 تعداد کارمندان فعال: {len(employees)}")
+
+            print("\n  ┌──────┬────────┬──────────────────────┬────────────┬────────────┬────────────┐")
+            print("  │ ردیف │ کد     │ نام کامل             │ دپارتمان   │ سمت        │ تاریخ استخدام │")
+            print("  ├──────┼────────┼──────────────────────┼────────────┼────────────┼────────────┤")
+
+            for i, emp in enumerate(employees, 1):
+                hire_str = ""
+                if emp.hire_date:
+                    j_hire = jdatetime.date.fromgregorian(date=emp.hire_date)
+                    hire_str = j_hire.strftime('%Y/%m/%d')
+
+                print(f"  │ {i:<4} │ {emp.user_id:<6} │ {emp.full_name[:20]:<20} │ "
+                      f"{emp.department or '-':<10} │ {emp.position or '-':<10} │ {hire_str:<10} │")
+
+            print("  └──────┴────────┴──────────────────────┴────────────┴────────────┴────────────┘")
+
+        finally:
+            manager.close()
+
+    def _list_inactive_employees(self):
+        """لیست کارمندان غیرفعال"""
+        from core.employee_manager import EmployeeManager
+
+        print("\n" + "=" * 120)
+        print("  ❌ لیست کارمندان غیرفعال (ترک کار)")
+        print("=" * 120)
+
+        manager = EmployeeManager()
+        try:
+            employees = manager.db.query(Employee).filter(Employee.is_active == False).order_by(
+                Employee.termination_date.desc()
+            ).all()
+
+            if not employees:
+                print("\n  ✅ هیچ کارمند غیرفعالی وجود ندارد")
+                return
+
+            print(f"\n  📊 تعداد کارمندان غیرفعال: {len(employees)}")
+
+            print("\n  ┌──────┬────────┬──────────────────────┬────────────┬────────────┬──────────────────────┐")
+            print("  │ ردیف │ کد     │ نام کامل             │ دپارتمان   │ تاریخ ترک  │ دلیل                   │")
+            print("  ├──────┼────────┼──────────────────────┼────────────┼────────────┼──────────────────────┤")
+
+            for i, emp in enumerate(employees, 1):
+                term_date_str = ""
+                if emp.termination_date:
+                    j_term = jdatetime.date.fromgregorian(date=emp.termination_date)
+                    term_date_str = j_term.strftime('%Y/%m/%d')
+
+                reason = (emp.termination_reason or '-')[:20]
+
+                print(f"  │ {i:<4} │ {emp.user_id:<6} │ {emp.full_name[:20]:<20} │ "
+                      f"{emp.department or '-':<10} │ {term_date_str:<10} │ {reason:<20} │")
+
+            print("  └──────┴────────┴──────────────────────┴────────────┴────────────┴──────────────────────┘")
+
+        finally:
+            manager.close()
+
+    def _set_employee_status(self):
+        """تغییر وضعیت کارمند (فعال/غیرفعال)"""
+        from core.employee_manager import EmployeeManager
+
+        print("\n" + "=" * 70)
+        print("  🔄 تغییر وضعیت کارمند")
+        print("=" * 70)
+
+        user_id = input("\n  📛 کد پرسنلی: ").strip()
+        if not user_id:
+            print("  ❌ کد پرسنلی نمی‌تواند خالی باشد")
+            return
+
+        manager = EmployeeManager()
+        try:
+            employee = manager.get_employee(user_id)
+
+            if not employee:
+                print(f"\n  ⚠️  اطلاعاتی برای کاربر {user_id} ثبت نشده است")
+                return
+
+            current_status = "فعال ✅" if employee.is_active else "غیرفعال ❌"
+            print(f"\n  👤 کاربر: {employee.full_name}")
+            print(f"  📊 وضعیت فعلی: {current_status}")
+
+            if employee.is_active:
+                # غیرفعال کردن
+                print("\n  🎯 عملیات: غیرفعال کردن (ثبت ترک کار)")
+
+                term_date_str = input(f"  📅 تاریخ ترک کار (شمسی) [پیش‌فرض: امروز]: ").strip()
+                try:
+                    if term_date_str:
+                        j_term = jdatetime.datetime.strptime(term_date_str, "%Y/%m/%d").date()
+                        term_date = j_term.togregorian()
+                    else:
+                        term_date = date.today()
+                except Exception as e:
+                    print(f"  ❌ خطا در تبدیل تاریخ: {e}")
+                    return
+
+                print("\n  📋 دلایل ترک کار:")
+                print("    1. استعفا")
+                print("    2. بازنشستگی")
+                print("    3. اخراج")
+                print("    4. پایان قرارداد")
+                print("    5. انتقال")
+                print("    6. سایر")
+                reason_choice = input("  انتخاب [1-6]: ").strip()
+
+                reason_map = {
+                    '1': 'استعفا',
+                    '2': 'بازنشستگی',
+                    '3': 'اخراج',
+                    '4': 'پایان قرارداد',
+                    '5': 'انتقال',
+                    '6': 'سایر'
+                }
+                reason = reason_map.get(reason_choice, 'سایر')
+
+                if reason_choice == '6':
+                    custom_reason = input("  📝 دلیل (دستی): ").strip()
+                    if custom_reason:
+                        reason = custom_reason
+
+                # پیش‌نمایش
+                j_term_display = jdatetime.date.fromgregorian(date=term_date)
+                print("\n" + "-" * 70)
+                print("  📋 پیش‌نمایش:")
+                print(f"     • کاربر           : {employee.full_name}")
+                print(f"     • وضعیت جدید      : غیرفعال ❌")
+                print(f"     • تاریخ ترک کار   : {j_term_display.strftime('%Y/%m/%d')}")
+                print(f"     • دلیل            : {reason}")
+                print("-" * 70)
+
+                confirm = input("\n  آیا تایید می‌کنید؟ (بله/خیر): ").strip()
+                if confirm.lower() not in ['بله', 'yes', 'y']:
+                    print("  ❌ لغو شد")
+                    return
+
+                result = manager.set_employee_status(
+                    user_id=user_id,
+                    is_active=False,
+                    termination_date=term_date,
+                    termination_reason=reason
+                )
+            else:
+                # فعال کردن
+                print("\n  🎯 عملیات: فعال کردن")
+                print(f"     • تاریخ ترک کار قبلی: {employee.termination_date}")
+                print(f"     • دلیل قبلی: {employee.termination_reason}")
+
+                confirm = input("\n  آیا می‌خواهید کاربر را فعال کنید؟ (بله/خیر): ").strip()
+                if confirm.lower() not in ['بله', 'yes', 'y']:
+                    print("  ❌ لغو شد")
+                    return
+
+                result = manager.set_employee_status(
+                    user_id=user_id,
+                    is_active=True
+                )
+
+            print(f"\n  {result['message']}")
+
+        finally:
+            manager.close()
