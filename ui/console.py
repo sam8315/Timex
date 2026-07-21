@@ -4,6 +4,7 @@ import jdatetime
 from core.device_manager import DeviceManager
 from core.attendance_analyzer import AttendanceAnalyzer
 from core.employee_manager import EmployeeManager
+from models import Employee
 from models.user import User
 from models.contract import Contract
 from models.leave_request import LeaveRequest
