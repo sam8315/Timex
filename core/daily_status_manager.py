@@ -204,33 +204,80 @@ class DailyStatusManager:
     def get_daily_report(
             self,
             target_date: date,
-            group_id: Optional[int] = None,
+            group_id: Optional[str] = None,
             active_only: bool = True
     ) -> List[Dict]:
-        """گزارش وضعیت روزانه - فقط از employee استفاده می‌کند"""
+        """گزارش وضعیت روزانه - با وضعیت روز، فرد و تردد"""
         from core.employee_manager import EmployeeManager
+        from core.attendance_analyzer import calculate_night_hours
+        from models.holiday import Holiday
 
-        # ✅ دریافت فقط کارمندان فعال از employee
+        # دریافت کارمندان فعال
         employees_query = self.db.query(Employee)
         if active_only:
             employees_query = employees_query.filter(Employee.is_active == True)
 
+        if group_id is not None:
+            employees_query = employees_query.filter(Employee.department == str(group_id))
+
         employees = employees_query.all()
+
+        # ✅ بررسی وضعیت روز (تعطیل/کاری)
+        is_friday = target_date.weekday() == 4
+        holiday = self.db.query(Holiday).filter(Holiday.holiday_date == target_date).first()
+        is_holiday = holiday is not None
+        is_day_off = is_friday or is_holiday
+        day_status = 'تعطیل' if is_day_off else 'کاری'
 
         emp_manager = EmployeeManager()
         report = []
 
         try:
             for emp in employees:
-                # ✅ فیلتر بر اساس department (گروه)
-                if group_id is not None:
-                    # department باید با group_id مطابقت داشته باشد
-                    if emp.department != str(group_id):
-                        continue
-
                 status_info = self.detect_status(emp.user_id, target_date)
 
-                # ✅ دریافت اطلاعات قرارداد
+                # ✅ اول: دریافت رکوردهای تردد روز
+                attendances = self.db.query(Attendance).filter(
+                    and_(
+                        Attendance.user_id == emp.user_id,
+                        func.date(Attendance.timestamp) == target_date,
+                        Attendance.is_deleted == False
+                    )
+                ).order_by(Attendance.timestamp).all()
+
+                enters = [a for a in attendances if a.punch == 0]
+                exits = [a for a in attendances if a.punch == 1]
+
+                # ✅ دوم: تعیین وضعیت فرد (حالا attendances در دسترس است)
+                person_status_code = status_info['status']
+
+                # اولویت ۱: وضعیت‌های دستی خاص
+                if person_status_code == 'R':
+                    person_status = 'استراحت'
+                elif person_status_code == 'M':
+                    person_status = 'ماموریت'
+                elif person_status_code == 'LP':
+                    person_status = 'حضور کم'
+                elif person_status_code in ['AL', 'SL', 'RL', 'UL']:
+                    person_status = 'مرخصی'
+
+                # اولویت ۲: بررسی روز تعطیل
+                elif is_day_off:
+                    has_attendance = len(attendances) > 0
+                    if has_attendance:
+                        person_status = 'حاضر'
+                    else:
+                        person_status = 'تعطیل'
+
+                # اولویت ۳: روز کاری عادی
+                elif person_status_code == 'P':
+                    person_status = 'حاضر'
+                elif person_status_code == 'A':
+                    person_status = 'غایب'
+                else:
+                    person_status = 'نامشخص'
+
+                # ✅ سوم: دریافت اطلاعات قرارداد
                 contract = self.db.query(Contract).filter(
                     and_(
                         Contract.user_id == emp.user_id,
@@ -245,54 +292,105 @@ class DailyStatusManager:
                 contract_info = {
                     'has_contract': contract is not None,
                     'type': contract.contract_type if contract else None,
-                    'status': '✅ فعال' if contract else '❌ بدون قرارداد'
+                    'status': 'فعال' if contract else 'بدون قرارداد'
                 }
 
-                # دریافت رکوردهای تردد روز
-                attendances = self.db.query(Attendance).filter(
-                    and_(
-                        Attendance.user_id == emp.user_id,
-                        func.date(Attendance.timestamp) == target_date,
-                        Attendance.is_deleted == False
-                    )
-                ).order_by(Attendance.timestamp).all()
-
-                # محاسبه ساعات کاری
-                enters = [a for a in attendances if a.punch == 0]
-                exits = [a for a in attendances if a.punch == 1]
-
+                # ✅ چهارم: محاسبه ساعات کاری با مدیریت تردد شبانه
                 work_hours = 0.0
                 night_hours = 0.0
-                attendance_status = '—'
 
-                if enters and exits:
+                if not enters and not exits:
+                    attendance_status = 'بدون تردد'
+                elif enters and exits:
                     first_in = min(e.timestamp for e in enters)
                     last_out = max(e.timestamp for e in exits)
 
-                    if last_out > first_in:
+                    # ✅ بررسی تردد شبانه (خروج فردا)
+                    if last_out.date() > target_date:
+                        # خروج فردا است، کارکرد امروز تا 23:59
+                        from datetime import datetime as dt
+                        end_of_day = dt.combine(target_date, dt.max.time())
+                        if first_in.tzinfo is not None:
+                            end_of_day = end_of_day.replace(tzinfo=first_in.tzinfo)
+                        work_hours = (end_of_day - first_in).total_seconds() / 3600
+                        attendance_status = f'کامل (خروج فردا)'
+                    elif last_out > first_in:
+                        # محاسبه کارکرد عادی
+                        if len(enters) == len(exits):
+                            if len(enters) == 1:
+                                attendance_status = 'کامل'
+                            else:
+                                attendance_status = f'کامل{len(enters)}'
+                        else:
+                            attendance_status = f'ناقص ({len(enters)}و/{len(exits)}خ)'
+
                         delta = (last_out - first_in).total_seconds() / 3600
                         work_hours = round(delta, 2)
                         night_hours = round(calculate_night_hours(first_in, last_out), 2)
+                    else:
+                        attendance_status = 'خطا در تردد'
 
-                        if len(enters) == 1 and len(exits) == 1:
-                            attendance_status = '✅ کامل'
-                        else:
-                            attendance_status = f'🔄 {len(enters)}و/{len(exits)}خ'
                 elif enters and not exits:
-                    attendance_status = '⚠️ بدون خروج'
+                    # ✅ بررسی آیا فردا خروج دارد
+                    next_day = target_date + timedelta(days=1)
+                    next_day_attendances = self.db.query(Attendance).filter(
+                        and_(
+                            Attendance.user_id == emp.user_id,
+                            func.date(Attendance.timestamp) == next_day,
+                            Attendance.is_deleted == False
+                        )
+                    ).all()
+                    next_day_exits = [a for a in next_day_attendances if a.punch == 1]
+
+                    if next_day_exits:
+                        # فردا خروج دارد
+                        first_in = min(e.timestamp for e in enters)
+                        from datetime import datetime as dt
+                        end_of_day = dt.combine(target_date, dt.max.time())
+                        if first_in.tzinfo is not None:
+                            end_of_day = end_of_day.replace(tzinfo=first_in.tzinfo)
+                        work_hours = (end_of_day - first_in).total_seconds() / 3600
+                        attendance_status = 'کامل (خروج فردا)'
+                    else:
+                        attendance_status = f'ورود بدون خروج ({len(enters)} ورود)'
+
                 elif exits and not enters:
-                    attendance_status = '❌ بدون ورود'
+                    # ✅ بررسی آیا دیروز ورود داشته
+                    prev_day = target_date - timedelta(days=1)
+                    prev_day_attendances = self.db.query(Attendance).filter(
+                        and_(
+                            Attendance.user_id == emp.user_id,
+                            func.date(Attendance.timestamp) == prev_day,
+                            Attendance.is_deleted == False
+                        )
+                    ).all()
+                    prev_day_enters = [a for a in prev_day_attendances if a.punch == 0]
+
+                    if prev_day_enters:
+                        # دیروز ورود داشته، کارکرد امروز از 00:00
+                        last_out = max(e.timestamp for e in exits)
+                        from datetime import datetime as dt
+                        start_of_day = dt.combine(target_date, dt.min.time())
+                        if last_out.tzinfo is not None:
+                            start_of_day = start_of_day.replace(tzinfo=last_out.tzinfo)
+                        work_hours = (last_out - start_of_day).total_seconds() / 3600
+                        attendance_status = 'کامل (ورود دیروز)'
+                    else:
+                        attendance_status = f'خروج بدون ورود ({len(exits)} خروج)'
 
                 report.append({
                     'user_id': emp.user_id,
-                    'full_name': emp.full_name,  # ✅ از employee
-                    'department': emp.department or 'بدون گروه',  # ✅ از employee
+                    'full_name': emp.full_name,
+                    'department': emp.department or 'بدون گروه',
+                    'hire_date': emp.hire_date,  # ✅ اضافه شد
+                    'day_status': day_status,
+                    'person_status': person_status,
+                    'attendance_status': attendance_status,
                     'status': status_info['status'],
                     'status_name': self.get_status_name(status_info['status']),
                     'source': status_info['source'],
                     'description': status_info['description'],
                     'attendance_count': len(attendances),
-                    'attendance_status': attendance_status,
                     'work_hours': work_hours,
                     'night_hours': night_hours,
                     'enters_count': len(enters),
@@ -304,7 +402,16 @@ class DailyStatusManager:
         finally:
             emp_manager.close()
 
-        return sorted(report, key=lambda x: x['full_name'])
+            # ✅ مرتب‌سازی بر اساس تاریخ استخدام
+
+        def sort_key(r):
+            hire_date = r.get('hire_date')
+            if hire_date is None:
+                # اگر تاریخ استخدام ندارد، آخر قرار بگیرد
+                return (date.max, r.get('full_name', ''))
+            return (hire_date, r.get('full_name', ''))
+
+        return sorted(report, key=sort_key)
 
 
 

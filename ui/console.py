@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, List
 from datetime import datetime, timedelta,date
 import jdatetime
 from core.device_manager import DeviceManager
@@ -2914,42 +2914,71 @@ class ConsoleUI:
         finally:
             manager.close()
 
+    def _get_department_name(self, dept_code: str) -> str:
+        """تبدیل کد دپارتمان به نام فارسی"""
+        dept_map = {
+            '1': 'رسمی',
+            '2': 'وظیفه',
+            '3': 'خریدخدمت',
+            '4': 'قراردادی',
+            '5': 'پزشک',
+            None: 'بدون گروه',
+            '': 'بدون گروه'
+        }
+        return dept_map.get(str(dept_code) if dept_code else '', f'گروه {dept_code}')
+
     def _show_daily_report(self):
-        """گزارش وضعیت یک روز"""
+        """گزارش وضعیت روزانه - مرتب بر اساس گروه، وضعیت و تاریخ استخدام"""
         from core.daily_status_manager import DailyStatusManager
+        from core.contract_manager import ContractManager
 
-        print("\n" + "=" * 130)
+        print("\n" + "=" * 220)
         print("  📅 گزارش وضعیت روزانه")
-        print("=" * 130)
+        print("=" * 220)
 
-        date_str = input("\n  📅 تاریخ (شمسی) [پیش‌فرض: امروز]: ").strip()
-        try:
-            if date_str:
+        date_str = input("\n  📅 تاریخ (شمسی - مثال: 1405/04/01) [پیش‌فرض: امروز]: ").strip()
+        if date_str:
+            try:
                 j_date = jdatetime.datetime.strptime(date_str, "%Y/%m/%d").date()
-                g_date = j_date.togregorian()
-            else:
-                g_date = date.today()
-                j_date = jdatetime.date.fromgregorian(date=g_date)
-        except Exception as e:
-            print(f"  ❌ خطا در تبدیل تاریخ: {e}")
-            return
+                target_date = j_date.togregorian()
+            except Exception as e:
+                print(f"  ❌ خطا در تبدیل تاریخ: {e}")
+                return
+        else:
+            target_date = date.today()
 
-        print("\n  📋 فیلتر بر اساس گروه:")
+        # انتخاب گروه
+        print("\n  📋 انتخاب گروه:")
         print("    0. همه گروه‌ها")
         print("    1. رسمی")
         print("    2. وظیفه")
         print("    3. خریدخدمت")
         print("    4. قراردادی")
         print("    5. پزشک")
-        group_choice = input("  انتخاب [0-5]: ").strip()
-        group_id = int(group_choice) if group_choice != '0' else None
+        group_choice = input("  انتخاب [0-5] [پیش‌فرض: 0]: ").strip() or '0'
+
+        if group_choice == '0':
+            group_id = None
+        elif group_choice.isdigit() and group_choice in ['1', '2', '3', '4', '5']:
+            group_id = group_choice
+        else:
+            group_id = None
 
         manager = DailyStatusManager()
+        contract_manager = ContractManager()
         try:
-            report = manager.get_daily_report(g_date, group_id)
+            report = manager.get_daily_report(target_date, group_id, active_only=True)
 
-            print(f"\n  📅 تاریخ: {j_date.strftime('%Y/%m/%d')} ({self._get_day_name(g_date)})")
+            j_date = jdatetime.date.fromgregorian(date=target_date)
+            day_name = self._get_day_name(target_date)
+
+            print(f"\n  📅 تاریخ: {j_date.strftime('%Y/%m/%d')} ({day_name})")
             print(f"  👥 تعداد کاربران: {len(report)}")
+
+            if not report:
+                print("\n  ⚠️  هیچ کاربری یافت نشد")
+                print("  💡 نکته: مطمئن شوید کارمندان در جدول employee ثبت شده و فعال هستند")
+                return
 
             # شمارش وضعیت‌ها
             status_counts = {}
@@ -2957,73 +2986,175 @@ class ConsoleUI:
                 code = r['status']
                 status_counts[code] = status_counts.get(code, 0) + 1
 
-            print("\n  📊 خلاصه وضعیت:")
-            for code, count in sorted(status_counts.items()):
-                print(f"     • {manager.get_status_name(code):<15} : {count}")
+            # ✅ مرتب‌سازی بر اساس گروه، وضعیت، تاریخ استخدام، نام
+            status_order = {
+                'P': 0, 'M': 1, 'LP': 2,
+                'AL': 3, 'SL': 3, 'RL': 3, 'UL': 3, 'L': 3,
+                'R': 4,
+                'H': 5,
+                'A': 6,
+            }
 
-            # آمار قرارداد
-            with_contract = sum(1 for r in report if r['contract']['has_contract'])
-            without_contract = len(report) - with_contract
-            print(f"\n  📑 قرارداد:")
-            print(f"     • دارای قرارداد فعال : {with_contract} ✅")
-            print(f"     • بدون قرارداد       : {without_contract} ❌")
+            # ✅ مرتب‌سازی فقط بر اساس تاریخ استخدام
+            def sort_key(r):
+                hire_date = r.get('hire_date')
+                if hire_date is None:
+                    # اگر تاریخ استخدام ندارد، آخر قرار بگیرد
+                    return (date.max, r.get('full_name', ''))
+                return (hire_date, r.get('full_name', ''))
 
-            # آمار تردد
-            worked = sum(1 for r in report if r['work_hours'] > 0)
-            total_work = sum(r['work_hours'] for r in report)
-            total_night = sum(r['night_hours'] for r in report)
-            print(f"\n  ⏱️  کارکرد:")
-            print(f"     • کاربران حاضر     : {worked}")
-            print(
-                f"     • مجموع ساعات کاری : {int(total_work)} ساعت و {int((total_work - int(total_work)) * 60)} دقیقه")
-            print(
-                f"     • مجموع شب‌کاری     : {int(total_night)} ساعت و {int((total_night - int(total_night)) * 60)} دقیقه 🌙")
 
-            # جدول اصلی
-            print(
-                "\n  ┌──────┬────────┬──────────────────────┬────────────┬────────────┬────────────┬────────┬────────┬──────────────┐")
-            print(
-                "  │ ردیف │ کد     │ نام و نام خانوادگی   │ گروه       │ قرارداد    │ وضعیت      │ ورود   │ خروج   │ ساعت کاری    │")
-            print(
-                "  ├──────┼────────┼──────────────────────┼────────────┼────────────┼────────────┼────────┼────────┼──────────────┤")
+            report_sorted = sorted(report, key=sort_key)
 
-            for i, r in enumerate(report, 1):
-                full_name = r['full_name'][:20]
+            # گروه‌بندی بر اساس دپارتمان
+            by_department = {}
+            for r in report_sorted:
+                dept = r.get('department', 'بدون گروه')
+                if dept not in by_department:
+                    by_department[dept] = []
+                by_department[dept].append(r)
 
-                # ✅ استفاده مستقیم از department
-                department = r['department'][:10]
+            # نمایش به تفکیک گروه
+            for dept, dept_report in sorted(by_department.items()):
+                # ✅ شمارش بر اساس person_status
+                present_count = sum(1 for r in dept_report if r.get('person_status') == 'حاضر')
+                absent_count = sum(1 for r in dept_report if r.get('person_status') == 'غایب')
+                leave_count = sum(1 for r in dept_report if r.get('person_status') == 'مرخصی')
+                rest_count = sum(1 for r in dept_report if r.get('person_status') == 'استراحت')
+                holiday_count = sum(1 for r in dept_report if r.get('person_status') == 'تعطیل')
+                mission_count = sum(1 for r in dept_report if r.get('person_status') == 'ماموریت')
+                late_count = sum(1 for r in dept_report if r.get('person_status') == 'حضور کم')
 
-                contract_display = r['contract']['type'][:10] if r['contract']['has_contract'] else '❌ ندارد'
+                # ✅ نام فارسی دپارتمان
+                dept_name = self._get_department_name(dept)
 
-                # وضعیت کلی (ترکیب وضعیت روز + وضعیت تردد)
-                status_display = r['status_name'][:10]
-                if r['attendance_status'] != '—':
-                    status_display = f"{status_display[:6]}|{r['attendance_status'][:3]}"
+                print(f"\n{'=' * 220}")
+                print(
+                    f"  🏢 گروه: {dept_name} ({len(dept_report)} کاربر) | ✅ حاضر: {present_count} | 💼 ماموریت: {mission_count} | ⏰ حضور کم: {late_count} | 🌴 مرخصی: {leave_count} | 🛌 استراحت: {rest_count} | 🟡 تعطیل: {holiday_count} | ❌ غایب: {absent_count}")
+                print(f"{'=' * 220}")
 
-                # زمان ورود و خروج
-                first_enter = r['first_enter'].strftime('%H:%M') if r['first_enter'] else '  --  '
-                last_exit = r['last_exit'].strftime('%H:%M') if r['last_exit'] else '  --  '
+                # ✅ جدول با ستون‌های جدید و تراز دقیق
+                print(
+                    "\n  ┌──────┬────────┬────────────────────────┬──────────────┬──────────────┬──────────────┬──────────────┬──────────────────────┬──────────────┬────────┬────────┬──────────────┐")
+                print(
+                    "  │ ردیف │ کد     │ نام کامل               │ دپارتمان     │ تاریخ استخدام│ وضعیت روز    │ وضعیت فرد    │ وضعیت تردد           │ قرارداد      │ ورود   │ خروج   │ ساعات کاری   │")
+                print(
+                    "  ├──────┼────────┼────────────────────────┼──────────────┼──────────────┼──────────────┼──────────────┼──────────────────────┼──────────────┼────────┼────────┼──────────────┤")
 
-                # ساعت کاری
-                if r['work_hours'] > 0:
-                    work_h = int(r['work_hours'])
-                    work_m = int((r['work_hours'] - work_h) * 60)
-                    work_str = f"{work_h:02d}:{work_m:02d}"
-                    if r['night_hours'] > 0:
-                        night_h = int(r['night_hours'])
-                        night_m = int((r['night_hours'] - night_h) * 60)
-                        work_str += f" 🌙{night_h:02d}:{night_m:02d}"
-                else:
-                    work_str = '  --    '
+                for i, r in enumerate(dept_report, 1):
+                    # ✅ استفاده از ljust برای تراز دقیق
+                    full_name = r['full_name'][:22].ljust(22)
+
+                    # ✅ نام فارسی دپارتمان
+                    dept_display = self._get_department_name(r.get('department', '-'))[:12].ljust(12)
+
+                    # ✅ تاریخ استخدام
+                    hire_date = r.get('hire_date')
+                    if hire_date:
+                        try:
+                            j_hire = jdatetime.date.fromgregorian(date=hire_date)
+                            hire_str = j_hire.strftime('%Y/%m/%d')
+                        except:
+                            hire_str = '  --  '
+                    else:
+                        hire_str = '  --  '
+                    hire_str = hire_str.ljust(12)
+
+                    contract_display = ('✅ فعال' if r['contract']['has_contract'] else '❌ بدون').ljust(12)
+
+                    # ✅ سه ستون وضعیت با ایموجی
+                    day_status_raw = r.get('day_status', 'کاری')
+                    day_status = ('🔴 تعطیل' if day_status_raw == 'تعطیل' else '🟢 کاری').ljust(12)
+
+                    person_status_raw = r.get('person_status', 'نامشخص')
+                    if person_status_raw == 'حاضر':
+                        person_status = '✅ حاضر'
+                    elif person_status_raw == 'مرخصی':
+                        person_status = '🌴 مرخصی'
+                    elif person_status_raw == 'استراحت':
+                        person_status = '🛌 استراحت'
+                    elif person_status_raw == 'غایب':
+                        person_status = '❌ غایب'
+                    elif person_status_raw == 'تعطیل':
+                        person_status = '🟡 تعطیل'
+                    elif person_status_raw == 'ماموریت':
+                        person_status = '💼 ماموریت'
+                    elif person_status_raw == 'حضور کم':
+                        person_status = '⏰ حضور کم'
+                    else:
+                        person_status = f'❓ {person_status_raw}'
+                    person_status = person_status[:12].ljust(12)
+
+                    # ✅ وضعیت تردد با ایموجی
+                    attendance_status_raw = r.get('attendance_status', 'بدون تردد')
+                    if attendance_status_raw == 'کامل':
+                        attendance_status = '✅ کامل'
+                    elif attendance_status_raw.startswith('کامل'):
+                        attendance_status = f'✅ {attendance_status_raw}'
+                    elif 'ناقص' in attendance_status_raw:
+                        attendance_status = f'⚠️ {attendance_status_raw}'
+                    elif 'ورود بدون' in attendance_status_raw:
+                        attendance_status = f'⬅️ {attendance_status_raw}'
+                    elif 'خروج بدون' in attendance_status_raw:
+                        attendance_status = f'➡️ {attendance_status_raw}'
+                    else:
+                        attendance_status = '⚪ بدون تردد'
+                    attendance_status = attendance_status[:20].ljust(20)
+
+                    first_enter = r['first_enter'].strftime('%H:%M') if r['first_enter'] else '  --  '
+                    last_exit = r['last_exit'].strftime('%H:%M') if r['last_exit'] else '  --  '
+
+                    if r['work_hours'] > 0:
+                        work_h = int(r['work_hours'])
+                        work_m = int((r['work_hours'] - work_h) * 60)
+                        work_str = f"{work_h:02d}:{work_m:02d}"
+                    else:
+                        work_str = '  --  '
+
+                    print(
+                        f"  │ {i:<4} │ {r['user_id']:<6} │ {full_name} │ {dept_display} │ {hire_str} │ {day_status} │ {person_status} │ {attendance_status} │ {contract_display} │ {first_enter} │ {last_exit} │ {work_str:<12} │")
 
                 print(
-                    f"  │ {i:<4} │ {r['user_id']:<6} │ {full_name:<20} │ {department:<10} │ {contract_display:<10} │ {status_display:<10} │ {first_enter:<6} │ {last_exit:<6} │ {work_str:<12} │")
+                    "  └──────┴────────┴────────────────────────┴──────────────┴──────────────┴──────────────┴──────────────┴──────────────────────┴──────────────┴────────┴────────┴──────────────┘")
 
-            print(
-                "  └──────┴────────┴──────────────────────┴────────────┴────────────┴────────────┴────────┴────────┴──────────────┘")
+            # ✅ آمار کلی بر اساس person_status
+            print(f"\n{'=' * 220}")
+            print("  📊 آمار کلی:")
+            print(f"{'=' * 220}")
+
+            present_total = sum(1 for r in report if r.get('person_status') == 'حاضر')
+            mission_total = sum(1 for r in report if r.get('person_status') == 'ماموریت')
+            late_total = sum(1 for r in report if r.get('person_status') == 'حضور کم')
+            leave_total = sum(1 for r in report if r.get('person_status') == 'مرخصی')
+            rest_total = sum(1 for r in report if r.get('person_status') == 'استراحت')
+            holiday_total = sum(1 for r in report if r.get('person_status') == 'تعطیل')
+            absent_total = sum(1 for r in report if r.get('person_status') == 'غایب')
+
+            print(f"     • ✅ حاضر              : {present_total} نفر")
+            print(f"     • 💼 ماموریت           : {mission_total} نفر")
+            print(f"     • ⏰ حضور کم           : {late_total} نفر")
+            print(f"     • 🌴 مرخصی             : {leave_total} نفر")
+            print(f"     • 🛌 استراحت           : {rest_total} نفر")
+            print(f"     • 🟡 تعطیل             : {holiday_total} نفر")
+            print(f"     • ❌ غایب              : {absent_total} نفر")
+
+            # ✅ جزئیات مرخصی
+            leave_details = {}
+            for r in report:
+                if r.get('person_status') == 'مرخصی':
+                    code = r['status']
+                    leave_details[code] = leave_details.get(code, 0) + 1
+
+            if leave_details:
+                print(f"\n  📋 جزئیات مرخصی:")
+                for code, count in sorted(leave_details.items()):
+                    status_name = manager.get_status_name(code)
+                    emoji = {'AL': '🌴', 'SL': '🏥', 'RL': '🎁', 'UL': '💸', 'L': '🌴'}.get(code, '•')
+                    print(f"     • {emoji} {status_name:<23} : {count} نفر")
 
         finally:
             manager.close()
+            contract_manager.close()
 
     def _show_user_monthly_report(self):
         """گزارش ماهانه یک کاربر - روز به روز"""
@@ -4587,3 +4718,241 @@ class ConsoleUI:
         print(f"     مجموع کسری همه کارمندان   : {fmt_hours(total_deficit)} ساعت")
 
         print(f"{'=' * 180}")
+
+    def _get_department_name(self, dept_code: str) -> str:
+        """تبدیل کد دپارتمان به نام فارسی"""
+        dept_map = {
+            '1': 'رسمی',
+            '2': 'وظیفه',
+            '3': 'خریدخدمت',
+            '4': 'قراردادی',
+            '5': 'پزشک',
+            None: 'بدون گروه',
+            '': 'بدون گروه'
+        }
+        return dept_map.get(str(dept_code), f'گروه {dept_code}')
+
+    def _update_employee_info(self):
+        """ویرایش اطلاعات کارمند"""
+        from core.employee_manager import EmployeeManager
+
+        print("\n" + "=" * 70)
+        print("  ✏️  ویرایش اطلاعات کارمند")
+        print("=" * 70)
+
+        user_id = input("\n  📛 کد پرسنلی: ").strip()
+        if not user_id:
+            print("  ❌ کد پرسنلی نمی‌تواند خالی باشد")
+            return
+
+        manager = EmployeeManager()
+        try:
+            employee = manager.get_employee(user_id)
+
+            if not employee:
+                print(f"\n  ⚠️  اطلاعاتی برای کاربر {user_id} ثبت نشده است")
+                create = input("  آیا می‌خواهید اطلاعات جدید ایجاد کنید؟ (بله/خیر): ").strip()
+                if create.lower() in ['بله', 'yes', 'y']:
+                    self._add_employee_info()
+                return
+
+            # نمایش اطلاعات فعلی
+            print("\n" + "-" * 70)
+            print("  📋 اطلاعات فعلی:")
+            print("-" * 70)
+            print(f"     • کد پرسنلی     : {employee.user_id}")
+            print(f"     • نام             : {employee.first_name}")
+            print(f"     • نام خانوادگی    : {employee.last_name}")
+            print(f"     • نام پدر         : {employee.father_name or '-'}")
+            print(f"     • کد ملی          : {employee.national_code or '-'}")
+
+            if employee.birth_date:
+                j_birth = jdatetime.date.fromgregorian(date=employee.birth_date)
+                print(f"     • تاریخ تولد      : {j_birth.strftime('%Y/%m/%d')}")
+            else:
+                print(f"     • تاریخ تولد      : -")
+
+            print(f"     • جنسیت           : {employee.gender_name}")
+            print(f"     • وضعیت تاهل      : {employee.marital_status_name}")
+            print(f"     • ایمیل           : {employee.email or '-'}")
+
+            if employee.hire_date:
+                j_hire = jdatetime.date.fromgregorian(date=employee.hire_date)
+                print(f"     • تاریخ استخدام   : {j_hire.strftime('%Y/%m/%d')}")
+            else:
+                print(f"     • تاریخ استخدام   : -")
+
+            print(f"     • دپارتمان        : {employee.department or '-'}")
+            print(f"     • سمت             : {employee.position or '-'}")
+            print(f"     • وضعیت           : {employee.status_name}")
+            print(f"     • یادداشت         : {employee.notes or '-'}")
+            print("-" * 70)
+
+            # منوی ویرایش
+            print("\n  📝 کدام فیلد را می‌خواهید ویرایش کنید؟")
+            print("    1. نام")
+            print("    2. نام خانوادگی")
+            print("    3. نام پدر")
+            print("    4. کد ملی")
+            print("    5. تاریخ تولد")
+            print("    6. جنسیت")
+            print("    7. وضعیت تاهل")
+            print("    8. ایمیل")
+            print("    9. تاریخ استخدام")
+            print("    10. دپارتمان")
+            print("    11. سمت")
+            print("    12. یادداشت")
+            print("    0. انصراف")
+
+            field_choice = input("\n  انتخاب [0-12]: ").strip()
+
+            if field_choice == '0':
+                print("  ❌ عملیات لغو شد")
+                return
+
+            # ویرایش فیلد انتخاب شده
+            updated = False
+
+            if field_choice == '1':
+                new_value = input(f"  نام جدید [{employee.first_name}]: ").strip()
+                if new_value:
+                    employee.first_name = new_value
+                    updated = True
+
+            elif field_choice == '2':
+                new_value = input(f"  نام خانوادگی جدید [{employee.last_name}]: ").strip()
+                if new_value:
+                    employee.last_name = new_value
+                    updated = True
+
+            elif field_choice == '3':
+                new_value = input(f"  نام پدر جدید [{employee.father_name or '-'}]: ").strip()
+                employee.father_name = new_value if new_value else None
+                updated = True
+
+            elif field_choice == '4':
+                new_value = input(f"  کد ملی جدید [{employee.national_code or '-'}]: ").strip()
+                if new_value:
+                    # بررسی تکراری نبودن
+                    existing = manager.db.query(Employee).filter(
+                        Employee.national_code == new_value,
+                        Employee.user_id != user_id
+                    ).first()
+                    if existing:
+                        print(f"  ❌ این کد ملی قبلاً برای {existing.full_name} ثبت شده است")
+                        return
+                    employee.national_code = new_value
+                    updated = True
+                else:
+                    employee.national_code = None
+                    updated = True
+
+            elif field_choice == '5':
+                new_value = input(
+                    f"  تاریخ تولد جدید (شمسی - مثال: 1370/05/15) [{employee.birth_date or '-'}]: ").strip()
+                if new_value:
+                    try:
+                        j_date = jdatetime.datetime.strptime(new_value, "%Y/%m/%d").date()
+                        employee.birth_date = j_date.togregorian()
+                        updated = True
+                    except Exception as e:
+                        print(f"  ❌ خطا در تبدیل تاریخ: {e}")
+                        return
+                else:
+                    employee.birth_date = None
+                    updated = True
+
+            elif field_choice == '6':
+                print("    M. مرد")
+                print("    F. زن")
+                new_value = input(f"  جنسیت جدید [{employee.gender or '-'}]: ").strip().upper()
+                if new_value in ['M', 'F']:
+                    employee.gender = new_value
+                    updated = True
+                elif new_value:
+                    print("  ❌ انتخاب نامعتبر")
+                    return
+
+            elif field_choice == '7':
+                print("    S. مجرد")
+                print("    M. متاهل")
+                new_value = input(f"  وضعیت تاهل جدید [{employee.marital_status or '-'}]: ").strip().upper()
+                if new_value in ['S', 'M']:
+                    employee.marital_status = new_value
+                    updated = True
+                elif new_value:
+                    print("  ❌ انتخاب نامعتبر")
+                    return
+
+            elif field_choice == '8':
+                new_value = input(f"  ایمیل جدید [{employee.email or '-'}]: ").strip()
+                employee.email = new_value if new_value else None
+                updated = True
+
+            elif field_choice == '9':
+                new_value = input(f"  تاریخ استخدام جدید (شمسی) [{employee.hire_date or '-'}]: ").strip()
+                if new_value:
+                    try:
+                        j_date = jdatetime.datetime.strptime(new_value, "%Y/%m/%d").date()
+                        employee.hire_date = j_date.togregorian()
+                        updated = True
+                    except Exception as e:
+                        print(f"  ❌ خطا در تبدیل تاریخ: {e}")
+                        return
+                else:
+                    employee.hire_date = None
+                    updated = True
+
+            elif field_choice == '10':
+                print("    1. رسمی")
+                print("    2. وظیفه")
+                print("    3. خریدخدمت")
+                print("    4. قراردادی")
+                print("    5. پزشک")
+                new_value = input(f"  دپارتمان جدید [{employee.department or '-'}]: ").strip()
+                if new_value in ['1', '2', '3', '4', '5']:
+                    employee.department = new_value
+                    updated = True
+                elif new_value:
+                    print("  ❌ انتخاب نامعتبر")
+                    return
+
+            elif field_choice == '11':
+                new_value = input(f"  سمت جدید [{employee.position or '-'}]: ").strip()
+                employee.position = new_value if new_value else None
+                updated = True
+
+            elif field_choice == '12':
+                new_value = input(f"  یادداشت جدید [{employee.notes or '-'}]: ").strip()
+                employee.notes = new_value if new_value else None
+                updated = True
+
+            else:
+                print("  ❌ انتخاب نامعتبر")
+                return
+
+            if not updated:
+                print("  ⚠️  تغییری اعمال نشد")
+                return
+
+            # ذخیره تغییرات
+            try:
+                manager.db.commit()
+                print("\n  ✅ اطلاعات کارمند با موفقیت به‌روزرسانی شد")
+
+                # نمایش اطلاعات جدید
+                print("\n" + "-" * 70)
+                print("  📋 اطلاعات به‌روزرسانی شده:")
+                print("-" * 70)
+                print(f"     • کد پرسنلی     : {employee.user_id}")
+                print(f"     • نام کامل        : {employee.full_name}")
+                print(f"     • دپارتمان        : {employee.department or '-'}")
+                print(f"     • سمت             : {employee.position or '-'}")
+                print(f"     • وضعیت           : {employee.status_name}")
+                print("-" * 70)
+            except Exception as e:
+                manager.db.rollback()
+                print(f"\n  ❌ خطا در ذخیره تغییرات: {e}")
+
+        finally:
+            manager.close()
