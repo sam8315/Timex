@@ -715,13 +715,16 @@ class ConsoleUI:
         self.manager.sync_attendance_to_db()
 
     def _show_incomplete_attendances(self):
-        """نمایش ترددهای ناقص"""
+        """نمایش ترددهای ناقص - به تفکیک گروه و بدون تردد شبانه"""
         from core.attendance_analyzer import AttendanceAnalyzer
         from core.employee_manager import EmployeeManager
+        from models.employee import Employee
+        from models.attendance import Attendance  # ✅ اضافه شد
+        from sqlalchemy import and_, func  # ✅ اضافه شد
 
-        print("\n" + "=" * 110)
+        print("\n" + "=" * 150)
         print("  🔍 بررسی ترددهای ناقص")
-        print("=" * 110)
+        print("=" * 150)
 
         # دریافت بازه زمانی
         print("\n📅 بازه زمانی را مشخص کنید:")
@@ -755,55 +758,204 @@ class ConsoleUI:
                 print("\n✅ هیچ تردد ناقصی در این بازه زمانی یافت نشد!")
                 return
 
-            print(f"\n⚠️  تعداد {len(incomplete)} تردد ناقص یافت شد:\n")
-
-            # ✅ جدول با ستون‌های جدید
-            print(f"  {'تاریخ':<12} {'کد':<8} {'نام کامل':<22} {'گروه':<12} {'وضعیت':<25} {'ورود':<6} {'خروج':<6}")
-            print("  " + "-" * 105)
-
-            # ✅ شمارش بر اساس نوع مشکل
-            missing_enter = 0
-            missing_exit = 0
-            imbalance = 0
-
-            # ✅ شمارش بر اساس گروه
-            dept_counts = {}
-
+            # ✅ فیلتر کردن ترددهای شبانه (امروز ورود، فردا خروج)
+            filtered_incomplete = []
             for item in incomplete:
-                # ✅ دریافت نام کامل و department از employee
-                full_name = emp_manager.get_full_name(item['user_id'])
-                department = emp_manager.get_group_name(item['user_id'])
+                # ✅ حالت ۱: فقط ورود دارد (exit_count = 0)
+                if item['issue'] == 'missing_exit' and item['enter_count'] > 0 and item['exit_count'] == 0:
+                    next_day = item['date'] + timedelta(days=1)
+                    next_day_attendances = analyzer.db.query(Attendance).filter(
+                        and_(
+                            Attendance.user_id == item['user_id'],
+                            func.date(Attendance.timestamp) == next_day,
+                            Attendance.is_deleted == False
+                        )
+                    ).all()
 
-                # شمارش
-                if item['issue'] == 'missing_enter':
-                    missing_enter += 1
-                elif item['issue'] == 'missing_exit':
-                    missing_exit += 1
+                    next_day_exits = [a for a in next_day_attendances if a.punch == 1]
+
+                    if next_day_exits:
+                        continue  # تردد شبانه است
+
+                # ✅ حالت ۲: فقط خروج دارد (enter_count = 0)
+                elif item['issue'] == 'missing_enter' and item['exit_count'] > 0 and item['enter_count'] == 0:
+                    prev_day = item['date'] - timedelta(days=1)
+                    prev_day_attendances = analyzer.db.query(Attendance).filter(
+                        and_(
+                            Attendance.user_id == item['user_id'],
+                            func.date(Attendance.timestamp) == prev_day,
+                            Attendance.is_deleted == False
+                        )
+                    ).all()
+
+                    prev_day_enters = [a for a in prev_day_attendances if a.punch == 0]
+
+                    if prev_day_enters:
+                        continue  # تردد شبانه است
+
+                # ✅ حالت ۳: عدم تعادل (enter_count != exit_count)
                 elif item['issue'] == 'imbalance':
-                    imbalance += 1
+                    # بررسی آیا خروجی در اوایل صبح وجود دارد که متعلق به دیروز باشد
+                    day_attendances = analyzer.db.query(Attendance).filter(
+                        and_(
+                            Attendance.user_id == item['user_id'],
+                            func.date(Attendance.timestamp) == item['date'],
+                            Attendance.is_deleted == False
+                        )
+                    ).order_by(Attendance.timestamp).all()
 
-                dept_counts[department] = dept_counts.get(department, 0) + 1
+                    enters = [a for a in day_attendances if a.punch == 0]
+                    exits = [a for a in day_attendances if a.punch == 1]
 
-                j_date = jdatetime.date.fromgregorian(date=item['date'])
-                date_str = j_date.strftime("%Y/%m/%d")
+                    # اگر خروج بیشتر از ورود است
+                    if len(exits) > len(enters):
+                        # بررسی آیا خروجی در اوایل صبح (قبل از 08:00) وجود دارد
+                        early_exits = [e for e in exits if e.timestamp.hour < 8]
 
-                print(f"  {date_str:<12} {item['user_id']:<8} {full_name[:20]:<22} {department:<12} "
-                      f"{item['type']:<25} {item['enter_count']:<6} {item['exit_count']:<6}")
+                        if early_exits:
+                            # بررسی آیا دیروز ورود داشته
+                            prev_day = item['date'] - timedelta(days=1)
+                            prev_day_attendances = analyzer.db.query(Attendance).filter(
+                                and_(
+                                    Attendance.user_id == item['user_id'],
+                                    func.date(Attendance.timestamp) == prev_day,
+                                    Attendance.is_deleted == False
+                                )
+                            ).all()
 
-            # خلاصه بر اساس نوع مشکل
-            print("\n" + "-" * 105)
-            print(f"  📊 خلاصه بر اساس نوع مشکل:")
-            print(f"     • خروج بدون ورود   : {missing_enter}")
-            print(f"     • ورود بدون خروج   : {missing_exit}")
-            print(f"     • عدم تعادل       : {imbalance}")
+                            prev_day_enters = [a for a in prev_day_attendances if a.punch == 0]
 
-            # ✅ خلاصه بر اساس گروه
-            if dept_counts:
-                print(f"\n  📊 خلاصه بر اساس گروه:")
-                for g_name, count in sorted(dept_counts.items(), key=lambda x: x[1], reverse=True):
-                    print(f"     • {g_name:<15} : {count} مورد")
+                            if prev_day_enters:
+                                # این خروج متعلق به دیروز است، نادیده بگیر
+                                # اگر حالا balanced شد، حذف کن
+                                adjusted_exit_count = len(exits) - len(early_exits)
+                                if len(enters) == adjusted_exit_count:
+                                    continue  # تردد شبانه است، حذف کن
 
-            print("-" * 105)
+                    # اگر ورود بیشتر از خروج است
+                    elif len(enters) > len(exits):
+                        # بررسی آیا ورودی در اواخر شب (بعد از 22:00) وجود دارد که فردا خروج داشته باشد
+                        late_enters = [e for e in enters if e.timestamp.hour >= 22]
+
+                        if late_enters:
+                            # بررسی آیا فردا خروج دارد
+                            next_day = item['date'] + timedelta(days=1)
+                            next_day_attendances = analyzer.db.query(Attendance).filter(
+                                and_(
+                                    Attendance.user_id == item['user_id'],
+                                    func.date(Attendance.timestamp) == next_day,
+                                    Attendance.is_deleted == False
+                                )
+                            ).all()
+
+                            next_day_exits = [a for a in next_day_attendances if a.punch == 1]
+
+                            if next_day_exits:
+                                # این ورود متعلق به فردا است، نادیده بگیر
+                                adjusted_enter_count = len(enters) - len(late_enters)
+                                if adjusted_enter_count == len(exits):
+                                    continue  # تردد شبانه است، حذف کن
+
+                # اگر به اینجا رسیدیم، یعنی واقعا ناقص است
+                filtered_incomplete.append(item)
+
+            if not filtered_incomplete:
+                print("\n✅ هیچ تردد ناقصی یافت نشد (همه ترددهای شبانه هستند)")
+                return
+
+            print(f"\n⚠️  تعداد {len(filtered_incomplete)} تردد ناقص یافت شد:\n")
+
+            # ✅ گروه‌بندی بر اساس دپارتمان
+            by_department = {}
+            for item in filtered_incomplete:
+                # دریافت اطلاعات کارمند
+                employee = analyzer.db.query(Employee).filter(Employee.user_id == item['user_id']).first()
+                if employee:
+                    dept = employee.department or 'بدون گروه'
+                    dept_name = self._get_department_name(dept)
+                    full_name = employee.full_name
+                else:
+                    dept = 'بدون گروه'
+                    dept_name = 'بدون گروه'
+                    full_name = f"کاربر {item['user_id']}"
+
+                if dept not in by_department:
+                    by_department[dept] = {
+                        'name': dept_name,
+                        'items': []
+                    }
+
+                by_department[dept]['items'].append({
+                    **item,
+                    'full_name': full_name
+                })
+
+            # ✅ نمایش به تفکیک گروه
+            for dept, dept_data in sorted(by_department.items(), key=lambda x: x[1]['name']):
+                dept_name = dept_data['name']
+                items = dept_data['items']
+
+                # شمارش بر اساس نوع مشکل
+                missing_enter = sum(1 for i in items if i['issue'] == 'missing_enter')
+                missing_exit = sum(1 for i in items if i['issue'] == 'missing_exit')
+                imbalance = sum(1 for i in items if i['issue'] == 'imbalance')
+
+                print(f"\n{'=' * 150}")
+                print(
+                    f"  🏢 گروه: {dept_name} ({len(items)} مورد) | ⬅️ ورود بدون خروج: {missing_enter} | ➡️ خروج بدون ورود: {missing_exit} | ⚠️ عدم تعادل: {imbalance}")
+                print(f"{'=' * 150}")
+
+                # جدول
+                print(
+                    "\n  ┌──────┬────────────┬────────┬────────────────────────┬──────────────┬──────────────────────┬────────┬────────┐")
+                print(
+                    "  │ ردیف │ تاریخ      │ کد     │ نام کامل               │ دپارتمان     │ وضعیت                │ ورود   │ خروج   │")
+                print(
+                    "  ├──────┼────────────┼────────┼────────────────────────┼──────────────┼──────────────────────┼────────┼────────┤")
+
+                for i, item in enumerate(items, 1):
+                    # تبدیل تاریخ میلادی به شمسی
+                    j_date = jdatetime.date.fromgregorian(date=item['date'])
+                    date_str = j_date.strftime('%Y/%m/%d')
+
+                    full_name = item['full_name'][:22].ljust(22)
+                    dept_display = dept_name[:12].ljust(12)
+
+                    # وضعیت با ایموجی
+                    if item['issue'] == 'missing_enter':
+                        issue_str = '⬅️ خروج بدون ورود'
+                    elif item['issue'] == 'missing_exit':
+                        issue_str = '➡️ ورود بدون خروج'
+                    elif item['issue'] == 'imbalance':
+                        issue_str = f'⚠️ عدم تعادل'
+                    else:
+                        issue_str = '❓ نامشخص'
+                    issue_str = issue_str.ljust(20)
+
+                    print(
+                        f"  │ {i:<4} │ {date_str:<10} │ {item['user_id']:<6} │ {full_name} │ {dept_display} │ {issue_str} │ {item['enter_count']:<6} │ {item['exit_count']:<6} │")
+
+                print(
+                    "  └──────┴────────────┴────────┴────────────────────────┴──────────────┴──────────────────────┴────────┴────────┘")
+
+            # ✅ خلاصه کلی
+            print(f"\n{'=' * 150}")
+            print("  📊 خلاصه کلی:")
+            print(f"{'=' * 150}")
+
+            total_missing_enter = sum(1 for i in filtered_incomplete if i['issue'] == 'missing_enter')
+            total_missing_exit = sum(1 for i in filtered_incomplete if i['issue'] == 'missing_exit')
+            total_imbalance = sum(1 for i in filtered_incomplete if i['issue'] == 'imbalance')
+
+            print(f"     • ⬅️ خروج بدون ورود   : {total_missing_enter} مورد")
+            print(f"     • ➡️ ورود بدون خروج   : {total_missing_exit} مورد")
+            print(f"     • ⚠️ عدم تعادل       : {total_imbalance} مورد")
+            print(f"     • 📊 مجموع کل        : {len(filtered_incomplete)} مورد")
+
+            # خلاصه بر اساس گروه
+            print(f"\n  📊 خلاصه بر اساس گروه:")
+            for dept, dept_data in sorted(by_department.items(), key=lambda x: x[1]['name']):
+                print(f"     • {dept_data['name']:<15} : {len(dept_data['items'])} مورد")
 
         finally:
             analyzer.close()
