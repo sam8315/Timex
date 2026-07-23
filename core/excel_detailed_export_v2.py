@@ -152,12 +152,13 @@ class DetailedExcelExporterV2:
 
         ws.append(['وضعیت روزها'])
         ws['A7'].font = Font(bold=True, size=12)
-        ws.append(['حضور', summary['present_days']])
+        ws.append(['حضور (کاری عادی)', summary['present_days']])
+        ws.append(['جمعه کاری', summary['friday_work_days']])
+        ws.append(['تعطیل کاری', summary['holiday_work_days']])
         ws.append(['مرخصی', summary['leave_days']])
         ws.append(['غیبت', summary['absent_days']])
         ws.append(['استراحت', summary['rest_days']])
         ws.append(['تعطیل', summary['holiday_days']])
-        ws.append(['جمعه کاری', summary['friday_work_days']])
 
         ws.append([])
 
@@ -176,6 +177,14 @@ class DetailedExcelExporterV2:
         ws.append(['کسری کار (مبنای 7:20)', self._fmt_hours(summary['total_deficit'])])
         ws.append(['اضافه کاری هفتگی', self._fmt_hours(summary['weekly_overtime'])])
         ws.append(['جمعه کاری', self._fmt_hours(summary['friday_work_hours'])])
+
+        # ✅ وضعیت کلی
+        ws.append([])
+        ws.append(['وضعیت کلی'])
+        ws['A27'].font = Font(bold=True, size=12)
+        ws.append(['تهاتر اضافی و کسری', self._fmt_hours(abs(summary['net_balance']))])
+        ws.append(['وضعیت نهایی', summary['overall_status']])
+        ws.append(['مقدار خالص (ساعت)', summary['net_balance_hours']])
 
         self._auto_adjust_column_width(ws)
 

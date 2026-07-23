@@ -343,21 +343,29 @@ class DetailedPDFExporterV2:
                     pdf.cell(col_widths[i], 4, self._fix_rtl(value), border=1, align='C')
             pdf.ln()
 
-        pdf.ln(3)
+        pdf.ln(4)
 
-        pdf.set_font(font_name, 'B', 10)
-        pdf.cell(0, 6, self._fix_rtl('خلاصه ماهانه'), ln=True, align='R')
-        pdf.ln(1)
+        # خلاصه
+        pdf.set_font(font_name, 'B', 11)
+        pdf.cell(0, 7, self._fix_rtl('خلاصه ماهانه'), ln=True, align='R')
+        pdf.ln(2)
 
-        pdf.set_font(font_name, '', 8)
-        pdf.cell(0, 4, self._fix_rtl(f"موظفی: {summary['duty_days']} روز / {self._fmt_hours(summary['duty_hours'])}"),
+        pdf.set_font(font_name, '', 9)
+        pdf.cell(0, 5,
+                 self._fix_rtl(f"موظفی: {summary['duty_days']} روز / {self._fmt_hours(summary['duty_hours'])} ساعت"),
                  ln=True, align='R')
-        pdf.cell(0, 4, self._fix_rtl(
-            f"حضور: {summary['present_days']} | مرخصی: {summary['leave_days']} | غیبت: {summary['absent_days']} | استراحت: {summary['rest_days']} | تعطیل: {summary['holiday_days']}"),
-                 ln=True, align='R')
-        pdf.cell(0, 4, self._fix_rtl(
+        pdf.cell(0, 5, self._fix_rtl(f"حضور: {summary['present_days']} | جمعه کاری: {summary['friday_work_days']} | تعطیل کاری: {summary['holiday_work_days']} | مرخصی: {summary['leave_days']} | غیبت: {summary['absent_days']} | استراحت: {summary['rest_days']} | تعطیل: {summary['holiday_days']}"), ln=True, align='R')
+
+        pdf.cell(0, 5, self._fix_rtl(
             f"کارکرد: {self._fmt_hours(summary['total_work_hours'])} | صبح: {self._fmt_hours(summary['total_morning'])} | عصر: {self._fmt_hours(summary['total_evening'])} | شب: {self._fmt_hours(summary['total_night'])}"),
                  ln=True, align='R')
-        pdf.cell(0, 4, self._fix_rtl(
+        pdf.cell(0, 5, self._fix_rtl(
             f"اضافی: {self._fmt_hours(summary['total_surplus'])} | کسری: {self._fmt_hours(summary['total_deficit'])} | هفتگی: {self._fmt_hours(summary['weekly_overtime'])} | جمعه کاری: {self._fmt_hours(summary['friday_work_hours'])}"),
                  ln=True, align='R')
+
+        # ✅ وضعیت کلی
+        pdf.set_font(font_name, 'B', 9)
+        pdf.cell(0, 5, self._fix_rtl('وضعیت کلی:'), ln=True, align='R')
+        pdf.set_font(font_name, '', 9)
+        # ✅ خط آخر با تهاتر و مقدار عددی
+        pdf.cell(0, 5, self._fix_rtl(f"تهاتر: {self._fmt_hours(abs(summary['net_balance']))} ({abs(summary['net_balance']):.2f} عددی) | وضعیت: {summary['overall_status']} | مقدار خالص: {summary['net_balance_hours']:.2f} عددی"), ln=True, align='R')

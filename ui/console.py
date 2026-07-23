@@ -260,6 +260,7 @@ class ConsoleUI:
             print("  12. درخواست‌های یک کاربر")
             print("  13. آمار درخواست‌ها")
             print("  14. تایید همه درخواست‌های در انتظار (یکجا) 🆕")  # 🆕
+            print("  15. حذف درخواست (مدیر) 🆕")  # 🆕
             print("  0. بازگشت")
 
             choice = input("\n  انتخاب: ").strip()
@@ -277,6 +278,7 @@ class ConsoleUI:
             elif choice == '12': self._show_user_requests()
             elif choice == '13': self._show_request_statistics()
             elif choice == '14': self._approve_all_pending_leaves()  # 🆕
+            elif choice == '15': self._admin_delete_leave_request()  # 🆕
             elif choice == '0': break
             else: print("\n❌ انتخاب نامعتبر")
             input("\n⏎ Enter...")
@@ -5340,12 +5342,13 @@ class ConsoleUI:
         print(f"     ساعات موظفی         : {fmt_hours_summary(summary['duty_hours'])} ساعت")
 
         print(f"\n  وضعیت روزها:")
-        print(f"     حضور                : {summary['present_days']} روز")
-        print(f"     مرخصی               : {summary['leave_days']} روز")
-        print(f"     غیبت                : {summary['absent_days']} روز")
-        print(f"     استراحت             : {summary['rest_days']} روز")
-        print(f"     تعطیل               : {summary['holiday_days']} روز")
-        print(f"     جمعه کاری           : {summary['friday_work_days']} روز")
+        print(f"     حضور (کاری عادی)  : {summary['present_days']} روز")
+        print(f"     جمعه کاری         : {summary['friday_work_days']} روز")
+        print(f"     تعطیل کاری        : {summary['holiday_work_days']} روز")
+        print(f"     مرخصی             : {summary['leave_days']} روز")
+        print(f"     غیبت              : {summary['absent_days']} روز")
+        print(f"     استراحت           : {summary['rest_days']} روز")
+        print(f"     تعطیل             : {summary['holiday_days']} روز")
 
         print(f"\n  ساعات کاری:")
         print(f"     کارکرد ماهانه       : {fmt_hours_summary(summary['total_work_hours'])} ساعت")
@@ -5358,6 +5361,12 @@ class ConsoleUI:
         print(f"     مجموع کسری          : {fmt_hours_summary(summary['total_deficit'])} ساعت")
         print(f"     اضافه کاری هفتگی    : {fmt_hours_summary(summary['weekly_overtime'])} ساعت")
         print(f"     جمعه کاری           : {fmt_hours_summary(summary['friday_work_hours'])} ساعت")
+
+        # ✅ وضعیت کلی - تهاتر اضافی و کسری
+        print(f"\n  وضعیت کلی:")
+        print(f"     تهاتر اضافی و کسری  : {fmt_hours_summary(abs(summary['net_balance']))} ساعت")
+        print(f"     وضعیت نهایی         : {summary['overall_status']}")
+        print(f"     مقدار خالص          : {fmt_hours_summary(summary['net_balance_hours'])} ساعت")
 
         print(f"{'=' * 220}")
 
@@ -5455,3 +5464,231 @@ class ConsoleUI:
                   f"{fmt_hours(summary['total_work_hours'])} │ {fmt_hours(summary['total_surplus'])} │ {fmt_hours(summary['total_deficit'])} │")
 
         print("  └──────┴────────┴──────────────────────┴────────┴──────┴──────┴──────┴────────┴────────┴────────┘")
+
+    def _admin_delete_leave_request(self):
+        """حذف درخواست مرخصی توسط مدیر"""
+        from core.leave_request_manager import LeaveRequestManager
+
+        print("\n" + "=" * 120)
+        print("  🗑️ حذف درخواست مرخصی (مدیر)")
+        print("=" * 120)
+
+        manager = LeaveRequestManager()
+        try:
+            # فیلتر اختیاری
+            print("\n  🔍 فیلتر:")
+            print("    1. همه درخواست‌ها")
+            print("    2. بر اساس کد پرسنلی")
+            print("    3. بر اساس وضعیت")
+            filter_choice = input("  انتخاب [1-3] [پیش‌فرض: 1]: ").strip() or '1'
+
+            user_filter = None
+            status_filter = None
+
+            if filter_choice == '2':
+                user_filter = input("  کد پرسنلی: ").strip()
+            elif filter_choice == '3':
+                print("    P. در انتظار")
+                print("    A. تایید شده")
+                print("    R. رد شده")
+                print("    C. لغو شده")
+                status_filter = input("  وضعیت [P/A/R/C]: ").strip().upper()
+
+            # دریافت لیست درخواست‌ها
+            if user_filter:
+                requests = manager.get_all_requests(user_filter)
+            elif status_filter:
+                requests = manager.db.query(LeaveRequest).filter(
+                    LeaveRequest.status == status_filter
+                ).order_by(LeaveRequest.from_date.desc()).all()
+            else:
+                requests = manager.get_all_requests()
+
+            if not requests:
+                print("\n  ⚠️ هیچ درخواستی یافت نشد")
+                return
+
+            # نمایش لیست
+            leave_type_names = {
+                'AL': 'استحقاقی',
+                'SL': 'استعلاجی',
+                'RL': 'تشویقی',
+                'UL': 'بدون حقوق'
+            }
+
+            status_names = {
+                'P': '⏳ در انتظار',
+                'A': '✅ تایید شده',
+                'R': '❌ رد شده',
+                'C': '🚫 لغو شده'
+            }
+
+            print(f"\n  📋 تعداد درخواست‌ها: {len(requests)}")
+            print(
+                "\n  ┌──────┬──────┬────────┬────────────────────────┬────────────┬────────────┬────────────┬────────┐")
+            print("  │ ردیف │ ID   │ کد     │ نام کامل               │ از تاریخ   │ تا تاریخ   │ نوع مرخصی  │ وضعیت  │")
+            print("  ├──────┼──────┼────────┼────────────────────────┼────────────┼────────────┼────────────┼────────┤")
+
+            for i, req in enumerate(requests, 1):
+                full_name = manager.get_employee_name(req.user_id)
+                j_from = jdatetime.date.fromgregorian(date=req.from_date)
+                j_to = jdatetime.date.fromgregorian(date=req.to_date)
+                leave_type = leave_type_names.get(req.leave_type, req.leave_type)
+                status = status_names.get(req.status, req.status)
+
+                print(
+                    f"  │ {i:<4} │ {req.id:<4} │ {req.user_id:<6} │ {full_name[:22]:<22} │ {j_from.strftime('%Y/%m/%d')} │ {j_to.strftime('%Y/%m/%d')} │ {leave_type:<10} │ {status:<6} │")
+
+            print("  └──────┴──────┴────────┴────────────────────────┴────────────┴────────────┴────────────┴────────┘")
+
+            # انتخاب برای حذف
+            print("\n" + "-" * 120)
+            choice_str = input("  شماره ردیف برای حذف (یا 0 برای انصراف): ").strip()
+
+            try:
+                choice = int(choice_str)
+                if choice == 0:
+                    print("  ❌ عملیات لغو شد")
+                    return
+                if choice < 1 or choice > len(requests):
+                    print("  ❌ شماره نامعتبر")
+                    return
+            except ValueError:
+                print("  ❌ عدد نامعتبر")
+                return
+
+            selected = requests[choice - 1]
+
+            # نمایش جزئیات و تایید
+            print("\n" + "-" * 120)
+            print("  📋 جزئیات درخواست:")
+            print(f"     • ID              : {selected.id}")
+            print(f"     • کد پرسنلی       : {selected.user_id}")
+            print(f"     • نام             : {manager.get_employee_name(selected.user_id)}")
+            print(
+                f"     • از تاریخ        : {jdatetime.date.fromgregorian(date=selected.from_date).strftime('%Y/%m/%d')}")
+            print(
+                f"     • تا تاریخ        : {jdatetime.date.fromgregorian(date=selected.to_date).strftime('%Y/%m/%d')}")
+            print(f"     • نوع مرخصی       : {leave_type_names.get(selected.leave_type, selected.leave_type)}")
+            print(f"     • تعداد روز       : {selected.days_count}")
+            print(f"     • وضعیت           : {status_names.get(selected.status, selected.status)}")
+            print(f"     • دلیل            : {selected.reason or '-'}")
+
+            print("\n  ⚠️  هشدار: این عملیات غیرقابل بازگشت است!")
+            confirm = input("  آیا مطمئن هستید؟ (بله/خیر): ").strip()
+
+            if confirm.lower() not in ['بله', 'yes', 'y']:
+                print("  ❌ عملیات لغو شد")
+                return
+
+            # حذف
+            result = manager.delete_leave_request(selected.id)
+            print(f"\n  {result['message']}")
+
+            if result['success']:
+                info = result['info']
+                print(f"\n  📋 اطلاعات حذف شده:")
+                print(f"     • کد پرسنلی       : {info['user_id']}")
+                print(
+                    f"     • از تاریخ        : {jdatetime.date.fromgregorian(date=info['from_date']).strftime('%Y/%m/%d')}")
+                print(
+                    f"     • تا تاریخ        : {jdatetime.date.fromgregorian(date=info['to_date']).strftime('%Y/%m/%d')}")
+                print(f"     • تعداد روز       : {info['days_count']}")
+
+        finally:
+            manager.close()
+
+    def _show_all_leave_requests(self):
+        """نمایش همه درخواست‌های مرخصی (برای مدیر)"""
+        from core.leave_request_manager import LeaveRequestManager
+
+        print("\n" + "=" * 120)
+        print("  📋 مشاهده همه درخواست‌های مرخصی")
+        print("=" * 120)
+
+        manager = LeaveRequestManager()
+        try:
+            # فیلتر
+            print("\n  🔍 فیلتر:")
+            print("    1. همه درخواست‌ها")
+            print("    2. بر اساس کد پرسنلی")
+            print("    3. بر اساس وضعیت")
+            filter_choice = input("  انتخاب [1-3] [پیش‌فرض: 1]: ").strip() or '1'
+
+            user_filter = None
+            status_filter = None
+
+            if filter_choice == '2':
+                user_filter = input("  کد پرسنلی: ").strip()
+            elif filter_choice == '3':
+                print("    P. در انتظار")
+                print("    A. تایید شده")
+                print("    R. رد شده")
+                print("    C. لغو شده")
+                status_filter = input("  وضعیت [P/A/R/C]: ").strip().upper()
+
+            # دریافت لیست
+            if user_filter:
+                requests = manager.get_all_requests(user_filter)
+            elif status_filter:
+                requests = manager.db.query(LeaveRequest).filter(
+                    LeaveRequest.status == status_filter
+                ).order_by(LeaveRequest.from_date.desc()).all()
+            else:
+                requests = manager.get_all_requests()
+
+            if not requests:
+                print("\n  ⚠️ هیچ درخواستی یافت نشد")
+                return
+
+            # نمایش
+            leave_type_names = {
+                'AL': 'استحقاقی',
+                'SL': 'استعلاجی',
+                'RL': 'تشویقی',
+                'UL': 'بدون حقوق'
+            }
+
+            status_names = {
+                'P': '⏳ در انتظار',
+                'A': '✅ تایید شده',
+                'R': '❌ رد شده',
+                'C': '🚫 لغو شده'
+            }
+
+            print(f"\n  📋 تعداد درخواست‌ها: {len(requests)}")
+            print(
+                "\n  ┌──────┬────────┬────────────────────────┬────────────┬────────────┬────────────┬────────┬────────────────┐")
+            print(
+                "  │ ID   │ کد     │ نام کامل               │ از تاریخ   │ تا تاریخ   │ نوع مرخصی  │ وضعیت  │ دلیل           │")
+            print(
+                "  ├──────┼────────┼────────────────────────┼────────────┼────────────┼────────────┼────────┼────────────────┤")
+
+            for req in requests:
+                full_name = manager.get_employee_name(req.user_id)
+                j_from = jdatetime.date.fromgregorian(date=req.from_date)
+                j_to = jdatetime.date.fromgregorian(date=req.to_date)
+                leave_type = leave_type_names.get(req.leave_type, req.leave_type)
+                status = status_names.get(req.status, req.status)
+                reason = (req.reason or '-')[:14]
+
+                print(
+                    f"  │ {req.id:<4} │ {req.user_id:<6} │ {full_name[:22]:<22} │ {j_from.strftime('%Y/%m/%d')} │ {j_to.strftime('%Y/%m/%d')} │ {leave_type:<10} │ {status:<6} │ {reason:<14} │")
+
+            print(
+                "  └──────┴────────┴────────────────────────┴────────────┴────────────┴────────────┴────────┴────────────────┘")
+
+            # آمار
+            status_counts = {}
+            for req in requests:
+                status_counts[req.status] = status_counts.get(req.status, 0) + 1
+
+            print(f"\n  📊 آمار:")
+            for status, count in sorted(status_counts.items()):
+                print(f"     • {status_names.get(status, status)}: {count} درخواست")
+
+            total_days = sum(req.days_count for req in requests if req.status == 'A')
+            print(f"\n  📅 مجموع روزهای مرخصی تایید شده: {total_days} روز")
+
+        finally:
+            manager.close()

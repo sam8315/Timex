@@ -424,3 +424,52 @@ class LeaveRequestManager:
         if employee:
             return employee.full_name
         return f"کاربر {user_id}"
+
+    def delete_leave_request(self, request_id: int) -> Dict:
+        """
+        حذف کامل درخواست مرخصی از دیتابیس (فقط برای مدیر)
+        """
+        try:
+            request = self.db.query(LeaveRequest).filter(
+                LeaveRequest.id == request_id
+            ).first()
+
+            if not request:
+                return {
+                    'success': False,
+                    'message': '❌ درخواست یافت نشد'
+                }
+
+            # ذخیره اطلاعات برای نمایش
+            info = {
+                'user_id': request.user_id,
+                'from_date': request.from_date,
+                'to_date': request.to_date,
+                'leave_type': request.leave_type,
+                'days_count': request.days_count,
+                'status': request.status
+            }
+
+            # حذف از دیتابیس
+            self.db.delete(request)
+            self.db.commit()
+
+            return {
+                'success': True,
+                'message': f'✅ درخواست مرخصی با موفقیت حذف شد',
+                'info': info
+            }
+
+        except Exception as e:
+            self.db.rollback()
+            return {
+                'success': False,
+                'message': f'❌ خطا در حذف درخواست: {e}'
+            }
+
+    def get_all_requests(self, user_id: Optional[str] = None) -> List[LeaveRequest]:
+        """دریافت همه درخواست‌های مرخصی (اختیاری بر اساس کاربر)"""
+        query = self.db.query(LeaveRequest)
+        if user_id:
+            query = query.filter(LeaveRequest.user_id == user_id)
+        return query.order_by(LeaveRequest.from_date.desc()).all()

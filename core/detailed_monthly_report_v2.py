@@ -46,10 +46,10 @@ class DetailedMonthlyReportGeneratorV2:
         ).order_by(Employee.hire_date, Employee.last_name, Employee.first_name).all()
 
     def generate_detailed_report(
-            self,
-            user_id: str,
-            year: int,
-            month: int
+        self,
+        user_id: str,
+        year: int,
+        month: int
     ) -> Dict:
         """تولید گزارش تفصیلی ماهانه برای یک کارمند - نسخه ۲"""
         # محاسبه بازه ماه
@@ -99,6 +99,30 @@ class DetailedMonthlyReportGeneratorV2:
 
         statuses_by_date = {ds.status_date: ds.status_code for ds in daily_statuses}
 
+        # ✅ دریافت درخواست‌های مرخصی تایید شده
+        approved_leaves = self.db.query(LeaveRequest).filter(
+            and_(
+                LeaveRequest.user_id == user_id,
+                LeaveRequest.status == 'A',  # تایید شده
+                LeaveRequest.from_date <= g_end,
+                LeaveRequest.to_date >= g_start
+            )
+        ).all()
+
+        # ✅ ساخت دیکشنری مرخصی‌ها بر اساس تاریخ
+        leaves_by_date = {}
+        for leave in approved_leaves:
+            current = leave.from_date
+            while current <= leave.to_date:
+                if current >= g_start and current <= g_end:
+                    leaves_by_date[current] = leave.leave_type
+                current += timedelta(days=1)
+
+        # ✅ ترکیب وضعیت‌ها: DailyStatus اولویت بالاتر دارد
+        for leave_date, leave_type in leaves_by_date.items():
+            if leave_date not in statuses_by_date:
+                statuses_by_date[leave_date] = leave_type
+
         # ساخت لیست روزها
         days = []
         current = g_start
@@ -116,17 +140,17 @@ class DetailedMonthlyReportGeneratorV2:
                 current, statuses_by_date, attendances_by_day, is_day_off
             )
 
-            # ✅ محاسبه ساعات کاری با چند جفت ورود/خروج
+            # محاسبه ساعات کاری با چند جفت ورود/خروج
             day_data = self._calculate_day_work_hours_v2(
                 current, attendances_by_day.get(current, []), attendances
             )
 
             work_hours = day_data['work_hours']
-            attendance_pairs = day_data['pairs']  # ✅ لیست جفت‌های ورود/خروج
+            attendance_pairs = day_data['pairs']
             attendance_status = day_data['attendance_status']
             has_incomplete = day_data['has_incomplete']
 
-            # ✅ محاسبه اضافی/کسری بر اساس 7:20
+            # محاسبه اضافی/کسری بر اساس 7:20
             surplus, deficit = self._calculate_surplus_deficit(
                 work_hours, is_day_off, person_status
             )
@@ -153,12 +177,12 @@ class DetailedMonthlyReportGeneratorV2:
                 'day_status': 'تعطیل' if is_day_off else 'کاری',
                 'person_status': person_status['code'],
                 'person_status_name': person_status['name'],
-                'attendance_pairs': attendance_pairs,  # ✅ لیست جفت‌ها
+                'attendance_pairs': attendance_pairs,
                 'attendance_status': attendance_status,
                 'has_incomplete': has_incomplete,
                 'work_hours': work_hours,
-                'surplus': surplus,  # ✅ اضافی
-                'deficit': deficit,  # ✅ کسری
+                'surplus': surplus,
+                'deficit': deficit,
                 'morning_hours': shift_hours['morning'],
                 'evening_hours': shift_hours['evening'],
                 'night_hours': shift_hours['night'],
@@ -186,16 +210,17 @@ class DetailedMonthlyReportGeneratorV2:
         }
 
     def _determine_person_status(
-            self,
-            current: date,
-            statuses_by_date: Dict,
-            attendances_by_day: Dict,
-            is_day_off: bool
+        self,
+        current: date,
+        statuses_by_date: Dict,
+        attendances_by_day: Dict,
+        is_day_off: bool
     ) -> Dict:
         """تعیین وضعیت فرد در یک روز"""
         if current in statuses_by_date:
             status_code = statuses_by_date[current]
-            if status_code in ['AL', 'SL', 'RL', 'UL']:
+            # ✅ بررسی انواع مرخصی
+            if status_code in ['AL', 'SL', 'RL', 'UL', 'L']:
                 return {'code': 'L', 'name': 'مرخصی'}
             elif status_code == 'R':
                 return {'code': 'R', 'name': 'استراحت'}
@@ -211,7 +236,7 @@ class DetailedMonthlyReportGeneratorV2:
                 return {'code': 'P', 'name': 'حاضر (تعطیل کاری)'}
             return {'code': 'P', 'name': 'حاضر'}
 
-        # ✅ اگر روز تعطیل است و تردد ندارد → تعطیل
+        # اگر روز تعطیل است و تردد ندارد → تعطیل
         if is_day_off:
             return {'code': 'H', 'name': 'تعطیل'}
 
@@ -221,8 +246,6 @@ class DetailedMonthlyReportGeneratorV2:
         """
         محاسبه ساعات کاری روز با چند جفت ورود/خروج - نسخه ۲
         """
-        from datetime import timezone
-
         if not day_attendances:
             return {
                 'work_hours': 0.0,
@@ -234,7 +257,7 @@ class DetailedMonthlyReportGeneratorV2:
         enters = sorted([a for a in day_attendances if a.punch == 0], key=lambda x: x.timestamp)
         exits = sorted([a for a in day_attendances if a.punch == 1], key=lambda x: x.timestamp)
 
-        # ✅ تابع کمکی برای ساخت datetime با timezone صحیح
+        # تابع کمکی برای ساخت datetime با timezone صحیح
         def make_aware_datetime(d: date, hour: int, minute: int, second: int, microsecond: int, ref_timestamp):
             naive_dt = datetime.combine(d, datetime.min.time().replace(
                 hour=hour, minute=minute, second=second, microsecond=microsecond
@@ -250,10 +273,8 @@ class DetailedMonthlyReportGeneratorV2:
 
             # بررسی آیا خروج فردا است
             if last_exit.date() > current:
-                # ✅ خروج فردا است، کارکرد امروز تا 23:59
                 end_of_day = make_aware_datetime(current, 23, 59, 59, 999999, first_enter)
 
-                # ✅ ساخت جفت‌ها
                 pairs = []
                 for i, enter in enumerate(enters):
                     if i < len(exits):
@@ -278,7 +299,6 @@ class DetailedMonthlyReportGeneratorV2:
 
             # خروج در همان روز است
             if last_exit > first_enter:
-                # ✅ ساخت جفت‌های ورود/خروج
                 pairs = []
                 for i, enter in enumerate(enters):
                     if i < len(exits):
@@ -421,13 +441,20 @@ class DetailedMonthlyReportGeneratorV2:
 
     def _calculate_monthly_summary(self, days: List[Dict]) -> Dict:
         """محاسبه خلاصه ماهانه"""
-        # شمارش روزها
+        # ✅ شمارش روزها با تفکیک دقیق
+        # روزهای کاری عادی که حاضر بوده
         present_days = sum(1 for d in days if d['person_status'] == 'P' and not d['is_day_off'])
+
+        # جمعه‌هایی که حاضر بوده (جمعه کاری)
+        friday_work_days = sum(1 for d in days if d['is_friday'] and d['person_status'] == 'P')
+
+        # تعطیل‌های غیر جمعه که حاضر بوده (تعطیل کاری)
+        holiday_work_days = sum(1 for d in days if d['is_holiday'] and not d['is_friday'] and d['person_status'] == 'P')
+
         leave_days = sum(1 for d in days if d['person_status'] == 'L')
         absent_days = sum(1 for d in days if d['person_status'] == 'A')
         rest_days = sum(1 for d in days if d['person_status'] == 'R')
         holiday_days = sum(1 for d in days if d['person_status'] == 'H')
-        friday_work_days = sum(1 for d in days if d['is_friday'] and d['person_status'] == 'P')
 
         # محاسبه موظفی
         duty_days = sum(1 for d in days if d['has_duty'])
@@ -439,15 +466,32 @@ class DetailedMonthlyReportGeneratorV2:
         total_evening = sum(d['evening_hours'] for d in days)
         total_night = sum(d['night_hours'] for d in days)
 
-        # ✅ محاسبه اضافی و کسری بر اساس 7:20
+        # محاسبه اضافی و کسری بر اساس 7:20
         total_surplus = sum(d['surplus'] for d in days)
         total_deficit = sum(d['deficit'] for d in days)
+
+        # تهاتر و وضعیت کلی
+        net_balance = total_surplus - total_deficit
+
+        if net_balance > 0:
+            overall_status = 'اضافی'
+            net_balance_hours = net_balance
+        elif net_balance < 0:
+            overall_status = 'کسری'
+            net_balance_hours = abs(net_balance)
+        else:
+            overall_status = 'متعادل'
+            net_balance_hours = 0.0
 
         # محاسبه اضافه کار هفتگی
         weekly_overtime = self._calculate_weekly_overtime(days)
 
-        # جمعه کاری
+        # جمعه کاری (ساعات)
         friday_work_hours = sum(d['work_hours'] for d in days if d['is_friday'] and d['person_status'] == 'P')
+
+        # تعطیل کاری (ساعات)
+        holiday_work_hours = sum(
+            d['work_hours'] for d in days if d['is_holiday'] and not d['is_friday'] and d['person_status'] == 'P')
 
         return {
             'duty_days': duty_days,
@@ -458,14 +502,19 @@ class DetailedMonthlyReportGeneratorV2:
             'rest_days': rest_days,
             'holiday_days': holiday_days,
             'friday_work_days': friday_work_days,
+            'holiday_work_days': holiday_work_days,  # ✅ اضافه شد
             'total_work_hours': round(total_work_hours, 2),
             'total_morning': round(total_morning, 2),
             'total_evening': round(total_evening, 2),
             'total_night': round(total_night, 2),
             'total_surplus': round(total_surplus, 2),
             'total_deficit': round(total_deficit, 2),
+            'net_balance': round(net_balance, 2),
+            'overall_status': overall_status,
+            'net_balance_hours': round(net_balance_hours, 2),
             'weekly_overtime': round(weekly_overtime, 2),
-            'friday_work_hours': round(friday_work_hours, 2)
+            'friday_work_hours': round(friday_work_hours, 2),
+            'holiday_work_hours': round(holiday_work_hours, 2)  # ✅ اضافه شد
         }
 
     def _calculate_weekly_overtime(self, days: List[Dict]) -> float:
