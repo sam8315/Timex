@@ -382,7 +382,7 @@ class LeaveRequestManager:
     def approve_all_pending(self, approved_by: str = "admin") -> Dict:
         """
         تایید همه درخواست‌های مرخصی در انتظار
-        با استفاده از approve_request برای هر درخواست
+        با استفاده از approve_request برای هر درخواست (برای کسر مانده و ثبت تراکنش)
         """
         pending_requests = self.db.query(LeaveRequest).filter(
             LeaveRequest.status == self.STATUS_PENDING
@@ -465,14 +465,14 @@ class LeaveRequestManager:
                 except Exception as e:
                     return {'success': False, 'message': f'❌ خطا در تبدیل تاریخ: {e}'}
 
-                # ✅ برگرداندن مانده مرخصی
-                result = self.leave_manager.credit_leave(
+                # ✅ برگرداندن مانده مرخصی با متد جدید
+                result = self.leave_manager.restore_leave(
                     user_id=request.user_id,
                     year=jalali_year,
                     leave_type=request.leave_type,
                     amount=request.days_count,
-                    transaction_type='CREDIT',
-                    description=f'برگشت مانده - حذف درخواست شماره {request.id}'
+                    description=f'برگشت مانده - حذف درخواست شماره {request.id} توسط {deleted_by}',
+                    reference_id=request.id
                 )
 
                 if not result['success']:
@@ -482,7 +482,7 @@ class LeaveRequestManager:
                     }
 
                 # ✅ حذف DailyStatus‌های مرتبط
-                self.db.query(DailyStatus).filter(
+                deleted_statuses = self.db.query(DailyStatus).filter(
                     and_(
                         DailyStatus.user_id == request.user_id,
                         DailyStatus.leave_request_id == request.id

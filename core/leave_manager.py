@@ -318,3 +318,71 @@ class LeaveManager:
             'used': used_by_type,
             'approved_requests_count': len(approved_requests)
         }
+
+    def restore_leave(
+            self,
+            user_id: str,
+            year: int,
+            leave_type: str,
+            amount: int,
+            description: str = "",
+            reference_id: Optional[int] = None
+    ) -> Dict:
+        """
+        برگرداندن مانده مرخصی (مخصوص حذف درخواست تایید شده)
+        این متد محدودیت AL را دور می‌زند چون "شارژ جدید" نیست، بلکه "برگشت" است
+        """
+        # بررسی وجود کاربر
+        user = self.db.query(User).filter(User.user_id == user_id).first()
+        if not user:
+            return {'success': False, 'message': f'❌ کاربر {user_id} یافت نشد'}
+
+        # بررسی نوع مرخصی
+        if leave_type not in self.LEAVE_TYPES:
+            return {'success': False, 'message': f'❌ نوع مرخصی نامعتبر: {leave_type}'}
+
+        try:
+            # به‌روزرسانی یا ایجاد مانده
+            balance = self.db.query(LeaveBalance).filter(
+                and_(
+                    LeaveBalance.user_id == user_id,
+                    LeaveBalance.year == year,
+                    LeaveBalance.leave_type == leave_type
+                )
+            ).first()
+
+            if balance:
+                balance.balance += amount
+            else:
+                balance = LeaveBalance(
+                    user_id=user_id,
+                    year=year,
+                    leave_type=leave_type,
+                    balance=amount
+                )
+                self.db.add(balance)
+
+            # ثبت تراکنش با نوع RESTORE
+            transaction = LeaveTransaction(
+                user_id=user_id,
+                year=year,
+                leave_type=leave_type,
+                amount=amount,  # مثبت برای برگشت
+                transaction_type='RESTORE',  # ✅ نوع جدید
+                description=description,
+                reference_id=reference_id
+            )
+            self.db.add(transaction)
+            self.db.commit()
+
+            type_name = self.get_leave_type_name(leave_type)
+            new_balance = balance.balance
+
+            return {
+                'success': True,
+                'message': f'✅ {amount} روز مرخصی {type_name} برگردانده شد. مانده جدید: {new_balance} روز'
+            }
+
+        except Exception as e:
+            self.db.rollback()
+            return {'success': False, 'message': f'❌ خطا: {e}'}
