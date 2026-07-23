@@ -259,6 +259,7 @@ class ConsoleUI:
             print("  11. تایید/رد درخواست")
             print("  12. درخواست‌های یک کاربر")
             print("  13. آمار درخواست‌ها")
+            print("  14. تایید همه درخواست‌های در انتظار (یکجا) 🆕")  # 🆕
             print("  0. بازگشت")
 
             choice = input("\n  انتخاب: ").strip()
@@ -275,6 +276,7 @@ class ConsoleUI:
             elif choice == '11': self._approve_reject_request()
             elif choice == '12': self._show_user_requests()
             elif choice == '13': self._show_request_statistics()
+            elif choice == '14': self._approve_all_pending_leaves()  # 🆕
             elif choice == '0': break
             else: print("\n❌ انتخاب نامعتبر")
             input("\n⏎ Enter...")
@@ -5105,6 +5107,69 @@ class ConsoleUI:
             except Exception as e:
                 manager.db.rollback()
                 print(f"\n  ❌ خطا در ذخیره تغییرات: {e}")
+
+        finally:
+            manager.close()
+
+    def _approve_all_pending_leaves(self):
+        """تایید همه درخواست‌های مرخصی در انتظار به صورت یکجا"""
+        from core.leave_request_manager import LeaveRequestManager
+
+        print("\n" + "=" * 100)
+        print("  ✅ تایید همه درخواست‌های مرخصی در انتظار")
+        print("=" * 100)
+
+        manager = LeaveRequestManager()
+        try:
+            # دریافت لیست درخواست‌های در انتظار
+            pending = manager.get_pending_requests()
+
+            if not pending:
+                print("\n  ⚠️  هیچ درخواست در انتظاری وجود ندارد")
+                return
+
+            # نمایش لیست درخواست‌ها
+            print(f"\n  📋 تعداد درخواست‌های در انتظار: {len(pending)}")
+            print("\n  ┌──────┬────────┬────────────────────────┬────────────┬────────────┬────────────┬────────┐")
+            print("  │ ردیف │ کد     │ نام کامل               │ از تاریخ   │ تا تاریخ   │ نوع مرخصی  │ روزها  │")
+            print("  ├──────┼────────┼────────────────────────┼────────────┼────────────┼────────────┼────────┤")
+
+            leave_type_names = {
+                'AL': 'استحقاقی',
+                'SL': 'استعلاجی',
+                'RL': 'تشویقی',
+                'UL': 'بدون حقوق'
+            }
+
+            for i, req in enumerate(pending, 1):
+                # دریافت نام کامل
+                full_name = manager.get_employee_name(req.user_id)
+
+                j_from = jdatetime.date.fromgregorian(date=req.from_date)
+                j_to = jdatetime.date.fromgregorian(date=req.to_date)
+
+                leave_type = leave_type_names.get(req.leave_type, req.leave_type)
+
+                print(
+                    f"  │ {i:<4} │ {req.user_id:<6} │ {full_name[:22]:<22} │ {j_from.strftime('%Y/%m/%d')} │ {j_to.strftime('%Y/%m/%d')} │ {leave_type:<10} │ {req.days_count:<6} │")
+
+            print("  └──────┴────────┴────────────────────────┴────────────┴────────────┴────────────┴────────┘")
+
+            # آمار کلی
+            total_days = sum(req.days_count for req in pending)
+            print(f"\n  📊 مجموع روزهای مرخصی: {total_days} روز")
+
+            # تایید
+            print("\n" + "-" * 100)
+            confirm = input("  آیا می‌خواهید همه این درخواست‌ها را تایید کنید؟ (بله/خیر): ").strip()
+
+            if confirm.lower() not in ['بله', 'yes', 'y']:
+                print("  ❌ عملیات لغو شد")
+                return
+
+            # تایید همه
+            result = manager.approve_all_pending()
+            print(f"\n  {result['message']}")
 
         finally:
             manager.close()

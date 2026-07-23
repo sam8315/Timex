@@ -5,7 +5,7 @@
 - به‌روزرسانی وضعیت روزانه
 - کسر خودکار از مانده مرخصی
 """
-from datetime import date, timedelta
+from datetime import date, timedelta,datetime
 from typing import List, Dict, Optional
 from sqlalchemy import and_, or_, func
 from sqlalchemy.orm import Session
@@ -378,3 +378,49 @@ class LeaveRequestManager:
             'rejected': rejected,
             'by_type': by_type
         }
+
+    def approve_all_pending(self) -> Dict:
+        """
+        تایید همه درخواست‌های مرخصی در انتظار
+        """
+        pending_requests = self.db.query(LeaveRequest).filter(
+            LeaveRequest.status == 'P'
+        ).all()
+
+        if not pending_requests:
+            return {
+                'success': False,
+                'message': '⚠️  هیچ درخواست در انتظاری وجود ندارد',
+                'count': 0
+            }
+
+        approved_count = 0
+        try:
+            for request in pending_requests:
+                request.status = 'A'  # Approved
+                request.approved_by = 'SYSTEM'
+                request.approved_at = datetime.now()
+                approved_count += 1
+
+            self.db.commit()
+            return {
+                'success': True,
+                'message': f'✅ {approved_count} درخواست مرخصی با موفقیت تایید شد',
+                'count': approved_count
+            }
+
+        except Exception as e:
+            self.db.rollback()
+            return {
+                'success': False,
+                'message': f'❌ خطا در تایید درخواست‌ها: {e}',
+                'count': 0
+            }
+
+    def get_employee_name(self, user_id: str) -> str:
+        """دریافت نام کارمند"""
+        from models.employee import Employee
+        employee = self.db.query(Employee).filter(Employee.user_id == user_id).first()
+        if employee:
+            return employee.full_name
+        return f"کاربر {user_id}"
