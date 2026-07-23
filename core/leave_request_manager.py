@@ -379,43 +379,46 @@ class LeaveRequestManager:
             'by_type': by_type
         }
 
-    def approve_all_pending(self) -> Dict:
+    def approve_all_pending(self, approved_by: str = "admin") -> Dict:
         """
         تایید همه درخواست‌های مرخصی در انتظار
+        با استفاده از approve_request برای هر درخواست
         """
         pending_requests = self.db.query(LeaveRequest).filter(
-            LeaveRequest.status == 'P'
+            LeaveRequest.status == self.STATUS_PENDING
         ).all()
 
         if not pending_requests:
             return {
                 'success': False,
                 'message': '⚠️  هیچ درخواست در انتظاری وجود ندارد',
-                'count': 0
+                'count': 0,
+                'approved': 0,
+                'failed': 0
             }
 
         approved_count = 0
-        try:
-            for request in pending_requests:
-                request.status = 'A'  # Approved
-                request.approved_by = 'SYSTEM'
-                request.approved_at = datetime.now()
+        failed_count = 0
+        failed_messages = []
+
+        for request in pending_requests:
+            # ✅ استفاده از approve_request برای هر درخواست
+            result = self.approve_request(request.id, approved_by)
+
+            if result['success']:
                 approved_count += 1
+            else:
+                failed_count += 1
+                failed_messages.append(f"درخواست {request.id}: {result['message']}")
 
-            self.db.commit()
-            return {
-                'success': True,
-                'message': f'✅ {approved_count} درخواست مرخصی با موفقیت تایید شد',
-                'count': approved_count
-            }
-
-        except Exception as e:
-            self.db.rollback()
-            return {
-                'success': False,
-                'message': f'❌ خطا در تایید درخواست‌ها: {e}',
-                'count': 0
-            }
+        return {
+            'success': True,
+            'message': f'✅ {approved_count} درخواست تایید شد، {failed_count} درخواست با خطا مواجه شد',
+            'count': len(pending_requests),
+            'approved': approved_count,
+            'failed': failed_count,
+            'failed_messages': failed_messages
+        }
 
     def get_employee_name(self, user_id: str) -> str:
         """دریافت نام کارمند"""
@@ -425,10 +428,13 @@ class LeaveRequestManager:
             return employee.full_name
         return f"کاربر {user_id}"
 
-    def delete_leave_request(self, request_id: int) -> Dict:
+    def delete_leave_request(self, request_id: int, deleted_by: str = "admin") -> Dict:
         """
         حذف کامل درخواست مرخصی از دیتابیس (فقط برای مدیر)
+        اگر درخواست تایید شده باشد، مانده را برمی‌گرداند
         """
+        import jdatetime
+
         try:
             request = self.db.query(LeaveRequest).filter(
                 LeaveRequest.id == request_id
@@ -449,6 +455,39 @@ class LeaveRequestManager:
                 'days_count': request.days_count,
                 'status': request.status
             }
+
+            # ✅ اگر درخواست تایید شده بود، باید مانده را برگردانیم
+            if request.status == self.STATUS_APPROVED:
+                # تبدیل تاریخ میلادی به شمسی برای دریافت سال صحیح
+                try:
+                    j_from = jdatetime.date.fromgregorian(date=request.from_date)
+                    jalali_year = j_from.year
+                except Exception as e:
+                    return {'success': False, 'message': f'❌ خطا در تبدیل تاریخ: {e}'}
+
+                # ✅ برگرداندن مانده مرخصی
+                result = self.leave_manager.credit_leave(
+                    user_id=request.user_id,
+                    year=jalali_year,
+                    leave_type=request.leave_type,
+                    amount=request.days_count,
+                    transaction_type='CREDIT',
+                    description=f'برگشت مانده - حذف درخواست شماره {request.id}'
+                )
+
+                if not result['success']:
+                    return {
+                        'success': False,
+                        'message': f'❌ خطا در برگرداندن مانده: {result["message"]}'
+                    }
+
+                # ✅ حذف DailyStatus‌های مرتبط
+                self.db.query(DailyStatus).filter(
+                    and_(
+                        DailyStatus.user_id == request.user_id,
+                        DailyStatus.leave_request_id == request.id
+                    )
+                ).delete(synchronize_session=False)
 
             # حذف از دیتابیس
             self.db.delete(request)
