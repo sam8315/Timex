@@ -274,7 +274,7 @@ class ConsoleUI:
             elif choice == '8': self._show_leave_transactions()
             elif choice == '9': self._create_leave_request()
             elif choice == '10': self._show_pending_requests()
-            elif choice == '11': self._approve_reject_request()
+            elif choice == '11': self._approve_leave_requests()
             elif choice == '12': self._show_user_requests()
             elif choice == '13': self._show_request_statistics()
             elif choice == '14': self._approve_all_pending_leaves()  # 🆕
@@ -2832,82 +2832,216 @@ class ConsoleUI:
         finally:
             manager.close()
 
-    def _approve_reject_request(self):
-        """تایید یا رد درخواست مرخصی"""
+    def _approve_leave_requests(self):
+        """تایید/رد درخواست‌های مرخصی با نمایش مانده مرخصی در همان سطر"""
         from core.leave_request_manager import LeaveRequestManager
+        from core.leave_manager import LeaveManager
 
-        print("\n" + "=" * 70)
-        print("  ✅ تایید / ❌ رد درخواست مرخصی")
-        print("=" * 70)
-
-        request_id_str = input("\n  🔢 شناسه درخواست: ").strip()
-        if not request_id_str:
-            print("  ❌ شناسه نمی‌تواند خالی باشد")
-            return
-
-        try:
-            request_id = int(request_id_str)
-        except ValueError:
-            print("  ❌ شناسه نامعتبر")
-            return
+        print("\n" + "=" * 180)
+        print("  ✅ تایید/رد درخواست‌های مرخصی")
+        print("=" * 180)
 
         manager = LeaveRequestManager()
+        leave_manager = LeaveManager()
         try:
-            # دریافت اطلاعات درخواست
-            request = manager.db.query(LeaveRequest).filter(LeaveRequest.id == request_id).first()
-            if not request:
-                print("  ❌ درخواست یافت نشد")
+            pending = manager.get_pending_requests()
+
+            if not pending:
+                print("\n  ⚠️  هیچ درخواست در انتظاری وجود ندارد")
                 return
 
-            user = manager.db.query(User).filter(User.user_id == request.user_id).first()
-            user_name = user.name if user else request.user_id
+            # دریافت سال فعلی
+            today_j = jdatetime.date.today()
+            current_year = today_j.year
 
-            j_from = jdatetime.date.fromgregorian(date=request.from_date)
-            j_to = jdatetime.date.fromgregorian(date=request.to_date)
-            type_name = manager.leave_manager.get_leave_type_name(request.leave_type)
-            status_name = manager.STATUS_NAMES.get(request.status, request.status)
+            leave_type_names = {
+                'AL': 'استحقاقی',
+                'SL': 'استعلاجی',
+                'RL': 'تشویقی',
+                'UL': 'بدون حقوق'
+            }
 
-            print("\n" + "-" * 70)
-            print("  📋 اطلاعات درخواست:")
-            print(f"     • شناسه      : {request.id}")
-            print(f"     • کاربر      : {user_name} ({request.user_id})")
-            print(f"     • نوع مرخصی  : {type_name}")
-            print(f"     • از تاریخ   : {j_from.strftime('%Y/%m/%d')}")
-            print(f"     • تا تاریخ   : {j_to.strftime('%Y/%m/%d')}")
-            print(f"     • تعداد روز  : {request.days_count}")
-            print(f"     • وضعیت فعلی : {status_name}")
-            if request.reason:
-                print(f"     • دلیل       : {request.reason}")
-            print("-" * 70)
+            print(f"\n  📋 تعداد درخواست‌های در انتظار: {len(pending)}")
+            print(f"  📅 سال: {current_year}")
 
-            print("\n  🎯 عملیات:")
-            print("    1. ✅ تایید")
-            print("    2. ❌ رد")
+            # ✅ جدول درخواست‌ها با مانده مرخصی
+            print(f"\n{'=' * 180}")
+            print("  📋 لیست درخواست‌های در انتظار")
+            print(f"{'=' * 180}")
+
+            # هدر جدول
+            print(
+                "\n  ┌──────┬────────┬──────────────────────┬────────────┬────────────┬────────────┬────────┬──────────────┬──────────────┬──────────────┬────────────────┐")
+            print(
+                "  │ ردیف │ کد     │ نام کامل             │ از تاریخ   │ تا تاریخ   │ نوع مرخصی  │ روزها  │ مانده استحقا │ مانده ذخیره  │ مانده نوع    │ وضعیت مانده    │")
+            print(
+                "  ├──────┼────────┼──────────────────────┼────────────┼────────────┼────────────┼────────┼──────────────┼──────────────┼──────────────┼────────────────┤")
+
+            for i, req in enumerate(pending, 1):
+                full_name = manager.get_employee_name(req.user_id)
+                j_from = jdatetime.date.fromgregorian(date=req.from_date)
+                j_to = jdatetime.date.fromgregorian(date=req.to_date)
+                leave_type = leave_type_names.get(req.leave_type, req.leave_type)
+
+                # دریافت مانده مرخصی
+                al_balance = leave_manager.get_balance(req.user_id, current_year, 'AL')
+                cw_balance = leave_manager.get_balance(req.user_id, current_year, 'CW')
+                sl_balance = leave_manager.get_balance(req.user_id, current_year, 'SL')
+                rl_balance = leave_manager.get_balance(req.user_id, current_year, 'RL')
+
+                # نمایش مانده بر اساس نوع مرخصی
+                if req.leave_type == 'AL':
+                    # برای استحقاقی: نمایش مانده استحقاقی و ذخیره
+                    al_display = f"{al_balance:<12}"
+                    cw_display = f"{cw_balance:<12}"
+                    type_balance = f"{al_balance + cw_balance:<12}"
+
+                    # بررسی وضعیت مانده
+                    total_balance = al_balance + cw_balance
+                    if total_balance >= req.days_count:
+                        status_display = '✅ کافی'
+                    else:
+                        status_display = f'❌ {total_balance - req.days_count} روز کم'
+
+                elif req.leave_type == 'SL':
+                    al_display = f"{al_balance:<12}"
+                    cw_display = f"{cw_balance:<12}"
+                    type_balance = f"{sl_balance:<12}"
+
+                    if sl_balance >= req.days_count:
+                        status_display = '✅ کافی'
+                    else:
+                        status_display = f'❌ {sl_balance - req.days_count} روز کم'
+
+                elif req.leave_type == 'RL':
+                    al_display = f"{al_balance:<12}"
+                    cw_display = f"{cw_balance:<12}"
+                    type_balance = f"{rl_balance:<12}"
+
+                    if rl_balance >= req.days_count:
+                        status_display = '✅ کافی'
+                    else:
+                        status_display = f'❌ {rl_balance - req.days_count} روز کم'
+
+                else:
+                    al_display = f"{al_balance:<12}"
+                    cw_display = f"{cw_balance:<12}"
+                    type_balance = f"{'--':<12}"
+                    status_display = '✅ بدون محدودیت'
+
+                status_display = status_display.ljust(14)
+
+                print(
+                    f"  │ {i:<4} │ {req.user_id:<6} │ {full_name[:20]:<20} │ {j_from.strftime('%Y/%m/%d')} │ {j_to.strftime('%Y/%m/%d')} │ {leave_type:<10} │ {req.days_count:<6} │ {al_display} │ {cw_display} │ {type_balance} │ {status_display} │")
+
+            print(
+                "  └──────┴────────┴──────────────────────┴────────────┴────────────┴────────────┴────────┴──────────────┴──────────────┴──────────────┴────────────────┘")
+
+            # ✅ راهنما
+            print(f"\n  💡 راهنما:")
+            print(f"     • مانده استحقا: مانده مرخصی استحقاقی (AL)")
+            print(f"     • مانده ذخیره: مانده ذخیره سال قبل (CW)")
+            print(f"     • مانده نوع: مجموع مانده برای نوع مرخصی درخواستی")
+            print(f"     • وضعیت مانده: ✅ کافی یا ❌ کمبود")
+
+            # ✅ انتخاب درخواست
+            print("\n" + "-" * 180)
+            choice_str = input("  شماره ردیف برای تایید/رد (یا 0 برای انصراف): ").strip()
+
+            try:
+                choice = int(choice_str)
+                if choice == 0:
+                    print("  ❌ عملیات لغو شد")
+                    return
+                if choice < 1 or choice > len(pending):
+                    print("  ❌ شماره نامعتبر")
+                    return
+            except ValueError:
+                print("  ❌ عدد نامعتبر")
+                return
+
+            selected = pending[choice - 1]
+
+            # ✅ نمایش جزئیات درخواست
+            print("\n" + "-" * 180)
+            print("  📋 جزئیات درخواست:")
+            print(f"     • ID              : {selected.id}")
+            print(f"     • کد پرسنلی       : {selected.user_id}")
+            print(f"     • نام             : {manager.get_employee_name(selected.user_id)}")
+            print(
+                f"     • از تاریخ        : {jdatetime.date.fromgregorian(date=selected.from_date).strftime('%Y/%m/%d')}")
+            print(
+                f"     • تا تاریخ        : {jdatetime.date.fromgregorian(date=selected.to_date).strftime('%Y/%m/%d')}")
+            print(f"     • نوع مرخصی       : {leave_type_names.get(selected.leave_type, selected.leave_type)}")
+            print(f"     • تعداد روز       : {selected.days_count}")
+            print(f"     • دلیل            : {selected.reason or '-'}")
+
+            # ✅ نمایش مانده مرخصی قبل از تایید
+            al_balance = leave_manager.get_balance(selected.user_id, current_year, 'AL')
+            cw_balance = leave_manager.get_balance(selected.user_id, current_year, 'CW')
+            sl_balance = leave_manager.get_balance(selected.user_id, current_year, 'SL')
+            rl_balance = leave_manager.get_balance(selected.user_id, current_year, 'RL')
+
+            print(f"\n  💰 مانده مرخصی فعلی:")
+            print(f"     • استحقاقی (AL)   : {al_balance} روز")
+            print(f"     • ذخیره (CW)      : {cw_balance} روز")
+            print(f"     • استعلاجی (SL)   : {sl_balance} روز")
+            print(f"     • تشویقی (RL)     : {rl_balance} روز")
+
+            # ✅ بررسی مانده کافی
+            if selected.leave_type == 'AL':
+                total_balance = al_balance + cw_balance
+                if total_balance < selected.days_count:
+                    print(f"\n  ⚠️  هشدار: مانده کافی نیست! (مجموع: {total_balance}، درخواست: {selected.days_count})")
+            elif selected.leave_type == 'SL':
+                if sl_balance < selected.days_count:
+                    print(
+                        f"\n  ⚠️  هشدار: مانده استعلاجی کافی نیست! (مانده: {sl_balance}، درخواست: {selected.days_count})")
+            elif selected.leave_type == 'RL':
+                if rl_balance < selected.days_count:
+                    print(
+                        f"\n  ⚠️  هشدار: مانده تشویقی کافی نیست! (مانده: {rl_balance}، درخواست: {selected.days_count})")
+
+            # ✅ انتخاب عملیات
+            print("\n  عملیات:")
+            print("    1. تایید")
+            print("    2. رد")
             print("    0. انصراف")
-            action = input("  انتخاب [0-2]: ").strip()
+
+            action = input("\n  انتخاب [0-2]: ").strip()
 
             if action == '0':
                 print("  ❌ عملیات لغو شد")
                 return
             elif action == '1':
-                confirm = input("\n  ⚠️  آیا مطمئن هستید؟ (بله/خیر): ").strip()
-                if confirm.lower() not in ['بله', 'yes', 'y']:
-                    print("  ❌ عملیات لغو شد")
-                    return
-
-                result = manager.approve_request(request_id)
+                # تایید
+                result = manager.approve_request(selected.id, approved_by="ADMIN")
                 print(f"\n  {result['message']}")
+
+                # نمایش مانده جدید
+                if result['success']:
+                    new_al = leave_manager.get_balance(selected.user_id, current_year, 'AL')
+                    new_cw = leave_manager.get_balance(selected.user_id, current_year, 'CW')
+                    new_sl = leave_manager.get_balance(selected.user_id, current_year, 'SL')
+                    new_rl = leave_manager.get_balance(selected.user_id, current_year, 'RL')
+
+                    print(f"\n  💰 مانده مرخصی جدید:")
+                    print(f"     • استحقاقی (AL)   : {new_al} روز")
+                    print(f"     • ذخیره (CW)      : {new_cw} روز")
+                    print(f"     • استعلاجی (SL)   : {new_sl} روز")
+                    print(f"     • تشویقی (RL)     : {new_rl} روز")
 
             elif action == '2':
-                reason = input("  📝 دلیل رد (اختیاری): ").strip()
-                result = manager.reject_request(request_id, reason)
+                # رد
+                reason = input("  دلیل رد (اختیاری): ").strip()
+                result = manager.reject_request(selected.id, rejection_reason=reason)
                 print(f"\n  {result['message']}")
-
             else:
                 print("  ❌ انتخاب نامعتبر")
 
         finally:
             manager.close()
+            leave_manager.close()
 
     def _show_user_requests(self):
         """نمایش درخواست‌های یک کاربر"""
@@ -2969,6 +3103,7 @@ class ConsoleUI:
         finally:
             manager.close()
             emp_manager.close()
+
     def _show_request_statistics(self):
         """نمایش آمار درخواست‌های مرخصی"""
         from core.leave_request_manager import LeaveRequestManager
