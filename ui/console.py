@@ -8,6 +8,7 @@ from models import Employee
 from models.user import User
 from models.contract import Contract
 from models.leave_request import LeaveRequest
+from sqlalchemy import and_, or_
 
 
 class ConsoleUI:
@@ -2833,16 +2834,19 @@ class ConsoleUI:
             manager.close()
 
     def _approve_leave_requests(self):
-        """تایید/رد درخواست‌های مرخصی با نمایش مانده مرخصی در همان سطر"""
+        """تایید/رد درخواست‌های مرخصی با نمایش وضعیت استحقاقی"""
         from core.leave_request_manager import LeaveRequestManager
         from core.leave_manager import LeaveManager
+        from core.contract_manager import ContractManager
+        from models.contract import Contract
 
-        print("\n" + "=" * 180)
+        print("\n" + "=" * 220)
         print("  ✅ تایید/رد درخواست‌های مرخصی")
-        print("=" * 180)
+        print("=" * 220)
 
         manager = LeaveRequestManager()
         leave_manager = LeaveManager()
+        contract_manager = ContractManager()
         try:
             pending = manager.get_pending_requests()
 
@@ -2850,9 +2854,133 @@ class ConsoleUI:
                 print("\n  ⚠️  هیچ درخواست در انتظاری وجود ندارد")
                 return
 
-            # دریافت سال فعلی
+            # دریافت سال و ماه فعلی
             today_j = jdatetime.date.today()
             current_year = today_j.year
+            current_month = today_j.month
+
+            # گروه‌بندی بر اساس کاربر
+            by_user = {}
+            for req in pending:
+                if req.user_id not in by_user:
+                    by_user[req.user_id] = []
+                by_user[req.user_id].append(req)
+
+            print(f"\n  📋 تعداد درخواست‌های در انتظار: {len(pending)}")
+            print(f"  👥 تعداد کاربران: {len(by_user)}")
+            print(f"  📅 تاریخ: {today_j.strftime('%Y/%m/%d')}")
+
+            # ✅ جدول وضعیت استحقاقی
+            print(f"\n{'=' * 220}")
+            print(f"  💰 وضعیت استحقاقی مرخصی کاربران")
+            print(f"{'=' * 220}")
+
+            print("\n  ┌────────┬──────────────────────┬──────────┬──────────┬──────────┬──────────┬──────────┬──────────┬──────────┬──────────┐")
+            print("  │ کد     │ نام کامل             │ استحقاقی │ میانگین  │ ماه‌های   │ مرخصی    │ مرخصی    │ مرخصی    │ مانده    │ وضعیت    │")
+            print("  │        │                      │ سالانه   │ ماهانه   │ گذشته    │ مجاز     │ رفته     │ درخواست  │ فعلی     │          │")
+            print("  ├────────┼──────────────────────┼──────────┼──────────┼──────────┼──────────┼──────────┼──────────┼──────────┼──────────┤")
+
+            user_stats = {}  # ذخیره آمار برای هر کاربر
+
+            for user_id, requests in by_user.items():
+                emp_name = manager.get_employee_name(user_id)
+
+                # دریافت مانده مرخصی
+                al_balance = leave_manager.get_balance(user_id, current_year, 'AL')
+                cw_balance = leave_manager.get_balance(user_id, current_year, 'CW')
+
+                # دریافت قرارداد فعال
+                contract = contract_manager.db.query(Contract).filter(
+                    and_(
+                        Contract.user_id == user_id,
+                        Contract.start_date <= date.today(),
+                        or_(
+                            Contract.end_date == None,
+                            Contract.end_date >= date.today()
+                        )
+                    )
+                ).order_by(Contract.start_date.desc()).first()
+
+                # محاسبه استحقاق سالانه
+                if contract and contract.annual_leave_days:
+                    annual_leave = contract.annual_leave_days
+                else:
+                    annual_leave = 0
+
+                # محاسبه میانگین ماهانه
+                monthly_average = annual_leave / 12 if annual_leave > 0 else 0
+
+                # محاسبه ماه‌های گذشته
+                if contract:
+                    contract_start_j = jdatetime.date.fromgregorian(date=contract.start_date)
+                    contract_start_month = contract_start_j.month
+                    contract_start_year = contract_start_j.year
+
+                    if contract_start_year == current_year:
+                        past_months = current_month - contract_start_month
+                    else:
+                        past_months = current_month - 1
+                else:
+                    past_months = current_month - 1
+
+                if past_months < 0:
+                    past_months = 0
+
+                # مرخصی مجاز تا الان
+                allowed_leave = monthly_average * past_months
+
+                # محاسبه مرخصی رفته شده (تایید شده)
+                user_requests = manager.get_user_requests(user_id, current_year, status='A')
+                used_leave = sum(r.days_count for r in user_requests if r.leave_type == 'AL')
+
+                # مرخصی در انتظار
+                pending_leave = sum(r.days_count for r in requests)
+
+                # مانده فعلی
+                current_balance = al_balance + cw_balance
+
+                # وضعیت (+ یا -)
+                if allowed_leave > 0:
+                    status_value = allowed_leave - used_leave - pending_leave
+                    if status_value >= 0:
+                        status_display = f'+{status_value:.1f}'
+                    else:
+                        status_display = f'{status_value:.1f}'
+                else:
+                    status_display = '--'
+
+                # ذخیره آمار
+                user_stats[user_id] = {
+                    'annual_leave': annual_leave,
+                    'monthly_average': monthly_average,
+                    'past_months': past_months,
+                    'allowed_leave': allowed_leave,
+                    'used_leave': used_leave,
+                    'pending_leave': pending_leave,
+                    'current_balance': current_balance,
+                    'status_display': status_display
+                }
+
+                # نمایش با ljust برای تراز دقیق
+                print(f"  │ {user_id:<6} │ {emp_name[:20]:<20} │ {annual_leave:<8} │ {monthly_average:<8.1f} │ {past_months:<8} │ {allowed_leave:<8.1f} │ {used_leave:<8.1f} │ {pending_leave:<8} │ {current_balance:<8} │ {status_display:<8} │")
+
+            print("  └────────┴──────────────────────┴──────────┴──────────┴──────────┴──────────┴──────────┴──────────┴──────────┴──────────┘")
+
+            # ✅ راهنما
+            print(f"\n  💡 راهنما:")
+            print(f"     • استحقاقی سالانه: مجموع مرخصی استحقاقی در قرارداد")
+            print(f"     • میانگین ماهانه: استحقاقی سالانه ÷ 12")
+            print(f"     • ماه‌های گذشته: تعداد ماه‌های سپری شده از شروع قرارداد")
+            print(f"     • مرخصی مجاز: میانگین ماهانه × ماه‌های گذشته")
+            print(f"     • مرخصی رفته: مجموع روزهای مرخصی تایید شده تا الان")
+            print(f"     • مرخصی درخواست: روزهای در انتظار تایید")
+            print(f"     • مانده فعلی: مانده مرخصی استحقاقی + ذخیره")
+            print(f"     • وضعیت: مرخصی مجاز - (رفته + درخواست)")
+
+            # ✅ لیست درخواست‌ها
+            print(f"\n{'=' * 220}")
+            print(f"  📋 لیست درخواست‌های در انتظار")
+            print(f"{'=' * 220}")
 
             leave_type_names = {
                 'AL': 'استحقاقی',
@@ -2861,21 +2989,9 @@ class ConsoleUI:
                 'UL': 'بدون حقوق'
             }
 
-            print(f"\n  📋 تعداد درخواست‌های در انتظار: {len(pending)}")
-            print(f"  📅 سال: {current_year}")
-
-            # ✅ جدول درخواست‌ها با مانده مرخصی
-            print(f"\n{'=' * 180}")
-            print("  📋 لیست درخواست‌های در انتظار")
-            print(f"{'=' * 180}")
-
-            # هدر جدول
-            print(
-                "\n  ┌──────┬────────┬──────────────────────┬────────────┬────────────┬────────────┬────────┬──────────────┬──────────────┬──────────────┬────────────────┐")
-            print(
-                "  │ ردیف │ کد     │ نام کامل             │ از تاریخ   │ تا تاریخ   │ نوع مرخصی  │ روزها  │ مانده استحقا │ مانده ذخیره  │ مانده نوع    │ وضعیت مانده    │")
-            print(
-                "  ├──────┼────────┼──────────────────────┼────────────┼────────────┼────────────┼────────┼──────────────┼──────────────┼──────────────┼────────────────┤")
+            print("\n  ┌──────┬────────┬──────────────────────┬────────────┬────────────┬────────────┬────────┬──────────────┬──────────────┬──────────────┬────────────────┐")
+            print("  │ ردیف │ کد     │ نام کامل             │ از تاریخ   │ تا تاریخ   │ نوع مرخصی  │ روزها  │ مانده استحقا │ مانده ذخیره  │ مانده نوع    │ وضعیت مانده    │")
+            print("  ├──────┼────────┼──────────────────────┼────────────┼────────────┼────────────┼────────┼──────────────┼──────────────┼──────────────┼────────────────┤")
 
             for i, req in enumerate(pending, 1):
                 full_name = manager.get_employee_name(req.user_id)
@@ -2891,38 +3007,30 @@ class ConsoleUI:
 
                 # نمایش مانده بر اساس نوع مرخصی
                 if req.leave_type == 'AL':
-                    # برای استحقاقی: نمایش مانده استحقاقی و ذخیره
                     al_display = f"{al_balance:<12}"
                     cw_display = f"{cw_balance:<12}"
                     type_balance = f"{al_balance + cw_balance:<12}"
-
-                    # بررسی وضعیت مانده
                     total_balance = al_balance + cw_balance
                     if total_balance >= req.days_count:
                         status_display = '✅ کافی'
                     else:
                         status_display = f'❌ {total_balance - req.days_count} روز کم'
-
                 elif req.leave_type == 'SL':
                     al_display = f"{al_balance:<12}"
                     cw_display = f"{cw_balance:<12}"
                     type_balance = f"{sl_balance:<12}"
-
                     if sl_balance >= req.days_count:
                         status_display = '✅ کافی'
                     else:
                         status_display = f'❌ {sl_balance - req.days_count} روز کم'
-
                 elif req.leave_type == 'RL':
                     al_display = f"{al_balance:<12}"
                     cw_display = f"{cw_balance:<12}"
                     type_balance = f"{rl_balance:<12}"
-
                     if rl_balance >= req.days_count:
                         status_display = '✅ کافی'
                     else:
                         status_display = f'❌ {rl_balance - req.days_count} روز کم'
-
                 else:
                     al_display = f"{al_balance:<12}"
                     cw_display = f"{cw_balance:<12}"
@@ -2931,21 +3039,12 @@ class ConsoleUI:
 
                 status_display = status_display.ljust(14)
 
-                print(
-                    f"  │ {i:<4} │ {req.user_id:<6} │ {full_name[:20]:<20} │ {j_from.strftime('%Y/%m/%d')} │ {j_to.strftime('%Y/%m/%d')} │ {leave_type:<10} │ {req.days_count:<6} │ {al_display} │ {cw_display} │ {type_balance} │ {status_display} │")
+                print(f"  │ {i:<4} │ {req.user_id:<6} │ {full_name[:20]:<20} │ {j_from.strftime('%Y/%m/%d')} │ {j_to.strftime('%Y/%m/%d')} │ {leave_type:<10} │ {req.days_count:<6} │ {al_display} │ {cw_display} │ {type_balance} │ {status_display} │")
 
-            print(
-                "  └──────┴────────┴──────────────────────┴────────────┴────────────┴────────────┴────────┴──────────────┴──────────────┴──────────────┴────────────────┘")
+            print("  └──────┴────────┴──────────────────────┴────────────┴────────────┴────────────┴────────┴──────────────┴──────────────┴──────────────┴────────────────┘")
 
-            # ✅ راهنما
-            print(f"\n  💡 راهنما:")
-            print(f"     • مانده استحقا: مانده مرخصی استحقاقی (AL)")
-            print(f"     • مانده ذخیره: مانده ذخیره سال قبل (CW)")
-            print(f"     • مانده نوع: مجموع مانده برای نوع مرخصی درخواستی")
-            print(f"     • وضعیت مانده: ✅ کافی یا ❌ کمبود")
-
-            # ✅ انتخاب درخواست
-            print("\n" + "-" * 180)
+            # انتخاب درخواست
+            print("\n" + "-" * 220)
             choice_str = input("  شماره ردیف برای تایید/رد (یا 0 برای انصراف): ").strip()
 
             try:
@@ -2962,21 +3061,31 @@ class ConsoleUI:
 
             selected = pending[choice - 1]
 
-            # ✅ نمایش جزئیات درخواست
-            print("\n" + "-" * 180)
+            # نمایش جزئیات
+            print("\n" + "-" * 220)
             print("  📋 جزئیات درخواست:")
             print(f"     • ID              : {selected.id}")
             print(f"     • کد پرسنلی       : {selected.user_id}")
             print(f"     • نام             : {manager.get_employee_name(selected.user_id)}")
-            print(
-                f"     • از تاریخ        : {jdatetime.date.fromgregorian(date=selected.from_date).strftime('%Y/%m/%d')}")
-            print(
-                f"     • تا تاریخ        : {jdatetime.date.fromgregorian(date=selected.to_date).strftime('%Y/%m/%d')}")
+            print(f"     • از تاریخ        : {jdatetime.date.fromgregorian(date=selected.from_date).strftime('%Y/%m/%d')}")
+            print(f"     • تا تاریخ        : {jdatetime.date.fromgregorian(date=selected.to_date).strftime('%Y/%m/%d')}")
             print(f"     • نوع مرخصی       : {leave_type_names.get(selected.leave_type, selected.leave_type)}")
             print(f"     • تعداد روز       : {selected.days_count}")
             print(f"     • دلیل            : {selected.reason or '-'}")
 
-            # ✅ نمایش مانده مرخصی قبل از تایید
+            # نمایش آمار استحقاقی
+            if selected.user_id in user_stats:
+                stats = user_stats[selected.user_id]
+                print(f"\n  📊 وضعیت استحقاقی:")
+                print(f"     • استحقاقی سالانه   : {stats['annual_leave']} روز")
+                print(f"     • میانگین ماهانه    : {stats['monthly_average']:.1f} روز")
+                print(f"     • ماه‌های گذشته     : {stats['past_months']} ماه")
+                print(f"     • مرخصی مجاز        : {stats['allowed_leave']:.1f} روز")
+                print(f"     • مرخصی رفته        : {stats['used_leave']:.1f} روز")
+                print(f"     • مرخصی درخواست     : {stats['pending_leave']} روز")
+                print(f"     • وضعیت             : {stats['status_display']}")
+
+            # نمایش مانده مرخصی
             al_balance = leave_manager.get_balance(selected.user_id, current_year, 'AL')
             cw_balance = leave_manager.get_balance(selected.user_id, current_year, 'CW')
             sl_balance = leave_manager.get_balance(selected.user_id, current_year, 'SL')
@@ -2988,21 +3097,19 @@ class ConsoleUI:
             print(f"     • استعلاجی (SL)   : {sl_balance} روز")
             print(f"     • تشویقی (RL)     : {rl_balance} روز")
 
-            # ✅ بررسی مانده کافی
+            # بررسی مانده کافی
             if selected.leave_type == 'AL':
                 total_balance = al_balance + cw_balance
                 if total_balance < selected.days_count:
                     print(f"\n  ⚠️  هشدار: مانده کافی نیست! (مجموع: {total_balance}، درخواست: {selected.days_count})")
             elif selected.leave_type == 'SL':
                 if sl_balance < selected.days_count:
-                    print(
-                        f"\n  ⚠️  هشدار: مانده استعلاجی کافی نیست! (مانده: {sl_balance}، درخواست: {selected.days_count})")
+                    print(f"\n  ⚠️  هشدار: مانده استعلاجی کافی نیست! (مانده: {sl_balance}، درخواست: {selected.days_count})")
             elif selected.leave_type == 'RL':
                 if rl_balance < selected.days_count:
-                    print(
-                        f"\n  ⚠️  هشدار: مانده تشویقی کافی نیست! (مانده: {rl_balance}، درخواست: {selected.days_count})")
+                    print(f"\n  ⚠️  هشدار: مانده تشویقی کافی نیست! (مانده: {rl_balance}، درخواست: {selected.days_count})")
 
-            # ✅ انتخاب عملیات
+            # انتخاب عملیات
             print("\n  عملیات:")
             print("    1. تایید")
             print("    2. رد")
@@ -3014,11 +3121,9 @@ class ConsoleUI:
                 print("  ❌ عملیات لغو شد")
                 return
             elif action == '1':
-                # تایید
                 result = manager.approve_request(selected.id, approved_by="ADMIN")
                 print(f"\n  {result['message']}")
 
-                # نمایش مانده جدید
                 if result['success']:
                     new_al = leave_manager.get_balance(selected.user_id, current_year, 'AL')
                     new_cw = leave_manager.get_balance(selected.user_id, current_year, 'CW')
@@ -3032,7 +3137,6 @@ class ConsoleUI:
                     print(f"     • تشویقی (RL)     : {new_rl} روز")
 
             elif action == '2':
-                # رد
                 reason = input("  دلیل رد (اختیاری): ").strip()
                 result = manager.reject_request(selected.id, rejection_reason=reason)
                 print(f"\n  {result['message']}")
@@ -3042,6 +3146,8 @@ class ConsoleUI:
         finally:
             manager.close()
             leave_manager.close()
+            contract_manager.close()
+
 
     def _show_user_requests(self):
         """نمایش درخواست‌های یک کاربر"""
