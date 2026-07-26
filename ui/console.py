@@ -705,23 +705,28 @@ class ConsoleUI:
 
     def _sync_attendance_to_db(self):
         """همگام‌سازی رکوردهای تردد دستگاه با دیتابیس"""
-        if not self.connected:
-            print("\n❌ ابتدا به دستگاه متصل شوید (گزینه 1)")
-            return
 
-        print("\n" + "=" * 60)
+        print("\n" + "=" * 70)
         print("  🔄 همگام‌سازی رکوردهای تردد با دیتابیس")
-        print("=" * 60)
-        print("\n⚠️  این عملیات بسته به تعداد رکوردها ممکن است زمان‌بر باشد.")
-        print("💡 رکوردهای تکراری به صورت خودکار نادیده گرفته می‌شوند.")
+        print("=" * 70)
+        print("\n⚠️  این عملیات شامل مراحل زیر است:")
+        print("   1. اتصال به دستگاه (اگر قطع باشد)")
+        print("   2. بررسی آخرین رکورد در دیتابیس")
+        print("   3. خواندن رکوردها از دستگاه")
+        print("   4. DRY RUN (بدون تغییر)")
+        print("   5. اجرای واقعی (با تایید شما)")
+        print("   6. قطع اتصال با دستگاه")
 
-        confirm = input("\nآیا مطمئن هستید؟ (بله/خیر): ").strip()
+        confirm = input("\n  آیا می‌خواهید ادامه دهید؟ (بله/خیر): ").strip()
         if confirm.lower() not in ['بله', 'yes', 'y']:
-            print("\n❌ عملیات لغو شد")
+            print("\n  ❌ عملیات لغو شد")
             return
 
-        # فراخوانی متد مدیر دستگاه
-        self.manager.sync_attendance_to_db()
+        # فراخوانی متد مدیر دستگاه با dry_run_first=True
+        result = self.manager.sync_attendance_to_db(dry_run_first=True)
+
+        if 'error' in result:
+            print(f"\n  ❌ {result['error']}")
 
     def _show_incomplete_attendances(self):
         """نمایش ترددهای ناقص - به تفکیک گروه و بدون تردد شبانه"""
