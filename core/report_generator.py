@@ -3,7 +3,7 @@
 """
 from datetime import date, timedelta
 from typing import List, Dict, Optional
-from sqlalchemy import and_, func
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 import jdatetime
 
@@ -67,167 +67,129 @@ class ReportGenerator:
 
         return sorted(reports, key=lambda x: (x['department'], x['full_name']))
 
-    def generate_leave_report(
-            self,
-            year: int,
-            month: Optional[int] = None
-    ) -> List[Dict]:
-        """
-        گزارش مرخصی‌ها - فقط از employee
-        """
+    def generate_leave_report(self, year: int, month: int = None) -> List[Dict]:
+        """تولید گزارش مرخصی‌ها با ساختار جدید (کل، استفاده شده، مانده)"""
+        from models.leave_request import LeaveRequest
+        from models.leave_balance import LeaveBalance
+        from models.employee import Employee
+        from models.contract import Contract
+        from sqlalchemy import and_
         import jdatetime
 
-        # ✅ تبدیل سال شمسی به بازه میلادی
-        j_from = jdatetime.date(year, 1, 1)
-        j_to = jdatetime.date(year, 12, 29)
+        # تبدیل سال شمسی به میلادی
+        j_from = jdatetime.date(year, month or 1, 1)
+        if month:
+            if month == 12:
+                try:
+                    j_to = jdatetime.date(year, 12, 30)
+                except ValueError:
+                    j_to = jdatetime.date(year, 12, 29)
+            else:
+                j_to = jdatetime.date(year, month + 1, 1) - timedelta(days=1)
+        else:
+            try:
+                j_to = jdatetime.date(year, 12, 30)
+            except ValueError:
+                j_to = jdatetime.date(year, 12, 29)
+
         g_from = j_from.togregorian()
         g_to = j_to.togregorian()
 
-        query = self.db.query(LeaveRequest).filter(
-            and_(
-                LeaveRequest.status == 'A',
-                LeaveRequest.from_date >= g_from,
-                LeaveRequest.from_date <= g_to
-            )
-        )
+        # دریافت همه کارمندان فعال
+        employees = self.db.query(Employee).filter(Employee.is_active == True).all()
 
-        if month:
-            j_month_from = jdatetime.date(year, month, 1)
-            if month == 12:
-                j_month_to = jdatetime.date(year, 12, 29)
-            else:
-                j_month_to = jdatetime.date(year, month + 1, 1) - timedelta(days=1)
+        reports = []
+        for emp in employees:
+            user_id = emp.user_id
 
-            g_month_from = j_month_from.togregorian()
-            g_month_to = j_month_to.togregorian()
-
-            query = query.filter(
+            # ✅ دریافت مانده‌های مرخصی
+            balances = self.db.query(LeaveBalance).filter(
                 and_(
-                    LeaveRequest.from_date >= g_month_from,
-                    LeaveRequest.from_date <= g_month_to
+                    LeaveBalance.user_id == user_id,
+                    LeaveBalance.year == year
                 )
-            )
+            ).all()
 
-        requests = query.all()
+            balance_map = {b.leave_type: b.balance for b in balances}
 
-        # گروه‌بندی بر اساس کاربر
-        user_leaves = {}
-        for req in requests:
-            if req.user_id not in user_leaves:
-                user_leaves[req.user_id] = {
-                    'AL': 0, 'SL': 0, 'RL': 0, 'UL': 0,
-                    'total_days': 0, 'total_requests': 0
-                }
-            user_leaves[req.user_id][req.leave_type] += req.days_count
-            user_leaves[req.user_id]['total_days'] += req.days_count
-            user_leaves[req.user_id]['total_requests'] += 1
+            # ✅ دریافت استفاده شده در بازه
+            used_requests = self.db.query(LeaveRequest).filter(
+                and_(
+                    LeaveRequest.user_id == user_id,
+                    LeaveRequest.status == 'A',
+                    LeaveRequest.from_date >= g_from,
+                    LeaveRequest.from_date <= g_to
+                )
+            ).all()
 
-        report = []
-        for user_id, data in user_leaves.items():
-            # ✅ دریافت اطلاعات از employee
-            employee = self.db.query(Employee).filter(Employee.user_id == user_id).first()
+            used_map = {'AL': 0, 'SL': 0, 'RL': 0, 'UL': 0, 'CW': 0}
+            for req in used_requests:
+                if req.leave_type in used_map:
+                    used_map[req.leave_type] += req.days_count
 
-            if employee:
-                full_name = employee.full_name
-                department = employee.department or 'بدون گروه'
+            # ✅ محاسبه "کل" برای هر نوع
+            # برای AL: اگر قرارداد فعال است، از قرارداد بخوان؛ در غیر این صورت از مانده + استفاده
+            al_total = 0
+            contract = self.db.query(Contract).filter(
+                and_(
+                    Contract.user_id == user_id,
+                    Contract.start_date <= g_to,
+                    or_(
+                        Contract.end_date == None,
+                        Contract.end_date >= g_from
+                    )
+                )
+            ).order_by(Contract.start_date.desc()).first()
+
+            if contract and contract.annual_leave_days:
+                al_total = contract.annual_leave_days
             else:
-                full_name = f"کاربر {user_id}"
-                department = 'بدون گروه'
+                # کل = مانده + استفاده شده
+                al_total = balance_map.get('AL', 0) + used_map.get('AL', 0)
 
-            report.append({
+            # برای سایر انواع: کل = مانده + استفاده شده
+            sl_total = balance_map.get('SL', 0) + used_map.get('SL', 0)
+            rl_total = balance_map.get('RL', 0) + used_map.get('RL', 0)
+            ul_total = balance_map.get('UL', 0) + used_map.get('UL', 0)
+            cw_total = balance_map.get('CW', 0) + used_map.get('CW', 0)
+
+            # ✅ محاسبه کل کل
+            tot_total = al_total + sl_total + rl_total + ul_total + cw_total
+            tot_used = sum(used_map.values())
+            tot_balance = tot_total - tot_used
+
+            reports.append({
                 'user_id': user_id,
-                'full_name': full_name,  # ✅ اصلاح شد
-                'department': department,  # ✅ اضافه شد
-                'annual_leave': data['AL'],
-                'sick_leave': data['SL'],
-                'reward_leave': data['RL'],
-                'unpaid_leave': data['UL'],
-                'total_days': data['total_days'],
-                'total_requests': data['total_requests']
+                'full_name': emp.full_name,
+                'department': emp.department or '',
+                # AL
+                'al_total': al_total,
+                'al_used': used_map.get('AL', 0),
+                'al_balance': balance_map.get('AL', 0),
+                # SL
+                'sl_total': sl_total,
+                'sl_used': used_map.get('SL', 0),
+                'sl_balance': balance_map.get('SL', 0),
+                # RL
+                'rl_total': rl_total,
+                'rl_used': used_map.get('RL', 0),
+                'rl_balance': balance_map.get('RL', 0),
+                # UL
+                'ul_total': ul_total,
+                'ul_used': used_map.get('UL', 0),
+                'ul_balance': balance_map.get('UL', 0),
+                # CW
+                'cw_total': cw_total,
+                'cw_used': used_map.get('CW', 0),
+                'cw_balance': balance_map.get('CW', 0),
+                # TOT
+                'tot_total': tot_total,
+                'tot_used': tot_used,
+                'tot_balance': tot_balance,
             })
 
-        return sorted(report, key=lambda x: (x['department'], x['full_name']))
+        return sorted(reports, key=lambda x: x['full_name'])
 
-    def generate_leave_report(
-            self,
-            year: int,
-            month: Optional[int] = None
-    ) -> List[Dict]:
-        """
-        گزارش مرخصی‌ها - فقط از employee
-        """
-        import jdatetime
-
-        # تبدیل سال شمسی به بازه میلادی
-        j_from = jdatetime.date(year, 1, 1)
-        j_to = jdatetime.date(year, 12, 29)
-        g_from = j_from.togregorian()
-        g_to = j_to.togregorian()
-
-        query = self.db.query(LeaveRequest).filter(
-            and_(
-                LeaveRequest.status == 'A',
-                LeaveRequest.from_date >= g_from,
-                LeaveRequest.from_date <= g_to
-            )
-        )
-
-        if month:
-            j_month_from = jdatetime.date(year, month, 1)
-            if month == 12:
-                j_month_to = jdatetime.date(year, 12, 29)
-            else:
-                j_month_to = jdatetime.date(year, month + 1, 1) - timedelta(days=1)
-
-            g_month_from = j_month_from.togregorian()
-            g_month_to = j_month_to.togregorian()
-
-            query = query.filter(
-                and_(
-                    LeaveRequest.from_date >= g_month_from,
-                    LeaveRequest.from_date <= g_month_to
-                )
-            )
-
-        requests = query.all()
-
-        # گروه‌بندی بر اساس کاربر
-        user_leaves = {}
-        for req in requests:
-            if req.user_id not in user_leaves:
-                user_leaves[req.user_id] = {
-                    'AL': 0, 'SL': 0, 'RL': 0, 'UL': 0,
-                    'total_days': 0, 'total_requests': 0
-                }
-            user_leaves[req.user_id][req.leave_type] += req.days_count
-            user_leaves[req.user_id]['total_days'] += req.days_count
-            user_leaves[req.user_id]['total_requests'] += 1
-
-        report = []
-        for user_id, data in user_leaves.items():
-            # ✅ دریافت اطلاعات از employee
-            employee = self.db.query(Employee).filter(Employee.user_id == user_id).first()
-
-            if employee:
-                full_name = employee.full_name
-                department = employee.department or 'بدون گروه'
-            else:
-                full_name = f"کاربر {user_id}"
-                department = 'بدون گروه'
-
-            report.append({
-                'user_id': user_id,
-                'full_name': full_name,  # ✅ تغییر از 'name' به 'full_name'
-                'department': department,  # ✅ اضافه شد
-                'annual_leave': data['AL'],
-                'sick_leave': data['SL'],
-                'reward_leave': data['RL'],
-                'unpaid_leave': data['UL'],
-                'total_days': data['total_days'],
-                'total_requests': data['total_requests']
-            })
-
-        return sorted(report, key=lambda x: (x['department'], x['full_name']))
 
     def generate_absent_report(
             self,

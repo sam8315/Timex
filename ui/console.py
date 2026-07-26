@@ -3843,12 +3843,14 @@ class ConsoleUI:
             emp_manager.close()
 
     def _show_leave_report(self):
-        """گزارش مرخصی‌ها"""
+        """گزارش مرخصی‌ها با ساختار جدید (کل، استفاده شده، مانده)"""
         from core.report_generator import ReportGenerator
+        from core.excel_leave_export import ExcelLeaveExporter
+        from core.pdf_leave_export import PDFLeaveExporter
 
-        print("\n" + "=" * 120)
+        print("\n" + "=" * 250)
         print("  🌴 گزارش مرخصی‌ها")
-        print("=" * 120)
+        print("=" * 250)
 
         today_j = jdatetime.date.today()
         year_str = input(f"\n  📅 سال [پیش‌فرض: {today_j.year}]: ").strip()
@@ -3866,8 +3868,19 @@ class ConsoleUI:
             print(f"  👥 تعداد کاربران: {len(reports)}")
 
             if not reports:
-                print("\n  ⚠️  هیچ مرخصی تایید شده‌ای یافت نشد")
+                print("\n  ⚠️  هیچ کاربری یافت نشد")
                 return
+
+            # ✅ نام‌های فارسی دپارتمان
+            dept_names = {
+                '1': 'رسمی',
+                '2': 'وظیفه',
+                '3': 'خریدخدمت',
+                '4': 'قراردادی',
+                '5': 'پزشک',
+                None: 'بدون گروه',
+                '': 'بدون گروه'
+            }
 
             # ✅ گروه‌بندی بر اساس دپارتمان
             by_department = {}
@@ -3878,31 +3891,87 @@ class ConsoleUI:
                 by_department[dept].append(r)
 
             for dept, dept_reports in sorted(by_department.items()):
-                print(f"\n{'=' * 120}")
-                print(f"  🏢 دپارتمان: {dept} ({len(dept_reports)} کاربر)")
-                print(f"{'=' * 120}")
+                dept_name = dept_names.get(str(dept), f'گروه {dept}')
+                print(f"\n{'=' * 250}")
+                print(f"  🏢 دپارتمان: {dept_name} ({len(dept_reports)} کاربر)")
+                print(f"{'=' * 250}")
 
-                print("\n  ┌──────┬────────┬──────────────────────┬────────┬────────┬────────┬──────────┬────────┬──────────┐")
-                print("  │ ردیف │ کد     │ نام کامل             │ استحقاق│ استعلاج│ تشویق  │ بدون حقوق│ مجموع  │ تعداد    │")
-                print("  ├──────┼────────┼──────────────────────┼────────┼────────┼────────┼──────────┼────────┼──────────┤")
+                # ✅ هدر دو سطری
+                print("\n  ┌────┬──────┬────────────────────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┐")
+                print("  │ #  │ Code │ Name               │ AL-T │ AL-U │ AL-B │ SL-T │ SL-U │ SL-B │ RL-T │ RL-U │ RL-B │ UL-T │ UL-U │ UL-B │ CW-T │ CW-U │ CW-B │ TOT-T│ TOT-U│ TOT-B│")
+                print("  ├────┼──────┼────────────────────┼──────┼──────┼──────┼──────┼──────┼──────┼──────┼──────┼──────┼──────┼──────┼──────┼──────┼──────┼──────┼──────┼──────┼──────┤")
 
                 for i, r in enumerate(dept_reports, 1):
-                    print(f"  │ {i:<4} │ {r['user_id']:<6} │ {r['full_name'][:20]:<20} │ "
-                          f"{r['annual_leave']:<6} │ {r['sick_leave']:<6} │ {r['reward_leave']:<6} │ "
-                          f"{r['unpaid_leave']:<8} │ {r['total_days']:<6} │ {r['total_requests']:<8} │")
+                    print(f"  │ {i:<2} │ {r['user_id']:<4} │ {r['full_name'][:18]:<18} │ "
+                          f"{r['al_total']:<4} │ {r['al_used']:<4} │ {r['al_balance']:<4} │ "
+                          f"{r['sl_total']:<4} │ {r['sl_used']:<4} │ {r['sl_balance']:<4} │ "
+                          f"{r['rl_total']:<4} │ {r['rl_used']:<4} │ {r['rl_balance']:<4} │ "
+                          f"{r['ul_total']:<4} │ {r['ul_used']:<4} │ {r['ul_balance']:<4} │ "
+                          f"{r['cw_total']:<4} │ {r['cw_used']:<4} │ {r['cw_balance']:<4} │ "
+                          f"{r['tot_total']:<4} │ {r['tot_used']:<4} │ {r['tot_balance']:<4} │")
 
-                print("  └──────┴────────┴──────────────────────┴────────┴────────┴────────┴──────────┴────────┴──────────┘")
+                print("  └────┴──────┴────────────────────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┘")
 
                 # خلاصه دپارتمان
-                total_days = sum(r['total_days'] for r in dept_reports)
-                total_requests = sum(r['total_requests'] for r in dept_reports)
-                print(f"\n  📊 خلاصه دپارتمان {dept}:")
-                print(f"     • مجموع روزهای مرخصی: {total_days}")
-                print(f"     • مجموع درخواست‌ها: {total_requests}")
+                sum_al_t = sum(r['al_total'] for r in dept_reports)
+                sum_al_u = sum(r['al_used'] for r in dept_reports)
+                sum_al_b = sum(r['al_balance'] for r in dept_reports)
+                sum_sl_t = sum(r['sl_total'] for r in dept_reports)
+                sum_sl_u = sum(r['sl_used'] for r in dept_reports)
+                sum_sl_b = sum(r['sl_balance'] for r in dept_reports)
+                sum_rl_t = sum(r['rl_total'] for r in dept_reports)
+                sum_rl_u = sum(r['rl_used'] for r in dept_reports)
+                sum_rl_b = sum(r['rl_balance'] for r in dept_reports)
+                sum_ul_t = sum(r['ul_total'] for r in dept_reports)
+                sum_ul_u = sum(r['ul_used'] for r in dept_reports)
+                sum_ul_b = sum(r['ul_balance'] for r in dept_reports)
+                sum_cw_t = sum(r['cw_total'] for r in dept_reports)
+                sum_cw_u = sum(r['cw_used'] for r in dept_reports)
+                sum_cw_b = sum(r['cw_balance'] for r in dept_reports)
+                sum_tot_t = sum(r['tot_total'] for r in dept_reports)
+                sum_tot_u = sum(r['tot_used'] for r in dept_reports)
+                sum_tot_b = sum(r['tot_balance'] for r in dept_reports)
+
+                print("  ┌────┬──────┬────────────────────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┐")
+                print(f"  │ Σ  │      │                    │ {sum_al_t:<4} │ {sum_al_u:<4} │ {sum_al_b:<4} │ "
+                      f"{sum_sl_t:<4} │ {sum_sl_u:<4} │ {sum_sl_b:<4} │ "
+                      f"{sum_rl_t:<4} │ {sum_rl_u:<4} │ {sum_rl_b:<4} │ "
+                      f"{sum_ul_t:<4} │ {sum_ul_u:<4} │ {sum_ul_b:<4} │ "
+                      f"{sum_cw_t:<4} │ {sum_cw_u:<4} │ {sum_cw_b:<4} │ "
+                      f"{sum_tot_t:<4} │ {sum_tot_u:<4} │ {sum_tot_b:<4} │")
+                print("  └────┴──────┴────────────────────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┘")
+
+            # ✅ راهنما
+            print(f"\n  💡 راهنمای ستون‌ها:")
+            print(f"     • AL = Annual Leave (استحقاقی)")
+            print(f"     • SL = Sick Leave (استعلاجی)")
+            print(f"     • RL = Reward Leave (تشویقی)")
+            print(f"     • UL = Unpaid Leave (بدون حقوق)")
+            print(f"     • CW = Carryover (ذخیره سال قبل)")
+            print(f"     • TOT = Total (مجموع)")
+            print(f"     • T = Total (کل) | U = Used (استفاده شده) | B = Balance (مانده)")
+
+            # ✅ منوی خروجی
+            print("\n" + "=" * 250)
+            print("  📤 خروجی:")
+            print("    1. اکسل")
+            print("    2. PDF")
+            print("    3. هر دو")
+            print("    0. بدون خروجی")
+            export_choice = input("  انتخاب [0-3]: ").strip()
+
+            if export_choice in ['1', '3']:
+                exporter = ExcelLeaveExporter()
+                filename = exporter.export_leave_report(reports, year, month, period)
+                print(f"\n  ✅ فایل اکسل: {filename}")
+
+            if export_choice in ['2', '3']:
+                exporter = PDFLeaveExporter()
+                filename = exporter.export_leave_report(reports, year, month, period, dept_names)
+                print(f"\n  ✅ فایل PDF: {filename}")
 
         finally:
             generator.close()
-
     # ============================================
     # خروجی اکسل
     # ============================================
