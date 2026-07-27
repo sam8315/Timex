@@ -128,9 +128,11 @@ class ReportGenerator:
                     used_map[req.leave_type] += req.days_count
 
             # ✅ محاسبه "کل" برای هر نوع
-            # برای AL: اگر قرارداد فعال است، از قرارداد بخوان؛ در غیر این صورت از مانده + استفاده
+            # برای AL: مجموع استحقاق همه قراردادهایی که در بازه گزارش قرار دارند
             al_total = 0
-            contract = self.db.query(Contract).filter(
+
+            # دریافت همه قراردادهای کاربر که با بازه گزارش همپوشانی دارند
+            contracts = self.db.query(Contract).filter(
                 and_(
                     Contract.user_id == user_id,
                     Contract.start_date <= g_to,
@@ -139,12 +141,15 @@ class ReportGenerator:
                         Contract.end_date >= g_from
                     )
                 )
-            ).order_by(Contract.start_date.desc()).first()
+            ).order_by(Contract.start_date.asc()).all()
 
-            if contract and contract.annual_leave_days:
-                al_total = contract.annual_leave_days
-            else:
-                # کل = مانده + استفاده شده
+            # ✅ جمع استحقاق همه قراردادهای بازه
+            for contract in contracts:
+                if contract.annual_leave_days:
+                    al_total += contract.annual_leave_days
+
+            # اگر هیچ قراردادی نبود، از مانده + استفاده استفاده کن
+            if al_total == 0:
                 al_total = balance_map.get('AL', 0) + used_map.get('AL', 0)
 
             # برای سایر انواع: کل = مانده + استفاده شده
