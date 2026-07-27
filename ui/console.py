@@ -223,22 +223,22 @@ class ConsoleUI:
             print("  2. مشاهده قراردادهای یک کاربر")
             print("  3. مشاهده تمام قراردادها")
             print("  4. ویرایش قرارداد")
-            print("  5. قراردادهای نزدیک به پایان")
-            print("  6. شارژ مرخصی استحقاقی سالانه")
+            print("  5. حذف قرارداد 🆕")
+            print("  6. قراردادهای نزدیک به پایان")
             print("  7. آمار قراردادها")
             print("  0. بازگشت")
-
             choice = input("\n  انتخاب: ").strip()
             if choice == '1': self._add_contract()
             elif choice == '2': self._show_user_contracts()
             elif choice == '3': self._show_all_contracts()
             elif choice == '4': self._update_contract()
-            elif choice == '5': self._show_expiring_contracts()
-            elif choice == '6': self._initialize_yearly_leave()
+            elif choice == '5': self._delete_contract()  # 🆕
+            elif choice == '6': self._show_expiring_contracts()
             elif choice == '7': self._show_contracts_summary()
             elif choice == '0': break
             else: print("\n❌ انتخاب نامعتبر")
             input("\n⏎ Enter...")
+
     def _leave_menu(self):
         """زیرمنوی تعطیلات و مرخصی"""
         while True:
@@ -1617,23 +1617,19 @@ class ConsoleUI:
             print(f"\n  ❌ خطا: {e}")
 
     def _add_contract(self):
-        """افزودن قرارداد جدید"""
+        """افزودن قرارداد جدید با شارژ خودکار مرخصی"""
         from core.contract_manager import ContractManager
-
         print("\n" + "=" * 70)
         print("  📝 افزودن قرارداد جدید")
         print("=" * 70)
-
         user_id = input("\n  📛 کد پرسنلی کاربر: ").strip()
         if not user_id:
             print("  ❌ کد پرسنلی نمی‌تواند خالی باشد")
             return
-
         # ✅ دریافت نام کاربر قبل از ادامه
         emp_manager = EmployeeManager()
         try:
             full_name = emp_manager.get_full_name(user_id)
-
             # بررسی وجود کاربر در جدول users
             user = emp_manager.db.query(User).filter(User.user_id == user_id).first()
             if not user:
@@ -1641,7 +1637,6 @@ class ConsoleUI:
                 return
         finally:
             emp_manager.close()
-
         # انواع قرارداد
         print("\n  📋 انواع قرارداد:")
         print("    1. رسمی")
@@ -1651,17 +1646,14 @@ class ConsoleUI:
         print("    5. پزشک")
         print("    6. سایر (دستی)")
         type_choice = input("  انتخاب [1-6]: ").strip()
-
         type_map = {
             '1': 'رسمی', '2': 'وظیفه', '3': 'خریدخدمت',
             '4': 'قراردادی', '5': 'پزشک'
         }
         contract_type = type_map.get(type_choice, input("  نام قرارداد: ").strip())
-
         if not contract_type:
             print("  ❌ نوع قرارداد نمی‌تواند خالی باشد")
             return
-
         # تاریخ شروع
         today_j = jdatetime.date.today()
         first_day_j = jdatetime.date(jdatetime.date.today().year, 1, 1)
@@ -1674,12 +1666,10 @@ class ConsoleUI:
         except Exception as e:
             print(f"  ❌ خطا در تبدیل تاریخ: {e}")
             return
-
         # تاریخ پایان (آخرین روز سال جاری)
         year = today_j.year
         next_year_start = jdatetime.date(year + 1, 1, 1)
         last_day_j = next_year_start - timedelta(days=1)  # آخرین روز سال جاری (۲۹ یا ۳۰ اسفند)
-
         # نمایش پیش‌فرض به کاربر
         default_end_str = last_day_j.strftime('%Y/%m/%d')
         end_str = input(f"  📅 تاریخ پایان (شمسی) [پیش‌فرض: {default_end_str}]: ").strip()
@@ -1691,7 +1681,6 @@ class ConsoleUI:
         except Exception as e:
             print(f"  ❌ خطا در تبدیل تاریخ: {e}")
             return
-
         # مقادیر پیش‌فرض بر اساس نوع قرارداد
         defaults = {
             'رسمی': (35, 0, 0, 0),
@@ -1700,33 +1689,24 @@ class ConsoleUI:
             'قراردادی': (30, 0, 0, 0),
             'پزشک': (0, 0, 0, 0),
         }
-
         default_values = defaults.get(contract_type, (0, 0, 0, 0))
-
         print(f"\n  💡 مقادیر پیش‌فرض برای قرارداد {contract_type}:")
         print(f"     • مرخصی استحقاقی سالانه: {default_values[0]} روز")
         print(f"     • مرخصی استعلاجی: {default_values[1]} روز")
         print(f"     • مرخصی تشویقی: {default_values[2]} روز")
         print(f"     • مرخصی بدون حقوق: {default_values[3]} روز")
-
         annual = input(f"  مرخصی استحقاقی [{default_values[0]}]: ").strip()
         annual = int(annual) if annual else default_values[0]
-
         sick = input(f"  مرخصی استعلاجی [{default_values[1]}]: ").strip()
         sick = int(sick) if sick else default_values[1]
-
         reward = input(f"  مرخصی تشویقی [{default_values[2]}]: ").strip()
         reward = int(reward) if reward else default_values[2]
-
         unpaid = input(f"  مرخصی بدون حقوق [{default_values[3]}]: ").strip()
         unpaid = int(unpaid) if unpaid else default_values[3]
-
         description = input("  📝 توضیحات (اختیاری): ").strip()
-
         # پیش‌نمایش
         j_start = jdatetime.date.fromgregorian(date=start_date)
         j_end = jdatetime.date.fromgregorian(date=end_date) if end_date else "نامحدود"
-
         print("\n" + "-" * 70)
         print("  📋 پیش‌نمایش قرارداد:")
         print(f"     • کد پرسنلی       : {user_id}")
@@ -1741,14 +1721,13 @@ class ConsoleUI:
         if description:
             print(f"     • توضیحات         : {description}")
         print("-" * 70)
-
         confirm = input("\n  آیا تایید می‌کنید؟ (بله/خیر): ").strip()
         if confirm.lower() not in ['بله', 'yes', 'y']:
             print("  ❌ عملیات لغو شد")
             return
-
         manager = ContractManager()
         try:
+            # ✅ ایجاد قرارداد
             result = manager.add_contract(
                 user_id=user_id,
                 contract_type=contract_type,
@@ -1760,7 +1739,71 @@ class ConsoleUI:
                 unpaid_leave=unpaid,
                 description=description
             )
+
+            if not result['success']:
+                print(f"\n  {result['message']}")
+                return
+
             print(f"\n  {result['message']}")
+
+            # ✅ شارژ خودکار مرخصی استحقاقی
+            if annual > 0:
+                # محاسبه سال‌های تحت تاثیر
+                j_start_year = jdatetime.date.fromgregorian(date=start_date).year
+                j_end_year = jdatetime.date.fromgregorian(date=end_date).year if end_date else j_start_year
+
+                years = list(range(j_start_year, j_end_year + 1))
+
+                print(f"\n  💰 شارژ خودکار مرخصی استحقاقی:")
+                print(f"     • سال‌های تحت تاثیر: {', '.join(map(str, years))}")
+                print(f"     • مقدار شارژ: {annual} روز برای هر سال")
+
+                charge_confirm = input("\n  آیا می‌خواهید مرخصی را شارژ کنید؟ (بله/خیر): ").strip()
+                if charge_confirm.lower() in ['بله', 'yes', 'y']:
+                    for year in years:
+                        charge_result = manager.credit_annual_leave(
+                            user_id=user_id,
+                            year=year,
+                            amount=annual,
+                            description=f'شارژ خودکار از قرارداد جدید (ID: {result["contract_id"]}, نوع: {contract_type})'
+                        )
+
+                        if charge_result['success']:
+                            print(f"     ✅ سال {year}: {charge_result['message']}")
+                        else:
+                            print(f"     ❌ سال {year}: {charge_result['message']}")
+
+                # شارژ استعلاجی و تشویقی
+                from core.leave_manager import LeaveManager
+                lm = LeaveManager()
+                try:
+                    for year in years:
+                        if sick > 0:
+                            lm.credit_leave(
+                                user_id=user_id,
+                                year=year,
+                                leave_type='SL',
+                                amount=sick,
+                                transaction_type='CONTRACT',
+                                description=f'شارژ خودکار استعلاجی از قرارداد (ID: {result["contract_id"]})'
+                            )
+                            print(f"     ✅ سال {year}: {sick} روز استعلاجی شارژ شد")
+
+                        if reward > 0:
+                            lm.credit_leave(
+                                user_id=user_id,
+                                year=year,
+                                leave_type='RL',
+                                amount=reward,
+                                transaction_type='CONTRACT',
+                                description=f'شارژ خودکار تشویقی از قرارداد (ID: {result["contract_id"]})'
+                            )
+                            print(f"     ✅ سال {year}: {reward} روز تشویقی شارژ شد")
+                finally:
+                    lm.close()
+            else:
+                print("\n  ⚠️  مرخصی استحقاقی 0 است، شارژ انجام نشد")
+
         finally:
             manager.close()
 
@@ -1813,148 +1856,6 @@ class ConsoleUI:
                       f"{c.reward_leave_days:<4} │ {c.unpaid_leave_days:<4} │ {status:<8} │")
 
             print("  └──────┴────────────────┴────────────┴────────────┴──────┴──────┴───────┴──────┴──────────┘")
-
-        finally:
-            manager.close()
-            emp_manager.close()
-
-    def _initialize_yearly_leave(self):
-        """شارژ مرخصی استحقاقی سالانه"""
-        from core.contract_manager import ContractManager
-        from core.employee_manager import EmployeeManager
-
-        print("\n" + "=" * 70)
-        print("  💰 شارژ مرخصی استحقاقی سالانه")
-        print("=" * 70)
-
-        print("\n  📋 نوع شارژ:")
-        print("    1. یک کاربر خاص")
-        print("    2. همه کاربران")
-        choice = input("  انتخاب [1/2]: ").strip()
-
-        today_j = jdatetime.date.today()
-        year_str = input(f"  📅 سال شمسی [پیش‌فرض: {today_j.year}]: ").strip()
-        year = int(year_str) if year_str else today_j.year
-
-        manager = ContractManager()
-        emp_manager = EmployeeManager()
-        try:
-            if choice == '1':
-                user_id = input("  📛 کد پرسنلی کاربر: ").strip()
-                if not user_id:
-                    print("  ❌ کد پرسنلی نمی‌تواند خالی باشد")
-                    return
-
-                # ✅ محاسبه مرخصی با در نظر گرفتن تمام قراردادها
-                calc = manager.calculate_yearly_leave(user_id, year)
-
-                if not calc['success']:
-                    print(f"\n  {calc['message']}")
-                    return
-
-                full_name = emp_manager.get_full_name(user_id)
-
-                # نمایش پیش‌نمایش دقیق
-                print("\n" + "-" * 70)
-                print(f"  👤 کاربر: {full_name} (کد: {user_id})")
-                print(f"  📅 سال شمسی: {year}")
-                print(f"  📊 تعداد قراردادهای فعال در سال: {calc['contracts_count']}")
-
-                if calc['contracts_count'] > 1:
-                    print("\n  📋 جزئیات محاسبه:")
-                    print("  " + "-" * 55)
-                    print(f"  {'نوع قرارداد':<15} {'استحقاقی':<10} {'استعلاجی':<10} {'تشویقی':<10}")
-                    print("  " + "-" * 55)
-
-                    for c in calc['contracts']:
-                        print(f"  {c['contract_type']:<15} {c['annual']:<10} {c['sick']:<10} {c['reward']:<10}")
-
-                    print("  " + "-" * 55)
-                    print(
-                        f"  {'مجموع':<15} {calc['total_annual']:<10} {calc['total_sick']:<10} {calc['total_reward']:<10}")
-                    print("  " + "-" * 55)
-                else:
-                    print(f"\n  📋 قرارداد: {calc['contracts'][0]['contract_type']}")
-                    print(f"     • استحقاقی سالانه : {calc['total_annual']} روز")
-                    print(f"     • استعلاجی        : {calc['total_sick']} روز")
-                    print(f"     • تشویقی          : {calc['total_reward']} روز")
-                    print(f"     • بدون حقوق       : {calc['total_unpaid']} روز")
-
-                print("-" * 70)
-
-                confirm = input("\n  آیا تایید می‌کنید؟ (بله/خیر): ").strip()
-                if confirm.lower() not in ['بله', 'yes', 'y']:
-                    print("  ❌ عملیات لغو شد")
-                    return
-
-                result = manager.initialize_yearly_balances(user_id, year)
-
-                # ✅ اگر قبلاً شارژ شده، از کاربر بپرس
-                if not result['success'] and result.get('already_charged'):
-                    print(f"\n  {result['message']}")
-                    print(f"  💡 مقدار جدید محاسبه شده: {result['new_amount']} روز")
-                    print(f"  💡 تفاوت: {result['new_amount'] - result['current_balance']} روز")
-
-                    reset_confirm = input("\n  ⚠️  آیا می‌خواهید بازنشانی و شارژ مجدد کنید؟ (بله/خیر): ").strip()
-                    if reset_confirm.lower() in ['بله', 'yes', 'y']:
-                        result = manager.initialize_yearly_balances(user_id, year, force_reset=True)
-                        print(f"\n  {result['message']}")
-                    else:
-                        print("  ❌ عملیات لغو شد")
-                else:
-                    print(f"\n  {result['message']}")
-
-
-            elif choice == '2':
-
-                # ✅ پرسش اول: آیا بازنشانی انجام شود؟
-
-                print("\n  📋 حالت شارژ:")
-
-                print("    1. فقط کاربرانی که هنوز شارژ نشده‌اند")
-
-                print("    2. بازنشانی همه کاربران (شارژ قبلی حذف و مجدد شارژ می‌شود)")
-
-                mode = input("  انتخاب [1/2] [پیش‌فرض: 1]: ").strip() or '1'
-
-                force_reset = (mode == '2')
-
-                if force_reset:
-
-                    confirm_msg = f"\n  ⚠️  هشدار: شارژ قبلی همه کاربران حذف و با مقادیر جدید جایگزین می‌شود!"
-
-                    confirm_msg += f"\n  ⚠️  آیا مطمئن هستید؟ (بله/خیر): "
-
-                else:
-
-                    confirm_msg = f"\n  ⚠️  شارژ مرخصی کاربران شارژ نشده برای سال شمسی {year}؟ (بله/خیر): "
-
-                confirm = input(confirm_msg).strip()
-
-                if confirm.lower() not in ['بله', 'yes', 'y']:
-                    print("  ❌ عملیات لغو شد")
-
-                    return
-
-                print("\n  ⏳ در حال پردازش...")
-
-                stats = manager.initialize_all_users_for_year(year, force_reset=force_reset)
-
-                print(f"\n  📊 نتیجه:")
-
-                print(f"     • کل کاربران           : {stats['total']}")
-
-                print(f"     • شارژ موفق (جدید)     : {stats['success'] - stats['reset']} ✅")
-
-                if stats['reset'] > 0:
-                    print(f"     • بازنشانی شده         : {stats['reset']} 🔄")
-
-                print(f"     • قبلاً شارژ شده (رد)  : {stats['skipped']} ⚠️")
-
-                print(f"     • خطا (بدون قرارداد)   : {stats['failed']} ❌")
-
-            else:
-                print("  ❌ انتخاب نامعتبر")
 
         finally:
             manager.close()
@@ -6007,3 +5908,78 @@ class ConsoleUI:
 
         finally:
             manager.close()
+
+    def _delete_contract(self):
+        """حذف قرارداد با کسر خودکار مرخصی"""
+        from core.contract_manager import ContractManager
+        from core.employee_manager import EmployeeManager
+
+        print("\n" + "=" * 80)
+        print("  🗑️ حذف قرارداد")
+        print("=" * 80)
+
+        contract_id_str = input("\n  🔢 شناسه قرارداد: ").strip()
+        if not contract_id_str:
+            print("  ❌ شناسه نمی‌تواند خالی باشد")
+            return
+
+        try:
+            contract_id = int(contract_id_str)
+        except ValueError:
+            print("  ❌ شناسه نامعتبر")
+            return
+
+        manager = ContractManager()
+        emp_manager = EmployeeManager()
+        try:
+            contract = manager.db.query(Contract).filter(Contract.id == contract_id).first()
+            if not contract:
+                print("  ❌ قرارداد یافت نشد")
+                return
+
+            # نمایش اطلاعات فعلی
+            full_name = emp_manager.get_full_name(contract.user_id)
+            j_start = jdatetime.date.fromgregorian(date=contract.start_date)
+            j_end = jdatetime.date.fromgregorian(date=contract.end_date) if contract.end_date else None
+
+            print("\n" + "-" * 80)
+            print("  📋 اطلاعات قرارداد:")
+            print(f"     • شناسه           : {contract.id}")
+            print(f"     • کد پرسنلی       : {contract.user_id}")
+            print(f"     • نام کاربر       : {full_name}")
+            print(f"     • نوع قرارداد     : {contract.contract_type}")
+            print(f"     • تاریخ شروع      : {j_start.strftime('%Y/%m/%d')}")
+            print(f"     • تاریخ پایان     : {j_end.strftime('%Y/%m/%d') if j_end else 'نامحدود'}")
+            print(f"     • استحقاقی سالانه : {contract.annual_leave_days} روز")
+            print(f"     • استعلاجی        : {contract.sick_leave_days} روز")
+            print(f"     • تشویقی          : {contract.reward_leave_days} روز")
+            print("-" * 80)
+
+            # ✅ هشدار درباره کسر مرخصی
+            print("\n  ⚠️  هشدار: با حذف این قرارداد، مقادیر زیر از مانده مرخصی کاربر کسر می‌شود:")
+            years = manager._get_years_for_contract(contract)
+            print(f"     • سال‌های تحت تاثیر: {', '.join(map(str, years))}")
+            print(f"     • استحقاقی (AL)   : -{contract.annual_leave_days} روز (برای هر سال)")
+            print(f"     • استعلاجی (SL)   : -{contract.sick_leave_days} روز (برای هر سال)")
+            print(f"     • تشویقی (RL)     : -{contract.reward_leave_days} روز (برای هر سال)")
+
+            print("\n" + "-" * 80)
+            confirm = input("  آیا مطمئن هستید؟ (بله/خیر): ").strip()
+            if confirm.lower() not in ['بله', 'yes', 'y']:
+                print("  ❌ عملیات لغو شد")
+                return
+
+            # حذف
+            result = manager.delete_contract(contract_id)
+            print(f"\n  {result['message']}")
+
+            if result['success'] and 'deduct_result' in result:
+                print("\n  📊 جزئیات کسر:")
+                for detail in result['deduct_result'].get('details', []):
+                    print(
+                        f"     • سال {detail['year']} - {detail['type']}: {detail.get('amount', detail.get('diff', 0))} روز")
+
+        finally:
+            manager.close()
+            emp_manager.close()
+

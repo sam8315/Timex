@@ -36,7 +36,7 @@ class ContractManager:
             unpaid_leave: int,
             description: str = ""
     ) -> Dict:
-        """افزودن قرارداد جدید"""
+        """افزودن قرارداد جدید با شارژ خودکار مرخصی"""
         # بررسی وجود کاربر
         user = self.db.query(User).filter(User.user_id == user_id).first()
         if not user:
@@ -59,7 +59,6 @@ class ContractManager:
                 )
             )
         ).first()
-
         if overlapping:
             return {
                 'success': False,
@@ -79,14 +78,23 @@ class ContractManager:
                 description=description
             )
             self.db.add(contract)
+            self.db.flush()  # برای دریافت ID
+
+            # ✅ شارژ خودکار مرخصی
+            charge_result = self._charge_leave_for_contract(contract)
+
             self.db.commit()
+
+            message = f'✅ قرارداد با موفقیت ایجاد شد (ID: {contract.id})'
+            if charge_result['success']:
+                message += f'\n{charge_result["message"]}'
 
             return {
                 'success': True,
-                'message': f'✅ قرارداد با موفقیت ایجاد شد (ID: {contract.id})',
-                'contract_id': contract.id
+                'message': message,
+                'contract_id': contract.id,
+                'charge_result': charge_result
             }
-
         except Exception as e:
             self.db.rollback()
             return {'success': False, 'message': f'❌ خطا: {e}'}
@@ -117,124 +125,201 @@ class ContractManager:
             Contract.user_id == user_id
         ).order_by(Contract.start_date.desc()).all()
 
-    def initialize_yearly_balances(self, user_id: str, year: int, force_reset: bool = False) -> Dict:
+    def initialize_yearly_balances(
+            self,
+            user_id: str,
+            year: int,
+            force_reset: bool = False
+    ) -> Dict:
         """
-        شارژ اولیه مرخصی بر اساس تمام قراردادهای سال
-        year: سال شمسی
-        force_reset: اگر True باشد، شارژ قبلی را حذف و مجدد شارژ می‌کند
-        """
-        # محاسبه مرخصی سالانه
-        calc = self.calculate_yearly_leave(user_id, year)
+        شارژ مرخصی استحقاقی از قراردادها با جلوگیری از شارژ مضاعف
 
+        منطق:
+        1. محاسبه کل استحقاق بر اساس همه قراردادهای بازه
+        2. بررسی تراکنش‌های قبلی با نوع CONTRACT برای یافتن مقدار شارژ شده
+        3. شارژ فقط مقدار تفاضل (Delta)
+
+        Args:
+            user_id: کد پرسنلی
+            year: سال شمسی
+            force_reset: اگر True باشد، شارژ قبلی حذف و با مقدار جدید جایگزین می‌شود
+        """
+        from models.leave_balance import LeaveBalance
+        from models.leave_transaction import LeaveTransaction
+        from sqlalchemy import and_, func
+
+        # ۱. محاسبه کل استحقاق از همه قراردادهای بازه
+        calc = self.calculate_yearly_leave(user_id, year)
         if not calc['success']:
             return calc
 
-        # بررسی اینکه آیا قبلاً شارژ شده یا نه
-        existing = self.db.query(LeaveBalance).filter(
-            and_(
-                LeaveBalance.user_id == user_id,
-                LeaveBalance.year == year,
-                LeaveBalance.leave_type == 'AL'
-            )
-        ).first()
-
-        if existing and not force_reset:
-            return {
-                'success': False,
-                'already_charged': True,
-                'current_balance': existing.balance,
-                'new_amount': calc['total_annual'],
-                'message': f'⚠️ مرخصی استحقاقی سال شمسی {year} قبلاً شارژ شده ({existing.balance} روز)'
-            }
+        total_expected = calc['total_annual']
 
         try:
-            # ✅ اگر force_reset باشد، شارژ قبلی را حذف کن
-            if existing and force_reset:
-                old_balance = existing.balance
+            # ۲. بررسی مقدار شارژ شده قبلی از طریق قرارداد
+            already_charged = self.db.query(func.sum(LeaveTransaction.amount)).filter(
+                and_(
+                    LeaveTransaction.user_id == user_id,
+                    LeaveTransaction.year == year,
+                    LeaveTransaction.leave_type == 'AL',
+                    LeaveTransaction.transaction_type == 'INITIAL'
+                )
+            ).scalar() or 0
 
-                # حذف مانده قبلی
-                self.db.delete(existing)
+            # ۳. محاسبه مقدار باقیمانده برای شارژ
+            amount_to_charge = total_expected - already_charged
 
-                # حذف تراکنش INITIAL قبلی
-                old_transactions = self.db.query(LeaveTransaction).filter(
+            # اگر قبلاً کامل شارژ شده است
+            if amount_to_charge <= 0 and not force_reset:
+                current_balance = self.db.query(LeaveBalance).filter(
+                    and_(
+                        LeaveBalance.user_id == user_id,
+                        LeaveBalance.year == year,
+                        LeaveBalance.leave_type == 'AL'
+                    )
+                ).first()
+
+                current_amount = current_balance.balance if current_balance else 0
+
+                return {
+                    'success': True,
+                    'message': f'✅ این کاربر قبلاً به طور کامل شارژ شده است. (کل استحقاق: {total_expected}، شارژ شده: {already_charged})',
+                    'already_charged': True,
+                    'current_balance': current_amount,
+                    'new_amount': 0
+                }
+
+            # ۴. اگر force_reset باشد، ابتدا مانده و تراکنش‌های قبلی را صفر می‌کنیم
+            if force_reset and already_charged > 0:
+                # حذف تراکنش‌های CONTRACT قبلی
+                self.db.query(LeaveTransaction).filter(
                     and_(
                         LeaveTransaction.user_id == user_id,
                         LeaveTransaction.year == year,
                         LeaveTransaction.leave_type == 'AL',
                         LeaveTransaction.transaction_type == 'INITIAL'
                     )
-                ).all()
+                ).delete(synchronize_session=False)
 
-                for t in old_transactions:
-                    self.db.delete(t)
+                # صفر کردن مانده AL
+                balance = self.db.query(LeaveBalance).filter(
+                    and_(
+                        LeaveBalance.user_id == user_id,
+                        LeaveBalance.year == year,
+                        LeaveBalance.leave_type == 'AL'
+                    )
+                ).first()
+                if balance:
+                    balance.balance = 0
+                else:
+                    balance = LeaveBalance(
+                        user_id=user_id,
+                        year=year,
+                        leave_type='AL',
+                        balance=0
+                    )
+                    self.db.add(balance)
 
                 self.db.flush()
+                already_charged = 0
+                amount_to_charge = total_expected
 
-            # ایجاد مانده مرخصی استحقاقی جدید
-            balance = LeaveBalance(
-                user_id=user_id,
-                year=year,
-                leave_type='AL',
-                balance=calc['total_annual']
-            )
-            self.db.add(balance)
+            # ۵. شارژ مقدار باقیمانده از طریق متد اختصاصی
+            if amount_to_charge > 0:
+                result = self.credit_annual_leave(
+                    user_id=user_id,
+                    year=year,
+                    amount=amount_to_charge,
+                    description=f'شارژ استحقاقی از قرارداد (کل: {total_expected}، قبلاً شارژ: {already_charged})'
+                )
 
-            # ثبت تراکنش
-            description = f'شارژ اولیه استحقاقی بر اساس {calc["contracts_count"]} قرارداد'
-            if calc['contracts_count'] > 1:
-                types = ', '.join([c['contract_type'] for c in calc['contracts']])
-                description += f' ({types})'
+                if not result['success']:
+                    return result
 
-            if force_reset and 'old_balance' in locals():
-                description += f' [بازنشانی از {old_balance} روز]'
+                new_balance = result['new_balance']
+            else:
+                # اگر amount_to_charge == 0 و force_reset بود، مانده صفر است
+                balance = self.db.query(LeaveBalance).filter(
+                    and_(
+                        LeaveBalance.user_id == user_id,
+                        LeaveBalance.year == year,
+                        LeaveBalance.leave_type == 'AL'
+                    )
+                ).first()
+                new_balance = balance.balance if balance else 0
 
-            transaction = LeaveTransaction(
-                user_id=user_id,
-                year=year,
-                leave_type='AL',
-                amount=calc['total_annual'],
-                transaction_type='INITIAL',
-                description=description
-            )
-            self.db.add(transaction)
+            # ۶. شارژ سایر انواع مرخصی (SL, RL) - فقط اگر force_reset باشد یا قبلاً شارژ نشده
+            from core.leave_manager import LeaveManager
+            lm = LeaveManager()
+            try:
+                for leave_type, amount in [
+                    ('SL', calc['total_sick']),
+                    ('RL', calc['total_reward']),
+                ]:
+                    if amount > 0:
+                        # بررسی آیا قبلاً شارژ شده
+                        existing = self.db.query(func.sum(LeaveTransaction.amount)).filter(
+                            and_(
+                                LeaveTransaction.user_id == user_id,
+                                LeaveTransaction.year == year,
+                                LeaveTransaction.leave_type == leave_type,
+                                LeaveTransaction.transaction_type == 'CONTRACT'
+                            )
+                        ).scalar() or 0
+
+                        remaining = amount - existing
+                        if remaining > 0:
+                            lm.credit_leave(
+                                user_id=user_id,
+                                year=year,
+                                leave_type=leave_type,
+                                amount=remaining,
+                                transaction_type='CONTRACT',
+                                description=f'شارژ {leave_type} از قرارداد (کل: {amount}، قبلاً: {existing})'
+                            )
+            finally:
+                lm.close()
 
             self.db.commit()
 
             return {
                 'success': True,
-                'message': f'✅ مرخصی استحقاقی سال شمسی {year} شارژ شد: {calc["total_annual"]} روز (از {calc["contracts_count"]} قرارداد)',
-                'calculation': calc
+                'message': f'✅ {amount_to_charge} روز به مانده اضافه شد. (کل استحقاق: {total_expected}، مانده جدید: {new_balance})',
+                'new_amount': amount_to_charge,
+                'current_balance': new_balance,
+                'already_charged': False,
+                'previous_charged': already_charged
             }
 
         except Exception as e:
             self.db.rollback()
-            return {'success': False, 'message': f'❌ خطا: {e}'}
+            return {'success': False, 'message': f'❌ خطا در شارژ: {e}'}
+
 
     def initialize_all_users_for_year(self, year: int, force_reset: bool = False) -> Dict:
-        """
-        شارژ مرخصی استحقاقی همه کاربران برای یک سال
-        year: سال شمسی
-        force_reset: اگر True باشد، شارژهای قبلی را بازنشانی می‌کند
-        """
-        users = self.db.query(User).all()
+        """شارژ همه کاربران برای یک سال"""
+        from models.employee import Employee
+
+        employees = self.db.query(Employee).filter(
+            Employee.is_active == True
+        ).all()
+
         stats = {
-            'total': 0,
+            'total': len(employees),
             'success': 0,
-            'failed': 0,
             'skipped': 0,
-            'reset': 0  # ✅ شمارش بازنشانی‌ها
+            'failed': 0,
+            'reset': 0
         }
 
-        for user in users:
-            stats['total'] += 1
-            result = self.initialize_yearly_balances(user.user_id, year, force_reset=force_reset)
+        for emp in employees:
+            result = self.initialize_yearly_balances(emp.user_id, year, force_reset=force_reset)
 
-            if result['success']:
-                stats['success'] += 1
-                # ✅ اگر بازنشانی شده بود، در آمار reset هم اضافه کن
-                if 'بازنشانی' in result.get('message', ''):
+            if result.get('success'):
+                if force_reset and result.get('previous_balance', 0) != 0:
                     stats['reset'] += 1
-            elif 'قبلاً شارژ شده' in result['message']:
+                stats['success'] += 1
+            elif result.get('already_charged'):
                 stats['skipped'] += 1
             else:
                 stats['failed'] += 1
@@ -308,19 +393,95 @@ class ContractManager:
         return result
 
     def update_contract(self, contract_id: int, **kwargs) -> Dict:
-        """به‌روزرسانی قرارداد"""
+        """به‌روزرسانی قرارداد با تنظیم خودکار مرخصی"""
         contract = self.db.query(Contract).filter(Contract.id == contract_id).first()
         if not contract:
             return {'success': False, 'message': '❌ قرارداد یافت نشد'}
 
         try:
+            # ✅ محاسبه تفاوت مقادیر مرخصی
+            old_annual = contract.annual_leave_days
+            old_sick = contract.sick_leave_days
+            old_reward = contract.reward_leave_days
+
+            # به‌روزرسانی فیلدها
             for key, value in kwargs.items():
                 if hasattr(contract, key) and key not in ['id', 'user_id', 'created_at']:
                     setattr(contract, key, value)
 
-            self.db.commit()
-            return {'success': True, 'message': '✅ قرارداد با موفقیت به‌روز شد'}
+            self.db.flush()
 
+            # ✅ محاسبه تفاوت و تنظیم مرخصی
+            years = self._get_years_for_contract(contract)
+            adjustments = []
+
+            # تفاوت AL
+            if 'annual_leave_days' in kwargs:
+                new_annual = contract.annual_leave_days
+                diff = new_annual - old_annual
+                if diff != 0:
+                    for year in years:
+                        result = self.credit_annual_leave(
+                            user_id=contract.user_id,
+                            year=year,
+                            amount=diff,
+                            description=f'تنظیم به دلیل ویرایش قرارداد (ID: {contract.id}, تفاوت: {diff:+d})'
+                        )
+                        adjustments.append({'year': year, 'type': 'AL', 'diff': diff, 'result': result})
+
+            # تفاوت SL
+            if 'sick_leave_days' in kwargs:
+                new_sick = contract.sick_leave_days
+                diff = new_sick - old_sick
+                if diff != 0:
+                    from core.leave_manager import LeaveManager
+                    lm = LeaveManager()
+                    try:
+                        for year in years:
+                            result = lm.credit_leave(
+                                user_id=contract.user_id,
+                                year=year,
+                                leave_type='SL',
+                                amount=diff,
+                                transaction_type='CONTRACT',
+                                description=f'تنظیم استعلاجی به دلیل ویرایش قرارداد (تفاوت: {diff:+d})'
+                            )
+                            adjustments.append({'year': year, 'type': 'SL', 'diff': diff, 'result': result})
+                    finally:
+                        lm.close()
+
+            # تفاوت RL
+            if 'reward_leave_days' in kwargs:
+                new_reward = contract.reward_leave_days
+                diff = new_reward - old_reward
+                if diff != 0:
+                    from core.leave_manager import LeaveManager
+                    lm = LeaveManager()
+                    try:
+                        for year in years:
+                            result = lm.credit_leave(
+                                user_id=contract.user_id,
+                                year=year,
+                                leave_type='RL',
+                                amount=diff,
+                                transaction_type='CONTRACT',
+                                description=f'تنظیم تشویقی به دلیل ویرایش قرارداد (تفاوت: {diff:+d})'
+                            )
+                            adjustments.append({'year': year, 'type': 'RL', 'diff': diff, 'result': result})
+                    finally:
+                        lm.close()
+
+            self.db.commit()
+
+            message = '✅ قرارداد با موفقیت به‌روز شد'
+            if adjustments:
+                message += f'\n🔄 {len(adjustments)} تنظیم مرخصی انجام شد'
+
+            return {
+                'success': True,
+                'message': message,
+                'adjustments': adjustments
+            }
         except Exception as e:
             self.db.rollback()
             return {'success': False, 'message': f'❌ خطا: {e}'}
@@ -464,3 +625,281 @@ class ContractManager:
             'contracts': details,
             'contracts_count': len(details)
         }
+
+    def credit_annual_leave(
+        self,
+        user_id: str,
+        year: int,
+        amount: int,
+        description: str = ""
+    ) -> Dict:
+        """
+        شارژ مرخصی استحقاقی (AL) از طریق قرارداد
+        مانده موجود را حفظ کرده و مقدار جدید را به آن اضافه می‌کند
+        """
+        from models.leave_balance import LeaveBalance
+        from models.leave_transaction import LeaveTransaction
+        from sqlalchemy import and_
+
+        try:
+            # دریافت یا ایجاد مانده
+            balance = self.db.query(LeaveBalance).filter(
+                and_(
+                    LeaveBalance.user_id == user_id,
+                    LeaveBalance.year == year,
+                    LeaveBalance.leave_type == 'AL'
+                )
+            ).first()
+
+            old_balance = balance.balance if balance else 0
+
+            if balance:
+                balance.balance += amount  # ✅ جمع با مانده موجود
+            else:
+                balance = LeaveBalance(
+                    user_id=user_id,
+                    year=year,
+                    leave_type='AL',
+                    balance=amount
+                )
+                self.db.add(balance)
+
+            # ثبت تراکنش
+            transaction = LeaveTransaction(
+                user_id=user_id,
+                year=year,
+                leave_type='AL',
+                amount=amount,
+                transaction_type='CONTRACT',  # ✅ 8 کاراکتر
+                description=description
+            )
+            self.db.add(transaction)
+            self.db.commit()
+
+            new_balance = balance.balance
+            return {
+                'success': True,
+                'message': f'✅ {amount} روز استحقاقی شارژ شد. مانده قبلی: {old_balance} → مانده جدید: {new_balance}',
+                'old_balance': old_balance,
+                'new_balance': new_balance
+            }
+
+        except Exception as e:
+            self.db.rollback()
+            return {'success': False, 'message': f'❌ خطا: {e}'}
+
+    def _get_years_for_contract(self, contract: 'Contract') -> List[int]:
+        """دریافت لیست سال‌های شمسی که قرارداد در آن‌ها فعال است"""
+        import jdatetime
+        years = []
+
+        # سال شروع (شمسی)
+        j_start = jdatetime.date.fromgregorian(date=contract.start_date)
+        start_year = j_start.year
+
+        # سال پایان (شمسی)
+        if contract.end_date:
+            j_end = jdatetime.date.fromgregorian(date=contract.end_date)
+            end_year = j_end.year
+        else:
+            # اگر پایان ندارد، فقط سال شروع
+            end_year = start_year
+
+        for year in range(start_year, end_year + 1):
+            years.append(year)
+
+        return years
+
+    def _charge_leave_for_contract(self, contract: 'Contract') -> Dict:
+        """شارژ خودکار مرخصی استحقاقی هنگام ایجاد قرارداد"""
+        from models.leave_balance import LeaveBalance
+        from models.leave_transaction import LeaveTransaction
+        from sqlalchemy import and_
+
+        results = []
+        years = self._get_years_for_contract(contract)
+
+        try:
+            for year in years:
+                # شارژ AL
+                if contract.annual_leave_days > 0:
+                    result = self.credit_annual_leave(
+                        user_id=contract.user_id,
+                        year=year,
+                        amount=contract.annual_leave_days,
+                        description=f'شارژ خودکار از قرارداد جدید (ID: {contract.id}, نوع: {contract.contract_type})'
+                    )
+                    results.append({'year': year, 'type': 'AL', 'result': result})
+
+                # شارژ SL
+                if contract.sick_leave_days > 0:
+                    from core.leave_manager import LeaveManager
+                    lm = LeaveManager()
+                    try:
+                        result = lm.credit_leave(
+                            user_id=contract.user_id,
+                            year=year,
+                            leave_type='SL',
+                            amount=contract.sick_leave_days,
+                            transaction_type='CONTRACT',
+                            description=f'شارژ خودکار استعلاجی از قرارداد (ID: {contract.id})'
+                        )
+                        results.append({'year': year, 'type': 'SL', 'result': result})
+                    finally:
+                        lm.close()
+
+                # شارژ RL
+                if contract.reward_leave_days > 0:
+                    from core.leave_manager import LeaveManager
+                    lm = LeaveManager()
+                    try:
+                        result = lm.credit_leave(
+                            user_id=contract.user_id,
+                            year=year,
+                            leave_type='RL',
+                            amount=contract.reward_leave_days,
+                            transaction_type='CONTRACT',
+                            description=f'شارژ خودکار تشویقی از قرارداد (ID: {contract.id})'
+                        )
+                        results.append({'year': year, 'type': 'RL', 'result': result})
+                    finally:
+                        lm.close()
+
+            return {
+                'success': True,
+                'message': f'✅ مرخصی برای {len(years)} سال شارژ شد',
+                'details': results
+            }
+
+        except Exception as e:
+            self.db.rollback()
+            return {'success': False, 'message': f'❌ خطا در شارژ خودکار: {e}'}
+
+    def _deduct_leave_for_contract(self, contract: 'Contract') -> Dict:
+        """کسر خودکار مرخصی استحقاقی هنگام حذف قرارداد"""
+        from models.leave_balance import LeaveBalance
+        from models.leave_transaction import LeaveTransaction
+        from sqlalchemy import and_
+
+        results = []
+        years = self._get_years_for_contract(contract)
+
+        try:
+            for year in years:
+                # کسر AL
+                if contract.annual_leave_days > 0:
+                    balance = self.db.query(LeaveBalance).filter(
+                        and_(
+                            LeaveBalance.user_id == contract.user_id,
+                            LeaveBalance.year == year,
+                            LeaveBalance.leave_type == 'AL'
+                        )
+                    ).first()
+
+                    old_balance = balance.balance if balance else 0
+
+                    if balance:
+                        balance.balance -= contract.annual_leave_days
+
+                    # ثبت تراکنش کسر
+                    transaction = LeaveTransaction(
+                        user_id=contract.user_id,
+                        year=year,
+                        leave_type='AL',
+                        amount=-contract.annual_leave_days,  # منفی برای کسر
+                        transaction_type='CONTRACT',
+                        description=f'کسر به دلیل حذف قرارداد (ID: {contract.id}, نوع: {contract.contract_type})'
+                    )
+                    self.db.add(transaction)
+
+                    results.append({
+                        'year': year,
+                        'type': 'AL',
+                        'old_balance': old_balance,
+                        'new_balance': balance.balance if balance else 0,
+                        'amount': contract.annual_leave_days
+                    })
+
+                # کسر SL
+                if contract.sick_leave_days > 0:
+                    from core.leave_manager import LeaveManager
+                    lm = LeaveManager()
+                    try:
+                        lm.credit_leave(
+                            user_id=contract.user_id,
+                            year=year,
+                            leave_type='SL',
+                            amount=-contract.sick_leave_days,
+                            transaction_type='CONTRACT',
+                            description=f'کسر استعلاجی به دلیل حذف قرارداد (ID: {contract.id})'
+                        )
+                        results.append({'year': year, 'type': 'SL', 'amount': contract.sick_leave_days})
+                    finally:
+                        lm.close()
+
+                # کسر RL
+                if contract.reward_leave_days > 0:
+                    from core.leave_manager import LeaveManager
+                    lm = LeaveManager()
+                    try:
+                        lm.credit_leave(
+                            user_id=contract.user_id,
+                            year=year,
+                            leave_type='RL',
+                            amount=-contract.reward_leave_days,
+                            transaction_type='CONTRACT',
+                            description=f'کسر تشویقی به دلیل حذف قرارداد (ID: {contract.id})'
+                        )
+                        results.append({'year': year, 'type': 'RL', 'amount': contract.reward_leave_days})
+                    finally:
+                        lm.close()
+
+            self.db.commit()
+
+            return {
+                'success': True,
+                'message': f'✅ مرخصی برای {len(years)} سال کسر شد',
+                'details': results
+            }
+
+        except Exception as e:
+            self.db.rollback()
+            return {'success': False, 'message': f'❌ خطا در کسر خودکار: {e}'}
+
+    def delete_contract(self, contract_id: int) -> Dict:
+        """حذف قرارداد با کسر خودکار مرخصی"""
+        contract = self.db.query(Contract).filter(Contract.id == contract_id).first()
+        if not contract:
+            return {'success': False, 'message': '❌ قرارداد یافت نشد'}
+
+        # ذخیره اطلاعات برای نمایش
+        info = {
+            'id': contract.id,
+            'user_id': contract.user_id,
+            'contract_type': contract.contract_type,
+            'annual_leave_days': contract.annual_leave_days,
+            'sick_leave_days': contract.sick_leave_days,
+            'reward_leave_days': contract.reward_leave_days
+        }
+
+        try:
+            # ✅ کسر خودکار مرخصی قبل از حذف
+            deduct_result = self._deduct_leave_for_contract(contract)
+
+            # حذف قرارداد
+            self.db.delete(contract)
+            self.db.commit()
+
+            message = f'✅ قرارداد با موفقیت حذف شد'
+            if deduct_result['success']:
+                message += f'\n{deduct_result["message"]}'
+
+            return {
+                'success': True,
+                'message': message,
+                'info': info,
+                'deduct_result': deduct_result
+            }
+        except Exception as e:
+            self.db.rollback()
+            return {'success': False, 'message': f'❌ خطا در حذف قرارداد: {e}'}
