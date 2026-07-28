@@ -295,27 +295,55 @@ class DailyStatusManager:
                     'status': 'فعال' if contract else 'بدون قرارداد'
                 }
 
-                # ✅ چهارم: محاسبه ساعات کاری با مدیریت تردد شبانه
+                # ✅ چهارم: محاسبه ساعات کاری با مدیریت شب‌کاری
                 work_hours = 0.0
                 night_hours = 0.0
 
                 if not enters and not exits:
                     attendance_status = 'بدون تردد'
+
                 elif enters and exits:
                     first_in = min(e.timestamp for e in enters)
                     last_out = max(e.timestamp for e in exits)
 
-                    # ✅ بررسی تردد شبانه (خروج فردا)
+                    # ✅ حالت ۱: خروج فردا (شیفت شب تا صبح فردا)
                     if last_out.date() > target_date:
-                        # خروج فردا است، کارکرد امروز تا 23:59
                         from datetime import datetime as dt
                         end_of_day = dt.combine(target_date, dt.max.time())
                         if first_in.tzinfo is not None:
                             end_of_day = end_of_day.replace(tzinfo=first_in.tzinfo)
                         work_hours = (end_of_day - first_in).total_seconds() / 3600
-                        attendance_status = f'کامل (خروج فردا)'
+                        attendance_status = 'کامل (خروج فردا)'
+
+                    # ✅ حالت ۲: شب‌کاری (خروج صبح قبل از ورود شب)
+                    elif last_out < first_in:
+                        # کاربر شب‌کار است:
+                        # - last_out (صبح) = خروج شیفت شب قبل
+                        # - first_in (شب) = ورود شیفت شب جاری
+
+                        from datetime import datetime as dt
+
+                        # کارکرد امروز = (23:59 - ورود شب) + (خروج صبح - 00:00)
+                        end_of_day = dt.combine(target_date, dt.max.time())
+                        start_of_day = dt.combine(target_date, dt.min.time())
+
+                        if first_in.tzinfo is not None:
+                            end_of_day = end_of_day.replace(tzinfo=first_in.tzinfo)
+                            start_of_day = start_of_day.replace(tzinfo=last_out.tzinfo)
+
+                        # ساعات بعد از ورود شب تا پایان روز
+                        hours_after_in = (end_of_day - first_in).total_seconds() / 3600
+                        # ساعات از شروع روز تا خروج صبح
+                        hours_before_out = (last_out - start_of_day).total_seconds() / 3600
+
+                        work_hours = hours_after_in + hours_before_out
+                        attendance_status = 'کامل (شب‌کار)'
+
+                        # محاسبه شب‌کاری
+                        night_hours = round(calculate_night_hours(first_in, last_out), 2)
+
+                    # ✅ حالت ۳: کارکرد عادی (ورود صبح، خروج عصر)
                     elif last_out > first_in:
-                        # محاسبه کارکرد عادی
                         if len(enters) == len(exits):
                             if len(enters) == 1:
                                 attendance_status = 'کامل'
@@ -327,6 +355,7 @@ class DailyStatusManager:
                         delta = (last_out - first_in).total_seconds() / 3600
                         work_hours = round(delta, 2)
                         night_hours = round(calculate_night_hours(first_in, last_out), 2)
+
                     else:
                         attendance_status = 'خطا در تردد'
 
