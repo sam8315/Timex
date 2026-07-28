@@ -68,6 +68,7 @@ class Attendance(TimestampMixin, Base):
     SOURCE_DEVICE = 'D'
     SOURCE_LEGACY = 'L'
     SOURCE_MANUAL = 'M'
+    SOURCE_ADMS = 'A'
 
     def __repr__(self) -> str:
         return f"<Attendance(user_id={self.user_id}, timestamp={self.timestamp}, source={self.source})>"
@@ -90,6 +91,7 @@ class Attendance(TimestampMixin, Base):
         names = {
             'D': '📱 دستگاه',
             'L': '📦 MySQL قدیمی',
-            'M': '✋ دستی'
+            'M': '✋ دستی',
+            'A': 'ADMS 📱📱',
         }
         return names.get(source_code, f'نامشخص ({source_code})')

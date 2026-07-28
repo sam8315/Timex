@@ -158,6 +158,7 @@ class DeviceManager:
 
         try:
             attendance = self.conn.get_attendance()
+            print(attendance)
             return [
                 {
                     'user_id': a.user_id,
@@ -238,7 +239,10 @@ class DeviceManager:
 
             db = SessionLocal()
             try:
-                last_record = db.query(Attendance).order_by(
+                # ✅ فقط رکوردهایی که منبع آن‌ها دستگاه (D) یا API (A) است
+                last_record = db.query(Attendance).filter(
+                    Attendance.source.in_(['D', 'A'])
+                ).order_by(
                     Attendance.timestamp.desc()
                 ).first()
 
