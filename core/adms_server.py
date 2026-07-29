@@ -127,8 +127,8 @@ async def process_attendance_data(sn: str, data: str):
                 attendance = Attendance(
                     user_id=user_id,
                     timestamp=timestamp,
-                    status=status,
-                    punch=punch,
+                    status=punch,
+                    punch=status,
                     source='A'  # ✅ CHANGED: 'A' for API/ADMS (was 'D')
                 )
                 db.add(attendance)

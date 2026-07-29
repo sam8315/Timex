@@ -1091,15 +1091,18 @@ class ConsoleUI:
 
                         # نمایش جزئیات رکوردها
                         if len(day['all_records']) > 2 or day['has_sequence_error']:
-                            print(f"  │            │ جزئیات رکوردها:                                                     │")
+                            print(
+                                f"  │            │ جزئیات رکوردها:                                                     │")
                             for i, rec in enumerate(day['all_records'], 1):
                                 time_str = rec['timestamp'].strftime("%H:%M")
                                 if rec['timestamp'].date() > day['date']:
                                     time_str += " (+1)"
                                 punch_icon = "🟢" if rec['punch'] == 0 else "🔴"
-                                source_icon = "📱" if rec.get('source') == 'D' else ("📦" if rec.get('source') == 'L' else "✋")
-                                print(f"  │            │   {i}. {punch_icon} {time_str} {rec['punch_name']:<10} {source_icon:<3}                  │")
-
+                                # ✅ این خط اصلاح شد
+                                source_icon = "📱" if rec.get('source') == 'D' else (
+                                    "🌐" if rec.get('source') == 'A' else ("✋" if rec.get('source') == 'L' else "❓"))
+                                print(
+                                    f"  │            │   {i}. {punch_icon} {time_str} {rec['punch_name']:<10} {source_icon:<3}                  │")
                     print("  └────────────┴──────────┴──────────┴──────┴──────┴────────┴──────────┴──────────────┘")
 
                     # خلاصه آماری
