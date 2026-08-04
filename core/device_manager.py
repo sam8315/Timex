@@ -206,6 +206,7 @@ class DeviceManager:
         from sqlalchemy.dialects.postgresql import insert
         from sqlalchemy.exc import SQLAlchemyError
 
+        print(f"\n🕐 Synchronization started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         stats = {
             'total_fetched': 0,
             'new_records': 0,
