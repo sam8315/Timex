@@ -203,6 +203,8 @@ class DeviceManager:
         """
         from database.engine import SessionLocal
         from models.attendance import Attendance
+        from sqlalchemy.dialects.postgresql import insert
+        from sqlalchemy.exc import SQLAlchemyError
 
         stats = {
             'total_fetched': 0,
