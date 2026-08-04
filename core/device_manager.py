@@ -199,12 +199,10 @@ class DeviceManager:
 
     def sync_attendance_to_db(self, dry_run_first: bool = True) -> Dict:
         """
-        همگام‌سازی رکوردهای تردد از دستگاه به دیتابیس
+        Synchronize attendance records from the device to the database
         """
         from database.engine import SessionLocal
         from models.attendance import Attendance
-        from sqlalchemy.dialects.postgresql import insert
-        from sqlalchemy.exc import SQLAlchemyError
 
         stats = {
             'total_fetched': 0,
@@ -217,29 +215,29 @@ class DeviceManager:
             'time_gap': None
         }
 
-        # مرحله ۱: اتصال به دستگاه
+        # Step 1: Connect to the device
         print("\n" + "=" * 70)
-        print("  🔌 مرحله ۱: اتصال به دستگاه")
+        print("  🔌 Step 1: Connecting to device")
         print("=" * 70)
 
         was_connected = self._ensure_connected()
         if not was_connected:
-            print("  ⚠️  دستگاه متصل نبود. در حال اتصال...")
+            print("  ⚠️  Device was not connected. Connecting...")
             if not self.connect():
-                return {'error': '❌ اتصال به دستگاه برقرار نشد'}
-            print("  ✅ دستگاه با موفقیت متصل شد")
+                return {'error': '❌ Could not establish connection to device'}
+            print("  ✅ Device successfully connected")
         else:
-            print("  ✅ دستگاه از قبل متصل بود")
+            print("  ✅ Device was already connected")
 
         try:
-            # مرحله ۲: دریافت آخرین رکورد از دیتابیس
+            # Step 2: Get the latest record from the database
             print("\n" + "=" * 70)
-            print("  📊 مرحله ۲: بررسی آخرین رکورد در دیتابیس")
+            print("  📊 Step 2: Checking latest record in database")
             print("=" * 70)
 
             db = SessionLocal()
             try:
-                # ✅ فقط رکوردهایی که منبع آن‌ها دستگاه (D) یا API (A) است
+                # ✅ Only records with source D (Device) or A (API)
                 last_record = db.query(Attendance).filter(
                     Attendance.source.in_(['D', 'A'])
                 ).order_by(
@@ -248,43 +246,43 @@ class DeviceManager:
 
                 if last_record:
                     stats['last_db_record'] = last_record.timestamp
-                    print(f"  📅 آخرین رکورد در دیتابیس: {last_record.timestamp}")
-                    print(f"  👤 کاربر: {last_record.user_id}")
-                    print(f"  🔄 نوع: {'ورود' if last_record.punch == 0 else 'خروج'}")
+                    print(f"  📅 Latest record in database: {last_record.timestamp}")
+                    print(f"  👤 User: {last_record.user_id}")
+                    print(f"  🔄 Type: {'Check-in' if last_record.punch == 0 else 'Check-out'}")
                 else:
                     stats['last_db_record'] = None
-                    print("  ⚠️  دیتابیس خالی است")
+                    print("  ⚠️  Database is empty")
             finally:
                 db.close()
 
-            # مرحله ۳: دریافت رکوردها از دستگاه
+            # Step 3: Get records from the device
             print("\n" + "=" * 70)
-            print("  📖 مرحله ۳: خواندن رکوردهای تردد از دستگاه")
+            print("  📖 Step 3: Reading attendance records from device")
             print("=" * 70)
 
             device_attendance = self.conn.get_attendance()
             stats['total_fetched'] = len(device_attendance)
-            print(f"  ✅ تعداد {len(device_attendance)} رکورد در دستگاه یافت شد")
+            print(f"  ✅ Found {len(device_attendance)} records on device")
 
             if stats['total_fetched'] == 0:
-                print("  ⚠️  هیچ رکوردی در دستگاه وجود ندارد")
+                print("  ⚠️  No records found on device")
                 return stats
 
-            # مرحله ۴: پیدا کردن اولین رکورد همگام‌نشده
+            # Step 4: Find the first unsynchronized record
             print("\n" + "=" * 70)
-            print("  🔍 مرحله ۴: بررسی رکوردهای همگام‌نشده")
+            print("  🔍 Step 4: Checking unsynchronized records")
             print("=" * 70)
 
-            # مرتب‌سازی رکوردهای دستگاه بر اساس زمان
+            # Sort device records by time
             device_attendance_sorted = sorted(device_attendance, key=lambda x: x.timestamp)
 
             if stats['last_db_record']:
-                # حذف timezone برای مقایسه
+                # Remove timezone for comparison
                 last_db_timestamp = stats['last_db_record']
                 if last_db_timestamp.tzinfo is not None:
                     last_db_timestamp = last_db_timestamp.replace(tzinfo=None)
 
-                # پیدا کردن اولین رکورد جدیدتر از آخرین رکورد دیتابیس
+                # Find the first record newer than the latest database record
                 first_new_record = None
                 for record in device_attendance_sorted:
                     record_time = record.timestamp
@@ -302,65 +300,65 @@ class DeviceManager:
                         if (r.timestamp.replace(tzinfo=None) if r.timestamp.tzinfo else r.timestamp) > last_db_timestamp
                     )
 
-                    # محاسبه اختلاف زمانی
+                    # Calculate time difference
                     record_time = first_new_record.timestamp
                     if record_time.tzinfo is not None:
                         record_time = record_time.replace(tzinfo=None)
                     time_gap = record_time - last_db_timestamp
                     stats['time_gap'] = time_gap
 
-                    print(f"  📅 اولین رکورد همگام‌نشده: {first_new_record.timestamp}")
-                    print(f"  👤 کاربر: {first_new_record.user_id}")
-                    print(f"  🔄 نوع: {'ورود' if first_new_record.punch == 0 else 'خروج'}")
-                    print(f"  📊 تعداد رکوردهای جدید: {stats['new_records']}")
-                    print(f"  ⏱️  اختلاف زمانی: {time_gap}")
+                    print(f"  📅 First unsynchronized record: {first_new_record.timestamp}")
+                    print(f"  👤 User: {first_new_record.user_id}")
+                    print(f"  🔄 Type: {'Check-in' if first_new_record.punch == 0 else 'Check-out'}")
+                    print(f"  📊 Number of new records: {stats['new_records']}")
+                    print(f"  ⏱️  Time difference: {time_gap}")
                 else:
-                    print("  ✅ همه رکوردها همگام هستند")
+                    print("  ✅ All records are synchronized")
                     return stats
             else:
-                # دیتابیس خالی است، همه رکوردها جدید هستند
+                # Database is empty, all records are new
                 stats['first_device_record'] = device_attendance_sorted[0].timestamp
                 stats['new_records'] = len(device_attendance_sorted)
-                print(f"  📅 اولین رکورد: {stats['first_device_record']}")
-                print(f"  📊 تعداد رکوردهای جدید: {stats['new_records']}")
+                print(f"  📅 First record: {stats['first_device_record']}")
+                print(f"  📊 Number of new records: {stats['new_records']}")
 
-            # مرحله ۵: DRY RUN
+            # Step 5: DRY RUN
             if dry_run_first:
                 print("\n" + "=" * 70)
-                print("  🔍 مرحله ۵: DRY RUN (بدون تغییر)")
+                print("  🔍 Step 5: DRY RUN (no changes)")
                 print("=" * 70)
 
                 dry_stats = self._dry_run_sync(device_attendance_sorted, stats['last_db_record'])
 
-                print(f"\n  📊 نتایج DRY RUN:")
-                print(f"     • رکوردهای جدید قابل درج    : {dry_stats['would_insert']}")
-                print(f"     • رکوردهای تکراری در دیتابیس : {dry_stats['would_skip_duplicate']}")
-                print(f"     • رکوردهای قدیمی (قبل از آخرین رکورد): {dry_stats['would_skip_old']}")
-                print(f"     • مجموع رد شده              : {dry_stats['total_skipped']}")
+                print(f"\n  📊 DRY RUN Results:")
+                print(f"     • New records to insert    : {dry_stats['would_insert']}")
+                print(f"     • Duplicate records in DB   : {dry_stats['would_skip_duplicate']}")
+                print(f"     • Old records (before latest): {dry_stats['would_skip_old']}")
+                print(f"     • Total skipped             : {dry_stats['total_skipped']}")
 
-                # پرسش برای ادامه
+                # Ask for confirmation
                 print("\n" + "-" * 70)
-                confirm = input("  آیا می‌خواهید همگام‌سازی واقعی را اجرا کنید؟ (بله/خیر): ").strip()
+                confirm = input("  Do you want to proceed with actual synchronization? (yes/no): ").strip()
 
-                if confirm.lower() not in ['بله', 'yes', 'y']:
-                    print("  ❌ عملیات لغو شد")
+                if confirm.lower() not in ['yes', 'y']:
+                    print("  ❌ Operation cancelled")
                     return stats
 
-            # مرحله ۶: اجرای واقعی
+            # Step 6: Actual execution
             print("\n" + "=" * 70)
-            print("  💾 مرحله ۶: ذخیره در دیتابیس")
+            print("  💾 Step 6: Saving to database")
             print("=" * 70)
 
             db = SessionLocal()
             batch_size = 200
 
             for i, record in enumerate(device_attendance_sorted, 1):
-                # حذف timezone برای مقایسه
+                # Remove timezone for comparison
                 record_time = record.timestamp
                 if record_time.tzinfo is not None:
                     record_time = record_time.replace(tzinfo=None)
 
-                # فقط رکوردهای جدید را پردازش کن
+                # Process only new records
                 if stats['last_db_record']:
                     last_db_timestamp = stats['last_db_record']
                     if last_db_timestamp.tzinfo is not None:
@@ -388,52 +386,52 @@ class DeviceManager:
                     else:
                         stats['skipped_duplicates'] += 1
 
-                    # Commit دسته‌ای
+                    # Batch commit
                     if i % batch_size == 0 or i == len(device_attendance_sorted):
                         db.commit()
-                        print(f"  ✅ دسته‌ای ذخیره شد: {i}/{len(device_attendance_sorted)}")
+                        print(f"  ✅ Batch saved: {i}/{len(device_attendance_sorted)}")
 
                 except SQLAlchemyError as e:
                     db.rollback()
-                    print(f"  ⚠️  خطا در رکورد {i} (User: {record.user_id}): {type(e).__name__}")
+                    print(f"  ⚠️  Error on record {i} (User: {record.user_id}): {type(e).__name__}")
                     stats['errors'] += 1
 
             db.close()
-            print("\n  ✅ همگام‌سازی رکوردهای تردد به پایان رسید")
+            print("\n  ✅ Attendance synchronization completed")
 
         except Exception as e:
-            print(f"\n  ❌ خطای کلی در همگام‌سازی تردد: {e}")
+            print(f"\n  ❌ General error during attendance synchronization: {e}")
             stats['errors'] += 1
 
         finally:
-            # مرحله ۷: قطع اتصال
+            # Step 7: Disconnect
             print("\n" + "=" * 70)
-            print("  🔌 مرحله ۷: قطع اتصال با دستگاه")
+            print("  🔌 Step 7: Disconnecting from device")
             print("=" * 70)
 
             if self.conn and hasattr(self.conn, 'disconnect'):
                 try:
                     self.disconnect()
-                    print("  ✅ اتصال با دستگاه قطع شد")
+                    print("  ✅ Disconnected from device")
                 except Exception as e:
-                    print(f"  ⚠️  خطا در قطع اتصال: {e}")
+                    print(f"  ⚠️  Error during disconnection: {e}")
 
-        # نمایش آمار نهایی
+        # Display final statistics
         print("\n" + "=" * 70)
-        print("  📊 آمار نهایی همگام‌سازی تردد")
+        print("  📊 Final Attendance Synchronization Statistics")
         print("=" * 70)
-        print(f"  • کل رکوردهای خوانده شده : {stats['total_fetched']}")
-        print(f"  • رکوردهای جدید          : {stats['new_records']}")
-        print(f"  • رکوردهای ثبت شده        : {stats['inserted']}")
-        print(f"  • رکوردهای تکراری رد شده  : {stats['skipped_duplicates']}")
-        print(f"  • خطاها                   : {stats['errors']}")
+        print(f"  • Total records read    : {stats['total_fetched']}")
+        print(f"  • New records           : {stats['new_records']}")
+        print(f"  • Records inserted      : {stats['inserted']}")
+        print(f"  • Duplicates skipped    : {stats['skipped_duplicates']}")
+        print(f"  • Errors                : {stats['errors']}")
 
         if stats['last_db_record']:
-            print(f"\n  📅 آخرین رکورد قبلی       : {stats['last_db_record']}")
+            print(f"\n  📅 Previous latest record : {stats['last_db_record']}")
         if stats['first_device_record']:
-            print(f"  📅 اولین رکورد جدید        : {stats['first_device_record']}")
+            print(f"  📅 First new record       : {stats['first_device_record']}")
         if stats['time_gap']:
-            print(f"  ⏱️  اختلاف زمانی           : {stats['time_gap']}")
+            print(f"  ⏱️  Time difference        : {stats['time_gap']}")
 
         print("=" * 70)
 
