@@ -227,12 +227,13 @@ class LeaveRequestManager:
                 raise Exception(result['message'])
 
             self.db.commit()
-            # 👇 بعد از self.db.commit() و قبل از return
-            self._send_sms_notification(request, action='approved')
+
+            # ✅ ارسال پیامک و دریافت وضعیت
+            sms_status = self._send_sms_notification(request, action='approved')
 
             return {
                 'success': True,
-                'message': f'✅ درخواست تایید شد و {request.days_count} روز از مانده کسر شد'
+                'message': f'✅ درخواست تایید شد و {request.days_count} روز از مانده کسر شد\n  {sms_status}'
             }
 
         except Exception as e:
@@ -257,10 +258,11 @@ class LeaveRequestManager:
             request.rejection_reason = rejection_reason
 
             self.db.commit()
-            # 👇 بعد از self.db.commit() و قبل از return
-            self._send_sms_notification(request, action='rejected', rejection_reason=rejection_reason)
 
-            return {'success': True, 'message': '✅ درخواست رد شد'}
+            # ✅ ارسال پیامک و دریافت وضعیت
+            sms_status = self._send_sms_notification(request, action='rejected', rejection_reason=rejection_reason)
+
+            return {'success': True, 'message': f'✅ درخواست رد شد\n  {sms_status}'}
 
         except Exception as e:
             self.db.rollback()
@@ -518,16 +520,18 @@ class LeaveRequestManager:
             query = query.filter(LeaveRequest.user_id == user_id)
         return query.order_by(LeaveRequest.from_date.desc()).all()
 
-    def _send_sms_notification(self, request: 'LeaveRequest', action: str, rejection_reason: str = ""):
-        """ارسال پیامک اطلاع‌رسانی به کاربر (بدون تأثیر بر فرآیند اصلی)"""
+    def _send_sms_notification(self, request: 'LeaveRequest', action: str, rejection_reason: str = "") -> str:
+        """ارسال پیامک و برگرداندن پیام وضعیت برای نمایش در کنسول"""
         try:
+            from core.phone_manager import PhoneManager
+            from core.sms_service import SmsService
+
             phone_manager = PhoneManager()
             try:
                 default_phone = phone_manager.get_default_phone(request.user_id)
 
                 if not default_phone:
-                    logger.info(f"ℹ️ شماره موبایل برای کاربر {request.user_id} ثبت نشده - SMS ارسال نشد")
-                    return
+                    return f"📱 شماره موبایل برای {request.user_id} ثبت نشده - پیامک ارسال نشد ⚠️"
 
                 sms_service = SmsService()
 
@@ -548,15 +552,14 @@ class LeaveRequestManager:
                         reason=rejection_reason
                     )
                 else:
-                    return
+                    return ""
 
                 if result['success']:
-                    logger.info(f"✅ پیامک برای {request.user_id} ارسال شد")
+                    return f"📱 پیامک به {default_phone} ارسال شد ✅"
                 else:
-                    logger.warning(f"⚠️ ارسال پیامک ناموفق: {result.get('message')}")
+                    return f"📱 ارسال پیامک ناموفق: {result.get('message', 'خطای نامشخص')} ⚠️"
             finally:
                 phone_manager.close()
 
         except Exception as e:
-            # مهم: خطای SMS نباید فرآیند اصلی را خراب کند
-            logger.error(f"❌ خطای SMS (بدون تأثیر بر تراکنش): {e}")
+            return f"📱 خطا در ارسال پیامک: {e} ⚠️"
