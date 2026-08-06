@@ -5,21 +5,22 @@
 - به‌روزرسانی وضعیت روزانه
 - کسر خودکار از مانده مرخصی
 """
-from datetime import date, timedelta,datetime
+from datetime import date, timedelta
 from typing import List, Dict, Optional
-from sqlalchemy import and_, or_, func
+from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
-import jdatetime
 
 from database.engine import SessionLocal
 from models.user import User
 from models.leave_request import LeaveRequest
-from models.leave_balance import LeaveBalance
-from models.leave_transaction import LeaveTransaction
 from models.daily_status import DailyStatus
-from models.holiday import Holiday
 from core.leave_manager import LeaveManager
 from core.holiday_manager import HolidayManager
+from core.sms_service import SmsService
+from core.phone_manager import PhoneManager
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class LeaveRequestManager:
@@ -226,6 +227,8 @@ class LeaveRequestManager:
                 raise Exception(result['message'])
 
             self.db.commit()
+            # 👇 بعد از self.db.commit() و قبل از return
+            self._send_sms_notification(request, action='approved')
 
             return {
                 'success': True,
@@ -254,6 +257,8 @@ class LeaveRequestManager:
             request.rejection_reason = rejection_reason
 
             self.db.commit()
+            # 👇 بعد از self.db.commit() و قبل از return
+            self._send_sms_notification(request, action='rejected', rejection_reason=rejection_reason)
 
             return {'success': True, 'message': '✅ درخواست رد شد'}
 
@@ -512,3 +517,46 @@ class LeaveRequestManager:
         if user_id:
             query = query.filter(LeaveRequest.user_id == user_id)
         return query.order_by(LeaveRequest.from_date.desc()).all()
+
+    def _send_sms_notification(self, request: 'LeaveRequest', action: str, rejection_reason: str = ""):
+        """ارسال پیامک اطلاع‌رسانی به کاربر (بدون تأثیر بر فرآیند اصلی)"""
+        try:
+            phone_manager = PhoneManager()
+            try:
+                default_phone = phone_manager.get_default_phone(request.user_id)
+
+                if not default_phone:
+                    logger.info(f"ℹ️ شماره موبایل برای کاربر {request.user_id} ثبت نشده - SMS ارسال نشد")
+                    return
+
+                sms_service = SmsService()
+
+                if action == 'approved':
+                    result = sms_service.send_leave_approval_sms(
+                        phones=[default_phone],
+                        leave_type=request.leave_type,
+                        from_date=request.from_date,
+                        to_date=request.to_date,
+                        days_count=request.days_count
+                    )
+                elif action == 'rejected':
+                    result = sms_service.send_leave_rejection_sms(
+                        phones=[default_phone],
+                        leave_type=request.leave_type,
+                        from_date=request.from_date,
+                        to_date=request.to_date,
+                        reason=rejection_reason
+                    )
+                else:
+                    return
+
+                if result['success']:
+                    logger.info(f"✅ پیامک برای {request.user_id} ارسال شد")
+                else:
+                    logger.warning(f"⚠️ ارسال پیامک ناموفق: {result.get('message')}")
+            finally:
+                phone_manager.close()
+
+        except Exception as e:
+            # مهم: خطای SMS نباید فرآیند اصلی را خراب کند
+            logger.error(f"❌ خطای SMS (بدون تأثیر بر تراکنش): {e}")

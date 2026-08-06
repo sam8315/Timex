@@ -9,6 +9,7 @@ from models.user import User
 from models.contract import Contract
 from models.leave_request import LeaveRequest
 from sqlalchemy import and_, or_
+from core.phone_manager import PhoneManager
 
 
 class ConsoleUI:
@@ -351,21 +352,32 @@ class ConsoleUI:
             print("  6. تغییر وضعیت کارمند (فعال/غیرفعال)")
             print("  7. جستجو در اطلاعات")
             print("  8. آمار کارمندان")
+            print("  9. مدیریت شماره موبایل 🆕")  # 🆕
             print("  0. بازگشت")
-
             choice = input("\n  انتخاب: ").strip()
-            if choice == '1': self._add_employee_info()
-            elif choice == '2': self._update_employee_info()
-            elif choice == '3': self._show_employee_info()
-            elif choice == '4': self._list_active_employees()
-            elif choice == '5': self._list_inactive_employees()
-            elif choice == '6': self._set_employee_status()
-            elif choice == '7': self._search_employees()
-            elif choice == '8': self._show_employee_statistics()
-            elif choice == '0': break
-            else: print("\n❌ انتخاب نامعتبر")
-            input("\n⏎ Enter...")
-    # ============================================
+            if choice == '1':
+                self._add_employee_info()
+            elif choice == '2':
+                self._update_employee_info()
+            elif choice == '3':
+                self._show_employee_info()
+            elif choice == '4':
+                self._list_active_employees()
+            elif choice == '5':
+                self._list_inactive_employees()
+            elif choice == '6':
+                self._set_employee_status()
+            elif choice == '7':
+                self._search_employees()
+            elif choice == '8':
+                self._show_employee_statistics()
+            elif choice == '9':
+                self._phone_menu()  # 🆕
+            elif choice == '0':
+                break
+            else:
+                print("\n❌ انتخاب نامعتبر")
+            input("\n⏎ Enter...")    # ============================================
     # متدهای عملیاتی
     # ============================================
 
@@ -5986,3 +5998,225 @@ class ConsoleUI:
             manager.close()
             emp_manager.close()
 
+    def _phone_menu(self):
+        """زیرمنوی مدیریت شماره موبایل"""
+        while True:
+            self.clear()
+            self.header("📱 مدیریت شماره موبایل")
+            print("\n  1. مشاهده شماره‌های یک کاربر")
+            print("  2. افزودن شماره جدید")
+            print("  3. تعیین شماره پیش‌فرض")
+            print("  4. حذف شماره")
+            print("  0. بازگشت")
+            choice = input("\n  انتخاب: ").strip()
+            if choice == '1':
+                self._show_user_phones()
+            elif choice == '2':
+                self._add_phone()
+            elif choice == '3':
+                self._set_default_phone()
+            elif choice == '4':
+                self._delete_phone()
+            elif choice == '0':
+                break
+            else:
+                print("\n❌ انتخاب نامعتبر")
+            input("\n⏎ Enter...")
+
+    def _show_user_phones(self):
+        """نمایش شماره‌های یک کاربر"""
+        print("\n" + "=" * 70)
+        print("  📱 شماره‌های موبایل کاربر")
+        print("=" * 70)
+        user_id = input("\n  📛 کد پرسنلی کاربر: ").strip()
+        if not user_id:
+            print("  ❌ کد پرسنلی نمی‌تواند خالی باشد")
+            return
+
+        phone_manager = PhoneManager()
+        try:
+            phones = phone_manager.get_user_phones(user_id)
+            if not phones:
+                print(f"\n  ⚠️  هیچ شماره‌ای برای کاربر {user_id} ثبت نشده است")
+                return
+
+            print(f"\n  📊 تعداد شماره‌ها: {len(phones)}")
+            print("\n  ┌──────┬────────────────┬────────────┬────────┐")
+            print("  │ ردیف │ شماره          │ برچسب      │ پیش‌فرض │")
+            print("  ├──────┼────────────────┼────────────┼────────┤")
+            for i, phone in enumerate(phones, 1):
+                default_icon = "⭐" if phone.is_default else "  "
+                label = phone.label or "-"
+                print(f"  │ {i:<4} │ {phone.phone_number:<14} │ {label:<10} │ {default_icon:<6} │")
+            print("  └──────┴────────────────┴────────────┴────────┘")
+        finally:
+            phone_manager.close()
+
+    def _add_phone(self):
+        """افزودن شماره جدید"""
+        print("\n" + "=" * 70)
+        print("  ➕ افزودن شماره موبایل")
+        print("=" * 70)
+        user_id = input("\n  📛 کد پرسنلی کاربر: ").strip()
+        if not user_id:
+            print("  ❌ کد پرسنلی نمی‌تواند خالی باشد")
+            return
+
+        phone_number = input("  📱 شماره موبایل (مثال: 09121234567): ").strip()
+        if not phone_number:
+            print("  ❌ شماره موبایل نمی‌تواند خالی باشد")
+            return
+
+        label = input("  🏷️  برچسب (مثال: همراه، منزل) [اختیاری]: ").strip() or "همراه"
+
+        # بررسی اینکه آیا این اولین شماره است یا خیر
+        phone_manager = PhoneManager()
+        try:
+            existing_phones = phone_manager.get_user_phones(user_id)
+            is_first_phone = len(existing_phones) == 0
+
+            if is_first_phone:
+                print(f"\n  💡 این اولین شماره برای کاربر است و خودکار پیش‌فرض می‌شود")
+                is_default = True
+            else:
+                print(f"\n  ⭐ آیا این شماره پیش‌فرض باشد؟ (بله/خیر) [پیش‌فرض: خیر]: ", end="")
+                default_input = input().strip().lower()
+                is_default = default_input in ['بله', 'yes', 'y']
+
+            # پیش‌نمایش
+            print("\n" + "-" * 70)
+            print("  📋 پیش‌نمایش:")
+            print(f"     • کد پرسنلی   : {user_id}")
+            print(f"     • شماره       : {phone_number}")
+            print(f"     • برچسب       : {label}")
+            print(f"     • پیش‌فرض     : {'بله ⭐' if is_default else 'خیر'}")
+            print("-" * 70)
+
+            confirm = input("\n  آیا تایید می‌کنید؟ (بله/خیر): ").strip()
+            if confirm.lower() not in ['بله', 'yes', 'y']:
+                print("  ❌ عملیات لغو شد")
+                return
+
+            result = phone_manager.add_phone(
+                user_id=user_id,
+                phone_number=phone_number,
+                label=label,
+                is_default=is_default
+            )
+            print(f"\n  {result['message']}")
+        finally:
+            phone_manager.close()
+
+    def _set_default_phone(self):
+        """تعیین شماره پیش‌فرض"""
+        print("\n" + "=" * 70)
+        print("  ⭐ تعیین شماره پیش‌فرض")
+        print("=" * 70)
+        user_id = input("\n  📛 کد پرسنلی کاربر: ").strip()
+        if not user_id:
+            print("  ❌ کد پرسنلی نمی‌تواند خالی باشد")
+            return
+
+        phone_manager = PhoneManager()
+        try:
+            phones = phone_manager.get_user_phones(user_id)
+            if not phones:
+                print(f"\n  ⚠️  هیچ شماره‌ای برای کاربر {user_id} ثبت نشده است")
+                return
+
+            # نمایش لیست
+            print(f"\n  📋 شماره‌های کاربر {user_id}:")
+            print("\n  ┌──────┬────────────────┬────────────┬────────┐")
+            print("  │ ردیف │ شماره          │ برچسب      │ پیش‌فرض │")
+            print("  ├──────┼────────────────┼────────────┼────────┤")
+            for i, phone in enumerate(phones, 1):
+                default_icon = "⭐" if phone.is_default else "  "
+                label = phone.label or "-"
+                print(f"  │ {i:<4} │ {phone.phone_number:<14} │ {label:<10} │ {default_icon:<6} │")
+            print("  └──────┴────────────────┴────────────┴────────┘")
+
+            # انتخاب
+            choice_str = input("\n  شماره ردیف برای تعیین به عنوان پیش‌فرض (0 = انصراف): ").strip()
+            try:
+                choice = int(choice_str)
+                if choice == 0:
+                    print("  ❌ عملیات لغو شد")
+                    return
+                if choice < 1 or choice > len(phones):
+                    print("  ❌ شماره نامعتبر")
+                    return
+            except ValueError:
+                print("  ❌ عدد نامعتبر")
+                return
+
+            selected_phone = phones[choice - 1]
+
+            # تایید
+            print(f"\n  ⚠️  آیا مطمئن هستید که می‌خواهید شماره {selected_phone.phone_number} را پیش‌فرض کنید؟")
+            confirm = input("  تایید (بله/خیر): ").strip()
+            if confirm.lower() not in ['بله', 'yes', 'y']:
+                print("  ❌ عملیات لغو شد")
+                return
+
+            result = phone_manager.set_default_phone(user_id, selected_phone.id)
+            print(f"\n  {result['message']}")
+        finally:
+            phone_manager.close()
+
+    def _delete_phone(self):
+        """حذف شماره موبایل"""
+        print("\n" + "=" * 70)
+        print("  🗑️  حذف شماره موبایل")
+        print("=" * 70)
+        user_id = input("\n  📛 کد پرسنلی کاربر: ").strip()
+        if not user_id:
+            print("  ❌ کد پرسنلی نمی‌تواند خالی باشد")
+            return
+
+        phone_manager = PhoneManager()
+        try:
+            phones = phone_manager.get_user_phones(user_id)
+            if not phones:
+                print(f"\n  ⚠️  هیچ شماره‌ای برای کاربر {user_id} ثبت نشده است")
+                return
+
+            # نمایش لیست
+            print(f"\n  📋 شماره‌های کاربر {user_id}:")
+            print("\n  ┌──────┬────────────────┬────────────┬────────┐")
+            print("  │ ردیف │ شماره          │ برچسب      │ پیش‌فرض │")
+            print("  ├──────┼────────────────┼────────────┼────────┤")
+            for i, phone in enumerate(phones, 1):
+                default_icon = "⭐" if phone.is_default else "  "
+                label = phone.label or "-"
+                print(f"  │ {i:<4} │ {phone.phone_number:<14} │ {label:<10} │ {default_icon:<6} │")
+            print("  └──────┴────────────────┴────────────┴────────┘")
+
+            # انتخاب
+            choice_str = input("\n  شماره ردیف برای حذف (0 = انصراف): ").strip()
+            try:
+                choice = int(choice_str)
+                if choice == 0:
+                    print("  ❌ عملیات لغو شد")
+                    return
+                if choice < 1 or choice > len(phones):
+                    print("  ❌ شماره نامعتبر")
+                    return
+            except ValueError:
+                print("  ❌ عدد نامعتبر")
+                return
+
+            selected_phone = phones[choice - 1]
+
+            # تایید
+            print(f"\n  ⚠️  آیا مطمئن هستید که می‌خواهید شماره {selected_phone.phone_number} را حذف کنید؟")
+            if selected_phone.is_default:
+                print(f"  💡 توجه: این شماره پیش‌فرض است. شماره بعدی خودکار پیش‌فرض می‌شود.")
+            confirm = input("  تایید (بله/خیر): ").strip()
+            if confirm.lower() not in ['بله', 'yes', 'y']:
+                print("  ❌ عملیات لغو شد")
+                return
+
+            result = phone_manager.delete_phone(selected_phone.id, user_id)
+            print(f"\n  {result['message']}")
+        finally:
+            phone_manager.close()
