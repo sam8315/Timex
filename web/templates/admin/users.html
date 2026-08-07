@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}مدیریت کاربران{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4><i class="bi bi-people"></i> مدیریت کاربران</h4>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <table class="table table-hover">
+            <thead>
+                <tr>
+                    <th>کد پرسنلی</th>
+                    <th>نام</th>
+                    <th>کد ملی</th>
+                    <th>نقش</th>
+                    <th>وضعیت وب</th>
+                    <th>آخرین ورود</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in users %}
+                <tr>
+                    <td>{{ item.web_user.user_id }}</td>
+                    <td>
+                        {% if item.employee %}{{ item.employee.full_name }}
+                        {% else %}{{ item.web_user.name }}{% endif %}
+                    </td>
+                    <td>{{ item.employee.national_code if item.employee else '-' }}</td>
+                    <td>
+                        {% if item.web_user.role == 'super_admin' %}
+                        <span class="badge bg-danger">مدیر ارشد</span>
+                        {% elif item.web_user.role == 'admin' %}
+                        <span class="badge bg-warning">مدیر</span>
+                        {% else %}
+                        <span class="badge bg-secondary">کاربر</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if item.web_user.web_enabled %}
+                        <span class="badge bg-success">فعال</span>
+                        {% else %}
+                        <span class="badge bg-danger">غیرفعال</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if item.web_user.last_login %}
+                        {{ item.web_user.last_login.strftime('%Y/%m/%d %H:%M') }}
+                        {% else %}-{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

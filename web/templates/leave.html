@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}مرخصی‌ها{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4><i class="bi bi-airplane"></i> مرخصی‌ها</h4>
+</div>
+
+<!-- مانده مرخصی -->
+<div class="row g-4 mb-4">
+    {% for code, data in balances.items() %}
+    <div class="col-md-2">
+        <div class="card text-center">
+            <div class="card-body">
+                <h6 class="text-muted">{{ data.name }}</h6>
+                <h3 class="{% if data.balance < 0 %}text-danger{% else %}text-success{% endif %}">
+                    {{ data.balance }}
+                </h3>
+                <small>روز</small>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<div class="row g-4">
+    <!-- فرم درخواست -->
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h6><i class="bi bi-plus-circle"></i> درخواست مرخصی جدید</h6>
+            </div>
+            <div class="card-body">
+                <form method="post" action="/leave/request">
+                    <div class="mb-3">
+                        <label class="form-label">نوع مرخصی</label>
+                        <select name="leave_type" class="form-select" required>
+                            <option value="AL">استحقاقی</option>
+                            <option value="SL">استعلاجی</option>
+                            <option value="RL">تشویقی</option>
+                            <option value="UL">بدون حقوق</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">از تاریخ (شمسی)</label>
+                        <input type="text" name="from_date_str" class="form-control"
+                               placeholder="1405/05/15" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">تا تاریخ (شمسی)</label>
+                        <input type="text" name="to_date_str" class="form-control"
+                               placeholder="1405/05/17" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">دلیل (اختیاری)</label>
+                        <textarea name="reason" class="form-control" rows="2"></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-send"></i> ثبت درخواست
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- لیست درخواست‌ها -->
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header bg-white"><h6><i class="bi bi-list"></i> درخواست‌های مرخصی</h6></div>
+            <div class="card-body">
+                <table class="table table-hover">
+                    <thead>
+                        <tr><th>نوع</th><th>از</th><th>تا</th><th>روز</th><th>وضعیت</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for req in leave_requests %}
+                        <tr>
+                            <td>{{ leave_type_names.get(req.leave_type, req.leave_type) }}</td>
+                            <td>{{ req.from_date.strftime('%Y/%m/%d') }}</td>
+                            <td>{{ req.to_date.strftime('%Y/%m/%d') }}</td>
+                            <td>{{ req.days_count }}</td>
+                            <td>
+                                {% if req.status == 'P' %}<span class="badge bg-warning">در انتظار</span>
+                                {% elif req.status == 'A' %}<span class="badge bg-success">تایید شده</span>
+                                {% else %}<span class="badge bg-danger">رد شده</span>{% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

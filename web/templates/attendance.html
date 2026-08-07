@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}رکوردهای تردد{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4><i class="bi bi-calendar-check"></i> رکوردهای تردد</h4>
+    <span class="badge bg-primary">{{ month_name }} {{ year }}</span>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-md-4">
+        <div class="card bg-primary text-white">
+            <div class="card-body text-center">
+                <h3>{{ total_records }}</h3>
+                <small>کل رکوردها</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card bg-success text-white">
+            <div class="card-body text-center">
+                <h3>{{ days | length }}</h3>
+                <small>روزهای دارای تردد</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card bg-info text-white">
+            <div class="card-body text-center">
+                <h3>{{ "%.1f" | format(days | sum(attribute='work_hours')) }}</h3>
+                <small>مجموع ساعات</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>تاریخ</th>
+                        <th>روز</th>
+                        <th>اولین ورود</th>
+                        <th>آخرین خروج</th>
+                        <th>ساعات کاری</th>
+                        <th>تعداد تردد</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for day in days %}
+                    <tr class="{% if day.is_friday %}table-warning{% endif %}">
+                        <td>{{ day.jalali_date }}</td>
+                        <td>{{ day.day_name }}</td>
+                        <td>
+                            {% if day.first_enter %}
+                            <span class="badge bg-success">{{ day.first_enter.strftime('%H:%M') }}</span>
+                            {% else %}<span class="text-muted">-</span>{% endif %}
+                        </td>
+                        <td>
+                            {% if day.last_exit %}
+                            <span class="badge bg-danger">{{ day.last_exit.strftime('%H:%M') }}</span>
+                            {% else %}<span class="text-muted">-</span>{% endif %}
+                        </td>
+                        <td>{{ "%.1f" | format(day.work_hours) }} ساعت</td>
+                        <td>{{ day.records | length }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

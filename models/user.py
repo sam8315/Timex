@@ -1,8 +1,9 @@
 """
 مدل جدول کاربران
 """
+from datetime import datetime
 from typing import Optional, List
-from sqlalchemy import Integer, String, BigInteger
+from sqlalchemy import Integer, String, BigInteger, Boolean, DateTime
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from models.base import Base, TimestampMixin
 
@@ -13,14 +14,22 @@ class User(TimestampMixin, Base):
 
     # فیلدهای اصلی
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-
-    # user_id: کد پرسنلی (همان user_id در دستگاه ZKTeco)
     user_id: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
-
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     card: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     group_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     privilege: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    # ============================================
+    # 🆕 فیلدهای احراز هویت وب
+    # ============================================
+    password_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    role: Mapped[str] = mapped_column(String(20), default='user', nullable=False)  # user/admin/super_admin
+    web_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    last_login: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    failed_attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    locked_until: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     # Relationships
     attendances: Mapped[List["Attendance"]] = relationship(
@@ -30,7 +39,21 @@ class User(TimestampMixin, Base):
     )
 
     def __repr__(self) -> str:
-        return f"<User(user_id='{self.user_id}', name='{self.name}')>"
+        return f"<User(user_id='{self.user_id}', name='{self.name}', role='{self.role}')>"
+
+    @property
+    def is_admin(self) -> bool:
+        return self.role in ('admin', 'super_admin')
+
+    @property
+    def is_super_admin(self) -> bool:
+        return self.role == 'super_admin'
+
+    @property
+    def is_locked(self) -> bool:
+        if self.locked_until and datetime.now() < self.locked_until:
+            return True
+        return False
 
     def to_dict(self) -> dict:
         return {
@@ -40,6 +63,9 @@ class User(TimestampMixin, Base):
             'card': self.card,
             'group_id': self.group_id,
             'privilege': self.privilege,
+            'role': self.role,
+            'web_enabled': self.web_enabled,
+            'last_login': self.last_login,
             'created_at': self.created_at,
             'updated_at': self.updated_at,
         }
