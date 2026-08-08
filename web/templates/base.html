@@ -43,6 +43,11 @@
                             <i class="bi bi-airplane"></i> مرخصی‌ها
                         </a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if '/contract' in request.url.path %}active{% endif %}" href="/contract">
+                            <i class="bi bi-file-earmark-text"></i> قراردادها
+                        </a>
+                    </li>
                     {% if is_admin %}
                     <hr class="text-white-50 my-3">
                     <li class="nav-item">
@@ -52,6 +57,11 @@
                     </li>
                     {% endif %}
                     <hr class="text-white-50 my-3">
+                    <li class="nav-item">
+                        <a class="nav-link {% if '/change-password' in request.url.path %}active{% endif %}" href="/change-password">
+                            <i class="bi bi-key"></i> تغییر رمز عبور
+                        </a>
+                    </li>
                     <li class="nav-item">
                         <a class="nav-link text-danger" href="/logout">
                             <i class="bi bi-box-arrow-right"></i> خروج

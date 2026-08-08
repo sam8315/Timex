@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block title %}قراردادها{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4><i class="bi bi-file-earmark-text"></i> قراردادهای من</h4>
+    <span class="text-muted">{{ today_j.strftime('%Y/%m/%d') }}</span>
+</div>
+
+{% if active_contract %}
+<!-- قرارداد فعال -->
+<div class="card border-success mb-4">
+    <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+        <h6 class="mb-0"><i class="bi bi-check-circle"></i> قرارداد فعال</h6>
+        <span class="badge bg-light text-success">{{ active_contract.contract_type_name }}</span>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-3">
+                <div class="text-muted small">تاریخ شروع</div>
+                <div class="fw-bold">{{ active_contract.start_date_j }}</div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-muted small">تاریخ پایان</div>
+                <div class="fw-bold">{{ active_contract.end_date_j }}</div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-muted small">نوع قرارداد</div>
+                <div class="fw-bold">{{ active_contract.contract_type_name }}</div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-muted small">توضیحات</div>
+                <div class="fw-bold">{{ active_contract.description }}</div>
+            </div>
+        </div>
+
+        <hr>
+
+        <h6 class="text-muted mb-3"><i class="bi bi-gift"></i> مرخصی‌های سالانه</h6>
+        <div class="row g-3">
+            <div class="col-md-3">
+                <div class="card bg-light">
+                    <div class="card-body text-center py-3">
+                        <div class="text-muted small">استحقاقی</div>
+                        <div class="fs-4 fw-bold text-primary">{{ active_contract.annual_leave_days }}</div>
+                        <div class="text-muted small">روز در سال</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-light">
+                    <div class="card-body text-center py-3">
+                        <div class="text-muted small">استعلاجی</div>
+                        <div class="fs-4 fw-bold text-info">{{ active_contract.sick_leave_days }}</div>
+                        <div class="text-muted small">روز در سال</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-light">
+                    <div class="card-body text-center py-3">
+                        <div class="text-muted small">تشویقی</div>
+                        <div class="fs-4 fw-bold text-warning">{{ active_contract.reward_leave_days }}</div>
+                        <div class="text-muted small">روز در سال</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-light">
+                    <div class="card-body text-center py-3">
+                        <div class="text-muted small">بدون حقوق</div>
+                        <div class="fs-4 fw-bold text-secondary">{{ active_contract.unpaid_leave_days }}</div>
+                        <div class="text-muted small">روز در سال</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="alert alert-warning">
+    <i class="bi bi-exclamation-triangle"></i>
+    شما در حال حاضر قرارداد فعالی ندارید. لطفاً با واحد منابع انسانی تماس بگیرید.
+</div>
+{% endif %}
+
+<!-- تاریخچه قراردادها -->
+<div class="card">
+    <div class="card-header bg-white">
+        <h6><i class="bi bi-clock-history"></i> تاریخچه قراردادها</h6>
+    </div>
+    <div class="card-body">
+        {% if contracts %}
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>نوع قرارداد</th>
+                        <th>تاریخ شروع</th>
+                        <th>تاریخ پایان</th>
+                        <th class="text-center">استحقاقی</th>
+                        <th class="text-center">استعلاجی</th>
+                        <th class="text-center">تشویقی</th>
+                        <th>وضعیت</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in contracts %}
+                    <tr class="{% if c.is_active %}table-success{% endif %}">
+                        <td>
+                            <i class="bi bi-file-earmark-text text-primary"></i>
+                            {{ c.contract_type_name }}
+                        </td>
+                        <td>{{ c.start_date_j }}</td>
+                        <td>{{ c.end_date_j }}</td>
+                        <td class="text-center">{{ c.annual_leave_days }} روز</td>
+                        <td class="text-center">{{ c.sick_leave_days }} روز</td>
+                        <td class="text-center">{{ c.reward_leave_days }} روز</td>
+                        <td>
+                            {% if c.is_active %}
+                            <span class="badge bg-success">✅ فعال</span>
+                            {% else %}
+                            <span class="badge bg-secondary">⏸️ پایان یافته</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted text-center mb-0">هیچ قراردادی ثبت نشده است</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

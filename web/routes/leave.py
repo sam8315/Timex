@@ -17,10 +17,18 @@ router = APIRouter(tags=["Leave"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
 
 LEAVE_TYPE_NAMES = {
-    'AL': 'استحقاقی', 'SL': 'استعلاجی', 'RL': 'تشویقی',
-    'UL': 'بدون حقوق', 'CW': 'ذخیره سال قبل'
+    'AL': 'استحقاقی',
+    'SL': 'استعلاجی',
+    'RL': 'تشویقی',
+    'UL': 'بدون حقوق',
+    'CW': 'ذخیره سال قبل'
 }
-STATUS_NAMES = {'P': 'در انتظار تایید', 'A': 'تایید شده', 'R': 'رد شده'}
+
+STATUS_NAMES = {
+    'P': 'در انتظار',
+    'A': 'تایید شده',
+    'R': 'رد شده'
+}
 
 
 @router.get("/leave", response_class=HTMLResponse)
@@ -44,15 +52,33 @@ async def leave_page(
     }
 
     # درخواست‌ها
-    requests = db.query(LeaveRequest).filter(
+    requests_raw = db.query(LeaveRequest).filter(
         LeaveRequest.user_id == user.user_id
     ).order_by(LeaveRequest.created_at.desc()).limit(20).all()
+
+    # 🆕 تبدیل تاریخ‌ها و ترجمه
+    leave_requests = []
+    for req in requests_raw:
+        j_from = jdatetime.date.fromgregorian(date=req.from_date)
+        j_to = jdatetime.date.fromgregorian(date=req.to_date)
+        leave_requests.append({
+            'id': req.id,
+            'leave_type': req.leave_type,
+            'leave_type_name': LEAVE_TYPE_NAMES.get(req.leave_type, req.leave_type),
+            'from_date_j': j_from.strftime('%Y/%m/%d'),
+            'to_date_j': j_to.strftime('%Y/%m/%d'),
+            'days_count': req.days_count,
+            'status': req.status,
+            'status_name': STATUS_NAMES.get(req.status, req.status),
+            'reason': req.reason,
+            'created_at_j': jdatetime.date.fromgregorian(date=req.created_at.date()).strftime('%Y/%m/%d'),
+        })
 
     return templates.TemplateResponse(request, "leave.html", {
         "user": user,
         "today_j": today_j,
         "balances": balances_dict,
-        "leave_requests": requests,
+        "leave_requests": leave_requests,
         "leave_type_names": LEAVE_TYPE_NAMES,
         "status_names": STATUS_NAMES,
         "is_admin": user.is_admin,

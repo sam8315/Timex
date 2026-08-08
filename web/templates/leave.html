@@ -74,14 +74,18 @@
                     <tbody>
                         {% for req in leave_requests %}
                         <tr>
-                            <td>{{ leave_type_names.get(req.leave_type, req.leave_type) }}</td>
-                            <td>{{ req.from_date.strftime('%Y/%m/%d') }}</td>
-                            <td>{{ req.to_date.strftime('%Y/%m/%d') }}</td>
+                            <td>{{ req.leave_type_name }}</td>
+                            <td>{{ req.from_date_j }}</td>
+                            <td>{{ req.to_date_j }}</td>
                             <td>{{ req.days_count }}</td>
                             <td>
-                                {% if req.status == 'P' %}<span class="badge bg-warning">در انتظار</span>
-                                {% elif req.status == 'A' %}<span class="badge bg-success">تایید شده</span>
-                                {% else %}<span class="badge bg-danger">رد شده</span>{% endif %}
+                                {% if req.status == 'P' %}
+                                <span class="badge bg-warning">{{ req.status_name }}</span>
+                                {% elif req.status == 'A' %}
+                                <span class="badge bg-success">{{ req.status_name }}</span>
+                                {% else %}
+                                <span class="badge bg-danger">{{ req.status_name }}</span>
+                                {% endif %}
                             </td>
                         </tr>
                         {% endfor %}
@@ -89,6 +93,5 @@
                 </table>
             </div>
         </div>
-    </div>
-</div>
+    </div></div>
 {% endblock %}

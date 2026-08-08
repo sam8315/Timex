@@ -1,11 +1,11 @@
 """داشبورد کاربر"""
 from datetime import timedelta
 from fastapi import APIRouter, Request, Depends
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, func
+from sqlalchemy import and_, or_, func
 import jdatetime
 
 from web.dependencies import get_db, check_password_change
@@ -18,6 +18,21 @@ from models.daily_status import DailyStatus
 
 router = APIRouter(tags=["Dashboard"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
+
+# 🆕 دیکشنری ترجمه انواع مرخصی
+LEAVE_TYPE_NAMES = {
+    'AL': 'استحقاقی',
+    'SL': 'استعلاجی',
+    'RL': 'تشویقی',
+    'UL': 'بدون حقوق',
+    'CW': 'ذخیره سال قبل'
+}
+
+STATUS_NAMES = {
+    'P': 'در انتظار',
+    'A': 'تایید شده',
+    'R': 'رد شده'
+}
 
 
 @router.get("/dashboard", response_class=HTMLResponse)
@@ -37,7 +52,7 @@ async def dashboard(
         and_(DailyStatus.user_id == user.user_id, DailyStatus.status_date == today_g)
     ).first()
 
-    # تردهای امروز
+    # ترددهای امروز
     today_attendance = db.query(Attendance).filter(
         and_(
             Attendance.user_id == user.user_id,
@@ -53,9 +68,26 @@ async def dashboard(
     balances_dict = {lb.leave_type: lb.balance for lb in leave_balances}
 
     # درخواست‌های اخیر
-    recent_requests = db.query(LeaveRequest).filter(
+    recent_requests_raw = db.query(LeaveRequest).filter(
         LeaveRequest.user_id == user.user_id
     ).order_by(LeaveRequest.created_at.desc()).limit(5).all()
+
+    # 🆕 تبدیل تاریخ‌ها و ترجمه نوع مرخصی
+    recent_requests = []
+    for req in recent_requests_raw:
+        j_from = jdatetime.date.fromgregorian(date=req.from_date)
+        j_to = jdatetime.date.fromgregorian(date=req.to_date)
+        recent_requests.append({
+            'id': req.id,
+            'leave_type': req.leave_type,
+            'leave_type_name': LEAVE_TYPE_NAMES.get(req.leave_type, req.leave_type),
+            'from_date_j': j_from.strftime('%Y/%m/%d'),
+            'to_date_j': j_to.strftime('%Y/%m/%d'),
+            'days_count': req.days_count,
+            'status': req.status,
+            'status_name': STATUS_NAMES.get(req.status, req.status),
+            'reason': req.reason,
+        })
 
     # آمار ماه
     month_start_j = jdatetime.date(today_j.year, today_j.month, 1)
@@ -69,6 +101,48 @@ async def dashboard(
             Attendance.punch == 0
         )
     ).count()
+    # 🆕 اطلاعات قرارداد فعال
+    from models.contract import Contract
+    active_contract = db.query(Contract).filter(
+        and_(
+            Contract.user_id == user.user_id,
+            Contract.start_date <= today_g,
+            or_(
+                Contract.end_date == None,
+                Contract.end_date >= today_g
+            )
+        )
+    ).order_by(Contract.start_date.desc()).first()
+
+    contract_info = None
+    if active_contract:
+        j_start = jdatetime.date.fromgregorian(date=active_contract.start_date)
+        j_end = jdatetime.date.fromgregorian(date=active_contract.end_date) if active_contract.end_date else None
+
+        # محاسبه روزهای باقی‌مانده
+        if active_contract.end_date:
+            days_remaining = (active_contract.end_date - today_g).days
+            total_days = (active_contract.end_date - active_contract.start_date).days
+            elapsed_days = (today_g - active_contract.start_date).days
+            progress_percent = min(100, max(0, (elapsed_days / total_days * 100) if total_days > 0 else 0))
+        else:
+            days_remaining = None
+            total_days = None
+            elapsed_days = None
+            progress_percent = 0
+
+        contract_info = {
+            'id': active_contract.id,
+            'contract_type': active_contract.contract_type,
+            'start_date_j': j_start.strftime('%Y/%m/%d'),
+            'end_date_j': j_end.strftime('%Y/%m/%d') if j_end else 'نامحدود',
+            'days_remaining': days_remaining,
+            'total_days': total_days,
+            'elapsed_days': elapsed_days,
+            'progress_percent': round(progress_percent, 1),
+            'is_expiring_soon': days_remaining is not None and days_remaining <= 30,
+            'is_expired': days_remaining is not None and days_remaining < 0,
+        }
 
     return templates.TemplateResponse(request, "dashboard.html", {
         "user": user,
@@ -79,5 +153,6 @@ async def dashboard(
         "balances": balances_dict,
         "recent_requests": recent_requests,
         "month_attendance_count": month_attendance_count,
+        "contract_info": contract_info,  # 🆕
         "is_admin": user.is_admin,
     })
