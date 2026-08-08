@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+{% block title %}تردد کارمندان | پنل مدیریت{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4><i class="bi bi-people"></i> تردد کارمندان</h4>
+    <a href="/admin/" class="btn btn-outline-primary btn-sm">
+        <i class="bi bi-arrow-right"></i> بازگشت به پنل مدیریت
+    </a>
+</div>
+
+<!-- 🆕 نوار ناوبری روز -->
+<div class="card mb-4">
+    <div class="card-body py-3">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+            <!-- دکمه‌های ناوبری -->
+            <div class="d-flex align-items-center gap-2">
+                <a href="/admin/attendance?date_str={{ prev_date_str }}{% if department %}&department={{ department }}{% endif %}"
+                   class="btn btn-outline-primary btn-sm">
+                    <i class="bi bi-chevron-right"></i> روز قبل
+                </a>
+                <a href="/admin/attendance?date_str={{ next_date_str }}{% if department %}&department={{ department }}{% endif %}"
+                   class="btn btn-outline-primary btn-sm">
+                    روز بعد <i class="bi bi-chevron-left"></i>
+                </a>
+                {% if not is_today %}
+                <a href="/admin/attendance" class="btn btn-success btn-sm">
+                    <i class="bi bi-calendar-today"></i> امروز
+                </a>
+                {% endif %}
+            </div>
+
+            <!-- فرم انتخاب مستقیم -->
+            <form method="get" action="/admin/attendance" class="d-flex align-items-center gap-2">
+                <input type="text" name="date_str" class="form-control form-control-sm"
+                       value="{{ date_str_input }}" placeholder="1405/05/19" style="width: 130px;">
+                {% if department %}
+                <input type="hidden" name="department" value="{{ department }}">
+                {% endif %}
+                <button type="submit" class="btn btn-primary btn-sm">
+                    <i class="bi bi-search"></i> نمایش
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- فیلترها -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" action="/admin/attendance" class="row g-3 align-items-end">
+            <input type="hidden" name="date_str" value="{{ date_str_input }}">
+            <div class="col-md-3">
+                <label class="form-label">🏢 دپارتمان</label>
+                <select name="department" class="form-select">
+                    <option value="">همه دپارتمان‌ها</option>
+                    <option value="1" {% if department == '1' %}selected{% endif %}>رسمی</option>
+                    <option value="2" {% if department == '2' %}selected{% endif %}>وظیفه</option>
+                    <option value="3" {% if department == '3' %}selected{% endif %}>خریدخدمت</option>
+                    <option value="4" {% if department == '4' %}selected{% endif %}>قراردادی</option>
+                    <option value="5" {% if department == '5' %}selected{% endif %}>پزشک</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="bi bi-funnel"></i> اعمال فیلتر
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- فیلترها -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" action="/admin/attendance" class="row g-3 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label">📅 تاریخ (شمسی)</label>
+                <input type="text" name="date_str" class="form-control"
+                       value="{{ date_str_input }}" placeholder="1405/05/19">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">🏢 دپارتمان</label>
+                <select name="department" class="form-select">
+                    <option value="">همه دپارتمان‌ها</option>
+                    <option value="1" {% if department == '1' %}selected{% endif %}>رسمی</option>
+                    <option value="2" {% if department == '2' %}selected{% endif %}>وظیفه</option>
+                    <option value="3" {% if department == '3' %}selected{% endif %}>خریدخدمت</option>
+                    <option value="4" {% if department == '4' %}selected{% endif %}>قراردادی</option>
+                    <option value="5" {% if department == '5' %}selected{% endif %}>پزشک</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="bi bi-search"></i> نمایش
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- اطلاعات روز -->
+<div class="alert {% if is_holiday %}alert-danger{% elif is_friday %}alert-warning{% else %}alert-info{% endif %}">
+    <i class="bi bi-calendar-event"></i>
+    <strong>{{ target_j.strftime('%Y/%m/%d') }}</strong>
+    {% if is_friday %} | 🟡 جمعه{% endif %}
+    {% if is_holiday %} | 🔴 تعطیل رسمی: {{ holiday_title }}{% endif %}
+</div>
+
+<!-- آمار -->
+<div class="row g-4 mb-4">
+    <div class="col-md-2">
+        <div class="card bg-primary text-white">
+            <div class="card-body text-center">
+                <h3>{{ total_employees }}</h3>
+                <small>کل کارمندان</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card bg-success text-white">
+            <div class="card-body text-center">
+                <h3>{{ present_count }}</h3>
+                <small>✅ حاضر</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card bg-info text-white">
+            <div class="card-body text-center">
+                <h3>{{ leave_count }}</h3>
+                <small>🌴 مرخصی</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card bg-danger text-white">
+            <div class="card-body text-center">
+                <h3>{{ absent_count }}</h3>
+                <small>❌ غایب</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card bg-secondary text-white">
+            <div class="card-body text-center">
+                <h3>{{ no_attendance_count }}</h3>
+                <small>⚪ بدون تردد</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- جدول -->
+<div class="card">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>ردیف</th>
+                        <th>کد</th>
+                        <th>نام کامل</th>
+                        <th>دپارتمان</th>
+                        <th>اولین ورود</th>
+                        <th>آخرین خروج</th>
+                        <th class="text-center">تردد</th>
+                        <th class="text-center">وضعیت</th>
+                        <th class="text-center">جزئیات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in results %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td>{{ r.user_id }}</td>
+                        <td>{{ r.full_name }}</td>
+                        <td>
+                            {% if r.department == '1' %}رسمی
+                            {% elif r.department == '2' %}وظیفه
+                            {% elif r.department == '3' %}خریدخدمت
+                            {% elif r.department == '4' %}قراردادی
+                            {% elif r.department == '5' %}پزشک
+                            {% else %}-{% endif %}
+                        </td>
+                        <td>
+                            {% if r.first_enter %}
+                            <span class="badge bg-success">{{ r.first_enter.strftime('%H:%M') }}</span>
+                            {% else %}<span class="text-muted">-</span>{% endif %}
+                        </td>
+                        <td>
+                            {% if r.last_exit %}
+                            <span class="badge bg-danger">{{ r.last_exit.strftime('%H:%M') }}</span>
+                            {% else %}<span class="text-muted">-</span>{% endif %}
+                        </td>
+                        <td class="text-center">
+                            <span class="badge {% if r.total_punches > 2 %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+                                {{ r.total_punches }}
+                            </span>
+                        </td>
+                        <td class="text-center">
+                            <span class="badge bg-{{ r.status_color }}">{{ r.status_label }}</span>
+                        </td>
+                        <td class="text-center">
+                            {% if r.has_detail %}
+                            <a href="/admin/attendance/user/{{ r.user_id }}?year={{ target_j.year }}&month={{ target_j.month }}"
+                               class="btn btn-sm btn-outline-primary" title="مشاهده جزئیات ماهانه">
+                                <i class="bi bi-eye"></i>
+                            </a>
+                            {% else %}
+                            <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

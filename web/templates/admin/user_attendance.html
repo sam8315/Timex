@@ -1,9 +1,27 @@
 {% extends "base.html" %}
-{% block title %}رکوردهای تردد{% endblock %}
+{% block title %}تردد {{ target_employee.full_name if target_employee else target_user_id }} | پنل مدیریت{% endblock %}
 {% block content %}
+
+<!-- هدر کاربر هدف -->
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <h4><i class="bi bi-calendar-check"></i> رکوردهای تردد</h4>
-    <span class="badge bg-primary fs-6">{{ month_name }} {{ year }}</span>
+    <h4>
+        <i class="bi bi-person-badge"></i>
+        تردد: {{ target_employee.full_name if target_employee else target_user.name }}
+        <small class="text-muted">({{ target_user_id }})</small>
+        {% if target_employee and target_employee.department %}
+        <span class="badge bg-secondary fs-6">
+            {% if target_employee.department == '1' %}رسمی
+            {% elif target_employee.department == '2' %}وظیفه
+            {% elif target_employee.department == '3' %}خریدخدمت
+            {% elif target_employee.department == '4' %}قراردادی
+            {% elif target_employee.department == '5' %}پزشک
+            {% endif %}
+        </span>
+        {% endif %}
+    </h4>
+    <a href="/admin/attendance" class="btn btn-outline-primary btn-sm">
+        <i class="bi bi-arrow-right"></i> بازگشت به لیست
+    </a>
 </div>
 
 <!-- 🆕 نوار ناوبری ماه/سال -->
@@ -12,23 +30,23 @@
         <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
             <!-- دکمه‌های ناوبری -->
             <div class="d-flex align-items-center gap-2">
-                <a href="/attendance?year={{ prev_year }}&month={{ prev_month }}{% if status_filter != 'all' %}&filter={{ status_filter }}{% endif %}"
+                <a href="/admin/attendance/user/{{ target_user_id }}?year={{ prev_year }}&month={{ prev_month }}{% if status_filter != 'all' %}&filter={{ status_filter }}{% endif %}"
                    class="btn btn-outline-primary btn-sm">
                     <i class="bi bi-chevron-right"></i> ماه قبل
                 </a>
-                <a href="/attendance?year={{ next_year }}&month={{ next_month }}{% if status_filter != 'all' %}&filter={{ status_filter }}{% endif %}"
+                <a href="/admin/attendance/user/{{ target_user_id }}?year={{ next_year }}&month={{ next_month }}{% if status_filter != 'all' %}&filter={{ status_filter }}{% endif %}"
                    class="btn btn-outline-primary btn-sm">
                     ماه بعد <i class="bi bi-chevron-left"></i>
                 </a>
                 {% if not is_current_month %}
-                <a href="/attendance" class="btn btn-success btn-sm">
+                <a href="/admin/attendance/user/{{ target_user_id }}" class="btn btn-success btn-sm">
                     <i class="bi bi-calendar-today"></i> ماه جاری
                 </a>
                 {% endif %}
             </div>
 
             <!-- فرم انتخاب مستقیم -->
-            <form method="get" action="/attendance" class="d-flex align-items-center gap-2">
+            <form method="get" action="/admin/attendance/user/{{ target_user_id }}" class="d-flex align-items-center gap-2">
                 <select name="year" class="form-select form-select-sm" style="width: auto;">
                     {% for y in available_years %}
                     <option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>
@@ -55,48 +73,49 @@
     <div class="card-body py-2">
         <div class="d-flex flex-wrap align-items-center gap-2">
             <span class="text-muted"><i class="bi bi-funnel"></i> فیلتر:</span>
-            <a href="/attendance?year={{ year }}&month={{ month }}"
+            <a href="/admin/attendance/user/{{ target_user_id }}?year={{ year }}&month={{ month }}"
                class="btn btn-sm {% if status_filter == 'all' %}btn-primary{% else %}btn-outline-primary{% endif %}">
                 همه
             </a>
-            <a href="/attendance?year={{ year }}&month={{ month }}&filter=complete"
+            <a href="/admin/attendance/user/{{ target_user_id }}?year={{ year }}&month={{ month }}&filter=complete"
                class="btn btn-sm {% if status_filter == 'complete' %}btn-success{% else %}btn-outline-success{% endif %}">
                 ✅ کامل
             </a>
-            <a href="/attendance?year={{ year }}&month={{ month }}&filter=night_shift"
+            <a href="/admin/attendance/user/{{ target_user_id }}?year={{ year }}&month={{ month }}&filter=night_shift"
                class="btn btn-sm {% if status_filter == 'night_shift' %}btn-info{% else %}btn-outline-info{% endif %}">
                 🌙 شیفت شب
             </a>
-            <a href="/attendance?year={{ year }}&month={{ month }}&filter=issues"
+            <a href="/admin/attendance/user/{{ target_user_id }}?year={{ year }}&month={{ month }}&filter=issues"
                class="btn btn-sm {% if status_filter == 'issues' %}btn-danger{% else %}btn-outline-danger{% endif %}">
                 ⚠️ دارای مشکل
             </a>
-            <a href="/attendance?year={{ year }}&month={{ month }}&filter=friday_holiday"
+            <a href="/admin/attendance/user/{{ target_user_id }}?year={{ year }}&month={{ month }}&filter=friday_holiday"
                class="btn btn-sm {% if status_filter == 'friday_holiday' %}btn-warning{% else %}btn-outline-warning{% endif %}">
                 🟡 جمعه/تعطیل
             </a>
-            <a href="/attendance?year={{ year }}&month={{ month }}&filter=no_attendance"
+            <a href="/admin/attendance/user/{{ target_user_id }}?year={{ year }}&month={{ month }}&filter=no_attendance"
                class="btn btn-sm {% if status_filter == 'no_attendance' %}btn-secondary{% else %}btn-outline-secondary{% endif %}">
                 ⚪ بدون تردد
             </a>
         </div>
     </div>
 </div>
+
 <!-- آمار کلی -->
 <div class="row g-4 mb-4">
     <div class="col-md-4">
         <div class="card bg-primary text-white">
             <div class="card-body text-center">
                 <h3>{{ total_records }}</h3>
-                <small>کل رکوردها</small>
+                <small>کل رکوردها - {{ month_name }} {{ year }}</small>
             </div>
         </div>
     </div>
     <div class="col-md-4">
         <div class="card bg-success text-white">
             <div class="card-body text-center">
-                <h3>{{ days | length }}</h3>
-                <small>روزهای نمایش داده شده</small>
+                <h3>{{ days | selectattr('records') | list | length }}</h3>
+                <small>روزهای دارای تردد</small>
             </div>
         </div>
     </div>

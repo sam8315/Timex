@@ -319,6 +319,33 @@ async def attendance_page(
 
     # آمار
     total_records = sum(len(d['records']) for d in days_list)
+    # 🆕 محاسبه ماه قبل و بعد
+    if month == 1:
+        prev_year, prev_month = year - 1, 12
+    else:
+        prev_year, prev_month = year, month - 1
+
+    if month == 12:
+        next_year, next_month = year + 1, 1
+    else:
+        next_year, next_month = year, month + 1
+
+    # 🆕 لیست سال‌های قابل انتخاب (6 سال اخیر)
+    today_j = jdatetime.date.today()
+    available_years = list(range(today_j.year, today_j.year - 6, -1))
+
+    # 🆕 لیست ماه‌ها
+    months_list = [
+        {'num': 1, 'name': 'فروردین'}, {'num': 2, 'name': 'اردیبهشت'},
+        {'num': 3, 'name': 'خرداد'}, {'num': 4, 'name': 'تیر'},
+        {'num': 5, 'name': 'مرداد'}, {'num': 6, 'name': 'شهریور'},
+        {'num': 7, 'name': 'مهر'}, {'num': 8, 'name': 'آبان'},
+        {'num': 9, 'name': 'آذر'}, {'num': 10, 'name': 'دی'},
+        {'num': 11, 'name': 'بهمن'}, {'num': 12, 'name': 'اسفند'},
+    ]
+
+    # بررسی آیا ماه جاری است
+    is_current_month = (year == today_j.year and month == today_j.month)
 
     return templates.TemplateResponse(request, "attendance.html", {
         "user": user,
@@ -329,4 +356,13 @@ async def attendance_page(
         "total_records": total_records,
         "is_admin": user.is_admin,
         "status_filter": status_filter or 'all',
+        # 🆕 متغیرهای ناوبری
+        "prev_year": prev_year,
+        "prev_month": prev_month,
+        "next_year": next_year,
+        "next_month": next_month,
+        "available_years": available_years,
+        "months_list": months_list,
+        "is_current_month": is_current_month,
+        "today_j": today_j,
     })

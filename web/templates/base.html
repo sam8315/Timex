@@ -51,8 +51,13 @@
                     {% if is_admin %}
                     <hr class="text-white-50 my-3">
                     <li class="nav-item">
-                        <a class="nav-link {% if '/admin' in request.url.path %}active{% endif %}" href="/admin/">
+                        <a class="nav-link {% if request.url.path == '/admin/' %}active{% endif %}" href="/admin/">
                             <i class="bi bi-gear"></i> پنل مدیریت
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if '/admin/attendance' in request.url.path %}active{% endif %}" href="/admin/attendance">
+                            <i class="bi bi-people"></i> تردد کارمندان
                         </a>
                     </li>
                     {% endif %}
