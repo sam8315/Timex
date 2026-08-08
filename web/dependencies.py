@@ -35,6 +35,13 @@ def require_admin(request: Request, db: Session = Depends(get_db)) -> User:
         raise HTTPException(status_code=403, detail="دسترسی غیرمجاز")
     return user
 
+def require_super_admin(request: Request, db: Session = Depends(get_db)) -> User:
+    """اجبار به نقش مدیر ارشد"""
+    user = get_current_user(request, db)
+    if not user.is_super_admin:
+        raise HTTPException(status_code=403, detail="دسترسی غیرمجاز - فقط مدیر ارشد")
+    return user
+
 
 def check_password_change(request: Request, user: User = Depends(get_current_user)):
     """بررسی نیاز به تغییر رمز"""

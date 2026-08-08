@@ -16,6 +16,7 @@
                     <th>نقش</th>
                     <th>وضعیت وب</th>
                     <th>آخرین ورود</th>
+                    <th class="text-center">عملیات</th>
                 </tr>
             </thead>
             <tbody>
@@ -47,6 +48,16 @@
                         {% if item.web_user.last_login %}
                         {{ item.web_user.last_login.strftime('%Y/%m/%d %H:%M') }}
                         {% else %}-{% endif %}
+                    </td>
+                    <td class="text-center">
+                        <a href="/admin/profile/{{ item.web_user.user_id }}" class="btn btn-sm btn-outline-primary" title="مشاهده پروفایل">
+                            <i class="bi bi-eye"></i>
+                        </a>
+                        {% if is_admin %}
+                        <a href="/admin/attendance/user/{{ item.web_user.user_id }}" class="btn btn-sm btn-outline-success" title="تردد">
+                            <i class="bi bi-calendar-check"></i>
+                        </a>
+                        {% endif %}
                     </td>
                 </tr>
                 {% endfor %}

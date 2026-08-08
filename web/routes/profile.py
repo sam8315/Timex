@@ -1,0 +1,103 @@
+"""صفحه پروفایل کاربر"""
+from datetime import date
+from fastapi import APIRouter, Request, Depends
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+from pathlib import Path
+from sqlalchemy.orm import Session
+import jdatetime
+
+from web.dependencies import get_db, check_password_change
+from models.user import User
+from models.employee import Employee
+
+router = APIRouter(tags=["Profile"])
+templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
+
+# رنگ‌های آواتار بر اساس hash نام
+AVATAR_COLORS = [
+    'primary', 'success', 'info', 'warning',
+    'danger', 'secondary', 'dark'
+]
+
+
+def calculate_age(birth_date: date) -> int:
+    """محاسبه سن"""
+    today = date.today()
+    age = today.year - birth_date.year
+    if (today.month, today.day) < (birth_date.month, birth_date.day):
+        age -= 1
+    return age
+
+
+def calculate_service_years(hire_date: date) -> dict:
+    """محاسبه سابقه کار به سال و ماه"""
+    today = date.today()
+    years = today.year - hire_date.year
+    months = today.month - hire_date.month
+
+    if today.day < hire_date.day:
+        months -= 1
+    if months < 0:
+        years -= 1
+        months += 12
+
+    return {'years': years, 'months': months}
+
+
+@router.get("/profile", response_class=HTMLResponse)
+async def profile_page(
+    request: Request,
+    user: User = Depends(check_password_change),
+    db: Session = Depends(get_db)
+):
+    """صفحه پروفایل کاربر"""
+    employee = db.query(Employee).filter(Employee.user_id == user.user_id).first()
+
+    today_j = jdatetime.date.today()
+
+    # محاسبات
+    age = None
+    age_j_display = None
+    if employee and employee.birth_date:
+        age = calculate_age(employee.birth_date)
+        j_birth = jdatetime.date.fromgregorian(date=employee.birth_date)
+        age_j_display = j_birth.strftime('%Y/%m/%d')
+
+    service = None
+    hire_j_display = None
+    if employee and employee.hire_date:
+        service = calculate_service_years(employee.hire_date)
+        hire_j_display = jdatetime.date.fromgregorian(date=employee.hire_date).strftime('%Y/%m/%d')
+
+    # حروف اول نام برای آواتار
+    avatar_initials = ""
+    avatar_color = "primary"
+    if employee:
+        avatar_initials = f"{employee.first_name[0] if employee.first_name else ''}{employee.last_name[0] if employee.last_name else ''}"
+        # رنگ بر اساس hash نام
+        name_hash = sum(ord(c) for c in employee.full_name)
+        avatar_color = AVATAR_COLORS[name_hash % len(AVATAR_COLORS)]
+
+    # تاریخ‌های شمسی
+    birth_j_display = None
+    if employee and employee.birth_date:
+        birth_j_display = jdatetime.date.fromgregorian(date=employee.birth_date).strftime('%Y/%m/%d')
+
+    termination_j_display = None
+    if employee and employee.termination_date:
+        termination_j_display = jdatetime.date.fromgregorian(date=employee.termination_date).strftime('%Y/%m/%d')
+
+    return templates.TemplateResponse(request, "profile.html", {
+        "user": user,
+        "employee": employee,
+        "today_j": today_j,
+        "age": age,
+        "birth_j_display": birth_j_display,
+        "service": service,
+        "hire_j_display": hire_j_display,
+        "avatar_initials": avatar_initials,
+        "avatar_color": avatar_color,
+        "termination_j_display": termination_j_display,
+        "is_admin": user.is_admin,
+    })

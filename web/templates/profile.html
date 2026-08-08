@@ -1,0 +1,271 @@
+{% extends "base.html" %}
+{% block title %}پروفایل من{% endblock %}
+{% block content %}
+
+<!-- هدر پروفایل -->
+<div class="card mb-4 overflow-hidden">
+    <div class="card-body p-0">
+        <!-- بنر بالا -->
+        <div style="height: 120px; background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);"></div>
+
+        <!-- اطلاعات اصلی -->
+        <div class="px-4 pb-4">
+            <div class="d-flex flex-wrap align-items-end justify-content-between" style="margin-top: -50px;">
+                <div class="d-flex align-items-end">
+                    <!-- آواتار -->
+                    <div class="rounded-circle bg-{{ avatar_color }} text-white d-flex align-items-center justify-content-center border border-4 border-white shadow"
+                         style="width: 110px; height: 110px; font-size: 2.2rem; font-weight: bold;">
+                        {{ avatar_initials }}
+                    </div>
+
+                    <!-- نام و اطلاعات -->
+                    <div class="ms-3 mb-2">
+                        <h3 class="mb-1">
+                            {{ employee.full_name if employee else user.name }}
+                            {% if employee and not employee.is_active %}
+                            <span class="badge bg-danger fs-6">غیرفعال</span>
+                            {% endif %}
+                        </h3>
+                        <div class="text-muted">
+                            <i class="bi bi-person-badge"></i> {{ user.user_id }}
+                            {% if employee and employee.position %}
+                            | <i class="bi bi-briefcase"></i> {{ employee.position }}
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- وضعیت -->
+                <div class="mb-2">
+                    {% if employee and employee.is_active %}
+                    <span class="badge bg-success px-3 py-2">
+                        <i class="bi bi-check-circle"></i> {{ employee.status_name }}
+                    </span>
+                    {% elif employee %}
+                    <span class="badge bg-danger px-3 py-2">
+                        <i class="bi bi-x-circle"></i> {{ employee.status_name }}
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- آمار سریع -->
+<div class="row g-4 mb-4">
+    <div class="col-md-4">
+        <div class="card stat-card bg-primary text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6>سابقه کار</h6>
+                        {% if service %}
+                        <h2>{{ service.years }} سال و {{ service.months }} ماه</h2>
+                        {% else %}
+                        <h2>-</h2>
+                        {% endif %}
+                    </div>
+                    <i class="bi bi-briefcase fs-1 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card stat-card bg-info text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6>سن</h6>
+                        {% if age is not none %}
+                        <h2>{{ age }} سال</h2>
+                        {% else %}
+                        <h2>-</h2>
+                        {% endif %}
+                    </div>
+                    <i class="bi bi-cake fs-1 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card stat-card bg-success text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6>وضعیت</h6>
+                        <h2>{% if employee and employee.is_active %}فعال{% else %}غیرفعال{% endif %}</h2>
+                    </div>
+                    <i class="bi bi-person-check fs-1 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if employee %}
+<!-- کارت‌های اطلاعات -->
+<div class="row g-4">
+    <!-- اطلاعات هویتی -->
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header bg-white">
+                <h6><i class="bi bi-person-vcard text-primary"></i> اطلاعات هویتی</h6>
+            </div>
+            <div class="card-body">
+                <div class="list-group list-group-flush">
+                    <div class="list-group-item d-flex justify-content-between px-0">
+                        <span class="text-muted"><i class="bi bi-hash"></i> کد ملی</span>
+                        <span class="fw-bold">{{ employee.national_code or '-' }}</span>
+                    </div>
+                    <div class="list-group-item d-flex justify-content-between px-0">
+                        <span class="text-muted"><i class="bi bi-person"></i> نام پدر</span>
+                        <span class="fw-bold">{{ employee.father_name or '-' }}</span>
+                    </div>
+                    <div class="list-group-item d-flex justify-content-between px-0">
+                        <span class="text-muted"><i class="bi bi-calendar-heart"></i> تاریخ تولد</span>
+                        <span class="fw-bold">{{ birth_j_display or '-' }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- اطلاعات شخصی -->
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header bg-white">
+                <h6><i class="bi bi-heart text-danger"></i> اطلاعات شخصی</h6>
+            </div>
+            <div class="card-body">
+                <div class="list-group list-group-flush">
+                    <div class="list-group-item d-flex justify-content-between px-0">
+                        <span class="text-muted"><i class="bi bi-gender-ambiguous"></i> جنسیت</span>
+                        <span>
+                            {% if employee.gender == 'M' %}
+                            <span class="badge bg-primary"><i class="bi bi-gender-male"></i> مرد</span>
+                            {% elif employee.gender == 'F' %}
+                            <span class="badge bg-danger"><i class="bi bi-gender-female"></i> زن</span>
+                            {% else %}
+                            <span class="badge bg-secondary">نامشخص</span>
+                            {% endif %}
+                        </span>
+                    </div>
+                    <div class="list-group-item d-flex justify-content-between px-0">
+                        <span class="text-muted"><i class="bi bi-heart"></i> وضعیت تاهل</span>
+                        <span>
+                            {% if employee.marital_status == 'S' %}
+                            <span class="badge bg-info">مجرد</span>
+                            {% elif employee.marital_status == 'M' %}
+                            <span class="badge bg-success">متاهل</span>
+                            {% else %}
+                            <span class="badge bg-secondary">نامشخص</span>
+                            {% endif %}
+                        </span>
+                    </div>
+                    <div class="list-group-item d-flex justify-content-between px-0">
+                        <span class="text-muted"><i class="bi bi-envelope"></i> ایمیل</span>
+                        <span class="fw-bold">{{ employee.email or '-' }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- اطلاعات شغلی -->
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header bg-white">
+                <h6><i class="bi bi-briefcase text-warning"></i> اطلاعات شغلی</h6>
+            </div>
+            <div class="card-body">
+                <div class="list-group list-group-flush">
+                    <div class="list-group-item d-flex justify-content-between px-0">
+                        <span class="text-muted"><i class="bi bi-person-badge"></i> کد پرسنلی</span>
+                        <span class="fw-bold">{{ employee.user_id }}</span>
+                    </div>
+                    <div class="list-group-item d-flex justify-content-between px-0">
+                        <span class="text-muted"><i class="bi bi-calendar-event"></i> تاریخ استخدام</span>
+                        <span class="fw-bold">{{ hire_j_display or '-' }}</span>
+                    </div>
+                    <div class="list-group-item d-flex justify-content-between px-0">
+                        <span class="text-muted"><i class="bi bi-building"></i> دپارتمان</span>
+                        <span>
+                            {% if employee.department == '1' %}<span class="badge bg-primary">رسمی</span>
+                            {% elif employee.department == '2' %}<span class="badge bg-info">وظیفه</span>
+                            {% elif employee.department == '3' %}<span class="badge bg-warning text-dark">خریدخدمت</span>
+                            {% elif employee.department == '4' %}<span class="badge bg-success">قراردادی</span>
+                            {% elif employee.department == '5' %}<span class="badge bg-danger">پزشک</span>
+                            {% else %}<span class="badge bg-secondary">-</span>{% endif %}
+                        </span>
+                    </div>
+                    <div class="list-group-item d-flex justify-content-between px-0">
+                        <span class="text-muted"><i class="bi bi-award"></i> سمت</span>
+                        <span class="fw-bold">{{ employee.position or '-' }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- وضعیت و ترک کار -->
+    <div class="col-md-6">
+        <div class="card h-100 {% if not employee.is_active %}border-danger{% endif %}">
+            <div class="card-header bg-white">
+                <h6>
+                    <i class="bi bi-activity {% if employee.is_active %}text-success{% else %}text-danger{% endif %}"></i>
+                    وضعیت employment
+                </h6>
+            </div>
+            <div class="card-body">
+                {% if employee.is_active %}
+                <div class="alert alert-success mb-3">
+                    <i class="bi bi-check-circle"></i>
+                    شما در حال حاضر در وضعیت <strong>فعال</strong> هستید.
+                </div>
+                {% else %}
+                <div class="alert alert-danger mb-3">
+                    <i class="bi bi-x-circle"></i>
+                    شما در وضعیت <strong>غیرفعال</strong> هستید.
+                </div>
+                {% endif %}
+
+                <div class="list-group list-group-flush">
+                    <div class="list-group-item d-flex justify-content-between px-0">
+                        <span class="text-muted"><i class="bi bi-toggle-on"></i> وضعیت</span>
+                        <span>{{ employee.status_name }}</span>
+                    </div>
+                    {% if employee.termination_date %}
+                    <div class="list-group-item d-flex justify-content-between px-0">
+                        <span class="text-muted"><i class="bi bi-calendar-x"></i> تاریخ ترک</span>
+                        <span class="fw-bold text-danger">{{ termination_j_display }}</span>
+                    </div>
+                    {% endif %}
+                    {% if employee.termination_reason %}
+                    <div class="list-group-item d-flex justify-content-between px-0">
+                        <span class="text-muted"><i class="bi bi-chat-left-text"></i> دلیل ترک</span>
+                        <span class="fw-bold">{{ employee.termination_reason }}</span>
+                    </div>
+                    {% endif %}
+                </div>
+
+                {% if employee.notes %}
+                <div class="mt-3 p-3 bg-light rounded">
+                    <small class="text-muted d-block mb-1"><i class="bi bi-sticky"></i> یادداشت:</small>
+                    <small>{{ employee.notes }}</small>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="alert alert-warning">
+    <i class="bi bi-exclamation-triangle"></i>
+    اطلاعات تکمیلی شما ثبت نشده است. لطفاً با واحد منابع انسانی تماس بگیرید.
+</div>
+{% endif %}
+
+{% endblock %}

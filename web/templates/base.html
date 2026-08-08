@@ -26,11 +26,21 @@
                 <div class="text-center text-white mb-4">
                     <h4><i class="bi bi-clock-history"></i> Timex</h4>
                     <small class="text-white-50">سامانه حضور و غیاب</small>
+                    <div class="mt-2">
+                        <small class="text-white-50">
+                            <i class="bi bi-person-circle"></i> {{ user.name if user else 'کاربر' }}
+                        </small>
+                    </div>
                 </div>
                 <ul class="nav flex-column">
                     <li class="nav-item">
                         <a class="nav-link {% if '/dashboard' in request.url.path %}active{% endif %}" href="/dashboard">
                             <i class="bi bi-house-door"></i> داشبورد
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if '/profile' in request.url.path %}active{% endif %}" href="/profile">
+                            <i class="bi bi-person-circle"></i> پروفایل من
                         </a>
                     </li>
                     <li class="nav-item">

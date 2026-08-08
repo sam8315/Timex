@@ -4,7 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 from pathlib import Path
 
-from web.routes import auth, dashboard, attendance, leave, admin, contract
+from web.routes import auth, dashboard, attendance, leave, admin, contract, profile
 BASE_PATH = Path(__file__).parent
 
 app = FastAPI(title="Timex - سامانه حضور و غیاب", version="1.0.0")
@@ -19,6 +19,7 @@ app.include_router(attendance.router)
 app.include_router(leave.router)
 app.include_router(admin.router)
 app.include_router(contract.router)
+app.include_router(profile.router)
 
 
 @app.get("/")

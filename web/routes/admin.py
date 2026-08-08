@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from web.dependencies import get_db, require_admin
 from models.user import User
 from models.leave_request import LeaveRequest
-from datetime import timedelta, date as date_type
+from datetime import timedelta, date, date as date_type
 from sqlalchemy import and_, func
 import jdatetime
 from typing import Optional
@@ -401,3 +401,271 @@ async def admin_user_attendance(
         "months_list": months_list,
         "is_current_month": is_current_month,
     })
+
+
+from datetime import timedelta, date as date_type
+from sqlalchemy import and_, func
+import jdatetime
+from typing import Optional
+from fastapi import Query, Form
+from fastapi.responses import RedirectResponse
+
+from web.dependencies import require_super_admin
+from web.security import hash_password
+from models.employee import Employee
+from models.user import User
+
+
+@router.get("/profile/{target_user_id}", response_class=HTMLResponse)
+async def admin_view_profile(
+    request: Request,
+    target_user_id: str,
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """مشاهده پروفایل یک کاربر توسط مدیر"""
+    target_user = db.query(User).filter(User.user_id == target_user_id).first()
+    if not target_user:
+        return RedirectResponse(url="/admin/", status_code=302)
+
+    employee = db.query(Employee).filter(Employee.user_id == target_user_id).first()
+    today_j = jdatetime.date.today()
+
+    # محاسبات
+    age = None
+    birth_j_display = None
+    if employee and employee.birth_date:
+        today = date.today()
+        age = today.year - employee.birth_date.year
+        if (today.month, today.day) < (employee.birth_date.month, employee.birth_date.day):
+            age -= 1
+        birth_j_display = jdatetime.date.fromgregorian(date=employee.birth_date).strftime('%Y/%m/%d')
+
+    service = None
+    hire_j_display = None
+    if employee and employee.hire_date:
+        today = date.today()
+        years = today.year - employee.hire_date.year
+        months = today.month - employee.hire_date.month
+        if today.day < employee.hire_date.day:
+            months -= 1
+        if months < 0:
+            years -= 1
+            months += 12
+        service = {'years': years, 'months': months}
+        hire_j_display = jdatetime.date.fromgregorian(date=employee.hire_date).strftime('%Y/%m/%d')
+
+    termination_j_display = None
+    if employee and employee.termination_date:
+        termination_j_display = jdatetime.date.fromgregorian(date=employee.termination_date).strftime('%Y/%m/%d')
+
+    # آواتار
+    avatar_initials = ""
+    avatar_color = "primary"
+    if employee:
+        avatar_initials = f"{employee.first_name[0] if employee.first_name else ''}{employee.last_name[0] if employee.last_name else ''}"
+        name_hash = sum(ord(c) for c in employee.full_name)
+        colors = ['primary', 'success', 'info', 'warning', 'danger', 'secondary', 'dark']
+        avatar_color = colors[name_hash % len(colors)]
+
+    return templates.TemplateResponse(request, "admin/user_profile.html", {
+        "user": user,
+        "target_user": target_user,
+        "employee": employee,
+        "today_j": today_j,
+        "age": age,
+        "birth_j_display": birth_j_display,
+        "service": service,
+        "hire_j_display": hire_j_display,
+        "termination_j_display": termination_j_display,
+        "avatar_initials": avatar_initials,
+        "avatar_color": avatar_color,
+        "is_admin": True,
+        "is_super_admin": user.is_super_admin,
+    })
+
+
+@router.get("/profile/{target_user_id}/edit", response_class=HTMLResponse)
+async def admin_edit_profile_page(
+    request: Request,
+    target_user_id: str,
+    user: User = Depends(require_super_admin),
+    db: Session = Depends(get_db)
+):
+    """صفحه ویرایش پروفایل (فقط مدیر ارشد)"""
+    employee = db.query(Employee).filter(Employee.user_id == target_user_id).first()
+    if not employee:
+        return RedirectResponse(url=f"/admin/profile/{target_user_id}", status_code=302)
+
+    # تبدیل تاریخ‌ها به شمسی برای فرم
+    birth_j_value = ""
+    if employee.birth_date:
+        birth_j_value = jdatetime.date.fromgregorian(date=employee.birth_date).strftime('%Y/%m/%d')
+
+    hire_j_value = ""
+    if employee.hire_date:
+        hire_j_value = jdatetime.date.fromgregorian(date=employee.hire_date).strftime('%Y/%m/%d')
+
+    term_j_value = ""
+    if employee.termination_date:
+        term_j_value = jdatetime.date.fromgregorian(date=employee.termination_date).strftime('%Y/%m/%d')
+
+    return templates.TemplateResponse(request, "admin/edit_user.html", {
+        "user": user,
+        "employee": employee,
+        "birth_j_value": birth_j_value,
+        "hire_j_value": hire_j_value,
+        "term_j_value": term_j_value,
+        "is_admin": True,
+        "is_super_admin": True,
+    })
+
+
+@router.post("/profile/{target_user_id}/edit")
+async def admin_edit_profile_submit(
+    request: Request,
+    target_user_id: str,
+    first_name: str = Form(...),
+    last_name: str = Form(...),
+    father_name: str = Form(""),
+    national_code: str = Form(""),
+    birth_date_str: str = Form(""),
+    gender: str = Form(""),
+    marital_status: str = Form(""),
+    email: str = Form(""),
+    hire_date_str: str = Form(""),
+    department: str = Form(""),
+    position: str = Form(""),
+    notes: str = Form(""),
+    is_active: str = Form(""),
+    termination_date_str: str = Form(""),
+    termination_reason: str = Form(""),
+    user: User = Depends(require_super_admin),
+    db: Session = Depends(get_db)
+):
+    """ذخیره ویرایش پروفایل"""
+    employee = db.query(Employee).filter(Employee.user_id == target_user_id).first()
+    if not employee:
+        return RedirectResponse(url="/admin/users", status_code=302)
+
+    try:
+        employee.first_name = first_name.strip()
+        employee.last_name = last_name.strip()
+        employee.father_name = father_name.strip() or None
+        employee.national_code = national_code.strip() or None
+        employee.gender = gender or None
+        employee.marital_status = marital_status or None
+        employee.email = email.strip() or None
+        employee.department = department or None
+        employee.position = position.strip() or None
+        employee.notes = notes.strip() or None
+
+        # تاریخ‌ها
+        if birth_date_str.strip():
+            employee.birth_date = jdatetime.datetime.strptime(birth_date_str.strip(), "%Y/%m/%d").date().togregorian()
+        else:
+            employee.birth_date = None
+
+        if hire_date_str.strip():
+            employee.hire_date = jdatetime.datetime.strptime(hire_date_str.strip(), "%Y/%m/%d").date().togregorian()
+        else:
+            employee.hire_date = None
+
+        # وضعیت فعال/غیرفعال
+        employee.is_active = (is_active == "on")
+
+        if employee.is_active:
+            # اگر فعال شد، اطلاعات ترک کار پاک شود
+            employee.termination_date = None
+            employee.termination_reason = None
+        else:
+            if termination_date_str.strip():
+                employee.termination_date = jdatetime.datetime.strptime(termination_date_str.strip(), "%Y/%m/%d").date().togregorian()
+            if termination_reason.strip():
+                employee.termination_reason = termination_reason.strip()
+
+        db.commit()
+        return RedirectResponse(url=f"/admin/profile/{target_user_id}?saved=1", status_code=302)
+    except Exception as e:
+        db.rollback()
+        return RedirectResponse(url=f"/admin/profile/{target_user_id}/edit?error={str(e)}", status_code=302)
+
+
+@router.post("/users/{target_user_id}/reset-password")
+async def admin_reset_password(
+        target_user_id: str,
+        user: User = Depends(require_super_admin),
+        db: Session = Depends(get_db)
+):
+    """ریست رمز عبور به کد ملی (فقط مدیر ارشد)"""
+    target_user = db.query(User).filter(User.user_id == target_user_id).first()
+    if not target_user:
+        return RedirectResponse(url="/admin/users", status_code=302)
+
+    employee = db.query(Employee).filter(Employee.user_id == target_user_id).first()
+
+    # ✅ حالت 1: اصلاً پروفایل ندارد
+    if not employee:
+        return RedirectResponse(
+            url=f"/admin/profile/{target_user_id}?error=no-profile",
+            status_code=302
+        )
+
+    # ✅ حالت 2: کد ملی خالی است
+    if not employee.national_code or not employee.national_code.strip():
+        return RedirectResponse(
+            url=f"/admin/profile/{target_user_id}?error=no-national-code",
+            status_code=302
+        )
+
+    target_user.password_hash = hash_password(employee.national_code)
+    target_user.must_change_password = True
+    db.commit()
+
+    return RedirectResponse(url=f"/admin/profile/{target_user_id}?password_reset=1", status_code=302)
+
+
+@router.post("/users/{target_user_id}/change-role")
+async def admin_change_role(
+    target_user_id: str,
+    new_role: str = Form(...),
+    user: User = Depends(require_super_admin),
+    db: Session = Depends(get_db)
+):
+    """تغییر نقش کاربر (فقط مدیر ارشد)"""
+    if new_role not in ('user', 'admin', 'super_admin'):
+        return RedirectResponse(url="/admin/users?error=invalid-role", status_code=302)
+
+    target_user = db.query(User).filter(User.user_id == target_user_id).first()
+    if not target_user:
+        return RedirectResponse(url="/admin/users", status_code=302)
+
+    # جلوگیری از تغییر نقش خود
+    if target_user.user_id == user.user_id:
+        return RedirectResponse(url="/admin/users?error=self-role", status_code=302)
+
+    target_user.role = new_role
+    db.commit()
+
+    return RedirectResponse(url=f"/admin/profile/{target_user_id}?role_changed=1", status_code=302)
+
+
+@router.post("/users/{target_user_id}/toggle-web")
+async def admin_toggle_web(
+    target_user_id: str,
+    user: User = Depends(require_super_admin),
+    db: Session = Depends(get_db)
+):
+    """فعال/غیرفعال کردن دسترسی وب (فقط مدیر ارشد)"""
+    target_user = db.query(User).filter(User.user_id == target_user_id).first()
+    if not target_user:
+        return RedirectResponse(url="/admin/users", status_code=302)
+
+    # جلوگیری از غیرفعال کردن خود
+    if target_user.user_id == user.user_id:
+        return RedirectResponse(url="/admin/users?error=self-disable", status_code=302)
+
+    target_user.web_enabled = not target_user.web_enabled
+    db.commit()
+
+    return RedirectResponse(url=f"/admin/profile/{target_user_id}?web_toggled=1", status_code=302)
