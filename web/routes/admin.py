@@ -55,25 +55,104 @@ async def admin_dashboard(
     })
 
 
+from sqlalchemy import or_
+
+
 @router.get("/users", response_class=HTMLResponse)
 async def admin_users(
     request: Request,
+    search: Optional[str] = Query(None),
+    department: Optional[str] = Query(None),
+    role: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    web_status: Optional[str] = Query(None),
+    show_all: Optional[str] = Query(None),
     user: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
-    users = db.query(User).order_by(User.user_id).all()
+    """مدیریت کاربران با فیلتر و جستجو"""
+    has_filter = any([search, department, role, status, web_status, show_all])
 
     user_details = []
-    for u in users:
-        emp = db.query(Employee).filter(Employee.user_id == u.user_id).first()
-        user_details.append({'web_user': u, 'employee': emp})
+    total_count = 0
+
+    if has_filter:
+        query = db.query(User)
+
+        # 🆕 بررسی اینکه آیا نیاز به join با Employee داریم
+        needs_employee_join = any([search, department, status])
+        if needs_employee_join:
+            query = query.outerjoin(Employee, User.user_id == Employee.user_id)
+
+        # 🔍 جستجو (بدون join مجدد)
+        if search and search.strip():
+            search_term = search.strip()
+            query = query.filter(
+                or_(
+                    User.user_id.ilike(f"%{search_term}%"),
+                    User.name.ilike(f"%{search_term}%"),
+                    Employee.first_name.ilike(f"%{search_term}%"),
+                    Employee.last_name.ilike(f"%{search_term}%"),
+                    Employee.national_code.ilike(f"%{search_term}%")
+                )
+            )
+
+        # 🏢 فیلتر دپارتمان (بدون join مجدد)
+        if department:
+            query = query.filter(Employee.department == department)
+
+        # 🎭 فیلتر نقش
+        if role:
+            query = query.filter(User.role == role)
+
+        # ✅ فیلتر وضعیت فعال/غیرفعال (بدون join مجدد)
+        if status == 'active':
+            query = query.filter(Employee.is_active == True)
+        elif status == 'inactive':
+            query = query.filter(Employee.is_active == False)
+
+        # 🌐 فیلتر وضعیت وب
+        if web_status == 'enabled':
+            query = query.filter(User.web_enabled == True)
+        elif web_status == 'disabled':
+            query = query.filter(User.web_enabled == False)
+
+        users = query.order_by(User.user_id).all()
+
+        # ساخت لیست نتایج
+        for wu in users:
+            emp = db.query(Employee).filter(Employee.user_id == wu.user_id).first()
+
+            last_login_display = None
+            if wu.last_login:
+                try:
+                    last_login_j = jdatetime.datetime.fromgregorian(datetime=wu.last_login)
+                    last_login_display = last_login_j.strftime('%Y/%m/%d - %H:%M')
+                except Exception:
+                    last_login_display = wu.last_login.strftime('%Y/%m/%d - %H:%M')
+
+            user_details.append({
+                'web_user': wu,
+                'employee': emp,
+                'last_login_display': last_login_display,
+            })
+
+        total_count = len(user_details)
 
     return templates.TemplateResponse(request, "admin/users.html", {
         "user": user,
         "users": user_details,
         "is_admin": True,
+        "is_super_admin": user.is_super_admin,
+        "total_count": total_count,
+        "has_filter": has_filter,
+        "show_all": show_all,
+        "search": search or "",
+        "department": department or "",
+        "role": role or "",
+        "status": status or "",
+        "web_status": web_status or "",
     })
-
 
 @router.get("/attendance", response_class=HTMLResponse)
 async def admin_attendance(

@@ -144,6 +144,15 @@ async def dashboard(
             'is_expired': days_remaining is not None and days_remaining < 0,
         }
 
+    # 🆕 تبدیل آخرین ورود به شمسی
+    last_login_display = None
+    if user.last_login:
+        try:
+            last_login_j = jdatetime.datetime.fromgregorian(datetime=user.last_login)
+            last_login_display = last_login_j.strftime('%Y/%m/%d - %H:%M')
+        except Exception:
+            last_login_display = user.last_login.strftime('%Y/%m/%d - %H:%M')
+
     return templates.TemplateResponse(request, "dashboard.html", {
         "user": user,
         "employee": employee,
@@ -155,4 +164,5 @@ async def dashboard(
         "month_attendance_count": month_attendance_count,
         "contract_info": contract_info,  # 🆕
         "is_admin": user.is_admin,
+        "last_login_display": last_login_display,
     })

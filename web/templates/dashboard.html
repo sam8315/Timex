@@ -2,7 +2,16 @@
 {% block title %}داشبورد{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <h4><i class="bi bi-house-door"></i> داشبورد</h4>
+    <div>
+        <h4><i class="bi bi-house-door"></i> داشبورد</h4>
+        <!-- 🆕 خوش‌آمدگویی و آخرین ورود -->
+        <small class="text-muted">
+            👋 خوش آمدید، {{ user.name }}
+            {% if last_login_display %}
+            | <i class="bi bi-clock-history"></i> آخرین ورود: {{ last_login_display }}
+            {% endif %}
+        </small>
+    </div>
     <span class="text-muted">{{ today_j.strftime('%Y/%m/%d') }}</span>
 </div>
 

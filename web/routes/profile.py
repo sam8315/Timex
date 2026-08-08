@@ -88,6 +88,15 @@ async def profile_page(
     if employee and employee.termination_date:
         termination_j_display = jdatetime.date.fromgregorian(date=employee.termination_date).strftime('%Y/%m/%d')
 
+    # 🆕 تبدیل آخرین ورود به شمسی
+    last_login_display = None
+    if user.last_login:
+        try:
+            last_login_j = jdatetime.datetime.fromgregorian(datetime=user.last_login)
+            last_login_display = last_login_j.strftime('%Y/%m/%d - %H:%M')
+        except Exception:
+            last_login_display = user.last_login.strftime('%Y/%m/%d - %H:%M')
+
     return templates.TemplateResponse(request, "profile.html", {
         "user": user,
         "employee": employee,
@@ -101,4 +110,5 @@ async def profile_page(
         "termination_j_display": termination_j_display,
         "is_admin": user.is_admin,
         "photo_path": employee.photo_path if employee else None,
+        "last_login_display": last_login_display,
     })
