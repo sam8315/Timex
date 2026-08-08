@@ -50,6 +50,8 @@ class Employee(TimestampMixin, Base):
 
     # Relationships
     user = relationship("User", backref="employee")
+    # 🆕 عکس پروفایل
+    photo_path: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
     def __repr__(self) -> str:
         status = "فعال" if self.is_active else "غیرفعال"
@@ -100,4 +102,5 @@ class Employee(TimestampMixin, Base):
             'notes': self.notes,
             'created_at': self.created_at,
             'updated_at': self.updated_at,
+            'photo_path': self.photo_path,
         }

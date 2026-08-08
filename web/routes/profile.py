@@ -100,4 +100,5 @@ async def profile_page(
         "avatar_color": avatar_color,
         "termination_j_display": termination_j_display,
         "is_admin": user.is_admin,
+        "photo_path": employee.photo_path if employee else None,
     })

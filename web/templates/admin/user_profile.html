@@ -45,6 +45,24 @@
     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
 </div>
 {% endif %}
+{% if request.query_params.get('photo_uploaded') %}
+<div class="alert alert-success alert-dismissible fade show">
+    <i class="bi bi-camera"></i> عکس پروفایل با موفقیت آپلود شد
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+{% if request.query_params.get('photo_deleted') %}
+<div class="alert alert-info alert-dismissible fade show">
+    <i class="bi bi-trash"></i> عکس پروفایل حذف شد
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+{% if request.query_params.get('error') %}
+<div class="alert alert-danger alert-dismissible fade show">
+    <i class="bi bi-exclamation-triangle"></i> {{ request.query_params.get('error') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
 <!-- هدر -->
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h4>
@@ -72,12 +90,20 @@
     <div class="card-body p-0">
         <div style="height: 120px; background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);"></div>
         <div class="px-4 pb-4">
-            <div class="d-flex flex-wrap align-items-end justify-content-between" style="margin-top: -50px;">
+            <div class="d-flex flex-wrap align-items-end justify-content-between" >
                 <div class="d-flex align-items-end">
+                    <!-- 🆕 آواتار با عکس یا حروف اول -->
+                    {% if employee and employee.photo_path %}
+                    <img src="{{ employee.photo_path }}?v={{ employee.updated_at.timestamp() | int }}"
+                         class="rounded-circle border border-4 border-white shadow"
+                         style="width: 110px; height: 110px; object-fit: cover;margin-top: -50px;"
+                         alt="{{ employee.full_name }}">
+                    {% else %}
                     <div class="rounded-circle bg-{{ avatar_color }} text-white d-flex align-items-center justify-content-center border border-4 border-white shadow"
                          style="width: 110px; height: 110px; font-size: 2.2rem; font-weight: bold;">
                         {{ avatar_initials }}
                     </div>
+                    {% endif %}
                     <div class="ms-3 mb-2">
                         <h3 class="mb-1">
                             {{ employee.full_name if employee else target_user.name }}
@@ -259,6 +285,30 @@
             <div class="card-body">
                 {% if is_super_admin %}
                 <div class="d-grid gap-2">
+                                        <!-- 🆕 آپلود عکس پروفایل -->
+                    <form method="post" action="/admin/profile/{{ target_user.user_id }}/upload-photo"
+                          enctype="multipart/form-data" class="mb-2">
+                        <div class="input-group">
+                            <input type="file" name="file" class="form-control" accept=".jpg,.jpeg,.png,.webp" required>
+                            <button type="submit" class="btn btn-success">
+                                <i class="bi bi-camera"></i> آپلود عکس
+                            </button>
+                        </div>
+                        <small class="text-muted d-block mt-1">
+                            <i class="bi bi-info-circle"></i>
+                            JPG, PNG, WEBP - حداکثر 2MB
+                        </small>
+                    </form>
+
+                    <!-- حذف عکس -->
+                    {% if employee and employee.photo_path %}
+                    <form method="post" action="/admin/profile/{{ target_user.user_id }}/delete-photo"
+                          onsubmit="return confirm('آیا مطمئن هستید که می‌خواهید عکس پروفایل را حذف کنید؟');">
+                        <button type="submit" class="btn btn-outline-danger w-100 mb-2">
+                            <i class="bi bi-trash"></i> حذف عکس پروفایل
+                        </button>
+                    </form>
+                    {% endif %}
                     <!-- ویرایش -->
                     <a href="/admin/profile/{{ target_user.user_id }}/edit" class="btn btn-warning">
                         <i class="bi bi-pencil"></i> ویرایش اطلاعات کارمند

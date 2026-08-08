@@ -10,13 +10,20 @@
 
         <!-- اطلاعات اصلی -->
         <div class="px-4 pb-4">
-            <div class="d-flex flex-wrap align-items-end justify-content-between" style="margin-top: -50px;">
+            <div class="d-flex flex-wrap align-items-end justify-content-between" >
                 <div class="d-flex align-items-end">
-                    <!-- آواتار -->
+                    <!-- 🆕 آواتار با عکس یا حروف اول -->
+                    {% if photo_path %}
+                    <img src="{{ photo_path }}?v={{ employee.updated_at.timestamp() | int if employee else 0 }}"
+                         class="rounded-circle border border-4 border-white shadow"
+                         style="width: 110px; height: 110px; object-fit: cover;margin-top: -50px;"
+                         alt="{{ employee.full_name if employee else user.name }}">
+                    {% else %}
                     <div class="rounded-circle bg-{{ avatar_color }} text-white d-flex align-items-center justify-content-center border border-4 border-white shadow"
                          style="width: 110px; height: 110px; font-size: 2.2rem; font-weight: bold;">
                         {{ avatar_initials }}
                     </div>
+                    {% endif %}
 
                     <!-- نام و اطلاعات -->
                     <div class="ms-3 mb-2">

@@ -12,6 +12,9 @@ from sqlalchemy import and_, func
 import jdatetime
 from typing import Optional
 from fastapi import Query
+from fastapi import UploadFile, File
+from pathlib import Path
+import os
 
 # 🆕 import تابع تحلیل وضعیت از صفحه کاربر عادی
 from web.routes.attendance import (
@@ -669,3 +672,99 @@ async def admin_toggle_web(
     db.commit()
 
     return RedirectResponse(url=f"/admin/profile/{target_user_id}?web_toggled=1", status_code=302)
+
+
+# 🆕 تنظیمات آپلود عکس
+UPLOAD_DIR = Path(__file__).parent.parent / "static" / "uploads" / "avatars"
+ALLOWED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp'}
+MAX_FILE_SIZE = 2 * 1024 * 1024  # 2 مگابایت
+
+
+@router.post("/profile/{target_user_id}/upload-photo")
+async def admin_upload_photo(
+    target_user_id: str,
+    file: UploadFile = File(...),
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """آپلود عکس پروفایل کاربر (توسط مدیر)"""
+    # اعتبارسنجی نوع فایل
+    ext = Path(file.filename).suffix.lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        return RedirectResponse(
+            url=f"/admin/profile/{target_user_id}?error=نوع فایل مجاز نیست (فقط JPG/PNG/WEBP)",
+            status_code=302
+        )
+
+    # بررسی اندازه فایل
+    content = await file.read()
+    if len(content) > MAX_FILE_SIZE:
+        return RedirectResponse(
+            url=f"/admin/profile/{target_user_id}?error=حجم فایل بیش از 2 مگابایت است",
+            status_code=302
+        )
+
+    # بررسی وجود کارمند
+    employee = db.query(Employee).filter(Employee.user_id == target_user_id).first()
+    if not employee:
+        return RedirectResponse(url="/admin/users", status_code=302)
+
+    try:
+        # ساخت پوشه اگر وجود ندارد
+        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+        # حذف عکس قبلی
+        if employee.photo_path:
+            old_file = Path(__file__).parent.parent / "static" / employee.photo_path.replace("/static/", "").replace("\\", "/")
+            if old_file.exists():
+                old_file.unlink()
+
+        # ذخیره فایل جدید با نام user_id
+        filename = f"{target_user_id}{ext}"
+        file_path = UPLOAD_DIR / filename
+
+        with open(file_path, 'wb') as f:
+            f.write(content)
+
+        # آپدیت دیتابیس
+        employee.photo_path = f"/static/uploads/avatars/{filename}"
+        db.commit()
+
+        return RedirectResponse(
+            url=f"/admin/profile/{target_user_id}?photo_uploaded=1",
+            status_code=302
+        )
+    except Exception as e:
+        return RedirectResponse(
+            url=f"/admin/profile/{target_user_id}?error=خطا در آپلود: {str(e)}",
+            status_code=302
+        )
+
+
+@router.post("/profile/{target_user_id}/delete-photo")
+async def admin_delete_photo(
+    target_user_id: str,
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """حذف عکس پروفایل کاربر"""
+    employee = db.query(Employee).filter(Employee.user_id == target_user_id).first()
+    if not employee:
+        return RedirectResponse(url="/admin/users", status_code=302)
+
+    if employee.photo_path:
+        # حذف فایل
+        file_path = Path(__file__).parent.parent / "static" / employee.photo_path.replace("/static/", "").replace("\\", "/")
+        if file_path.exists():
+            try:
+                file_path.unlink()
+            except Exception:
+                pass
+
+        employee.photo_path = None
+        db.commit()
+
+    return RedirectResponse(
+        url=f"/admin/profile/{target_user_id}?photo_deleted=1",
+        status_code=302
+    )
