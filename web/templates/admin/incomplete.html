@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+{% block title %}ترددهای ناقص | پنل مدیریت{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4><i class="bi bi-exclamation-triangle text-warning"></i> ترددهای ناقص</h4>
+    <a href="/admin/" class="btn btn-outline-primary btn-sm">
+        <i class="bi bi-arrow-right"></i> بازگشت به پنل مدیریت
+    </a>
+</div>
+
+<!-- فیلترها -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" action="/admin/incomplete">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <label class="form-label">📅 از تاریخ (شمسی)</label>
+                    <input type="text" name="from_date_str" class="form-control"
+                           value="{{ from_date_str }}" placeholder="1405/05/01">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">📅 تا تاریخ (شمسی)</label>
+                    <input type="text" name="to_date_str" class="form-control"
+                           value="{{ to_date_str }}" placeholder="1405/05/19">
+                </div>
+<div class="col-md-2">
+    <label class="form-label">🏢 دپارتمان</label>
+    <select name="department" class="form-select">
+        <option value="">همه</option>
+        <option value="1" {% if department|default('') == '1' %}selected{% endif %}>رسمی</option>
+        <option value="2" {% if department|default('') == '2' %}selected{% endif %}>وظیفه</option>
+        <option value="3" {% if department|default('') == '3' %}selected{% endif %}>خریدخدمت</option>
+        <option value="4" {% if department|default('') == '4' %}selected{% endif %}>قراردادی</option>
+        <option value="5" {% if department|default('') == '5' %}selected{% endif %}>پزشک</option>
+    </select>
+</div>                <div class="col-md-2">
+                    <label class="form-label">⚠️ نوع نقص</label>
+                    <select name="issue_type" class="form-select">
+                        <option value="">همه</option>
+                        <option value="missing_enter" {% if issue_type == 'missing_enter' %}selected{% endif %}>خروج بدون ورود</option>
+                        <option value="missing_exit" {% if issue_type == 'missing_exit' %}selected{% endif %}>ورود بدون خروج</option>
+                        <option value="imbalance" {% if issue_type == 'imbalance' %}selected{% endif %}>عدم تعادل</option>
+                        <option value="sequence_error" {% if issue_type == 'sequence_error' %}selected{% endif %}>خطای ترتیب</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">🌙 شیفت شب</label>
+                    <select name="include_night_shift" class="form-select">
+                        <option value="0" {% if include_night_shift == '0' %}selected{% endif %}>حذف شیفت شب</option>
+                        <option value="1" {% if include_night_shift == '1' %}selected{% endif %}>نمایش همه</option>
+                    </select>
+                </div>
+            </div>
+            <div class="mt-3 d-flex gap-2">
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-search"></i> اعمال فیلترها
+                </button>
+                <a href="/admin/incomplete?show_all=1" class="btn btn-success {% if show_all %}disabled{% endif %}">
+                    <i class="bi bi-list"></i> نمایش همه
+                </a>
+                {% if has_filter %}
+                <a href="/admin/incomplete" class="btn btn-outline-secondary">
+                    <i class="bi bi-x-circle"></i> پاک کردن فیلترها
+                </a>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 📊 نمایش نتایج -->
+{% if not has_filter %}
+<!-- حالت اولیه: هیچ فیلتری اعمال نشده -->
+<div class="card">
+    <div class="card-body text-center py-5">
+        <i class="bi bi-search display-4 text-muted"></i>
+        <h5 class="mt-3 text-muted">برای مشاهده ترددهای ناقص، فیلتر اعمال کنید</h5>
+        <p class="text-muted">
+            می‌توانید بازه زمانی، دپارتمان یا نوع نقص را مشخص کنید
+            <br>
+            یا روی دکمه <strong>"نمایش همه ترددهای ناقص ماه جاری"</strong> کلیک کنید
+        </p>
+        <a href="/admin/incomplete?show_all=1" class="btn btn-warning mt-2">
+            <i class="bi bi-list"></i> نمایش همه ترددهای ناقص ماه جاری
+        </a>
+    </div>
+</div>
+
+{% elif stats.total == 0 %}
+<!-- هیچ نتیجه‌ای یافت نشد -->
+<div class="card">
+    <div class="card-body text-center py-5">
+        <i class="bi bi-check-circle display-4 text-success"></i>
+        <h5 class="mt-3 text-success">هیچ تردد ناقصی یافت نشد!</h5>
+        <p class="text-muted">
+            در بازه زمانی انتخاب شده، همه ترددها کامل هستند
+        </p>
+        <a href="/admin/incomplete" class="btn btn-outline-secondary mt-2">
+            <i class="bi bi-arrow-clockwise"></i> پاک کردن فیلترها
+        </a>
+    </div>
+</div>
+
+{% else %}
+<!-- آمار -->
+<div class="row g-4 mb-4">
+    <div class="col-md-2">
+        <div class="card bg-danger text-white">
+            <div class="card-body text-center">
+                <h3>{{ stats.total }}</h3>
+                <small>کل ناقص‌ها</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card bg-warning text-dark">
+            <div class="card-body text-center">
+                <h3>{{ stats.missing_enter }}</h3>
+                <small>➡️ خروج بدون ورود</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card bg-warning text-dark">
+            <div class="card-body text-center">
+                <h3>{{ stats.missing_exit }}</h3>
+                <small>⬅️ ورود بدون خروج</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card bg-info text-white">
+            <div class="card-body text-center">
+                <h3>{{ stats.imbalance }}</h3>
+                <small>⚠️ عدم تعادل</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card bg-secondary text-white">
+            <div class="card-body text-center">
+                <h3>{{ stats.sequence_error }}</h3>
+                <small>❌ خطای ترتیب</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- جدول ترددهای ناقص -->
+{% for dept, items in by_department.items() %}
+<div class="card mb-4">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h6 class="mb-0">
+            <i class="bi bi-building"></i>
+            {{ dept_names.get(dept, dept) }}
+        </h6>
+        <span class="badge bg-primary">{{ items | length }} مورد</span>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>ردیف</th>
+                        <th>تاریخ</th>
+                        <th>کد</th>
+                        <th>نام کامل</th>
+                        <th class="text-center">وضعیت</th>
+                        <th class="text-center">ورود</th>
+                        <th class="text-center">خروج</th>
+                        <th class="text-center">جزئیات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in items %}
+                    <tr class="{% if item.is_night_shift %}table-info{% endif %}">
+                        <td>{{ loop.index }}</td>
+                        <td>{{ item.date_j }}</td>
+                        <td>{{ item.user_id }}</td>
+                        <td>{{ item.full_name }}</td>
+                        <td class="text-center">
+                            {% if item.issue == 'missing_enter' %}
+                            <span class="badge bg-warning text-dark">➡️ خروج بدون ورود</span>
+                            {% elif item.issue == 'missing_exit' %}
+                            <span class="badge bg-warning text-dark">⬅️ ورود بدون خروج</span>
+                            {% elif item.issue == 'imbalance' %}
+                            <span class="badge bg-info">⚠️ عدم تعادل</span>
+                            {% elif item.issue == 'sequence_error' %}
+                            <span class="badge bg-danger">❌ خطای ترتیب</span>
+                            {% endif %}
+                            {% if item.is_night_shift %}
+                            <span class="badge bg-info">🌙 شب</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            <span class="badge bg-success">{{ item.enter_count }}</span>
+                        </td>
+                        <td class="text-center">
+                            <span class="badge bg-danger">{{ item.exit_count }}</span>
+                        </td>
+                        <td class="text-center">
+                            <a href="/admin/attendance/user/{{ item.user_id }}?year={{ item.year_j }}&month={{ item.month_j }}"
+                               class="btn btn-sm btn-outline-primary" title="مشاهده و اصلاح">
+                                <i class="bi bi-eye"></i> مشاهده
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endfor %}
+
+{% endif %}
+
+{% endblock %}

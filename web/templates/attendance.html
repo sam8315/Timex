@@ -1,0 +1,243 @@
+{% extends "base.html" %}
+{% block title %}رکوردهای تردد{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4><i class="bi bi-calendar-check"></i> رکوردهای تردد</h4>
+    <span class="badge bg-primary fs-6">{{ month_name }} {{ year }}</span>
+</div>
+
+<!-- 🆕 نوار ناوبری ماه/سال -->
+<div class="card mb-4">
+    <div class="card-body py-3">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+            <!-- دکمه‌های ناوبری -->
+            <div class="d-flex align-items-center gap-2">
+                <a href="/attendance?year={{ prev_year }}&month={{ prev_month }}{% if status_filter != 'all' %}&filter={{ status_filter }}{% endif %}"
+                   class="btn btn-outline-primary btn-sm">
+                    <i class="bi bi-chevron-right"></i> ماه قبل
+                </a>
+                <a href="/attendance?year={{ next_year }}&month={{ next_month }}{% if status_filter != 'all' %}&filter={{ status_filter }}{% endif %}"
+                   class="btn btn-outline-primary btn-sm">
+                    ماه بعد <i class="bi bi-chevron-left"></i>
+                </a>
+                {% if not is_current_month %}
+                <a href="/attendance" class="btn btn-success btn-sm">
+                    <i class="bi bi-calendar-today"></i> ماه جاری
+                </a>
+                {% endif %}
+            </div>
+
+            <!-- فرم انتخاب مستقیم -->
+            <form method="get" action="/attendance" class="d-flex align-items-center gap-2">
+                <select name="year" class="form-select form-select-sm" style="width: auto;">
+                    {% for y in available_years %}
+                    <option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>
+                    {% endfor %}
+                </select>
+                <select name="month" class="form-select form-select-sm" style="width: auto;">
+                    {% for m in months_list %}
+                    <option value="{{ m.num }}" {% if m.num == month %}selected{% endif %}>{{ m.name }}</option>
+                    {% endfor %}
+                </select>
+                {% if status_filter != 'all' %}
+                <input type="hidden" name="filter" value="{{ status_filter }}">
+                {% endif %}
+                <button type="submit" class="btn btn-primary btn-sm">
+                    <i class="bi bi-search"></i> نمایش
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- فیلتر وضعیت -->
+<div class="card mb-4">
+    <div class="card-body py-2">
+        <div class="d-flex flex-wrap align-items-center gap-2">
+            <span class="text-muted"><i class="bi bi-funnel"></i> فیلتر:</span>
+            <a href="/attendance?year={{ year }}&month={{ month }}"
+               class="btn btn-sm {% if status_filter == 'all' %}btn-primary{% else %}btn-outline-primary{% endif %}">
+                همه
+            </a>
+            <a href="/attendance?year={{ year }}&month={{ month }}&filter=complete"
+               class="btn btn-sm {% if status_filter == 'complete' %}btn-success{% else %}btn-outline-success{% endif %}">
+                ✅ کامل
+            </a>
+            <a href="/attendance?year={{ year }}&month={{ month }}&filter=night_shift"
+               class="btn btn-sm {% if status_filter == 'night_shift' %}btn-info{% else %}btn-outline-info{% endif %}">
+                🌙 شیفت شب
+            </a>
+            <a href="/attendance?year={{ year }}&month={{ month }}&filter=issues"
+               class="btn btn-sm {% if status_filter == 'issues' %}btn-danger{% else %}btn-outline-danger{% endif %}">
+                ⚠️ دارای مشکل
+            </a>
+            <a href="/attendance?year={{ year }}&month={{ month }}&filter=friday_holiday"
+               class="btn btn-sm {% if status_filter == 'friday_holiday' %}btn-warning{% else %}btn-outline-warning{% endif %}">
+                🟡 جمعه/تعطیل
+            </a>
+            <a href="/attendance?year={{ year }}&month={{ month }}&filter=no_attendance"
+               class="btn btn-sm {% if status_filter == 'no_attendance' %}btn-secondary{% else %}btn-outline-secondary{% endif %}">
+                ⚪ بدون تردد
+            </a>
+        </div>
+    </div>
+</div>
+<!-- آمار کلی -->
+<div class="row g-4 mb-4">
+    <div class="col-md-4">
+        <div class="card bg-primary text-white">
+            <div class="card-body text-center">
+                <h3>{{ total_records }}</h3>
+                <small>کل رکوردها</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card bg-success text-white">
+            <div class="card-body text-center">
+                <h3>{{ days | length }}</h3>
+                <small>روزهای نمایش داده شده</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card bg-info text-white">
+            <div class="card-body text-center">
+                <h3>{{ "%.1f" | format(days | sum(attribute='work_hours')) }}</h3>
+                <small>مجموع ساعات</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- جدول تردد -->
+<div class="card">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>تاریخ</th>
+                        <th>روز</th>
+                        <th>اولین ورود</th>
+                        <th>آخرین خروج</th>
+                        <th>ساعات</th>
+                        <th>تردد</th>
+                        <th class="text-center">وضعیت</th>
+                        <th class="text-center">جزئیات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for day in days %}
+                    <tr class="{% if day.is_friday %}table-warning{% elif day.is_holiday %}table-danger{% endif %}">
+                        <td>{{ day.jalali_date }}</td>
+                        <td>
+                            {{ day.day_name }}
+                            {% if day.is_friday %}<span class="badge bg-warning text-dark">جمعه</span>{% endif %}
+                            {% if day.is_holiday %}<span class="badge bg-danger">تعطیل</span>{% endif %}
+                        </td>
+                        <td>
+                            {% if day.first_enter %}
+                            <span class="badge bg-success">{{ day.first_enter.strftime('%H:%M') }}</span>
+                            {% else %}<span class="text-muted">-</span>{% endif %}
+                        </td>
+                        <td>
+                            {% if day.last_exit %}
+                            <span class="badge bg-danger">{{ day.last_exit.strftime('%H:%M') }}</span>
+                            {% else %}<span class="text-muted">-</span>{% endif %}
+                        </td>
+                        <td>{{ "%.1f" | format(day.work_hours) }}</td>
+                        <td>
+                            <span class="badge {% if day.records | length > 2 %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+                                {{ day.records | length }}
+                            </span>
+                        </td>
+                        <td class="text-center">
+                            <span class="badge bg-{{ day.status.main_color }}">{{ day.status.main_label }}</span>
+                            {% for w in day.status.warnings %}
+                            <br><span class="badge bg-{{ w.color }} mt-1">{{ w.label }}</span>
+                            {% endfor %}
+                        </td>
+                        <td class="text-center">
+                            {% if day.records | length > 0 %}
+                            <button class="btn btn-sm btn-outline-primary"
+                                    data-bs-toggle="collapse"
+                                    data-bs-target="#details-{{ day.date.strftime('%Y%m%d') }}">
+                                <i class="bi bi-eye"></i>
+                                {% if day.status.main_status == 'sequence_error' %}
+                                <span class="badge bg-danger ms-1">!</span>
+                                {% endif %}
+                            </button>
+                            {% else %}
+                            <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+
+                    {% if day.records | length > 0 %}
+                    <tr>
+                        <td colspan="8" class="p-0">
+                            <div class="collapse" id="details-{{ day.date.strftime('%Y%m%d') }}">
+                                <div class="card card-body bg-light border-0 py-2">
+                                    <table class="table table-sm table-bordered mb-0">
+                                        <thead class="table-secondary">
+                                            <tr>
+                                                <th class="text-center">#</th>
+                                                <th class="text-center">ساعت</th>
+                                                <th class="text-center">نوع</th>
+                                                <th class="text-center">منبع</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for rec in day.records %}
+                                            <tr>
+                                                <td class="text-center">{{ loop.index }}</td>
+                                                <td class="text-center fw-bold">
+                                                    {{ rec.timestamp.strftime('%H:%M:%S') }}
+                                                    {% if rec.timestamp.date() > day.date %}
+                                                    <span class="badge bg-info">روز بعد</span>
+                                                    {% endif %}
+                                                </td>
+                                                <td class="text-center">
+                                                    {% if rec.punch == 0 %}
+                                                    <span class="badge bg-success">⬅️ ورود</span>
+                                                    {% else %}
+                                                    <span class="badge bg-danger">➡️ خروج</span>
+                                                    {% endif %}
+                                                </td>
+                                                <td class="text-center">
+                                                    {% if rec.source == 'D' %}📱 دستگاه
+                                                    {% elif rec.source == 'A' %}🌐 ADMS
+                                                    {% elif rec.source == 'L' %}✋ دستی
+                                                    {% else %}❓{% endif %}
+                                                </td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endif %}
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- راهنما -->
+<div class="card mt-3">
+    <div class="card-body py-2">
+        <small class="text-muted">
+            <strong>راهنمای وضعیت‌ها:</strong>
+            ✅ کامل | 🌙 شیفت شب | ⬅️ ورود بدون خروج | ➡️ خروج بدون ورود |
+            ❌ خطای ترتیب | ⚠️ عدم تعادل | ⚪ بدون تردد
+            <br>
+            <strong>هشدارها:</strong>
+            ⏱️ فاصله غیرعادی | 🔁 تردد تکراری | 🕐 ساعت غیرعادی | 🔢 تعداد زیاد | 🟡 جمعه‌کاری | 🔴 تعطیل‌کاری
+        </small>
+    </div>
+</div>
+{% endblock %}

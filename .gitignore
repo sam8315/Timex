@@ -13,3 +13,5 @@ dist
 build
 log/
 scripts/
+# Uploaded files
+web/static/uploads/

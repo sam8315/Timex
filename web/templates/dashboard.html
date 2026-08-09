@@ -1,0 +1,236 @@
+{% extends "base.html" %}
+{% block title %}داشبورد{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4><i class="bi bi-house-door"></i> داشبورد</h4>
+        <!-- 🆕 خوش‌آمدگویی و آخرین ورود -->
+        <small class="text-muted">
+            👋 خوش آمدید، {{ user.name }}
+            {% if last_login_display %}
+            | <i class="bi bi-clock-history"></i> آخرین ورود: {{ last_login_display }}
+            {% endif %}
+        </small>
+    </div>
+    <span class="text-muted">{{ today_j.strftime('%Y/%m/%d') }}</span>
+</div>
+
+<!-- کارت‌های آمار -->
+<div class="row g-4 mb-4">
+    <div class="col-md-3">
+        <div class="card stat-card bg-primary text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6>ترددهای این ماه</h6>
+                        <h2>{{ month_attendance_count }}</h2>
+                    </div>
+                    <i class="bi bi-calendar-check fs-1 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card bg-success text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6>مانده استحقاقی</h6>
+                        <h2>{{ balances.get('AL', 0) }} روز</h2>
+                    </div>
+                    <i class="bi bi-airplane fs-1 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card bg-warning text-dark">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6>درخواست‌های در انتظار</h6>
+                        <h2>{{ recent_requests | selectattr('status', 'equalto', 'P') | list | length }}</h2>
+                    </div>
+                    <i class="bi bi-hourglass-split fs-1 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+        <!-- 🆕 کارت قرارداد -->
+    <div class="col-md-3">
+        {% if contract_info %}
+        <div class="card stat-card {% if contract_info.is_expiring_soon %}bg-warning{% elif contract_info.is_expired %}bg-danger{% else %}bg-secondary{% endif %} text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6>مانده قرارداد</h6>
+                        {% if contract_info.days_remaining is not none %}
+                        <h2>{{ contract_info.days_remaining }} روز</h2>
+                        {% else %}
+                        <h2>نامحدود</h2>
+                        {% endif %}
+                    </div>
+                    <i class="bi bi-file-earmark-text fs-1 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div class="card stat-card bg-light border-danger">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="text-danger">قرارداد</h6>
+                        <h2 class="text-danger">ندارد ⚠️</h2>
+                    </div>
+                    <i class="bi bi-exclamation-triangle fs-1 text-danger opacity-50"></i>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- تردد امروز -->
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-white"><h6><i class="bi bi-clock"></i> تردد امروز</h6></div>
+            <div class="card-body">
+                {% if today_attendance %}
+                <table class="table table-sm">
+                    <thead><tr><th>ساعت</th><th>نوع</th></tr></thead>
+                    <tbody>
+                        {% for record in today_attendance %}
+                        <tr>
+                            <td>{{ record.timestamp.strftime('%H:%M') }}</td>
+                            <td>
+                                {% if record.punch == 0 %}
+                                <span class="badge bg-success">ورود</span>
+                                {% else %}
+                                <span class="badge bg-danger">خروج</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p class="text-muted text-center">هنوز ترددی ثبت نشده است</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- درخواست‌های اخیر -->
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-white"><h6><i class="bi bi-airplane"></i> درخواست‌های اخیر</h6></div>
+            <div class="card-body">
+                {% if recent_requests %}
+                <table class="table table-sm">
+                    <thead><tr><th>نوع</th><th>از</th><th>تا</th><th>وضعیت</th></tr></thead>
+                    <tbody>
+                        {% for req in recent_requests %}
+                        <tr>
+                            <td>{{ req.leave_type_name }}</td>
+                            <td>{{ req.from_date_j }}</td>
+                            <td>{{ req.to_date_j }}</td>
+                            <td>
+                                {% if req.status == 'P' %}<span class="badge bg-warning">{{ req.status_name }}</span>
+                                {% elif req.status == 'A' %}<span class="badge bg-success">{{ req.status_name }}</span>
+                                {% else %}<span class="badge bg-danger">{{ req.status_name }}</span>{% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p class="text-muted text-center">درخواستی ثبت نشده است</p>
+                {% endif %}
+            </div>
+        </div>
+    </div></div>
+<!-- 🆕 جزئیات قرارداد -->
+{% if contract_info %}
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <h6><i class="bi bi-file-earmark-text"></i> قرارداد فعال</h6>
+                <span class="badge {% if contract_info.is_expiring_soon %}bg-warning{% elif contract_info.is_expired %}bg-danger{% else %}bg-success{% endif %}">
+                    {{ contract_info.contract_type }}
+                </span>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="text-muted small">تاریخ شروع</div>
+                        <div class="fw-bold">{{ contract_info.start_date_j }}</div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-muted small">تاریخ پایان</div>
+                        <div class="fw-bold">{{ contract_info.end_date_j }}</div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-muted small">روزهای سپری شده</div>
+                        <div class="fw-bold">
+                            {% if contract_info.elapsed_days is not none %}
+                            {{ contract_info.elapsed_days }} روز
+                            {% else %}
+                            -
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-muted small">روزهای باقی‌مانده</div>
+                        <div class="fw-bold {% if contract_info.is_expiring_soon %}text-warning{% elif contract_info.is_expired %}text-danger{% else %}text-success{% endif %}">
+                            {% if contract_info.days_remaining is not none %}
+                            {{ contract_info.days_remaining }} روز
+                            {% else %}
+                            نامحدود
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- نوار پیشرفت -->
+                {% if contract_info.total_days %}
+                <div class="mt-3">
+                    <div class="d-flex justify-content-between mb-1">
+                        <small class="text-muted">پیشرفت قرارداد</small>
+                        <small class="text-muted">{{ contract_info.progress_percent }}%</small>
+                    </div>
+                    <div class="progress" style="height: 10px;">
+                        <div class="progress-bar {% if contract_info.progress_percent > 90 %}bg-danger{% elif contract_info.progress_percent > 75 %}bg-warning{% else %}bg-success{% endif %}"
+                             role="progressbar"
+                             style="width: {{ contract_info.progress_percent }}%"
+                             aria-valuenow="{{ contract_info.progress_percent }}"
+                             aria-valuemin="0"
+                             aria-valuemax="100">
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- هشدار پایان نزدیک -->
+                {% if contract_info.is_expiring_soon %}
+                <div class="alert alert-warning mt-3 mb-0">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    قرارداد شما کمتر از ۳۰ روز دیگر به پایان می‌رسد. لطفاً با واحد منابع انسانی تماس بگیرید.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="alert alert-danger">
+            <i class="bi bi-exclamation-triangle"></i>
+            شما قرارداد فعالی ندارید. لطفاً با واحد منابع انسانی تماس بگیرید.
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
