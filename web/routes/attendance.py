@@ -5,10 +5,11 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, func
+from sqlalchemy import and_, func, or_
 import jdatetime
 from typing import Optional, List, Dict
 
+from models.employee import Employee
 from web.dependencies import get_db, check_password_change
 from models.user import User
 from models.attendance import Attendance
@@ -422,14 +423,26 @@ async def attendance_page(
         )
     ).order_by(Attendance.timestamp).all()
 
-    # 🆕 دریافت تعطیلات ماه
-    holidays = db.query(Holiday).filter(
+    # 🆕 دریافت گروه کاربر (بر اساس دپارتمان)
+    user_group = Employee.department if Employee else None
+
+    # 🆕 دریافت تعطیلات: ملی + گروه کاربر
+    holiday_query = db.query(Holiday).filter(
         and_(
             Holiday.holiday_date >= month_start_g,
-            Holiday.holiday_date <= month_end_g,
-            Holiday.is_national == True
+            Holiday.holiday_date <= month_end_g
         )
-    ).all()
+    )
+    if user_group:
+        # ملی یا گروه کاربر
+        holiday_query = holiday_query.filter(
+            or_(Holiday.group_id == None, Holiday.group_id == user_group)
+        )
+    else:
+        # فقط ملی
+        holiday_query = holiday_query.filter(Holiday.group_id == None)
+
+    holidays = holiday_query.all()
     holiday_dates = {h.holiday_date: h.title for h in holidays}
 
     # گروه‌بندی بر اساس روز

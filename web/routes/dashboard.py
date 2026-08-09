@@ -144,14 +144,19 @@ async def dashboard(
             'is_expired': days_remaining is not None and days_remaining < 0,
         }
 
-    # 🆕 تبدیل آخرین ورود به شمسی
+    # 🆕 خواندن آخرین ورود قبلی از session
     last_login_display = None
-    if user.last_login:
+    previous_login_str = request.session.get('previous_login')
+    if previous_login_str:
         try:
-            last_login_j = jdatetime.datetime.fromgregorian(datetime=user.last_login)
+            from datetime import datetime
+            previous_login = datetime.fromisoformat(previous_login_str)
+            last_login_j = jdatetime.datetime.fromgregorian(datetime=previous_login)
             last_login_display = last_login_j.strftime('%Y/%m/%d - %H:%M')
         except Exception:
-            last_login_display = user.last_login.strftime('%Y/%m/%d - %H:%M')
+            last_login_display = previous_login_str
+    else:
+        last_login_display = "اولین ورود شما"
 
     return templates.TemplateResponse(request, "dashboard.html", {
         "user": user,

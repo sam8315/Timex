@@ -76,6 +76,13 @@ async def login_submit(
     # موفق
     user.failed_attempts = 0
     user.locked_until = None
+    # 🆕 ذخیره آخرین ورود قبلی در session (قبل از آپدیت)
+    if user.last_login:
+        request.session['previous_login'] = user.last_login.isoformat()
+    else:
+        request.session['previous_login'] = None
+
+    # آپدیت last_login به زمان فعلی
     user.last_login = datetime.now()
     db.commit()
 

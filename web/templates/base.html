@@ -80,6 +80,11 @@
                             <i class="bi bi-exclamation-triangle"></i> ترددهای ناقص
                         </a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if '/admin/holidays' in request.url.path %}active{% endif %}" href="/admin/holidays">
+                            <i class="bi bi-calendar-heart"></i> مدیریت تعطیلات
+                        </a>
+                    </li>
                     {% endif %}
                     <hr class="text-white-50 my-3">
                     <li class="nav-item">
