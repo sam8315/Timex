@@ -178,11 +178,14 @@
                             {% endfor %}
                         </td>
                         <td class="text-center">
-                            {% if day.records | length > 2 %}
+                            {% if day.records | length > 0 %}
                             <button class="btn btn-sm btn-outline-primary"
                                     data-bs-toggle="collapse"
                                     data-bs-target="#details-{{ day.date.strftime('%Y%m%d') }}">
                                 <i class="bi bi-eye"></i>
+                                {% if day.status.main_status == 'sequence_error' %}
+                                <span class="badge bg-danger ms-1">!</span>
+                                {% endif %}
                             </button>
                             {% else %}
                             <span class="text-muted">-</span>
@@ -190,7 +193,7 @@
                         </td>
                     </tr>
 
-                    {% if day.records | length > 2 %}
+                    {% if day.records | length > 0 %}
                     <tr>
                         <td colspan="8" class="p-0">
                             <div class="collapse" id="details-{{ day.date.strftime('%Y%m%d') }}">
@@ -202,6 +205,7 @@
                                                 <th class="text-center">ساعت</th>
                                                 <th class="text-center">نوع</th>
                                                 <th class="text-center">منبع</th>
+                                                <th class="text-center">عملیات</th>  <!-- 🆕 -->
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -227,8 +231,51 @@
                                                     {% elif rec.source == 'L' %}✋ دستی
                                                     {% else %}❓{% endif %}
                                                 </td>
+                                                <!-- 🆕 عملیات -->
+                                                <td class="text-center">
+                                                    <div class="btn-group btn-group-sm">
+                                                        <!-- تغییر وضعیت -->
+                                                        <form method="post" action="/admin/attendance/edit/change-punch" class="d-inline">
+                                                            <input type="hidden" name="record_id" value="{{ rec.id }}">
+                                                            <button type="submit" class="btn btn-outline-warning btn-sm"
+                                                                    title="تغییر به {% if rec.punch == 0 %}خروج{% else %}ورود{% endif %}"
+                                                                    onclick="return confirm('آیا وضعیت این تردد تغییر کند؟');">
+                                                                <i class="bi bi-arrow-repeat"></i>
+                                                            </button>
+                                                        </form>
+
+                                                        <!-- حذف -->
+                                                        <form method="post" action="/admin/attendance/edit/delete" class="d-inline">
+                                                            <input type="hidden" name="record_id" value="{{ rec.id }}">
+                                                            <button type="submit" class="btn btn-outline-danger btn-sm"
+                                                                    title="حذف"
+                                                                    onclick="return confirm('آیا این رکورد حذف شود؟');">
+                                                                <i class="bi bi-trash"></i>
+                                                            </button>
+                                                        </form>
+                                                    </div>
+                                                </td>
                                             </tr>
                                             {% endfor %}
+
+                                            <!-- 🆕 فرم افزودن رکورد جدید -->
+                                            <tr class="table-light">
+                                                <td colspan="5">
+                                                    <form method="post" action="/admin/attendance/edit/add" class="d-flex gap-2 align-items-center">
+                                                        <input type="hidden" name="user_id" value="{{ target_user_id }}">
+                                                        <input type="hidden" name="date_str" value="{{ day.jalali_date }}">
+                                                        <small class="text-muted">➕ افزودن:</small>
+                                                        <input type="time" name="time_str" class="form-control form-control-sm" style="width: 120px;" required>
+                                                        <select name="punch" class="form-select form-select-sm" style="width: 100px;">
+                                                            <option value="0">ورود</option>
+                                                            <option value="1">خروج</option>
+                                                        </select>
+                                                        <button type="submit" class="btn btn-success btn-sm">
+                                                            <i class="bi bi-plus"></i> افزودن
+                                                        </button>
+                                                    </form>
+                                                </td>
+                                            </tr>
                                         </tbody>
                                     </table>
                                 </div>

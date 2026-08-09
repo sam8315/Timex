@@ -15,6 +15,7 @@ from fastapi import Query
 from fastapi import UploadFile, File
 from pathlib import Path
 import os
+from web.routes.attendance import calculate_work_hours, STATUS_NIGHT_SHIFT
 
 # 🆕 import تابع تحلیل وضعیت از صفحه کاربر عادی
 from web.routes.attendance import (
@@ -392,16 +393,11 @@ async def admin_user_attendance(
             holiday_title=holiday_title
         )
 
-        enters = [r for r in day_records if r.punch == 0]
-        exits = [r for r in day_records if r.punch == 1]
-
-        work_hours = 0
-        first_enter = min(enters, key=lambda x: x.timestamp).timestamp if enters else None
-        last_exit = max(exits, key=lambda x: x.timestamp).timestamp if exits else None
-
-        if first_enter and last_exit:
-            diff = (last_exit - first_enter).total_seconds() / 3600
-            work_hours = max(0, diff)
+        # 🆕 محاسبه کارکرد با در نظر گرفتن شیفت شب
+        work_hours, first_enter, last_exit = calculate_work_hours(
+            day_records,
+            is_night_shift=status_info['main_status'] == STATUS_NIGHT_SHIFT
+        )
 
         days_list.append({
             'date': current,
@@ -847,3 +843,302 @@ async def admin_delete_photo(
         url=f"/admin/profile/{target_user_id}?photo_deleted=1",
         status_code=302
     )
+
+
+from datetime import datetime
+from models.attendance import Attendance
+
+
+@router.post("/attendance/edit/change-punch")
+async def admin_change_punch(
+        request: Request,
+        record_id: int = Form(...),
+        user: User = Depends(require_admin),
+        db: Session = Depends(get_db)
+):
+    """تغییر وضعیت ورود/خروج"""
+    record = db.query(Attendance).filter(Attendance.id == record_id).first()
+    if not record:
+        return RedirectResponse(url="/admin/attendance?error=رکورد یافت نشد", status_code=302)
+
+    # تغییر punch (0→1 یا 1→0)
+    record.punch = 1 if record.punch == 0 else 0
+    record.source = 'L'  # دستی
+    db.commit()
+
+    # بازگشت به صفحه قبل
+    referer = request.headers.get("referer", "/admin/attendance")
+    return RedirectResponse(url=f"{referer}?success=وضعیت تغییر کرد", status_code=302)
+
+
+@router.post("/attendance/edit/delete")
+async def admin_delete_record(
+        request: Request,
+        record_id: int = Form(...),
+        user: User = Depends(require_admin),
+        db: Session = Depends(get_db)
+):
+    """حذف رکورد تردد"""
+    record = db.query(Attendance).filter(Attendance.id == record_id).first()
+    if not record:
+        return RedirectResponse(url="/admin/attendance?error=رکورد یافت نشد", status_code=302)
+
+    user_id = record.user_id
+    record_date = record.timestamp.date()
+
+    # حذف (soft delete)
+    record.is_deleted = True
+    db.commit()
+
+    referer = request.headers.get("referer", "/admin/attendance")
+    return RedirectResponse(url=f"{referer}?success=رکورد حذف شد", status_code=302)
+
+
+@router.post("/attendance/edit/add")
+async def admin_add_record(
+        request: Request,
+        user_id: str = Form(...),
+        date_str: str = Form(...),
+        time_str: str = Form(...),
+        punch: int = Form(...),
+        user: User = Depends(require_admin),
+        db: Session = Depends(get_db)
+):
+    """افزودن رکورد تردد"""
+    try:
+        # تبدیل تاریخ شمسی
+        j_date = jdatetime.datetime.strptime(date_str, "%Y/%m/%d").date()
+        g_date = j_date.togregorian()
+
+        # ترکیب تاریخ و ساعت
+        hour, minute = map(int, time_str.split(':'))
+        timestamp = datetime(g_date.year, g_date.month, g_date.day, hour, minute)
+
+        # ساخت رکورد جدید
+        record = Attendance(
+            user_id=user_id,
+            timestamp=timestamp,
+            punch=punch,
+            status=15,  # دستی
+            source='L'  # دستی
+        )
+        db.add(record)
+        db.commit()
+
+        referer = request.headers.get("referer", "/admin/attendance")
+        return RedirectResponse(url=f"{referer}?success=رکورد اضافه شد", status_code=302)
+    except Exception as e:
+        referer = request.headers.get("referer", "/admin/attendance")
+        return RedirectResponse(url=f"{referer}?error={str(e)}", status_code=302)
+
+
+@router.get("/incomplete", response_class=HTMLResponse)
+async def admin_incomplete_attendance(
+    request: Request,
+    from_date_str: Optional[str] = Query(None),
+    to_date_str: Optional[str] = Query(None),
+    department: Optional[str] = Query(None),
+    issue_type: Optional[str] = Query(None),
+    include_night_shift: Optional[str] = Query(None),
+    show_all: Optional[str] = Query(None),
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """نمایش ترددهای ناقص با فیلترهای پیشرفته"""
+    from core.attendance_analyzer import AttendanceAnalyzer
+    from models.employee import Employee
+    from models.attendance import Attendance
+    from sqlalchemy import and_, func
+
+    # 🆕 بررسی اینکه آیا فیلتری اعمال شده یا خیر
+    has_filter = any([from_date_str, to_date_str, department, issue_type, show_all])
+
+    filtered_incomplete = []
+    stats = {'total': 0, 'missing_enter': 0, 'missing_exit': 0, 'imbalance': 0, 'sequence_error': 0}
+    by_department = {}
+    from_date_display = ""
+    to_date_display = ""
+
+    if has_filter:
+        today_j = jdatetime.date.today()
+
+        # تاریخ پیش‌فرض
+        if from_date_str:
+            try:
+                j_from = jdatetime.datetime.strptime(from_date_str, "%Y/%m/%d").date()
+                from_date = j_from.togregorian()
+            except:
+                from_date = date(today_j.year, today_j.month, 1)
+        else:
+            from_date = date(today_j.year, today_j.month, 1)
+
+        if to_date_str:
+            try:
+                j_to = jdatetime.datetime.strptime(to_date_str, "%Y/%m/%d").date()
+                to_date = j_to.togregorian()
+            except:
+                to_date = today_j.togregorian()
+        else:
+            to_date = today_j.togregorian()
+
+        from_date_display = jdatetime.date.fromgregorian(date=from_date).strftime('%Y/%m/%d')
+        to_date_display = jdatetime.date.fromgregorian(date=to_date).strftime('%Y/%m/%d')
+
+        # تحلیلگر
+        analyzer = AttendanceAnalyzer()
+        try:
+            incomplete_raw = analyzer.get_incomplete_attendances(from_date, to_date)
+
+            # 🆕 فیلتر شیفت شب - منطق ساده‌تر و دقیق‌تر
+            for item in incomplete_raw:
+                is_night_shift = False
+
+                # حالت ۱: ورود بدون خروج → بررسی اولین تردد فردا
+                if item['issue'] == 'missing_exit' and item['enter_count'] > 0 and item['exit_count'] == 0:
+                    next_day = item['date'] + timedelta(days=1)
+                    first_next_day_record = analyzer.db.query(Attendance).filter(
+                        and_(
+                            Attendance.user_id == item['user_id'],
+                            func.date(Attendance.timestamp) == next_day,
+                            Attendance.is_deleted == False
+                        )
+                    ).order_by(Attendance.timestamp.asc()).first()
+
+                    # ✅ فقط بررسی کنیم اولین تردد فردا خروج باشد
+                    if first_next_day_record and first_next_day_record.punch == 1:
+                        is_night_shift = True
+
+                # حالت ۲: خروج بدون ورود → بررسی آخرین تردد دیروز
+                elif item['issue'] == 'missing_enter' and item['exit_count'] > 0 and item['enter_count'] == 0:
+                    prev_day = item['date'] - timedelta(days=1)
+                    last_prev_day_record = analyzer.db.query(Attendance).filter(
+                        and_(
+                            Attendance.user_id == item['user_id'],
+                            func.date(Attendance.timestamp) == prev_day,
+                            Attendance.is_deleted == False
+                        )
+                    ).order_by(Attendance.timestamp.desc()).first()
+
+                    # ✅ فقط بررسی کنیم آخرین تردد دیروز ورود باشد
+                    if last_prev_day_record and last_prev_day_record.punch == 0:
+                        is_night_shift = True
+
+                # حالت ۳: عدم تعادل
+                elif item['issue'] == 'imbalance':
+                    day_attendances = analyzer.db.query(Attendance).filter(
+                        and_(
+                            Attendance.user_id == item['user_id'],
+                            func.date(Attendance.timestamp) == item['date'],
+                            Attendance.is_deleted == False
+                        )
+                    ).order_by(Attendance.timestamp).all()
+                    enters = [a for a in day_attendances if a.punch == 0]
+                    exits = [a for a in day_attendances if a.punch == 1]
+
+                    # خروج بیشتر از ورود → بررسی آخرین تردد دیروز
+                    if len(exits) > len(enters):
+                        prev_day = item['date'] - timedelta(days=1)
+                        last_prev_day_record = analyzer.db.query(Attendance).filter(
+                            and_(
+                                Attendance.user_id == item['user_id'],
+                                func.date(Attendance.timestamp) == prev_day,
+                                Attendance.is_deleted == False
+                            )
+                        ).order_by(Attendance.timestamp.desc()).first()
+
+                        # ✅ فقط بررسی کنیم آخرین تردد دیروز ورود باشد
+                        if last_prev_day_record and last_prev_day_record.punch == 0:
+                            # بررسی کنیم با حذف خروج‌های صبح زود، تعادل برقرار می‌شود
+                            early_exits = [e for e in exits if e.timestamp.hour < 8]
+                            if early_exits:
+                                adjusted_exit_count = len(exits) - len(early_exits)
+                                if len(enters) == adjusted_exit_count:
+                                    is_night_shift = True
+
+                    # ورود بیشتر از خروج → بررسی اولین تردد فردا
+                    elif len(enters) > len(exits):
+                        next_day = item['date'] + timedelta(days=1)
+                        first_next_day_record = analyzer.db.query(Attendance).filter(
+                            and_(
+                                Attendance.user_id == item['user_id'],
+                                func.date(Attendance.timestamp) == next_day,
+                                Attendance.is_deleted == False
+                            )
+                        ).order_by(Attendance.timestamp.asc()).first()
+
+                        # ✅ فقط بررسی کنیم اولین تردد فردا خروج باشد
+                        if first_next_day_record and first_next_day_record.punch == 1:
+                            late_enters = [e for e in enters if e.timestamp.hour >= 22]
+                            if late_enters:
+                                adjusted_enter_count = len(enters) - len(late_enters)
+                                if adjusted_enter_count == len(exits):
+                                    is_night_shift = True
+
+                # اگر شیفت شب است و کاربر نخواسته نمایش دهد، رد کن
+                if is_night_shift and include_night_shift != '1':
+                    continue
+                employee = analyzer.db.query(Employee).filter(Employee.user_id == item['user_id']).first()
+                if employee:
+                    item['full_name'] = employee.full_name
+                    item['department'] = employee.department or 'بدون گروه'
+                else:
+                    item['full_name'] = f"کاربر {item['user_id']}"
+                    item['department'] = 'بدون گروه'
+
+                item['is_night_shift'] = is_night_shift
+
+                # 🆕 تبدیل تاریخ به شمسی برای نمایش و لینک‌ها
+                j_date = jdatetime.date.fromgregorian(date=item['date'])
+                item['date_j'] = j_date.strftime('%Y/%m/%d')
+                item['year_j'] = j_date.year
+                item['month_j'] = j_date.month
+
+                filtered_incomplete.append(item)
+
+            # فیلتر دپارتمان
+            if department:
+                filtered_incomplete = [i for i in filtered_incomplete if i['department'] == department]
+
+            # فیلتر نوع نقص
+            if issue_type:
+                filtered_incomplete = [i for i in filtered_incomplete if i['issue'] == issue_type]
+
+            # آمار
+            stats = {
+                'total': len(filtered_incomplete),
+                'missing_enter': sum(1 for i in filtered_incomplete if i['issue'] == 'missing_enter'),
+                'missing_exit': sum(1 for i in filtered_incomplete if i['issue'] == 'missing_exit'),
+                'imbalance': sum(1 for i in filtered_incomplete if i['issue'] == 'imbalance'),
+                'sequence_error': sum(1 for i in filtered_incomplete if i['issue'] == 'sequence_error'),
+            }
+
+            # گروه‌بندی بر اساس دپارتمان
+            for item in filtered_incomplete:
+                dept = item['department']
+                if dept not in by_department:
+                    by_department[dept] = []
+                by_department[dept].append(item)
+
+        finally:
+            analyzer.close()
+
+    dept_names = {
+        '1': 'رسمی', '2': 'وظیفه', '3': 'خریدخدمت',
+        '4': 'قراردادی', '5': 'پزشک', 'بدون گروه': 'بدون گروه'
+    }
+
+    return templates.TemplateResponse(request, "admin/incomplete.html", {
+        "user": user,
+        "from_date_str": from_date_display,
+        "to_date_str": to_date_display,
+        "department": department or "",
+        "issue_type": issue_type or "",
+        "include_night_shift": include_night_shift or "0",
+        "show_all": show_all,
+        "has_filter": has_filter,
+        "incomplete_list": filtered_incomplete,
+        "stats": stats,
+        "by_department": by_department,
+        "dept_names": dept_names,
+        "is_admin": True,
+    })

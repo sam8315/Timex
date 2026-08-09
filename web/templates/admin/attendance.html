@@ -185,12 +185,26 @@
                         <td>
                             {% if r.first_enter %}
                             <span class="badge bg-success">{{ r.first_enter.strftime('%H:%M') }}</span>
-                            {% else %}<span class="text-muted">-</span>{% endif %}
+                            {% if r.is_night_shift and not r.records %}
+                            <span class="badge bg-info" title="ورود ضمنی">⚡</span>
+                            {% endif %}
+                            {% elif r.is_night_shift %}
+                            <span class="badge bg-info" title="ورود ضمنی">00:00 ⚡</span>
+                            {% else %}
+                            <span class="text-muted">-</span>
+                            {% endif %}
                         </td>
                         <td>
                             {% if r.last_exit %}
                             <span class="badge bg-danger">{{ r.last_exit.strftime('%H:%M') }}</span>
-                            {% else %}<span class="text-muted">-</span>{% endif %}
+                            {% if r.is_night_shift and not r.records %}
+                            <span class="badge bg-info" title="خروج ضمنی">⚡</span>
+                            {% endif %}
+                            {% elif r.is_night_shift %}
+                            <span class="badge bg-info" title="خروج ضمنی">23:59 ⚡</span>
+                            {% else %}
+                            <span class="text-muted">-</span>
+                            {% endif %}
                         </td>
                         <td class="text-center">
                             <span class="badge {% if r.total_punches > 2 %}bg-warning text-dark{% else %}bg-secondary{% endif %}">

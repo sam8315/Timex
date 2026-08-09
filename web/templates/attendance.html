@@ -159,11 +159,14 @@
                             {% endfor %}
                         </td>
                         <td class="text-center">
-                            {% if day.records | length > 2 %}
+                            {% if day.records | length > 0 %}
                             <button class="btn btn-sm btn-outline-primary"
                                     data-bs-toggle="collapse"
                                     data-bs-target="#details-{{ day.date.strftime('%Y%m%d') }}">
                                 <i class="bi bi-eye"></i>
+                                {% if day.status.main_status == 'sequence_error' %}
+                                <span class="badge bg-danger ms-1">!</span>
+                                {% endif %}
                             </button>
                             {% else %}
                             <span class="text-muted">-</span>
@@ -171,7 +174,7 @@
                         </td>
                     </tr>
 
-                    {% if day.records | length > 2 %}
+                    {% if day.records | length > 0 %}
                     <tr>
                         <td colspan="8" class="p-0">
                             <div class="collapse" id="details-{{ day.date.strftime('%Y%m%d') }}">
