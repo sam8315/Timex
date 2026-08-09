@@ -16,6 +16,19 @@ from fastapi import UploadFile, File
 from pathlib import Path
 import os
 from web.routes.attendance import calculate_work_hours, STATUS_NIGHT_SHIFT
+from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+
+def build_redirect_url(referer: str, key: str, value: str) -> str:
+    """ساخت URL بازگشت با رعایت query string موجود"""
+    separator = '&' if '?' in referer else '?'
+    return f"{referer}{separator}{key}={value}"
+def add_query_param(url: str, key: str, value: str) -> str:
+    """افزودن پارامتر به URL با رعایت query string موجود"""
+    parsed = urlparse(url)
+    query_params = parse_qs(parsed.query)
+    query_params[key] = [value]
+    new_query = urlencode(query_params, doseq=True)
+    return urlunparse((parsed.scheme, parsed.netloc, parsed.path, '', new_query, ''))
 
 # 🆕 import تابع تحلیل وضعیت از صفحه کاربر عادی
 from web.routes.attendance import (
@@ -851,58 +864,55 @@ from models.attendance import Attendance
 
 @router.post("/attendance/edit/change-punch")
 async def admin_change_punch(
-        request: Request,
-        record_id: int = Form(...),
-        user: User = Depends(require_admin),
-        db: Session = Depends(get_db)
+    request: Request,
+    record_id: int = Form(...),
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
 ):
     """تغییر وضعیت ورود/خروج"""
     record = db.query(Attendance).filter(Attendance.id == record_id).first()
     if not record:
         return RedirectResponse(url="/admin/attendance?error=رکورد یافت نشد", status_code=302)
 
-    # تغییر punch (0→1 یا 1→0)
     record.punch = 1 if record.punch == 0 else 0
-    record.source = 'L'  # دستی
+    record.source = 'L'
     db.commit()
 
-    # بازگشت به صفحه قبل
     referer = request.headers.get("referer", "/admin/attendance")
-    return RedirectResponse(url=f"{referer}?success=وضعیت تغییر کرد", status_code=302)
+    return RedirectResponse(url=build_redirect_url(referer, "success", "وضعیت تغییر کرد"), status_code=302)
 
 
 @router.post("/attendance/edit/delete")
 async def admin_delete_record(
-        request: Request,
-        record_id: int = Form(...),
-        user: User = Depends(require_admin),
-        db: Session = Depends(get_db)
+    request: Request,
+    record_id: int = Form(...),
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
 ):
     """حذف رکورد تردد"""
     record = db.query(Attendance).filter(Attendance.id == record_id).first()
     if not record:
         return RedirectResponse(url="/admin/attendance?error=رکورد یافت نشد", status_code=302)
 
-    user_id = record.user_id
-    record_date = record.timestamp.date()
-
     # حذف (soft delete)
     record.is_deleted = True
     db.commit()
 
+    # 🆕 بازگشت به صفحه قبل با پارامتر موفقیت
     referer = request.headers.get("referer", "/admin/attendance")
-    return RedirectResponse(url=f"{referer}?success=رکورد حذف شد", status_code=302)
+    redirect_url = add_query_param(referer, "success", "رکورد حذف شد")
+    return RedirectResponse(url=redirect_url, status_code=302)
 
 
 @router.post("/attendance/edit/add")
 async def admin_add_record(
-        request: Request,
-        user_id: str = Form(...),
-        date_str: str = Form(...),
-        time_str: str = Form(...),
-        punch: int = Form(...),
-        user: User = Depends(require_admin),
-        db: Session = Depends(get_db)
+    request: Request,
+    user_id: str = Form(...),
+    date_str: str = Form(...),
+    time_str: str = Form(...),
+    punch: int = Form(...),
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
 ):
     """افزودن رکورد تردد"""
     try:
@@ -925,12 +935,14 @@ async def admin_add_record(
         db.add(record)
         db.commit()
 
+        # 🆕 بازگشت به صفحه قبل با پارامتر موفقیت
         referer = request.headers.get("referer", "/admin/attendance")
-        return RedirectResponse(url=f"{referer}?success=رکورد اضافه شد", status_code=302)
+        redirect_url = add_query_param(referer, "success", "رکورد اضافه شد")
+        return RedirectResponse(url=redirect_url, status_code=302)
     except Exception as e:
         referer = request.headers.get("referer", "/admin/attendance")
-        return RedirectResponse(url=f"{referer}?error={str(e)}", status_code=302)
-
+        redirect_url = add_query_param(referer, "error", str(e))
+        return RedirectResponse(url=redirect_url, status_code=302)
 
 @router.get("/incomplete", response_class=HTMLResponse)
 async def admin_incomplete_attendance(
@@ -988,6 +1000,54 @@ async def admin_incomplete_attendance(
         analyzer = AttendanceAnalyzer()
         try:
             incomplete_raw = analyzer.get_incomplete_attendances(from_date, to_date)
+
+            # 🆕 بازطبقه‌بندی: تفکیک خطای ترتیب از ورود/خروج بدون خروج/ورود
+            for item in incomplete_raw:
+                # دریافت رکوردهای کامل روز
+                day_attendances = analyzer.db.query(Attendance).filter(
+                    and_(
+                        Attendance.user_id == item['user_id'],
+                        func.date(Attendance.timestamp) == item['date'],
+                        Attendance.is_deleted == False
+                    )
+                ).order_by(Attendance.timestamp).all()
+
+                sorted_records = sorted(day_attendances, key=lambda x: x.timestamp)
+
+                if not sorted_records:
+                    continue
+
+                # بررسی ۱: دو رکورد هم‌نوع پشت سر هم = خطای ترتیب واقعی
+                has_consecutive_error = False
+                consecutive_detail = ""
+                for i in range(1, len(sorted_records)):
+                    if sorted_records[i].punch == sorted_records[i - 1].punch:
+                        has_consecutive_error = True
+                        if sorted_records[i].punch == 0:
+                            consecutive_detail = "دو ورود پشت سر هم"
+                        else:
+                            consecutive_detail = "دو خروج پشت سر هم"
+                        break
+
+                if has_consecutive_error:
+                    item['issue'] = 'sequence_error'
+                    item['issue_detail'] = consecutive_detail
+                    item['enter_count'] = len([a for a in sorted_records if a.punch == 0])
+                    item['exit_count'] = len([a for a in sorted_records if a.punch == 1])
+                else:
+                    # بررسی ۲: اگر قبلاً sequence_error بوده ولی واقعاً ناقص است
+                    enters = [a for a in sorted_records if a.punch == 0]
+                    exits = [a for a in sorted_records if a.punch == 1]
+
+                    if item['issue'] == 'sequence_error':
+                        if len(enters) > len(exits):
+                            item['issue'] = 'missing_exit'
+                            item['issue_detail'] = ""
+                        elif len(exits) > len(enters):
+                            item['issue'] = 'missing_enter'
+                            item['issue_detail'] = ""
+                    else:
+                        item['issue_detail'] = ""
 
             # 🆕 فیلتر شیفت شب - منطق ساده‌تر و دقیق‌تر
             for item in incomplete_raw:

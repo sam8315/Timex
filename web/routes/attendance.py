@@ -73,7 +73,7 @@ def analyze_day_status(
     enters = sorted([r for r in day_records if r.punch == 0], key=lambda x: x.timestamp)
     exits = sorted([r for r in day_records if r.punch == 1], key=lambda x: x.timestamp)
 
-    # 🆕 بررسی شیفت شب با منطق ساده‌تر و قوی‌تر
+    # 🆕 بررسی شیفت شب با منطق دقیق‌تر
     has_night_shift = False
 
     # حالت ۰: خروج قبل از ورود در همان روز → شیفت شب ادغام‌شده
@@ -84,47 +84,56 @@ def analyze_day_status(
             # خروج صبح قبل از ورود شب → شیفت شب
             has_night_shift = True
 
-    # حالت ۱: ورود بدون خروج → بررسی هر خروجی در فردا
+    # 🆕 حالت ۱: ورود بدون خروج → بررسی اولین رکورد فردا
     if len(enters) > len(exits) and not has_night_shift:
         if next_day_records:
-            next_exits = [r for r in next_day_records if r.punch == 1]
-            if next_exits:
+            # مرتب‌سازی بر اساس زمان
+            next_sorted = sorted(next_day_records, key=lambda x: x.timestamp)
+            first_next_record = next_sorted[0]
+
+            # ✅ اولین رکورد فردا باید خروجی باشد
+            if first_next_record.punch == 1:
                 has_night_shift = True
 
-    # حالت ۲: خروج بدون ورود → بررسی هر ورودی در دیروز
+    # 🆕 حالت ۲: خروج بدون ورود → بررسی آخرین رکورد دیروز
     if len(exits) > len(enters) and not has_night_shift:
         if prev_day_records:
-            prev_enters = [r for r in prev_day_records if r.punch == 0]
-            if prev_enters:
+            # مرتب‌سازی بر اساس زمان
+            prev_sorted = sorted(prev_day_records, key=lambda x: x.timestamp)
+            last_prev_record = prev_sorted[-1]
+
+            # ✅ آخرین رکورد دیروز باید ورودی باشد
+            if last_prev_record.punch == 0:
                 has_night_shift = True
 
-# 🆕 بررسی خطای ترتیب (بهبودیافته)
+
+# ============================================
+# 🆕 بررسی خطای ترتیب (تفکیک‌شده از ناقص)
+# ============================================
     has_sequence_error = False
     sequence_error_detail = ""
 
     if day_records:
-        # مرتب‌سازی بر اساس زمان
         sorted_records = sorted(day_records, key=lambda x: x.timestamp)
 
-        # بررسی 1: آیا ورود و خروج به صورت متناوب هستند؟
-        expected_punch = 0  # باید با ورود شروع شود
-        for rec in sorted_records:
-            if rec.punch != expected_punch:
+        # 🆕 بررسی ۱: دو رکورد هم‌نوع پشت سر هم = خطای ترتیب واقعی
+        # مثال: (ورود، ورود) یا (خروج، خروج)
+        for i in range(1, len(sorted_records)):
+            if sorted_records[i].punch == sorted_records[i - 1].punch:
                 has_sequence_error = True
-                if rec.punch == 0 and expected_punch == 1:
-                    sequence_error_detail = "ورود بدون خروج قبلی"
-                elif rec.punch == 1 and expected_punch == 0:
-                    sequence_error_detail = "خروج بدون ورود قبلی"
+                if sorted_records[i].punch == 0:
+                    sequence_error_detail = "دو ورود پشت سر هم"
+                else:
+                    sequence_error_detail = "دو خروج پشت سر هم"
                 break
-            expected_punch = 1 - expected_punch  # تغییر بین 0 و 1
 
-        # بررسی 2: آیا اولین رکورد خروج است؟
-        if not has_sequence_error and sorted_records[0].punch == 1:
-            # بررسی آیا دیروز ورود داشته (شیفت شب)
-            prev_enters = [r for r in prev_day_records if r.punch == 0]
-            if not prev_enters:
+        # 🆕 بررسی ۲: اولین رکورد خروج است (و شیفت شب نیست)
+        # فقط اگر بیش از یک رکورد داشته باشیم، خطای ترتیب است
+        # اگر فقط یک خروج تنها باشد → missing_enter است (نه خطای ترتیب)
+        if not has_sequence_error and not has_night_shift:
+            if sorted_records[0].punch == 1 and len(sorted_records) > 1:
                 has_sequence_error = True
-                sequence_error_detail = "خروج بدون ورود"
+                sequence_error_detail = "خروج بدون ورود قبلی"
 
     # 🆕 تعیین وضعیت اصلی - شیفت شب اولویت بالاتری دارد
     if has_night_shift:
