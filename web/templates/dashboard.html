@@ -43,20 +43,20 @@
             </div>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="card stat-card bg-warning text-dark">
-            <div class="card-body">
-                <div class="d-flex justify-content-between">
-                    <div>
-                        <h6>درخواست‌های در انتظار</h6>
-                        <h2>{{ recent_requests | selectattr('status', 'equalto', 'P') | list | length }}</h2>
-                    </div>
-                    <i class="bi bi-hourglass-split fs-1 opacity-50"></i>
+<div class="col-md-3">
+    <div class="card stat-card bg-warning text-dark">
+        <div class="card-body">
+            <div class="d-flex justify-content-between">
+                <div>
+                    <h6>درخواست‌های در انتظار</h6>
+                    <h2>{{ pending_count }}</h2>
                 </div>
+                <i class="bi bi-hourglass-split fs-1 opacity-50"></i>
             </div>
         </div>
     </div>
-        <!-- 🆕 کارت قرارداد -->
+</div>
+    <!-- 🆕 کارت قرارداد -->
     <div class="col-md-3">
         {% if contract_info %}
         <div class="card stat-card {% if contract_info.is_expiring_soon %}bg-warning{% elif contract_info.is_expired %}bg-danger{% else %}bg-secondary{% endif %} text-white">
@@ -232,5 +232,67 @@
         </div>
     </div>
 </div>
+{% endif %}
+<!-- 🆕 مودال مرخصی استفاده نشده -->
+{% if show_carry_forward_modal %}
+<div class="modal fade" id="carryForwardModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-warning">
+                <h5 class="modal-title">
+                    <i class="bi bi-calendar-check"></i> مرخصی استفاده نشده
+                </h5>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle"></i>
+                    شما <strong>
+                        {% if unused_leave.AL %}{{ unused_leave.AL }} روز مرخصی استحقاقی{% endif %}
+                        {% if unused_leave.AL and unused_leave.SL %} و {% endif %}
+                        {% if unused_leave.SL %}{{ unused_leave.SL }} روز مرخصی استعلاجی{% endif %}
+                    </strong> استفاده نشده از سال <strong>{{ carry_forward_year }}</strong> دارید.
+                </div>
+                <p>
+                    آیا قصد <strong>بازخرید</strong> آن را دارید یا می‌خواهید در سال جدید <strong>استفاده</strong> کنید؟
+                </p>
+                <small class="text-muted">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    در صورت درخواست بازخرید، مدیر باید آن را تایید کند. در صورت رد، مرخصی به سال جدید منتقل می‌شود.
+                </small>
+            </div>
+            <div class="modal-footer">
+                {% for leave_type in unused_leave.keys() %}
+                <form method="post" action="/carry-forward/choose" class="d-inline">
+                    <input type="hidden" name="choice" value="USE">
+                    <input type="hidden" name="leave_type" value="{{ leave_type }}">
+                    <button type="submit" class="btn btn-success">
+                        🏖️ قصد استفاده دارم
+                        {% if unused_leave|length > 1 %}
+                        ({{ 'استحقاقی' if leave_type == 'AL' else 'استعلاجی' }})
+                        {% endif %}
+                    </button>
+                </form>
+                <form method="post" action="/carry-forward/choose" class="d-inline">
+                    <input type="hidden" name="choice" value="CASH">
+                    <input type="hidden" name="leave_type" value="{{ leave_type }}">
+                    <button type="submit" class="btn btn-primary">
+                        💰 درخواست بازخرید
+                        {% if unused_leave|length > 1 %}
+                        ({{ 'استحقاقی' if leave_type == 'AL' else 'استعلاجی' }})
+                        {% endif %}
+                    </button>
+                </form>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var modal = new bootstrap.Modal(document.getElementById('carryForwardModal'));
+    modal.show();
+});
+</script>
 {% endif %}
 {% endblock %}

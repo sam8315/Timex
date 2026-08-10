@@ -65,19 +65,21 @@ async def leave_balances_page(
     user: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
-    """لیست مانده مرخصی کاربران"""
+    """لیست مانده مرخصی کاربران - همه سال‌ها"""
     today_j = jdatetime.date.today()
-    if not year:
-        year = today_j.year
 
-    has_filter = any([search, show_all]) or year != today_j.year or year is not None
-    # برای لود اولیه خالی: فقط وقتی فیلتر داریم که search یا show_all باشد
-    has_filter = any([search, show_all])
+    # 🆕 اگر year یا search یا show_all باشد، فیلتر اعمال می‌شود
+    has_filter = any([search, show_all, year is not None])
 
     balances_data = []
 
     if has_filter:
-        query = db.query(LeaveBalance).filter(LeaveBalance.year == year)
+        query = db.query(LeaveBalance)
+
+        # 🆕 فقط اگر year مشخص شد، فیلتر سال اعمال شود
+        # اگر year=None → همه سال‌ها نمایش داده می‌شوند
+        if year:
+            query = query.filter(LeaveBalance.year == year)
 
         if search and search.strip():
             term = search.strip()
@@ -89,24 +91,32 @@ async def leave_balances_page(
                 )
             )
 
-        balances = query.order_by(LeaveBalance.user_id).all()
+        balances = query.order_by(LeaveBalance.year.desc(), LeaveBalance.user_id).all()
 
-        # گروه‌بندی بر اساس کاربر (نمایش AL و SL در یک ردیف)
+        # گروه‌بندی بر اساس کاربر و سال
         grouped = {}
         for b in balances:
-            if b.user_id not in grouped:
-                grouped[b.user_id] = {
+            key = (b.user_id, b.year)
+            if key not in grouped:
+                grouped[key] = {
                     'user_id': b.user_id,
                     'year': b.year,
                     'AL': None,
                     'SL': None,
                 }
             if b.leave_type in ('AL', 'SL'):
-                grouped[b.user_id][b.leave_type] = b.balance
+                grouped[key][b.leave_type] = b.balance
 
-        for uid, row in grouped.items():
-            row['full_name'] = get_employee_name(db, uid)
+        for key, row in grouped.items():
+            row['full_name'] = get_employee_name(db, row['user_id'])
             balances_data.append(row)
+
+    # 🆕 لیست سال‌های موجود در دیتابیس + سال جاری
+    existing_years = db.query(LeaveBalance.year).distinct().all()
+    available_years = sorted(
+        set([y[0] for y in existing_years] + [today_j.year]),
+        reverse=True
+    )
 
     return templates.TemplateResponse(request, "admin/leave_balances.html", {
         "user": user,
@@ -116,10 +126,103 @@ async def leave_balances_page(
         "show_all": show_all,
         "year": year,
         "search": search or "",
-        "available_years": list(range(today_j.year - 2, today_j.year + 3)),
+        "available_years": available_years,
         "leave_types": LEAVE_TYPES,
         "is_admin": True,
         "is_super_admin": user.is_super_admin,
+    })
+
+
+# ============================================
+# صفحه تراکنش‌های مرخصی
+# ============================================
+@router.get("/leave-transactions", response_class=HTMLResponse)
+async def leave_transactions_page(
+    request: Request,
+    year: Optional[int] = Query(None),
+    leave_type: Optional[str] = Query(None),
+    tx_type: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    show_all: Optional[str] = Query(None),
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """لیست تراکنش‌های مرخصی - همه سال‌ها"""
+    today_j = jdatetime.date.today()
+
+    # 🆕 اگر هر فیلتری باشد، اعمال می‌شود
+    has_filter = any([search, leave_type, tx_type, show_all, year is not None])
+
+    transactions_data = []
+
+    if has_filter:
+        query = db.query(LeaveTransaction)
+
+        # 🆕 فقط اگر year مشخص شد، فیلتر سال اعمال شود
+        if year:
+            query = query.filter(LeaveTransaction.year == year)
+
+        if leave_type:
+            query = query.filter(LeaveTransaction.leave_type == leave_type)
+
+        if tx_type:
+            query = query.filter(LeaveTransaction.transaction_type == tx_type)
+
+        if search and search.strip():
+            term = search.strip()
+            query = query.outerjoin(Employee, LeaveTransaction.user_id == Employee.user_id).filter(
+                or_(
+                    LeaveTransaction.user_id.ilike(f"%{term}%"),
+                    Employee.first_name.ilike(f"%{term}%"),
+                    Employee.last_name.ilike(f"%{term}%")
+                )
+            )
+
+        transactions = query.order_by(LeaveTransaction.created_at.desc()).limit(500).all()
+
+        for t in transactions:
+            created_j = None
+            if t.created_at:
+                try:
+                    created_j = jdatetime.datetime.fromgregorian(datetime=t.created_at).strftime('%Y/%m/%d %H:%M')
+                except Exception:
+                    created_j = t.created_at.strftime('%Y/%m/%d %H:%M')
+
+            transactions_data.append({
+                'id': t.id,
+                'user_id': t.user_id,
+                'full_name': get_employee_name(db, t.user_id),
+                'year': t.year,
+                'leave_type': t.leave_type,
+                'leave_type_name': LEAVE_TYPES.get(t.leave_type, t.leave_type),
+                'amount': t.amount,
+                'transaction_type': t.transaction_type,
+                'transaction_type_name': TRANSACTION_TYPES.get(t.transaction_type, t.transaction_type),
+                'description': t.description,
+                'created_j': created_j,
+            })
+
+    # 🆕 لیست سال‌های موجود در دیتابیس + سال جاری
+    existing_years = db.query(LeaveTransaction.year).distinct().all()
+    available_years = sorted(
+        set([y[0] for y in existing_years] + [today_j.year]),
+        reverse=True
+    )
+
+    return templates.TemplateResponse(request, "admin/leave_transactions.html", {
+        "user": user,
+        "transactions": transactions_data,
+        "total_count": len(transactions_data),
+        "has_filter": has_filter,
+        "show_all": show_all,
+        "year": year,
+        "search": search or "",
+        "leave_type": leave_type or "",
+        "tx_type": tx_type or "",
+        "available_years": available_years,
+        "leave_types": LEAVE_TYPES,
+        "transaction_types": TRANSACTION_TYPES,
+        "is_admin": True,
     })
 
 
@@ -190,89 +293,6 @@ async def adjust_balance(
         ),
         status_code=302
     )
-
-
-# ============================================
-# صفحه تراکنش‌های مرخصی
-# ============================================
-@router.get("/leave-transactions", response_class=HTMLResponse)
-async def leave_transactions_page(
-    request: Request,
-    year: Optional[int] = Query(None),
-    leave_type: Optional[str] = Query(None),
-    tx_type: Optional[str] = Query(None),
-    search: Optional[str] = Query(None),
-    show_all: Optional[str] = Query(None),
-    user: User = Depends(require_admin),
-    db: Session = Depends(get_db)
-):
-    """لیست تراکنش‌های مرخصی"""
-    today_j = jdatetime.date.today()
-    if not year:
-        year = today_j.year
-
-    has_filter = any([search, leave_type, tx_type, show_all])
-
-    transactions_data = []
-
-    if has_filter:
-        query = db.query(LeaveTransaction).filter(LeaveTransaction.year == year)
-
-        if leave_type:
-            query = query.filter(LeaveTransaction.leave_type == leave_type)
-
-        if tx_type:
-            query = query.filter(LeaveTransaction.transaction_type == tx_type)
-
-        if search and search.strip():
-            term = search.strip()
-            query = query.outerjoin(Employee, LeaveTransaction.user_id == Employee.user_id).filter(
-                or_(
-                    LeaveTransaction.user_id.ilike(f"%{term}%"),
-                    Employee.first_name.ilike(f"%{term}%"),
-                    Employee.last_name.ilike(f"%{term}%")
-                )
-            )
-
-        transactions = query.order_by(LeaveTransaction.created_at.desc()).limit(500).all()
-
-        for t in transactions:
-            created_j = None
-            if t.created_at:
-                try:
-                    created_j = jdatetime.datetime.fromgregorian(datetime=t.created_at).strftime('%Y/%m/%d %H:%M')
-                except Exception:
-                    created_j = t.created_at.strftime('%Y/%m/%d %H:%M')
-
-            transactions_data.append({
-                'id': t.id,
-                'user_id': t.user_id,
-                'full_name': get_employee_name(db, t.user_id),
-                'year': t.year,
-                'leave_type': t.leave_type,
-                'leave_type_name': LEAVE_TYPES.get(t.leave_type, t.leave_type),
-                'amount': t.amount,
-                'transaction_type': t.transaction_type,
-                'transaction_type_name': TRANSACTION_TYPES.get(t.transaction_type, t.transaction_type),
-                'description': t.description,
-                'created_j': created_j,
-            })
-
-    return templates.TemplateResponse(request, "admin/leave_transactions.html", {
-        "user": user,
-        "transactions": transactions_data,
-        "total_count": len(transactions_data),
-        "has_filter": has_filter,
-        "show_all": show_all,
-        "year": year,
-        "search": search or "",
-        "leave_type": leave_type or "",
-        "tx_type": tx_type or "",
-        "available_years": list(range(today_j.year - 2, today_j.year + 3)),
-        "leave_types": LEAVE_TYPES,
-        "transaction_types": TRANSACTION_TYPES,
-        "is_admin": True,
-    })
 
 
 from datetime import datetime
@@ -590,3 +610,175 @@ async def delete_leave_request(
             url=build_redirect_url(referer, "error", f"خطا: {str(e)}"),
             status_code=302
         )
+
+
+# ============================================
+# صفحه وارد کردن مرخصی ذخیره سال قبل
+# ============================================
+@router.get("/import-previous-leave", response_class=HTMLResponse)
+async def import_previous_leave_page(
+    request: Request,
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """صفحه وارد کردن مرخصی ذخیره سال قبل"""
+    return templates.TemplateResponse(request, "admin/import_previous_leave.html", {
+        "user": user,
+        "is_admin": True,
+    })
+
+
+@router.post("/import-previous-leave")
+async def import_previous_leave(
+    request: Request,
+    year: int = Form(...),
+    leave_type: str = Form('AL'),
+    data: str = Form(...),
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """پردازش وارد کردن مرخصی ذخیره"""
+    results = []
+    lines = data.strip().split('\n')
+
+    for line_num, line in enumerate(lines, 1):
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue  # رد کردن خطوط خالی و کامنت‌ها
+
+        try:
+            # پشتیبانی از جداکننده‌های مختلف: , یا tab یا فاصله
+            if ',' in line:
+                parts = line.split(',')
+            elif '\t' in line:
+                parts = line.split('\t')
+            else:
+                parts = line.split()
+
+            if len(parts) < 2:
+                results.append({
+                    'line': line_num,
+                    'data': line,
+                    'success': False,
+                    'error': 'فرمت نامعتبر (باید: کد_پرسنلی, تعداد_روز)'
+                })
+                continue
+
+            user_id = parts[0].strip()
+            days = int(parts[1].strip())
+
+            if days < 0:
+                results.append({
+                    'line': line_num,
+                    'data': line,
+                    'success': False,
+                    'error': 'تعداد روز نمی‌تواند منفی باشد'
+                })
+                continue
+
+            # بررسی وجود کاربر
+            employee = db.query(Employee).filter(Employee.user_id == user_id).first()
+            if not employee:
+                results.append({
+                    'line': line_num,
+                    'data': line,
+                    'success': False,
+                    'error': f'کاربر {user_id} یافت نشد'
+                })
+                continue
+
+            # بررسی وجود balance
+            balance = db.query(LeaveBalance).filter(
+                LeaveBalance.user_id == user_id,
+                LeaveBalance.year == year,
+                LeaveBalance.leave_type == leave_type
+            ).first()
+
+            if balance:
+                old_value = balance.balance
+                balance.balance += days
+                action = f"افزوده شد ({old_value} → {balance.balance})"
+            else:
+                balance = LeaveBalance(
+                    user_id=user_id,
+                    year=year,
+                    leave_type=leave_type,
+                    balance=days
+                )
+                db.add(balance)
+                action = f"ایجاد شد ({days} روز)"
+
+            # ثبت تراکنش
+            tx = LeaveTransaction(
+                user_id=user_id,
+                year=year,
+                leave_type=leave_type,
+                amount=days,
+                transaction_type='ADJUST',
+                description=f"مرخصی ذخیره سال {year} - ورود دستی توسط {user.name}",
+                reference_id=None
+            )
+            db.add(tx)
+
+            results.append({
+                'line': line_num,
+                'data': line,
+                'success': True,
+                'user_id': user_id,
+                'full_name': employee.full_name,
+                'days': days,
+                'action': action
+            })
+
+        except ValueError as e:
+            results.append({
+                'line': line_num,
+                'data': line,
+                'success': False,
+                'error': f'خطا در تبدیل تعداد روز: {str(e)}'
+            })
+        except Exception as e:
+            results.append({
+                'line': line_num,
+                'data': line,
+                'success': False,
+                'error': f'خطا: {str(e)}'
+            })
+
+    db.commit()
+
+    # شمارش موفق/ناموفق
+    success_count = sum(1 for r in results if r['success'])
+    fail_count = len(results) - success_count
+
+    # ذخیره نتایج در session برای نمایش در صفحه
+    request.session['import_results'] = results
+    request.session['import_summary'] = {
+        'total': len(results),
+        'success': success_count,
+        'fail': fail_count,
+        'year': year,
+    }
+
+    return RedirectResponse(
+        url=f"/admin/import-previous-leave?done=1&success={success_count}&fail={fail_count}",
+        status_code=302
+    )
+
+
+@router.get("/import-previous-leave/results", response_class=HTMLResponse)
+async def import_previous_leave_results(
+    request: Request,
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """نمایش نتایج وارد کردن"""
+    results = request.session.get('import_results', [])
+    summary = request.session.get('import_summary', {})
+
+    return templates.TemplateResponse(request, "admin/import_previous_leave_results.html", {
+        "user": user,
+        "results": results,
+        "summary": summary,
+        "is_admin": True,
+    })

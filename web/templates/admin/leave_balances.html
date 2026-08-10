@@ -23,7 +23,7 @@
     </a>
 </div>
 
-<!-- 🆕 فرم تنظیم دستی (فقط مدیر ارشد) -->
+<!-- فرم تنظیم دستی (فقط مدیر ارشد) -->
 {% if is_super_admin %}
 <div class="card mb-4 border-warning">
     <div class="card-header bg-warning text-dark">
@@ -37,10 +37,10 @@
             </div>
             <div class="col-md-2">
                 <label class="form-label">📅 سال <span class="text-danger">*</span></label>
-                <input type="number" name="year" class="form-control" value="{{ year }}" required>
+                <input type="number" name="year" class="form-control" value="{{ year if year else '' }}" required>
             </div>
             <div class="col-md-2">
-                <label class="form-label">️ نوع مرخصی</label>
+                <label class="form-label">🏷️ نوع مرخصی</label>
                 <select name="leave_type" class="form-select">
                     <option value="AL">استحقاقی</option>
                     <option value="SL">استعلاجی</option>
@@ -75,15 +75,16 @@
             <input type="text" name="search" class="form-control form-control-sm" style="width: 220px;"
                    value="{{ search }}" placeholder="🔍 جستجو: نام یا کد پرسنلی">
             <select name="year" class="form-select form-select-sm" style="width: auto;">
+                <option value="" {% if year is none %}selected{% endif %}>همه سال‌ها</option>
                 {% for y in available_years %}
-                <option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>
+                <option value="{{ y }}" {% if year == y %}selected{% endif %}>{{ y }}</option>
                 {% endfor %}
             </select>
             <button type="submit" class="btn btn-primary btn-sm">
                 <i class="bi bi-search"></i> اعمال
             </button>
-            <a href="/admin/leave-balances?show_all=1" class="btn btn-success btn-sm {% if show_all %}disabled{% endif %}">
-                <i class="bi bi-list"></i> نمایش همه
+            <a href="/admin/leave-balances?show_all=1" class="btn btn-success btn-sm {% if show_all and year is none %}disabled{% endif %}">
+                <i class="bi bi-list"></i> نمایش همه (همه سال‌ها)
             </a>
             {% if has_filter %}
             <a href="/admin/leave-balances" class="btn btn-outline-secondary btn-sm">
@@ -100,6 +101,9 @@
     <div class="card-body text-center py-5">
         <i class="bi bi-search display-4 text-muted"></i>
         <h5 class="mt-3 text-muted">برای مشاهده مانده مرخصی، جستجو کنید یا "نمایش همه" را بزنید</h5>
+        <a href="/admin/leave-balances?show_all=1" class="btn btn-success mt-2">
+            <i class="bi bi-list"></i> نمایش همه (همه سال‌ها)
+        </a>
     </div>
 </div>
 
@@ -107,15 +111,28 @@
 <div class="card">
     <div class="card-body text-center py-5">
         <i class="bi bi-emoji-frown display-4 text-muted"></i>
-        <h5 class="mt-3 text-muted">هیچ مانده‌ای برای سال {{ year }} یافت نشد</h5>
+        <h5 class="mt-3 text-muted">
+            {% if year %}
+            هیچ مانده‌ای برای سال {{ year }} یافت نشد
+            {% else %}
+            هیچ مانده‌ای یافت نشد
+            {% endif %}
+        </h5>
     </div>
 </div>
 
 {% else %}
 <div class="card">
     <div class="card-header bg-white d-flex justify-content-between align-items-center">
-        <h6 class="mb-0"><i class="bi bi-list-ul"></i> مانده مرخصی سال {{ year }}</h6>
-        <span class="badge bg-primary fs-6">{{ total_count }} کاربر</span>
+        <h6 class="mb-0">
+            <i class="bi bi-list-ul"></i> مانده مرخصی
+            {% if year %}
+            سال {{ year }}
+            {% else %}
+            (همه سال‌ها)
+            {% endif %}
+        </h6>
+        <span class="badge bg-primary fs-6">{{ total_count }} رکورد</span>
     </div>
     <div class="card-body">
         <div class="table-responsive">
@@ -123,6 +140,7 @@
                 <thead>
                     <tr>
                         <th>ردیف</th>
+                        <th class="text-center">سال</th>
                         <th>کد پرسنلی</th>
                         <th>نام کامل</th>
                         <th class="text-center">🏖️ مانده استحقاقی</th>
@@ -134,6 +152,9 @@
                     {% for row in balances %}
                     <tr>
                         <td>{{ loop.index }}</td>
+                        <td class="text-center">
+                            <span class="badge bg-primary">{{ row.year }}</span>
+                        </td>
                         <td>{{ row.user_id }}</td>
                         <td>{{ row.full_name }}</td>
                         <td class="text-center">
@@ -151,9 +172,9 @@
                             {% endif %}
                         </td>
                         <td class="text-center">
-                            <a href="/admin/leave-transactions?search={{ row.user_id }}&show_all=1"
-                               class="btn btn-sm btn-outline-primary" title="مشاهده تراکنش‌ها">
-                                <i class="bi bi-arrow-left-right"></i>
+                            <a href="/admin/leave-transactions?search={{ row.user_id }}&year={{ row.year }}&show_all=1"
+                               class="btn btn-sm btn-outline-primary" title="مشاهده تراکنش‌های این سال">
+                                <i class="bi bi-arrow-left-right"></i> تراکنش‌ها
                             </a>
                         </td>
                     </tr>

@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}ورود مرخصی ذخیره سال قبل | پنل مدیریت{% endblock %}
+{% block content %}
+
+<!-- پیام‌ها -->
+{% if request.query_params.get('done') %}
+<div class="alert alert-success alert-dismissible fade show">
+    <i class="bi bi-check-circle"></i>
+    عملیات انجام شد:
+    <strong>{{ request.query_params.get('success') }}</strong> موفق،
+    <strong>{{ request.query_params.get('fail') }}</strong> ناموفق
+    <a href="/admin/import-previous-leave/results" class="btn btn-sm btn-primary ms-2">مشاهده نتایج</a>
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4><i class="bi bi-cloud-upload"></i> ورود مرخصی ذخیره سال قبل</h4>
+    <a href="/admin/" class="btn btn-outline-primary btn-sm">
+        <i class="bi bi-arrow-right"></i> بازگشت به پنل مدیریت
+    </a>
+</div>
+
+<div class="row">
+    <!-- راهنما -->
+    <div class="col-md-4">
+        <div class="card mb-4">
+            <div class="card-header bg-info text-white">
+                <h6 class="mb-0"><i class="bi bi-info-circle"></i> راهنما</h6>
+            </div>
+            <div class="card-body">
+                <p><strong>فرمت هر خط:</strong></p>
+                <code class="d-block bg-light p-2 rounded mb-3">کد_پرسنلی, تعداد_روز</code>
+
+                <p><strong>مثال:</strong></p>
+                <pre class="bg-light p-2 rounded">NN-1234, 10
+NN-5678, 5
+NN-9012, 15</pre>
+
+                <hr>
+                <p><strong>نکات:</strong></p>
+                <ul class="small">
+                    <li>هر خط یک کاربر</li>
+                    <li>جداکننده: ویرگول (,) یا Tab یا فاصله</li>
+                    <li>خطوط خالی و شروع با # نادیده گرفته می‌شوند</li>
+                    <li>اگر مانده قبلی وجود داشته باشد، به آن <strong>اضافه</strong> می‌شود</li>
+                    <li>بعد از ورود، هنگام لاگین کاربر، مودال انتقال نمایش داده می‌شود</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- فرم -->
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header bg-white">
+                <h6><i class="bi bi-pencil-square"></i> فرم ورود اطلاعات</h6>
+            </div>
+            <div class="card-body">
+                <form method="post" action="/admin/import-previous-leave"
+                      onsubmit="return confirm('آیا مطمئن هستید؟ این عملیات قابل بازگشت نیست.');">
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-4">
+                            <label class="form-label">📅 سال <span class="text-danger">*</span></label>
+                            <input type="number" name="year" class="form-control" value="1404" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">🏷️ نوع مرخصی</label>
+                            <select name="leave_type" class="form-select">
+                                <option value="AL" selected>استحقاقی</option>
+                                <option value="SL">استعلاجی</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">📋 داده‌ها <span class="text-danger">*</span></label>
+                        <textarea name="data" class="form-control font-monospace" rows="15"
+                                  placeholder="NN-1234, 10&#10;NN-5678, 5&#10;NN-9012, 15" required></textarea>
+                        <small class="text-muted">هر خط: کد_پرسنلی, تعداد_روز</small>
+                    </div>
+
+                    <button type="submit" class="btn btn-success">
+                        <i class="bi bi-check-lg"></i> ثبت مرخصی‌ها
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

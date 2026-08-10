@@ -7,6 +7,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 import jdatetime
 from typing import Optional
 
@@ -14,6 +15,7 @@ from web.dependencies import get_db, require_admin
 from models.user import User
 from models.employee import Employee
 from models.contract import Contract, CONTRACT_TYPES
+from models.leave_transaction import LeaveTransaction
 from web.services.leave_service import (
     charge_leave_for_new_contract,
     update_leave_for_contract,
@@ -25,20 +27,57 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templa
 
 
 def build_redirect_url(referer: str, key: str, value: str) -> str:
-    """ساخت URL بازگشت"""
+    """ساخت URL بازگشت با رعایت query string موجود"""
     separator = '&' if '?' in referer else '?'
     return f"{referer}{separator}{key}={value}"
 
 
+def format_charge_message(charged: dict, prefix: str) -> str:
+    """🆕 ساخت پیام مرخصی شارژ شده به تفکیک سال"""
+    if not charged:
+        return ""
+    year_parts = []
+    for year_j, leaves in charged.items():
+        al = leaves.get('AL', 0)
+        sl = leaves.get('SL', 0)
+        parts = []
+        if al > 0:
+            parts.append(f"استحقاقی {al}")
+        if sl > 0:
+            parts.append(f"استعلاجی {sl}")
+        if parts:
+            year_parts.append(f"سال {year_j}: {' و '.join(parts)} روز")
+    if not year_parts:
+        return ""
+    return f" | {prefix} → " + " | ".join(year_parts)
+
+
+def get_charged_by_year(db: Session, contract_id: int) -> dict:
+    """🆕 محاسبه مرخصی شارژ شده بر اساس سال از تراکنش‌ها"""
+    charged_by_year = {}
+    charge_transactions = db.query(LeaveTransaction).filter(
+        LeaveTransaction.reference_id == contract_id,
+        LeaveTransaction.transaction_type == 'CHARGE'
+    ).all()
+
+    for tx in charge_transactions:
+        if tx.year not in charged_by_year:
+            charged_by_year[tx.year] = {'AL': 0, 'SL': 0}
+        if tx.leave_type in ('AL', 'SL'):
+            charged_by_year[tx.year][tx.leave_type] += tx.amount
+
+    return charged_by_year
+
+
 @router.get("/contracts", response_class=HTMLResponse)
 async def contracts_page(
-        request: Request,
-        search: Optional[str] = Query(None),
-        type_filter: Optional[str] = Query(None),
-        status_filter: Optional[str] = Query(None),
-        show_all: Optional[str] = Query(None),
-        user: User = Depends(require_admin),
-        db: Session = Depends(get_db)
+    request: Request,
+    search: Optional[str] = Query(None),
+    type_filter: Optional[str] = Query(None),
+    status_filter: Optional[str] = Query(None),
+    show_all: Optional[str] = Query(None),
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
 ):
     """لیست قراردادها"""
     has_filter = any([search, type_filter, status_filter, show_all])
@@ -51,9 +90,11 @@ async def contracts_page(
         if search and search.strip():
             search_term = search.strip()
             query = query.outerjoin(Employee, Contract.user_id == Employee.user_id).filter(
-                (Contract.user_id.ilike(f"%{search_term}%")) |
-                (Employee.first_name.ilike(f"%{search_term}%")) |
-                (Employee.last_name.ilike(f"%{search_term}%"))
+                or_(
+                    Contract.user_id.ilike(f"%{search_term}%"),
+                    Employee.first_name.ilike(f"%{search_term}%"),
+                    Employee.last_name.ilike(f"%{search_term}%")
+                )
             )
 
         # فیلتر نوع قرارداد
@@ -68,6 +109,9 @@ async def contracts_page(
             start_j = jdatetime.date.fromgregorian(date=c.start_date)
             end_j = jdatetime.date.fromgregorian(date=c.end_date) if c.end_date else None
 
+            # 🆕 محاسبه مرخصی شارژ شده بر اساس سال
+            charged_by_year = get_charged_by_year(db, c.id)
+
             contracts_data.append({
                 'contract': c,
                 'employee': employee,
@@ -75,6 +119,7 @@ async def contracts_page(
                 'start_j': start_j.strftime('%Y/%m/%d'),
                 'end_j': end_j.strftime('%Y/%m/%d') if end_j else 'دائمی',
                 'is_active': c.is_active,
+                'charged_by_year': charged_by_year,
             })
 
         # فیلتر وضعیت (بعد از محاسبه is_active)
@@ -99,20 +144,24 @@ async def contracts_page(
 
 @router.post("/contracts/add")
 async def add_contract(
-        request: Request,
-        user_id: str = Form(...),
-        contract_type_code: str = Form(...),
-        start_date_str: str = Form(...),
-        end_date_str: str = Form(""),
-        annual_leave_days: int = Form(0),
-        sick_leave_days: int = Form(0),
-        service_deduction_days: int = Form(0),
-        description: str = Form(""),
-        user: User = Depends(require_admin),
-        db: Session = Depends(get_db)
+    request: Request,
+    user_id: str = Form(...),
+    contract_type_code: str = Form(...),
+    start_date_str: str = Form(...),
+    end_date_str: str = Form(""),
+    annual_leave_days: int = Form(0),
+    sick_leave_days: int = Form(0),
+    service_deduction_days: int = Form(0),
+    description: str = Form(""),
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
 ):
-    """🆕 ثبت قرارداد جدید + شارژ مرخصی"""
+    """ثبت قرارداد جدید + شارژ مرخصی"""
     try:
+        # اعتبارسنجی نوع قرارداد
+        if contract_type_code not in CONTRACT_TYPES:
+            raise ValueError("نوع قرارداد نامعتبر است")
+
         # تبدیل تاریخ‌های شمسی
         start_j = jdatetime.datetime.strptime(start_date_str.strip(), "%Y/%m/%d").date()
         start_date = start_j.togregorian()
@@ -121,6 +170,10 @@ async def add_contract(
         if end_date_str.strip():
             end_j = jdatetime.datetime.strptime(end_date_str.strip(), "%Y/%m/%d").date()
             end_date = end_j.togregorian()
+
+        # 🆕 اعتبارسنجی: شروع باید قبل از پایان باشد
+        if end_date and start_date >= end_date:
+            raise ValueError("تاریخ شروع باید قبل از تاریخ پایان باشد")
 
         # بررسی وجود کاربر
         employee = db.query(Employee).filter(Employee.user_id == user_id).first()
@@ -136,9 +189,9 @@ async def add_contract(
         if not type_config.get('allow_service_deduction', False):
             service_deduction_days = 0
 
-        # 🆕 برای انواع قابل ویرایش، مقادیر پیش‌فرض از فرم گرفته می‌شود
-        # برای انواع ثابت، مقادیر از CONTRACT_TYPES گرفته می‌شود
+        # 🆕 مقادیر مرخصی بر اساس نوع قرارداد
         if not type_config.get('editable_leave', False):
+            # انواع ثابت: مقادیر از CONTRACT_TYPES
             annual_leave_days = type_config.get('annual_leave', 0)
             sick_leave_days = type_config.get('sick_leave', 0)
 
@@ -157,17 +210,9 @@ async def add_contract(
         db.commit()
         db.refresh(new_contract)
 
-        # 🆕 شارژ مرخصی به نسبت مدت قرارداد
+        # 🆕 شارژ مرخصی به نسبت مدت قرارداد (چند ساله)
         charged = charge_leave_for_new_contract(db, new_contract)
-
-        charge_msg = ""
-        if charged:
-            parts = []
-            if 'AL' in charged:
-                parts.append(f"استحقاقی: {charged['AL']} روز")
-            if 'SL' in charged:
-                parts.append(f"استعلاجی: {charged['SL']} روز")
-            charge_msg = " | مرخصی شارژ شد: " + "، ".join(parts)
+        charge_msg = format_charge_message(charged, "مرخصی شارژ شد")
 
         referer = request.headers.get("referer", "/admin/contracts")
         return RedirectResponse(
@@ -175,6 +220,7 @@ async def add_contract(
             status_code=302
         )
     except Exception as e:
+        db.rollback()
         referer = request.headers.get("referer", "/admin/contracts")
         return RedirectResponse(
             url=build_redirect_url(referer, "error", f"خطا: {str(e)}"),
@@ -184,22 +230,26 @@ async def add_contract(
 
 @router.post("/contracts/{contract_id}/edit")
 async def edit_contract(
-        request: Request,
-        contract_id: int,
-        contract_type_code: str = Form(...),
-        start_date_str: str = Form(...),
-        end_date_str: str = Form(""),
-        annual_leave_days: int = Form(0),
-        sick_leave_days: int = Form(0),
-        service_deduction_days: int = Form(0),
-        description: str = Form(""),
-        user: User = Depends(require_admin),
-        db: Session = Depends(get_db)
+    request: Request,
+    contract_id: int,
+    contract_type_code: str = Form(...),
+    start_date_str: str = Form(...),
+    end_date_str: str = Form(""),
+    annual_leave_days: int = Form(0),
+    sick_leave_days: int = Form(0),
+    service_deduction_days: int = Form(0),
+    description: str = Form(""),
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
 ):
-    """🆕 ویرایش قرارداد + بروزرسانی مرخصی"""
+    """ویرایش قرارداد + بروزرسانی مرخصی"""
     contract = db.query(Contract).filter(Contract.id == contract_id).first()
     if not contract:
-        return RedirectResponse(url="/admin/contracts?error=قرارداد یافت نشد", status_code=302)
+        referer = request.headers.get("referer", "/admin/contracts")
+        return RedirectResponse(
+            url=build_redirect_url(referer, "error", "قرارداد یافت نشد"),
+            status_code=302
+        )
 
     try:
         # ذخیره مقادیر قدیمی برای محاسبه مابه‌التفاوت
@@ -217,6 +267,10 @@ async def edit_contract(
         if end_date_str.strip():
             end_j = jdatetime.datetime.strptime(end_date_str.strip(), "%Y/%m/%d").date()
             end_date = end_j.togregorian()
+
+        # اعتبارسنجی تاریخ
+        if end_date and start_date >= end_date:
+            raise ValueError("تاریخ شروع باید قبل از تاریخ پایان باشد")
 
         # بررسی کسر خدمت
         type_config = CONTRACT_TYPES.get(contract_type_code, {})
@@ -238,7 +292,7 @@ async def edit_contract(
         contract.description = description.strip() or None
         db.commit()
 
-        # 🆕 بروزرسانی مرخصی (اضافه یا کسر)
+        # 🆕 بروزرسانی مرخصی (اضافه یا کسر) - چند ساله
         changes = update_leave_for_contract(
             db=db,
             contract=contract,
@@ -248,17 +302,7 @@ async def edit_contract(
             old_end_date=old_end,
             old_deduction=old_deduction
         )
-
-        change_msg = ""
-        if changes:
-            parts = []
-            for lt, diff in changes.items():
-                name = "استحقاقی" if lt == 'AL' else "استعلاجی"
-                if diff > 0:
-                    parts.append(f"{name}: +{diff} روز")
-                else:
-                    parts.append(f"{name}: {diff} روز")
-            change_msg = " | تغییرات مرخصی: " + "، ".join(parts)
+        change_msg = format_charge_message(changes, "تغییرات مرخصی")
 
         referer = request.headers.get("referer", "/admin/contracts")
         return RedirectResponse(
@@ -266,6 +310,7 @@ async def edit_contract(
             status_code=302
         )
     except Exception as e:
+        db.rollback()
         referer = request.headers.get("referer", "/admin/contracts")
         return RedirectResponse(
             url=build_redirect_url(referer, "error", f"خطا: {str(e)}"),
@@ -275,32 +320,28 @@ async def edit_contract(
 
 @router.post("/contracts/{contract_id}/delete")
 async def delete_contract(
-        request: Request,
-        contract_id: int,
-        user: User = Depends(require_admin),
-        db: Session = Depends(get_db)
+    request: Request,
+    contract_id: int,
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
 ):
-    """🆕 حذف قرارداد + حذف مرخصی"""
+    """حذف قرارداد + حذف مرخصی"""
     contract = db.query(Contract).filter(Contract.id == contract_id).first()
     if not contract:
-        return RedirectResponse(url="/admin/contracts?error=قرارداد یافت نشد", status_code=302)
+        referer = request.headers.get("referer", "/admin/contracts")
+        return RedirectResponse(
+            url=build_redirect_url(referer, "error", "قرارداد یافت نشد"),
+            status_code=302
+        )
 
     try:
-        # 🆕 حذف مرخصی شارژ شده
+        # 🆕 حذف مرخصی شارژ شده (چند ساله)
         removed = remove_leave_for_contract(db, contract)
+        remove_msg = format_charge_message(removed, "مرخصی کسر شد")
 
         # حذف قرارداد
         db.delete(contract)
         db.commit()
-
-        remove_msg = ""
-        if removed:
-            parts = []
-            if 'AL' in removed:
-                parts.append(f"استحقاقی: {removed['AL']} روز")
-            if 'SL' in removed:
-                parts.append(f"استعلاجی: {removed['SL']} روز")
-            remove_msg = " | مرخصی کسر شد: " + "، ".join(parts)
 
         referer = request.headers.get("referer", "/admin/contracts")
         return RedirectResponse(
@@ -308,6 +349,7 @@ async def delete_contract(
             status_code=302
         )
     except Exception as e:
+        db.rollback()
         referer = request.headers.get("referer", "/admin/contracts")
         return RedirectResponse(
             url=build_redirect_url(referer, "error", f"خطا: {str(e)}"),

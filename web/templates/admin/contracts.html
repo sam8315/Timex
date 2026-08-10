@@ -36,7 +36,7 @@
             </div>
             <div class="col-md-2">
                 <label class="form-label">📋 نوع قرارداد <span class="text-danger">*</span></label>
-                <select name="contract_type_code" class="form-select" id="add_type" onchange="toggleLeaveFields('add')">
+                <select name="contract_type_code" class="form-select" id="add_type" onchange="toggleLeaveFields()">
                     {% for code, config in contract_types.items() %}
                     <option value="{{ code }}">{{ config.name }}</option>
                     {% endfor %}
@@ -51,15 +51,15 @@
                 <input type="text" name="end_date_str" class="form-control" placeholder="خالی = دائمی">
             </div>
             <div class="col-md-1 leave-editable" style="display:none;">
-                <label class="form-label">استحقاقی</label>
+                <label class="form-label">🏖️ استحقاقی</label>
                 <input type="number" name="annual_leave_days" class="form-control" value="0" min="0">
             </div>
             <div class="col-md-1 leave-editable" style="display:none;">
-                <label class="form-label">استعلاجی</label>
+                <label class="form-label">🏥 استعلاجی</label>
                 <input type="number" name="sick_leave_days" class="form-control" value="0" min="0">
             </div>
             <div class="col-md-1 deduction-field" style="display:none;">
-                <label class="form-label">کسر خدمت</label>
+                <label class="form-label">⏳ کسر خدمت</label>
                 <input type="number" name="service_deduction_days" class="form-control" value="0" min="0">
             </div>
             <div class="col-md-1">
@@ -68,6 +68,10 @@
                 </button>
             </div>
         </form>
+        <small class="text-muted d-block mt-2">
+            <i class="bi bi-info-circle"></i>
+            مرخصی به نسبت مدت قرارداد و به تفکیک هر سال شمسی شارژ می‌شود
+        </small>
     </div>
 </div>
 
@@ -119,7 +123,7 @@
 <div class="card">
     <div class="card-body text-center py-5">
         <i class="bi bi-emoji-frown display-4 text-muted"></i>
-        <h5 class="mt-3 text-muted">هیچ قراردادی یافت نشد</h5>
+        <h5 class="mt-3 text-muted">هیچ قرادادی یافت نشد</h5>
     </div>
 </div>
 
@@ -140,8 +144,7 @@
                         <th class="text-center">نوع قرارداد</th>
                         <th>شروع</th>
                         <th>پایان</th>
-                        <th class="text-center">استحقاقی</th>
-                        <th class="text-center">استعلاجی</th>
+                        <th class="text-center">🏖️ مرخصی شارژ شده (به تفکیک سال)</th>
                         <th class="text-center">وضعیت</th>
                         <th class="text-center">عملیات</th>
                     </tr>
@@ -154,11 +157,33 @@
                         <td>{{ item.full_name }}</td>
                         <td class="text-center">
                             <span class="badge bg-secondary">{{ item.contract.contract_type_name }}</span>
+                            {% if item.contract.service_deduction_days > 0 %}
+                            <span class="badge bg-warning text-dark" title="کسر خدمت">
+                                ⏳ {{ item.contract.service_deduction_days }} روز
+                            </span>
+                            {% endif %}
                         </td>
                         <td>{{ item.start_j }}</td>
                         <td>{{ item.end_j }}</td>
-                        <td class="text-center">{{ item.contract.annual_leave_days }}</td>
-                        <td class="text-center">{{ item.contract.sick_leave_days }}</td>
+                        <td class="text-center">
+                            {% if item.charged_by_year %}
+                            <div class="d-flex flex-column gap-1 align-items-center">
+                                {% for year_j, leaves in item.charged_by_year.items() %}
+                                <div>
+                                    <span class="badge bg-primary">{{ year_j }}</span>
+                                    {% if leaves.AL > 0 %}
+                                    <span class="badge bg-success" title="استحقاقی">🏖️ {{ leaves.AL }}</span>
+                                    {% endif %}
+                                    {% if leaves.SL > 0 %}
+                                    <span class="badge bg-info" title="استعلاجی">🏥 {{ leaves.SL }}</span>
+                                    {% endif %}
+                                </div>
+                                {% endfor %}
+                            </div>
+                            {% else %}
+                            <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
                         <td class="text-center">
                             {% if item.is_active %}
                             <span class="badge bg-success">فعال</span>
@@ -173,7 +198,8 @@
                                     <i class="bi bi-pencil"></i>
                                 </button>
                                 <form method="post" action="/admin/contracts/{{ item.contract.id }}/delete"
-                                      class="d-inline" onsubmit="return confirm('آیا مطمئن هستید؟ مرخصی شارژ شده هم کسر می‌شود.');">
+                                      class="d-inline"
+                                      onsubmit="return confirm('آیا مطمئن هستید؟ مرخصی شارژ شده هم کسر می‌شود.');">
                                     <button type="submit" class="btn btn-outline-danger">
                                         <i class="bi bi-trash"></i>
                                     </button>
@@ -211,32 +237,33 @@
                                             <div class="col-md-4">
                                                 <label class="form-label">📅 پایان (شمسی)</label>
                                                 <input type="text" name="end_date_str" class="form-control"
-                                                       value="{{ item.end_j if item.end_j != 'دائمی' else '' }}">
+                                                       value="{{ item.end_j if item.end_j != 'دائمی' else '' }}"
+                                                       placeholder="خالی = دائمی">
                                             </div>
                                             <div class="col-md-3">
-                                                <label class="form-label">استحقاقی (روز)</label>
+                                                <label class="form-label">🏖️ استحقاقی (روز)</label>
                                                 <input type="number" name="annual_leave_days" class="form-control"
                                                        value="{{ item.contract.annual_leave_days }}" min="0">
                                             </div>
                                             <div class="col-md-3">
-                                                <label class="form-label">استعلاجی (روز)</label>
+                                                <label class="form-label">🏥 استعلاجی (روز)</label>
                                                 <input type="number" name="sick_leave_days" class="form-control"
                                                        value="{{ item.contract.sick_leave_days }}" min="0">
                                             </div>
                                             <div class="col-md-3">
-                                                <label class="form-label">کسر خدمت (روز)</label>
+                                                <label class="form-label">⏳ کسر خدمت (روز)</label>
                                                 <input type="number" name="service_deduction_days" class="form-control"
                                                        value="{{ item.contract.service_deduction_days }}" min="0">
                                             </div>
                                             <div class="col-md-3">
-                                                <label class="form-label">توضیحات</label>
+                                                <label class="form-label">📝 توضیحات</label>
                                                 <input type="text" name="description" class="form-control"
                                                        value="{{ item.contract.description or '' }}">
                                             </div>
                                         </div>
                                         <div class="alert alert-info mt-3 mb-0">
                                             <i class="bi bi-info-circle"></i>
-                                            پس از ذخیره، مرخصی به صورت خودکار افزایش یا کاهش می‌یابد.
+                                            پس از ذخیره، مابه‌التفاوت مرخصی به صورت خودکار برای هر سال افزایش یا کاهش می‌یابد.
                                         </div>
                                     </div>
                                     <div class="modal-footer">
@@ -259,12 +286,12 @@
 
 {% block extra_js %}
 <script>
-// 🆕 نمایش/مخفی کردن فیلدهای مرخصی بر اساس نوع قرارداد
+// نمایش/مخفی کردن فیلدهای مرخصی بر اساس نوع قرارداد
 const editableTypes = ['6', '7'];  // سایر و بیمه‌ها
 const deductionTypes = ['2'];       // وظیفه
 
-function toggleLeaveFields(prefix) {
-    const typeSelect = document.getElementById(prefix + '_type');
+function toggleLeaveFields() {
+    const typeSelect = document.getElementById('add_type');
     const selectedType = typeSelect.value;
 
     // فیلدهای مرخصی قابل ویرایش
@@ -280,7 +307,7 @@ function toggleLeaveFields(prefix) {
 
 // اجرای اولیه
 document.addEventListener('DOMContentLoaded', function() {
-    toggleLeaveFields('add');
+    toggleLeaveFields();
 });
 </script>
 {% endblock %}

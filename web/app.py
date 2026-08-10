@@ -5,7 +5,7 @@ from fastapi.responses import RedirectResponse
 from pathlib import Path
 from starlette.middleware.sessions import SessionMiddleware
 
-from web.routes import auth, dashboard, attendance, leave, admin, contract, profile, holidays, admin_contracts, admin_leave, admin_daily_status
+from web.routes import auth, dashboard, attendance, leave, admin, contract, profile, holidays, admin_contracts, admin_leave, admin_daily_status, carry_forward
 BASE_PATH = Path(__file__).parent
 
 app = FastAPI(title="Timex - سامانه حضور و غیاب", version="1.0.0")
@@ -28,6 +28,7 @@ app.include_router(holidays.router, prefix="/admin")
 app.include_router(admin_contracts.router, prefix="/admin")
 app.include_router(admin_leave.router, prefix="/admin")
 app.include_router(admin_daily_status.router, prefix="/admin")
+app.include_router(carry_forward.router)
 
 @app.get("/")
 async def root():

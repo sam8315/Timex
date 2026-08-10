@@ -144,23 +144,6 @@ class Contract(TimestampMixin, Base):
             return self.end_date - timedelta(days=self.service_deduction_days)
         return self.end_date
 
-    @property
-    def prorated_annual_leave(self) -> float:
-        """مرخصی استحقاقی به نسبت مدت قرارداد"""
-        duration = self.contract_duration_days
-        if duration is None or duration >= 365:
-            return float(self.annual_leave_days)
-        ratio = duration / 365.0
-        return self.annual_leave_days * ratio
-
-    @property
-    def prorated_sick_leave(self) -> float:
-        """مرخصی استعلاجی به نسبت مدت قرارداد"""
-        duration = self.contract_duration_days
-        if duration is None or duration >= 365:
-            return float(self.sick_leave_days)
-        ratio = duration / 365.0
-        return self.sick_leave_days * ratio
 
     @property
     def is_active(self) -> bool:
