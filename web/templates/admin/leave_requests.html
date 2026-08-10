@@ -1,0 +1,266 @@
+{% extends "base.html" %}
+{% block title %}درخواست‌های مرخصی | پنل مدیریت{% endblock %}
+{% block content %}
+
+<!-- پیام‌ها -->
+{% if request.query_params.get('success') %}
+<div class="alert alert-success alert-dismissible fade show">
+    <i class="bi bi-check-circle"></i> {{ request.query_params.get('success') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+{% if request.query_params.get('error') %}
+<div class="alert alert-danger alert-dismissible fade show">
+    <i class="bi bi-exclamation-triangle"></i> {{ request.query_params.get('error') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4>
+        <i class="bi bi-envelope-paper"></i> درخواست‌های مرخصی
+        {% if pending_count > 0 %}
+        <span class="badge bg-warning text-dark fs-6">{{ pending_count }} در انتظار</span>
+        {% endif %}
+    </h4>
+    <a href="/admin/" class="btn btn-outline-primary btn-sm">
+        <i class="bi bi-arrow-right"></i> بازگشت به پنل مدیریت
+    </a>
+</div>
+
+<!-- فیلترها -->
+<div class="card mb-4">
+    <div class="card-body py-2">
+        <form method="get" action="/admin/leave-requests" class="d-flex flex-wrap align-items-center gap-2">
+            <input type="text" name="search" class="form-control form-control-sm" style="width: 220px;"
+                   value="{{ search }}" placeholder="🔍 جستجو: نام یا کد پرسنلی">
+            <select name="status_filter" class="form-select form-select-sm" style="width: auto;">
+                <option value="">همه وضعیت‌ها</option>
+                <option value="P" {% if status_filter == 'P' %}selected{% endif %}>⏳ در انتظار</option>
+                <option value="A" {% if status_filter == 'A' %}selected{% endif %}>✅ تایید شده</option>
+                <option value="R" {% if status_filter == 'R' %}selected{% endif %}>❌ رد شده</option>
+                <option value="D" {% if status_filter == 'D' %}selected{% endif %}>🗑️ حذف شده</option>
+            </select>
+            <select name="leave_type" class="form-select form-select-sm" style="width: auto;">
+                <option value="">همه انواع</option>
+                {% for code, name in leave_types.items() %}
+                <option value="{{ code }}" {% if leave_type == code %}selected{% endif %}>{{ name }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit" class="btn btn-primary btn-sm">
+                <i class="bi bi-search"></i> اعمال
+            </button>
+            <a href="/admin/leave-requests?show_all=1" class="btn btn-success btn-sm {% if show_all %}disabled{% endif %}">
+                <i class="bi bi-list"></i> نمایش همه
+            </a>
+            <a href="/admin/leave-requests?status_filter=P" class="btn btn-warning btn-sm">
+                <i class="bi bi-hourglass-split"></i> فقط در انتظارها
+            </a>
+            {% if has_filter %}
+            <a href="/admin/leave-requests" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-x-circle"></i> پاک کردن
+            </a>
+            {% endif %}
+        </form>
+    </div>
+</div>
+
+<!-- جدول درخواست‌ها -->
+{% if not has_filter %}
+<!-- حالت اولیه: هیچ فیلتری اعمال نشده -->
+<div class="card">
+    <div class="card-body text-center py-5">
+        <i class="bi bi-search display-4 text-muted"></i>
+        <h5 class="mt-3 text-muted">برای مشاهده درخواست‌ها، فیلتر اعمال کنید</h5>
+        <div class="mt-3">
+            <a href="/admin/leave-requests?status_filter=P" class="btn btn-warning">
+                <i class="bi bi-hourglass-split"></i> مشاهده درخواست‌های در انتظار ({{ pending_count }})
+            </a>
+            <a href="/admin/leave-requests?show_all=1" class="btn btn-success ms-2">
+                <i class="bi bi-list"></i> نمایش همه
+            </a>
+        </div>
+    </div>
+</div>
+
+{% elif total_count == 0 %}
+<!-- هیچ نتیجه‌ای یافت نشد -->
+<div class="card">
+    <div class="card-body text-center py-5">
+        <i class="bi bi-check-circle display-4 text-success"></i>
+        <h5 class="mt-3 text-muted">هیچ درخواستی با این فیلترها یافت نشد</h5>
+    </div>
+</div>
+
+{% else %}
+<!-- نمایش نتایج -->
+<div class="card">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h6 class="mb-0"><i class="bi bi-list-ul"></i> درخواست‌های مرخصی</h6>
+        <span class="badge bg-primary fs-6">{{ total_count }} مورد</span>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>ردیف</th>
+                        <th>ثبت</th>
+                        <th>کد</th>
+                        <th>نام</th>
+                        <th class="text-center">نوع</th>
+                        <th>از تاریخ</th>
+                        <th>تا تاریخ</th>
+                        <th class="text-center">روزها</th>
+                        <th class="text-center">مانده</th>
+                        <th>دلیل</th>
+                        <th class="text-center">وضعیت</th>
+                        <th class="text-center">عملیات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in requests %}
+                    <tr class="{% if item.request.status == 'P' %}table-warning{% endif %}">
+                        <td>{{ loop.index }}</td>
+                        <td><small class="text-muted">{{ item.created_j }}</small></td>
+                        <td>{{ item.request.user_id }}</td>
+                        <td>{{ item.full_name }}</td>
+                        <td class="text-center">
+                            {% if item.request.leave_type == 'AL' %}
+                            <span class="badge bg-success">استحقاقی</span>
+                            {% elif item.request.leave_type == 'SL' %}
+                            <span class="badge bg-info">استعلاجی</span>
+                            {% else %}
+                            <span class="badge bg-secondary">{{ item.leave_type_name }}</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ item.from_j }}</td>
+                        <td>{{ item.to_j }}</td>
+                        <td class="text-center fw-bold">{{ item.request.days_count }}</td>
+                        <td class="text-center">
+                            {% if item.has_enough_balance %}
+                            <span class="badge bg-success">{{ item.current_balance }}</span>
+                            {% else %}
+                            <span class="badge bg-danger" title="مانده کافی نیست!">{{ item.current_balance }}</span>
+                            {% endif %}
+                        </td>
+                        <td><small>{{ item.request.reason or '-' }}</small></td>
+                        <td class="text-center">
+                            {% if item.request.status == 'P' %}
+                            <span class="badge bg-warning text-dark">⏳ در انتظار</span>
+                            {% elif item.request.status == 'A' %}
+                            <span class="badge bg-success">✅ تایید شده</span>
+                            {% elif item.request.status == 'R' %}
+                            <span class="badge bg-danger">❌ رد شده</span>
+                            {% elif item.request.status == 'D' %}
+                            <span class="badge bg-secondary">🗑️ حذف شده</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            {% if item.request.status == 'P' %}
+                            <!-- دکمه‌های تایید و رد برای درخواست‌های در انتظار -->
+                            <div class="btn-group btn-group-sm">
+                                <!-- تایید -->
+                                <form method="post" action="/admin/leave-requests/{{ item.request.id }}/approve"
+                                      class="d-inline"
+                                      onsubmit="return confirm('آیا این درخواست تایید شود؟ {{ item.request.days_count }} روز از مانده کسر می‌شود.');">
+                                    <button type="submit" class="btn btn-success" title="تایید"
+                                            {% if not item.has_enough_balance %}disabled{% endif %}>
+                                        <i class="bi bi-check-lg"></i>
+                                    </button>
+                                </form>
+                                <!-- رد -->
+                                <button type="button" class="btn btn-danger" title="رد"
+                                        data-bs-toggle="modal" data-bs-target="#rejectModal{{ item.request.id }}">
+                                    <i class="bi bi-x-lg"></i>
+                                </button>
+                            </div>
+
+                            {% elif item.request.status == 'A' %}
+                            <!-- نمایش تاییدکننده + دکمه حذف -->
+                            <small class="text-success d-block mb-1">
+                                <i class="bi bi-person-check"></i>
+                                {{ item.request.approved_by }}
+                            </small>
+                            <form method="post" action="/admin/leave-requests/{{ item.request.id }}/delete"
+                                  class="d-inline"
+                                  onsubmit="return confirm('آیا مطمئن هستید؟ {{ item.request.days_count }} روز به مانده کاربر برمی‌گردد.');">
+                                <button type="submit" class="btn btn-outline-danger btn-sm" title="حذف مرخصی">
+                                    <i class="bi bi-trash"></i> حذف
+                                </button>
+                            </form>
+
+                            {% elif item.request.status == 'R' %}
+                            <!-- نمایش ردکننده با دلیل رد -->
+                            <small class="text-danger" title="{{ item.request.rejection_reason or '' }}">
+                                <i class="bi bi-person-x"></i>
+                                {{ item.request.approved_by }}
+                                {% if item.request.rejection_reason %}
+                                <br>
+                                <span class="text-muted">{{ item.request.rejection_reason }}</span>
+                                {% endif %}
+                            </small>
+
+                            {% elif item.request.status == 'D' %}
+                            <!-- حذف شده -->
+                            <small class="text-muted">
+                                <i class="bi bi-trash"></i> حذف شده
+                            </small>
+                            {% endif %}
+                        </td>
+                    </tr>
+
+                    <!-- Modal رد درخواست (فقط برای درخواست‌های در انتظار) -->
+                    {% if item.request.status == 'P' %}
+                    <div class="modal fade" id="rejectModal{{ item.request.id }}" tabindex="-1">
+                        <div class="modal-dialog">
+                            <div class="modal-content">
+                                <form method="post" action="/admin/leave-requests/{{ item.request.id }}/reject">
+                                    <div class="modal-header">
+                                        <h5 class="modal-title">❌ رد درخواست مرخصی</h5>
+                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <p>
+                                            <strong>{{ item.full_name }}</strong> -
+                                            {{ item.request.days_count }} روز مرخصی {{ item.leave_type_name }}
+                                            از {{ item.from_j }} تا {{ item.to_j }}
+                                        </p>
+                                        {% if item.request.reason %}
+                                        <div class="alert alert-secondary">
+                                            <small>📝 دلیل درخواست: {{ item.request.reason }}</small>
+                                        </div>
+                                        {% endif %}
+                                        <div class="mb-3">
+                                            <label class="form-label">📝 دلیل رد (اختیاری)</label>
+                                            <textarea name="rejection_reason" class="form-control" rows="3"
+                                                      placeholder="دلیل رد درخواست را وارد کنید..."></textarea>
+                                        </div>
+                                    </div>
+                                    <div class="modal-footer">
+                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
+                                        <button type="submit" class="btn btn-danger">
+                                            <i class="bi bi-x-lg"></i> رد درخواست
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if total_count >= 200 %}
+        <div class="alert alert-info mt-3 mb-0">
+            <i class="bi bi-info-circle"></i>
+            فقط ۲۰۰ درخواست اخیر نمایش داده می‌شود. برای مشاهده بیشتر، فیلتر اعمال کنید.
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}

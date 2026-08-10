@@ -133,7 +133,7 @@ async def dashboard(
 
         contract_info = {
             'id': active_contract.id,
-            'contract_type': active_contract.contract_type,
+            'contract_type': active_contract.contract_type_name,
             'start_date_j': j_start.strftime('%Y/%m/%d'),
             'end_date_j': j_end.strftime('%Y/%m/%d') if j_end else 'نامحدود',
             'days_remaining': days_remaining,

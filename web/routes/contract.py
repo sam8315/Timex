@@ -54,7 +54,7 @@ async def contract_page(
 
         contract_data = {
             'id': c.id,
-            'contract_type': c.contract_type,
+            'contract_type': c.contract_type_name,
             'contract_type_name': CONTRACT_TYPE_NAMES.get(c.contract_type, c.contract_type),
             'start_date_j': j_start.strftime('%Y/%m/%d'),
             'end_date_j': j_end.strftime('%Y/%m/%d') if j_end else 'نامحدود',
