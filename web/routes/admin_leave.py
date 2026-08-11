@@ -6,7 +6,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
+from sqlalchemy import or_, and_
 import jdatetime
 from typing import Optional
 
@@ -17,6 +17,8 @@ from models.leave_balance import LeaveBalance
 from models.leave_transaction import LeaveTransaction
 from datetime import datetime
 from models.leave_request import LeaveRequest
+from models.contract import Contract, CONTRACT_TYPES
+from sqlalchemy import func
 
 router = APIRouter(tags=["Admin Leave"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
@@ -59,29 +61,72 @@ def get_employee_name(db, user_id: str) -> str:
 # ============================================
 @router.get("/leave-balances", response_class=HTMLResponse)
 async def leave_balances_page(
-    request: Request,
-    year: Optional[int] = Query(None),
-    search: Optional[str] = Query(None),
-    show_all: Optional[str] = Query(None),
-    user: User = Depends(require_admin),
-    db: Session = Depends(get_db)
+        request: Request,
+        year: Optional[str] = Query(None),
+        search: Optional[str] = Query(None),
+        contract_type: Optional[str] = Query(None),  # 🆕 فیلتر نوع قرارداد
+        show_all: Optional[str] = Query(None),
+        user: User = Depends(require_admin),
+        db: Session = Depends(get_db)
 ):
     """لیست مانده مرخصی کاربران - همه سال‌ها"""
     today_j = jdatetime.date.today()
 
-    # 🆕 اگر year یا search یا show_all باشد، فیلتر اعمال می‌شود
-    has_filter = any([search, show_all, year is not None])
+    # تبدیل year به int اگر خالی نباشد
+    year_int = None
+    if year and year.strip():
+        try:
+            year_int = int(year.strip())
+        except ValueError:
+            year_int = None
+
+    # اگر هر فیلتری باشد، اعمال می‌شود
+    has_filter = any([search, show_all, year_int is not None, contract_type])
 
     balances_data = []
 
     if has_filter:
         query = db.query(LeaveBalance)
 
-        # 🆕 فقط اگر year مشخص شد، فیلتر سال اعمال شود
-        # اگر year=None → همه سال‌ها نمایش داده می‌شوند
-        if year:
-            query = query.filter(LeaveBalance.year == year)
+        # فیلتر سال
+        if year_int:
+            query = query.filter(LeaveBalance.year == year_int)
 
+        # 🆕 فیلتر نوع قرارداد (بر اساس آخرین قرارداد هر کاربر)
+        if contract_type:
+            # subquery: آخرین start_date قرارداد هر کاربر
+            latest_contract_subq = (
+                db.query(
+                    Contract.user_id,
+                    func.max(Contract.start_date).label('max_start')
+                )
+                .group_by(Contract.user_id)
+                .subquery()
+            )
+
+            # پیدا کردن کاربرانی که آخرین قراردادشان نوع مورد نظر است
+            users_with_type = (
+                db.query(Contract.user_id)
+                .join(
+                    latest_contract_subq,
+                    and_(
+                        Contract.user_id == latest_contract_subq.c.user_id,
+                        Contract.start_date == latest_contract_subq.c.max_start
+                    )
+                )
+                .filter(Contract.contract_type_code == contract_type)
+                .all()
+            )
+
+            user_ids = list(set([u[0] for u in users_with_type]))
+
+            if user_ids:
+                query = query.filter(LeaveBalance.user_id.in_(user_ids))
+            else:
+                # هیچ کاربری با این نوع قرارداد نیست
+                query = query.filter(LeaveBalance.user_id == "___NONE___")
+
+        # جستجو
         if search and search.strip():
             term = search.strip()
             query = query.outerjoin(Employee, LeaveBalance.user_id == Employee.user_id).filter(
@@ -109,11 +154,30 @@ async def leave_balances_page(
             if b.leave_type in ('AL', 'SL', 'CW'):
                 grouped[key][b.leave_type] = b.balance
 
+        # 🆕 دریافت نوع قرارداد هر کاربر برای نمایش
+        user_ids_in_result = list(set([row['user_id'] for row in grouped.values()]))
+        contract_types_map = {}
+        if user_ids_in_result:
+            # آخرین قرارداد هر کاربر
+            for uid in user_ids_in_result:
+                last_contract = db.query(Contract).filter(
+                    Contract.user_id == uid
+                ).order_by(Contract.start_date.desc()).first()
+
+                if last_contract:
+                    contract_types_map[uid] = {
+                        'code': last_contract.contract_type_code,
+                        'name': last_contract.contract_type_name,
+                    }
+                else:
+                    contract_types_map[uid] = {'code': None, 'name': 'بدون قرارداد'}
+
         for key, row in grouped.items():
             row['full_name'] = get_employee_name(db, row['user_id'])
+            row['contract_type'] = contract_types_map.get(row['user_id'], {'code': None, 'name': '-'})
             balances_data.append(row)
 
-    # 🆕 لیست سال‌های موجود در دیتابیس + سال جاری
+    # لیست سال‌های موجود در دیتابیس + سال جاری
     existing_years = db.query(LeaveBalance.year).distinct().all()
     available_years = sorted(
         set([y[0] for y in existing_years] + [today_j.year]),
@@ -126,9 +190,11 @@ async def leave_balances_page(
         "total_count": len(balances_data),
         "has_filter": has_filter,
         "show_all": show_all,
-        "year": year,
+        "year": year_int,
         "search": search or "",
+        "contract_type": contract_type or "",  # 🆕
         "available_years": available_years,
+        "contract_types": CONTRACT_TYPES,  # 🆕
         "leave_types": LEAVE_TYPES,
         "is_admin": True,
         "is_super_admin": user.is_super_admin,
@@ -141,7 +207,7 @@ async def leave_balances_page(
 @router.get("/leave-transactions", response_class=HTMLResponse)
 async def leave_transactions_page(
     request: Request,
-    year: Optional[int] = Query(None),
+    year: Optional[str] = Query(None),  # 🆕 تغییر از int به str
     leave_type: Optional[str] = Query(None),
     tx_type: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
@@ -152,17 +218,25 @@ async def leave_transactions_page(
     """لیست تراکنش‌های مرخصی - همه سال‌ها"""
     today_j = jdatetime.date.today()
 
-    # 🆕 اگر هر فیلتری باشد، اعمال می‌شود
-    has_filter = any([search, leave_type, tx_type, show_all, year is not None])
+    # 🆕 تبدیل year به int اگر خالی نباشد
+    year_int = None
+    if year and year.strip():
+        try:
+            year_int = int(year.strip())
+        except ValueError:
+            year_int = None
+
+    # اگر هر فیلتری باشد، اعمال می‌شود
+    has_filter = any([search, leave_type, tx_type, show_all, year_int is not None])
 
     transactions_data = []
 
     if has_filter:
         query = db.query(LeaveTransaction)
 
-        # 🆕 فقط اگر year مشخص شد، فیلتر سال اعمال شود
-        if year:
-            query = query.filter(LeaveTransaction.year == year)
+        # فقط اگر year مشخص شد، فیلتر سال اعمال شود
+        if year_int:
+            query = query.filter(LeaveTransaction.year == year_int)
 
         if leave_type:
             query = query.filter(LeaveTransaction.leave_type == leave_type)
@@ -180,11 +254,7 @@ async def leave_transactions_page(
                 )
             )
 
-        transactions = query.order_by(
-            LeaveTransaction.year.desc(),  # ۱. سال جدیدتر اول
-            LeaveTransaction.created_at.desc(),  # ۲. تاریخ جدیدتر اول
-            LeaveTransaction.id.desc()  # ۳. id جدیدتر اول (برای تراکنش‌های هم‌زمان)
-        ).limit(500).all()
+        transactions = query.order_by(LeaveTransaction.created_at.desc()).limit(500).all()
 
         for t in transactions:
             created_j = None
@@ -208,7 +278,7 @@ async def leave_transactions_page(
                 'created_j': created_j,
             })
 
-    # 🆕 لیست سال‌های موجود در دیتابیس + سال جاری
+    # لیست سال‌های موجود در دیتابیس + سال جاری
     existing_years = db.query(LeaveTransaction.year).distinct().all()
     available_years = sorted(
         set([y[0] for y in existing_years] + [today_j.year]),
@@ -221,7 +291,7 @@ async def leave_transactions_page(
         "total_count": len(transactions_data),
         "has_filter": has_filter,
         "show_all": show_all,
-        "year": year,
+        "year": year_int,  # 🆕 int یا None
         "search": search or "",
         "leave_type": leave_type or "",
         "tx_type": tx_type or "",
@@ -230,7 +300,6 @@ async def leave_transactions_page(
         "transaction_types": TRANSACTION_TYPES,
         "is_admin": True,
     })
-
 
 # ============================================
 # تنظیم دستی مانده (فقط مدیر ارشد)
