@@ -26,8 +26,12 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templa
 LEAVE_TYPES = {
     'AL': 'استحقاقی',
     'SL': 'استعلاجی',
-    'CW': 'ذخیره سال قبل',  # 🆕
+    'RL': 'تشویقی',          # 🆕
+    'CW': 'ذخیره سال قبل',   # 🆕
 }
+
+# 🆕 انواع مرخصی که فقط در صورت داشتن مانده نمایش داده می‌شوند
+CONDITIONAL_LEAVE_TYPES = {'RL', 'CW'}
 
 STATUS_NAMES = {
     'P': '⏳ در انتظار',
@@ -111,14 +115,17 @@ async def leave_page(
     # دریافت مانده مرخصی سال جاری
     balances = get_user_leave_balance(db, user.user_id, current_year)
 
-    # 🆕 فقط انواع مرخصی که کاربر مانده دارد را نشان بده
+    # 🆕 فقط انواع مرخصی که کاربر می‌تواند درخواست دهد را نشان بده
+    # - AL و SL: همیشه نمایش داده می‌شوند
+    # - RL و CW: فقط اگر مانده > 0 باشد نمایش داده می‌شوند
     available_leave_types = {}
     for code, name in LEAVE_TYPES.items():
-        if code == 'CW':
-            # CW فقط اگر مانده دارد نمایش داده شود
-            if balances.get('CW', 0) > 0:
+        if code in CONDITIONAL_LEAVE_TYPES:
+            # انواع شرطی: فقط اگر مانده دارند نمایش داده شوند
+            if balances.get(code, 0) > 0:
                 available_leave_types[code] = name
         else:
+            # انواع عادی: همیشه نمایش داده شوند
             available_leave_types[code] = name
 
     # دریافت درخواست‌های اخیر
@@ -164,12 +171,13 @@ async def leave_page(
         "balances": balances,
         "al_balance": balances.get('AL', 0),
         "sl_balance": balances.get('SL', 0),
-        "cw_balance": balances.get('CW', 0),  # 🆕 مانده ذخیره سال قبل
+        "rl_balance": balances.get('RL', 0),   # 🆕
+        "cw_balance": balances.get('CW', 0),   # 🆕
         "recent_requests": recent_requests,
         "pending_count": pending_count,
         "approved_count": approved_count,
         "rejected_count": rejected_count,
-        "leave_types": available_leave_types,  # 🆕 فقط انواع موجود
+        "leave_types": available_leave_types,  # 🆕 لیست فیلتر شده
         "is_admin": user.is_admin,
     })
 

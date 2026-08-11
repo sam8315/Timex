@@ -25,7 +25,8 @@
 
 <!-- کارت‌های آماری -->
 <div class="row mb-4">
-    <div class="col-md-3">
+    <!-- مانده استحقاقی -->
+    <div class="col-md-3 mb-3">
         <div class="card stat-card bg-success text-white">
             <div class="card-body">
                 <div class="d-flex justify-content-between">
@@ -38,7 +39,9 @@
             </div>
         </div>
     </div>
-    <div class="col-md-3">
+
+    <!-- مانده استعلاجی -->
+    <div class="col-md-3 mb-3">
         <div class="card stat-card bg-info text-white">
             <div class="card-body">
                 <div class="d-flex justify-content-between">
@@ -51,8 +54,27 @@
             </div>
         </div>
     </div>
+
+    <!-- 🆕 مانده تشویقی -->
+    {% if rl_balance > 0 %}
+    <div class="col-md-3 mb-3">
+        <div class="card stat-card bg-warning text-dark">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6>مانده تشویقی</h6>
+                        <h2>{{ rl_balance }} روز</h2>
+                    </div>
+                    <i class="bi bi-gift fs-1 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- 🆕 مانده ذخیره سال قبل -->
     {% if cw_balance > 0 %}
-    <div class="col-md-3">
+    <div class="col-md-3 mb-3">
         <div class="card stat-card bg-secondary text-white">
             <div class="card-body">
                 <div class="d-flex justify-content-between">
@@ -66,8 +88,10 @@
         </div>
     </div>
     {% endif %}
-    <div class="col-md-3">
-        <div class="card stat-card bg-warning text-dark">
+
+    <!-- در انتظار -->
+    <div class="col-md-3 mb-3">
+        <div class="card stat-card bg-primary text-white">
             <div class="card-body">
                 <div class="d-flex justify-content-between">
                     <div>
@@ -75,19 +99,6 @@
                         <h2>{{ pending_count }}</h2>
                     </div>
                     <i class="bi bi-hourglass-split fs-1 opacity-50"></i>
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card stat-card bg-primary text-white">
-            <div class="card-body">
-                <div class="d-flex justify-content-between">
-                    <div>
-                        <h6>تایید شده</h6>
-                        <h2>{{ approved_count }}</h2>
-                    </div>
-                    <i class="bi bi-check-circle fs-1 opacity-50"></i>
                 </div>
             </div>
         </div>
@@ -108,13 +119,21 @@
                         <select name="leave_type" class="form-select" id="leaveType" onchange="updateBalanceDisplay()">
                             {% for code, name in leave_types.items() %}
                             <option value="{{ code }}"
-                                    data-balance="{{ balances.get(code, 0) }}">
+                                    data-balance="{{ balances.get(code, 0) }}"
+                                    data-type-name="{{ name }}">
                                 {{ name }}
+                                {% if code in ['RL', 'CW'] %}
+                                ({{ balances.get(code, 0) }} روز)
+                                {% endif %}
                             </option>
                             {% endfor %}
                         </select>
+                        <!-- 🆕 نمایش راهنما برای انواع خاص -->
+                        <small class="text-muted d-block mt-1" id="leaveTypeHint">
+                            <i class="bi bi-info-circle"></i>
+                            <span id="hintText"></span>
+                        </small>
                     </div>
-
                     <div class="mb-3">
                         <label class="form-label">📅 از تاریخ (شمسی) <span class="text-danger">*</span></label>
                         <input type="text" name="from_date_str" class="form-control"
@@ -247,14 +266,28 @@
 
 {% block extra_js %}
 <script>
-// به‌روزرسانی نمایش مانده بر اساس نوع مرخصی
+// 🆕 راهنمای انواع مرخصی
+const leaveTypeHints = {
+    'AL': 'مرخصی سالانه طبق قرارداد',
+    'SL': 'مرخصی بیماری با تایید پزشک',
+    'RL': 'مرخصی تشویقی اعطا شده توسط مدیریت',
+    'CW': 'مرخصی ذخیره شده از سال قبل',
+};
+
+// به‌روزرسانی نمایش مانده و راهنما بر اساس نوع مرخصی
 function updateBalanceDisplay() {
     const select = document.getElementById('leaveType');
     const selectedOption = select.options[select.selectedIndex];
+    const leaveType = selectedOption.value;
     const balance = selectedOption.dataset.balance;
 
-    // می‌توانید اینجا مانده را در یک المان نمایش دهید
-    console.log('مانده:', balance);
+    // به‌روزرسانی راهنما
+    const hintText = document.getElementById('hintText');
+    if (hintText && leaveTypeHints[leaveType]) {
+        hintText.textContent = leaveTypeHints[leaveType];
+    }
+
+    console.log('نوع:', leaveType, 'مانده:', balance);
 }
 
 // محاسبه تعداد روزها (سمت کلاینت - فقط برای پیش‌نمایش ساده)
@@ -269,18 +302,15 @@ function calculateDays() {
         return;
     }
 
-    // تبدیل تاریخ شمسی به Date (ساده)
     try {
         const fromParts = fromStr.split('/').map(Number);
         const toParts = toStr.split('/').map(Number);
 
-        // اعتبارسنجی ساده
         if (fromParts.length !== 3 || toParts.length !== 3) {
             preview.classList.add('d-none');
             return;
         }
 
-        // محاسبه ساده تعداد روزها (بدون تبدیل دقیق شمسی)
         const fromJ = new Date(fromParts[0], fromParts[1] - 1, fromParts[2]);
         const toJ = new Date(toParts[0], toParts[1] - 1, toParts[2]);
 
@@ -302,5 +332,10 @@ function calculateDays() {
         preview.classList.add('d-none');
     }
 }
+
+// اجرای اولیه
+document.addEventListener('DOMContentLoaded', function() {
+    updateBalanceDisplay();
+});
 </script>
 {% endblock %}
