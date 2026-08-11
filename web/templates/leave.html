@@ -134,19 +134,39 @@
                             <span id="hintText"></span>
                         </small>
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label">📅 از تاریخ (شمسی) <span class="text-danger">*</span></label>
-                        <input type="text" name="from_date_str" class="form-control"
-                               placeholder="1405/05/19" required id="fromDate"
-                               onchange="calculateDays()">
-                    </div>
+<!-- 📅 از تاریخ -->
+<div class="mb-3">
+    <label class="form-label">از تاریخ <span class="text-danger">*</span></label>
+    <div class="input-group">
+        <input type="text"
+               name="from_date_str"
+               class="form-control"
+               id="fromDate"
+               readonly
+               required
+               placeholder="انتخاب تاریخ">
+        <button class="btn btn-outline-secondary" type="button" onclick="clearDate('fromDate')" title="پاک کردن">
+            <i class="bi bi-x-lg"></i>
+        </button>
+    </div>
+</div>
 
-                    <div class="mb-3">
-                        <label class="form-label">📅 تا تاریخ (شمسی) <span class="text-danger">*</span></label>
-                        <input type="text" name="to_date_str" class="form-control"
-                               placeholder="1405/05/21" required id="toDate"
-                               onchange="calculateDays()">
-                    </div>
+<!-- 📅 تا تاریخ -->
+<div class="mb-3">
+    <label class="form-label">تا تاریخ <span class="text-danger">*</span></label>
+    <div class="input-group">
+        <input type="text"
+               name="to_date_str"
+               class="form-control"
+               id="toDate"
+               readonly
+               required
+               placeholder="انتخاب تاریخ">
+        <button class="btn btn-outline-secondary" type="button" onclick="clearDate('toDate')" title="پاک کردن">
+            <i class="bi bi-x-lg"></i>
+        </button>
+    </div>
+</div>
 
                     <div class="mb-3">
                         <label class="form-label">📝 دلیل (اختیاری)</label>
@@ -266,31 +286,54 @@
 
 {% block extra_js %}
 <script>
-// 🆕 راهنمای انواع مرخصی
-const leaveTypeHints = {
-    'AL': 'مرخصی سالانه طبق قرارداد',
-    'SL': 'مرخصی بیماری با تایید پزشک',
-    'RL': 'مرخصی تشویقی اعطا شده توسط مدیریت',
-    'CW': 'مرخصی ذخیره شده از سال قبل',
-};
-
-// به‌روزرسانی نمایش مانده و راهنما بر اساس نوع مرخصی
-function updateBalanceDisplay() {
-    const select = document.getElementById('leaveType');
-    const selectedOption = select.options[select.selectedIndex];
-    const leaveType = selectedOption.value;
-    const balance = selectedOption.dataset.balance;
-
-    // به‌روزرسانی راهنما
-    const hintText = document.getElementById('hintText');
-    if (hintText && leaveTypeHints[leaveType]) {
-        hintText.textContent = leaveTypeHints[leaveType];
-    }
-
-    console.log('نوع:', leaveType, 'مانده:', balance);
+// 🗑️ تابع پاک کردن تاریخ
+function clearDate(inputId) {
+    document.getElementById(inputId).value = '';
+    calculateDays();
 }
 
-// محاسبه تعداد روزها (سمت کلاینت - فقط برای پیش‌نمایش ساده)
+// 📅 راه‌اندازی تقویم - نسخه ساده و پایدار
+document.addEventListener('DOMContentLoaded', function() {
+    if (typeof mds === 'undefined' || !mds.MdsPersianDateTimePicker) {
+        console.error('کتابخانه تقویم لود نشده!');
+        return;
+    }
+
+    // 🆕 تابع کمکی برای ساخت تقویم
+    function createPicker(inputId, onSelectedCallback) {
+        const element = document.getElementById(inputId);
+        if (!element) return null;
+
+        return new mds.MdsPersianDateTimePicker(element, {
+            // 🆕 targetTextSelector به صورت string selector یا حذف شود
+            targetTextSelector: '#' + inputId,
+            selectedDateToShow: new Date(),
+            enableTimePicker: false,
+            monthButtons: true,
+            yearButtons: true,
+            isGregorian: false,
+            persianNumber: false,
+            // 🆕 فرمت شمسی
+            dateFormat: 'yyyy/MM/dd',
+            textFormat: 'yyyy/MM/dd',
+            onSelected: onSelectedCallback
+        });
+    }
+
+    // تقویم "از تاریخ"
+    createPicker('fromDate', function(date) {
+        console.log('از تاریخ انتخاب شد:', document.getElementById('fromDate').value);
+        setTimeout(calculateDays, 100);
+    });
+
+    // تقویم "تا تاریخ"
+    createPicker('toDate', function(date) {
+        console.log('تا تاریخ انتخاب شد:', document.getElementById('toDate').value);
+        setTimeout(calculateDays, 100);
+    });
+});
+
+// 🧮 محاسبه تعداد روزها
 function calculateDays() {
     const fromStr = document.getElementById('fromDate').value;
     const toStr = document.getElementById('toDate').value;
@@ -298,7 +341,7 @@ function calculateDays() {
     const daysEl = document.getElementById('daysCount');
 
     if (!fromStr || !toStr) {
-        preview.classList.add('d-none');
+        if (preview) preview.classList.add('d-none');
         return;
     }
 
@@ -307,33 +350,46 @@ function calculateDays() {
         const toParts = toStr.split('/').map(Number);
 
         if (fromParts.length !== 3 || toParts.length !== 3) {
-            preview.classList.add('d-none');
+            if (preview) preview.classList.add('d-none');
             return;
         }
 
-        const fromJ = new Date(fromParts[0], fromParts[1] - 1, fromParts[2]);
-        const toJ = new Date(toParts[0], toParts[1] - 1, toParts[2]);
+        // محاسبه ساده اختلاف روزها
+        const fromDays = fromParts[0] * 365 + fromParts[1] * 30 + fromParts[2];
+        const toDays = toParts[0] * 365 + toParts[1] * 30 + toParts[2];
+        const diffDays = Math.abs(toDays - fromDays) + 1;
 
-        if (fromJ > toJ) {
-            daysEl.textContent = 'خطا: تاریخ شروع بعد از پایان است';
-            preview.classList.remove('d-none');
-            return;
-        }
-
-        const diffDays = Math.floor((toJ - fromJ) / (1000 * 60 * 60 * 24)) + 1;
-
-        // تخمین: کسر جمعه‌ها (تقریبی)
+        // تخمین کسر جمعه‌ها
         const fridays = Math.floor(diffDays / 7);
         const estimatedDays = diffDays - fridays;
 
-        daysEl.textContent = `حدود ${estimatedDays} (محاسبه دقیق پس از ثبت)`;
-        preview.classList.remove('d-none');
+        if (daysEl) daysEl.textContent = `حدود ${estimatedDays} روز (محاسبه دقیق پس از ثبت)`;
+        if (preview) preview.classList.remove('d-none');
     } catch (e) {
-        preview.classList.add('d-none');
+        console.error(e);
+        if (preview) preview.classList.add('d-none');
     }
 }
 
-// اجرای اولیه
+// 🆕 راهنمای انواع مرخصی
+const leaveTypeHints = {
+    'AL': 'مرخصی سالانه طبق قرارداد',
+    'SL': 'مرخصی بیماری با تایید پزشک',
+    'RL': 'مرخصی تشویقی اعطا شده توسط مدیریت',
+    'CW': 'مرخصی ذخیره شده از سال قبل',
+};
+
+function updateBalanceDisplay() {
+    const select = document.getElementById('leaveType');
+    if (!select) return;
+    const selectedOption = select.options[select.selectedIndex];
+    const leaveType = selectedOption.value;
+    const hintText = document.getElementById('hintText');
+    if (hintText && leaveTypeHints[leaveType]) {
+        hintText.textContent = leaveTypeHints[leaveType];
+    }
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     updateBalanceDisplay();
 });

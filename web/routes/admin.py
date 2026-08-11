@@ -17,6 +17,8 @@ from pathlib import Path
 import os
 from web.routes.attendance import calculate_work_hours, STATUS_NIGHT_SHIFT
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+from sqlalchemy import and_, or_, func, nulls_last
+from datetime import timedelta  # اگر نیست
 
 def build_redirect_url(referer: str, key: str, value: str) -> str:
     """ساخت URL بازگشت با رعایت query string موجود"""
@@ -193,7 +195,13 @@ async def admin_attendance(
     query = db.query(Employee).filter(Employee.is_active == True)
     if department:
         query = query.filter(Employee.department == department)
-    employees = query.order_by(Employee.department, Employee.first_name).all()
+
+    # 🆕 مرتب‌سازی بر اساس عضویت، تاریخ استخدام، نام
+    employees = query.order_by(
+        Employee.department,  # ۱. عضویت
+        nulls_last(Employee.hire_date),  # ۲. تاریخ استخدام (خالی‌ها آخر)
+        Employee.first_name  # ۳. نام
+    ).all()
 
     # دریافت تردهای همه در این روز
     attendances = db.query(Attendance).filter(
@@ -272,6 +280,8 @@ async def admin_attendance(
             'user_id': emp.user_id,
             'full_name': emp.full_name,
             'department': emp.department,
+            # 🆕 تاریخ استخدام (شمسی)
+            'hire_date_j': jdatetime.date.fromgregorian(date=emp.hire_date).strftime('%Y/%m/%d') if emp.hire_date else '-',
             'first_enter': first_enter,
             'last_exit': last_exit,
             'total_punches': len(user_atts),
