@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_
 import jdatetime
 from typing import Optional
+from datetime import datetime, timedelta
 
 # 🆕 اصلاح import
 from web.dependencies import get_db, require_admin, get_current_user
@@ -168,3 +169,42 @@ async def reject_cash_out(
             url=build_redirect_url(referer, "error", result['error']),
             status_code=302
         )
+
+
+# ============================================
+# 🆕 تعویق تصمیم‌گیری (بعداً تصمیم می‌گیرم)
+# ============================================
+@router.post("/carry-forward/postpone")
+async def postpone_carry_forward(
+        request: Request,
+        user: User = Depends(get_current_user),
+        db: Session = Depends(get_db)
+):
+    """کاربر می‌خواهد بعداً تصمیم بگیرد - ۷ روز تعویق"""
+    from datetime import datetime, timedelta
+
+    # ۷ روز تعویق
+    postpone_until = datetime.now() + timedelta(days=7)
+    request.session['carry_forward_postponed_until'] = postpone_until.isoformat()
+
+    return RedirectResponse(
+        url="/dashboard?info=باشه، ۷ روز دیگه دوباره یادآوری می‌کنیم 👌",
+        status_code=302
+    )
+
+
+# ============================================
+# 🆕 تعیین تکلیف زودتر از موعد
+# ============================================
+@router.get("/carry-forward/manage")
+async def manage_carry_forward(
+        request: Request,
+        user: User = Depends(get_current_user),
+        db: Session = Depends(get_db)
+):
+    """پاک کردن دوره تعویق و نمایش مجدد مودال"""
+    # پاک کردن session تعویق
+    if 'carry_forward_postponed_until' in request.session:
+        del request.session['carry_forward_postponed_until']
+
+    return RedirectResponse(url="/dashboard", status_code=302)

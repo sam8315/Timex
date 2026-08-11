@@ -51,6 +51,21 @@
             </div>
         </div>
     </div>
+    {% if cw_balance > 0 %}
+    <div class="col-md-3">
+        <div class="card stat-card bg-secondary text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6>ذخیره سال قبل</h6>
+                        <h2>{{ cw_balance }} روز</h2>
+                    </div>
+                    <i class="bi bi-archive fs-1 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
     <div class="col-md-3">
         <div class="card stat-card bg-warning text-dark">
             <div class="card-body">

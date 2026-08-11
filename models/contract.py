@@ -8,35 +8,38 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from models.base import Base, TimestampMixin
 
 
-# 🆕 انواع قرارداد (کد → مشخصات)
 CONTRACT_TYPES = {
     '1': {
         'name': 'رسمی',
-        'annual_leave': 35,       # ۳۵ روز استحقاقی
-        'sick_leave': 120,        # ۴ ماه = ۱۲۰ روز
+        'annual_leave': 35,
+        'sick_leave': 120,
         'allow_service_deduction': False,
-        'editable_leave': False,   # مرخصی قابل ویرایش نیست
+        'editable_leave': False,
+        'carry_forward_max': 0,  # 🆕 رسمی: بدون سقف ذخیره (یا عدد دلخواه)
     },
     '2': {
         'name': 'وظیفه',
         'annual_leave': 35,
-        'sick_leave': 30,         # ۱ ماه
-        'allow_service_deduction': True,  # ✅ کسر خدمت دارد
+        'sick_leave': 30,
+        'allow_service_deduction': True,
         'editable_leave': False,
+        'carry_forward_max': 0,  # 🆕 وظیفه: بدون ذخیره
     },
     '3': {
         'name': 'خریدخدمت',
-        'annual_leave': 30,
-        'sick_leave': 30,
+        'annual_leave': 0,
+        'sick_leave': 0,
         'allow_service_deduction': False,
         'editable_leave': False,
+        'carry_forward_max': 0,  # 🆕 بدون ذخیره
     },
     '4': {
         'name': 'قراردادی',
         'annual_leave': 30,
-        'sick_leave': 30,         # ۱ ماه
+        'sick_leave': 30,
         'allow_service_deduction': False,
         'editable_leave': False,
+        'carry_forward_max': 9,  # 🆕 قراردادی: حداکثر ۹ روز
     },
     '5': {
         'name': 'پزشک',
@@ -44,20 +47,23 @@ CONTRACT_TYPES = {
         'sick_leave': 0,
         'allow_service_deduction': False,
         'editable_leave': False,
+        'carry_forward_max': 0,  # 🆕 بدون ذخیره
     },
     '6': {
         'name': 'سایر / متفرقه',
         'annual_leave': 0,
         'sick_leave': 0,
         'allow_service_deduction': False,
-        'editable_leave': True,    # ✅ مرخصی قابل تعریف است
+        'editable_leave': True,
+        'carry_forward_max': 0,  # 🆕 قابل تنظیم
     },
     '7': {
         'name': 'قرارداد با بیمه‌ها',
         'annual_leave': 0,
         'sick_leave': 0,
         'allow_service_deduction': False,
-        'editable_leave': True,    # ✅ مرخصی قابل تعریف است
+        'editable_leave': True,
+        'carry_forward_max': 0,  # 🆕 قابل تنظیم
     },
 }
 

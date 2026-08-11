@@ -26,6 +26,7 @@ LEAVE_TYPES = {
     'SL': 'استعلاجی',
     'RL': 'تشویقی',
     'UL': 'بدون حقوق',
+    'CW': 'ذخیره سال قبل',  # 🆕
 }
 
 TRANSACTION_TYPES = {
@@ -103,8 +104,9 @@ async def leave_balances_page(
                     'year': b.year,
                     'AL': None,
                     'SL': None,
+                    'CW': None,
                 }
-            if b.leave_type in ('AL', 'SL'):
+            if b.leave_type in ('AL', 'SL', 'CW'):
                 grouped[key][b.leave_type] = b.balance
 
         for key, row in grouped.items():
@@ -178,7 +180,11 @@ async def leave_transactions_page(
                 )
             )
 
-        transactions = query.order_by(LeaveTransaction.created_at.desc()).limit(500).all()
+        transactions = query.order_by(
+            LeaveTransaction.year.desc(),  # ۱. سال جدیدتر اول
+            LeaveTransaction.created_at.desc(),  # ۲. تاریخ جدیدتر اول
+            LeaveTransaction.id.desc()  # ۳. id جدیدتر اول (برای تراکنش‌های هم‌زمان)
+        ).limit(500).all()
 
         for t in transactions:
             created_j = None

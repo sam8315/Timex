@@ -137,10 +137,10 @@
                             {% endif %}
                         </td>
                         <td class="text-center fw-bold">
-                            {% if t.transaction_type in ['CHARGE', 'ADJUST'] %}
-                            <span class="text-success">+{{ t.amount }}</span>
+                            {% if t.transaction_type in ['CHARGE', 'ADJUST', 'CF_IN'] %}
+                            <span class="text-success">{{ t.amount }}+</span>
                             {% else %}
-                            <span class="text-danger">-{{ t.amount }}</span>
+                            <span class="text-danger">{{ t.amount }}-</span>
                             {% endif %}
                         </td>
                         <td class="text-center">{{ t.transaction_type_name }}</td>

@@ -232,17 +232,62 @@ async def dashboard(
     else:
         last_login_display = "اولین ورود شما"
 
-    # بررسی مرخصی استفاده نشده از سال قبل
+    # 🆕 بررسی مرخصی استفاده نشده از سال قبل
     unused_leave = get_unused_leave_from_previous_year(db, user.user_id)
     show_carry_forward_modal = False
     carry_forward_year = None
+    has_pending_carry_forward = False  # 🆕 متغیر جدید
 
     if unused_leave:
         current_year_j = jdatetime.date.today().year
         carry_forward_year = current_year_j - 1
 
+        # بررسی وجود درخواست قبلی (جلوگیری از نمایش مجدد مودال)
         if not has_carry_forward_request(db, user.user_id, carry_forward_year):
-            show_carry_forward_modal = True
+            # 🆕 مرخصی دارد و هنوز تعیین تکلیف نشده
+            has_pending_carry_forward = True
+
+            # بررسی اینکه کاربر "بعداً" را نزده باشد
+            postponed_until = request.session.get('carry_forward_postponed_until')
+            should_show = True
+
+            if postponed_until:
+                try:
+                    postponed_date = datetime.fromisoformat(postponed_until)
+                    if datetime.now() < postponed_date:
+                        # هنوز در دوره تعویق است
+                        should_show = False
+                except Exception:
+                    should_show = True
+
+            if should_show:
+                show_carry_forward_modal = True
+    # 🆕 محاسبه سقف انتقال برای نمایش در مودال
+    carry_forward_limit = None
+    if unused_leave:
+        current_year_j = jdatetime.date.today().year
+        carry_forward_year = current_year_j - 1
+
+        # 🆕 محاسبه سقف
+        from web.services.carry_forward_service import calculate_carry_forward_limit
+        carry_forward_limit = calculate_carry_forward_limit(db, user.user_id, carry_forward_year)
+
+        if not has_carry_forward_request(db, user.user_id, carry_forward_year):
+            # بررسی دوره تعویق
+            postponed_until = request.session.get('carry_forward_postponed_until')
+            should_show = True
+
+            if postponed_until:
+                try:
+                    postponed_date = datetime.fromisoformat(postponed_until)
+                    if datetime.now() < postponed_date:
+                        should_show = False
+                except Exception:
+                    should_show = True
+
+            if should_show:
+                show_carry_forward_modal = True
+
 
     return templates.TemplateResponse(request, "dashboard.html", {
         "user": user,
@@ -262,4 +307,9 @@ async def dashboard(
         "unused_leave": unused_leave,
         "show_carry_forward_modal": show_carry_forward_modal,
         "carry_forward_year": carry_forward_year,
+        "has_pending_carry_forward": has_pending_carry_forward,  # 🆕=
+        "unused_leave": unused_leave,
+        "show_carry_forward_modal": show_carry_forward_modal,
+        "carry_forward_year": carry_forward_year,
+        "carry_forward_limit": carry_forward_limit,  # 🆕
     })

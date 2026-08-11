@@ -145,6 +145,7 @@
                         <th>نام کامل</th>
                         <th class="text-center">🏖️ مانده استحقاقی</th>
                         <th class="text-center">🏥 مانده استعلاجی</th>
+                        <th class="text-center">📦 ذخیره سال قبل</th>  <!-- 🆕 -->
                         <th class="text-center">عملیات</th>
                     </tr>
                 </thead>
@@ -167,6 +168,13 @@
                         <td class="text-center">
                             {% if row.SL is not none %}
                             <span class="badge bg-info fs-6">{{ row.SL }} روز</span>
+                            {% else %}
+                            <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            {% if row.CW is not none and row.CW > 0 %}
+                            <span class="badge bg-secondary fs-6">{{ row.CW }} روز</span>
                             {% else %}
                             <span class="text-muted">-</span>
                             {% endif %}

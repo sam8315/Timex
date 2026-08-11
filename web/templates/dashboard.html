@@ -1,6 +1,31 @@
 {% extends "base.html" %}
 {% block title %}داشبورد{% endblock %}
 {% block content %}
+<!-- 🆕 نمایش پیام‌ها -->
+{% set success_msg = request.query_params.get('success') %}
+{% set error_msg = request.query_params.get('error') %}
+{% set info_msg = request.query_params.get('info') %}
+
+{% if success_msg %}
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+    <i class="bi bi-check-circle-fill"></i> {{ success_msg }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="بستن"></button>
+</div>
+{% endif %}
+
+{% if error_msg %}
+<div class="alert alert-danger alert-dismissible fade show" role="alert">
+    <i class="bi bi-exclamation-triangle-fill"></i> {{ error_msg }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="بستن"></button>
+</div>
+{% endif %}
+
+{% if info_msg %}
+<div class="alert alert-info alert-dismissible fade show" role="alert">
+    <i class="bi bi-info-circle-fill"></i> {{ info_msg }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="بستن"></button>
+</div>
+{% endif %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
         <h4><i class="bi bi-house-door"></i> داشبورد</h4>
@@ -14,7 +39,24 @@
     </div>
     <span class="text-muted">{{ today_j.strftime('%Y/%m/%d') }}</span>
 </div>
-
+<!-- 🆕 کارت یادآوری مرخصی استفاده نشده (وقتی مودال نمایش داده نمی‌شود) -->
+{% if has_pending_carry_forward and not show_carry_forward_modal %}
+<div class="alert alert-warning d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <i class="bi bi-exclamation-triangle"></i>
+        شما
+        {% for leave_type, days in unused_leave.items() %}
+            <strong>{{ days }} روز</strong> مرخصی
+            {{ 'استحقاقی' if leave_type == 'AL' else 'استعلاجی' }}
+            {% if not loop.last %} و {% endif %}
+        {% endfor %}
+        استفاده نشده از سال <strong>{{ carry_forward_year }}</strong> دارید.
+    </div>
+    <a href="/carry-forward/manage" class="btn btn-warning btn-sm">
+        <i class="bi bi-arrow-repeat"></i> تعیین تکلیف
+    </a>
+</div>
+{% endif %}
 <!-- کارت‌های آمار -->
 <div class="row g-4 mb-4">
     <div class="col-md-3">
@@ -35,8 +77,9 @@
             <div class="card-body">
                 <div class="d-flex justify-content-between">
                     <div>
-                        <h6>مانده استحقاقی</h6>
-                        <h2>{{ balances.get('AL', 0) }} روز</h2>
+                        <h6>مانده مرخصی</h6>
+                        <h2>{{ balances.get('AL', 0) }} روز استحقاقی</h2>
+                        <h2>{{ balances.get('CW', 0) }} روز انتقالی</h2>
                     </div>
                     <i class="bi bi-airplane fs-1 opacity-50"></i>
                 </div>
@@ -252,12 +295,31 @@
                         {% if unused_leave.SL %}{{ unused_leave.SL }} روز مرخصی استعلاجی{% endif %}
                     </strong> استفاده نشده از سال <strong>{{ carry_forward_year }}</strong> دارید.
                 </div>
+
+                <!-- 🆕 نمایش سقف انتقال -->
+                {% if carry_forward_limit is defined %}
+                <div class="alert alert-secondary">
+                    <i class="bi bi-speedometer2"></i>
+                    <strong>سقف ذخیره/بازخرید شما:</strong>
+                    {% if carry_forward_limit.max_days > 0 %}
+                        {{ carry_forward_limit.max_days }} روز
+                        {% if not carry_forward_limit.full_year %}
+                        <small class="text-muted">
+                            (به نسبت {{ carry_forward_limit.worked_days }} روز کارکرد از {{ carry_forward_limit.year_days }} روز)
+                        </small>
+                        {% endif %}
+                    {% else %}
+                        ۰ روز (نوع قرارداد اجازه نمی‌دهد)
+                    {% endif %}
+                </div>
+                {% endif %}
+
                 <p>
                     آیا قصد <strong>بازخرید</strong> آن را دارید یا می‌خواهید در سال جدید <strong>استفاده</strong> کنید؟
                 </p>
                 <small class="text-muted">
                     <i class="bi bi-exclamation-triangle"></i>
-                    در صورت درخواست بازخرید، مدیر باید آن را تایید کند. در صورت رد، مرخصی به سال جدید منتقل می‌شود.
+                    در صورت درخواست بازخرید، مدیر باید آن را تایید کند. مازاد بر سقف ذخیره، سوخت می‌شود.
                 </small>
             </div>
             <div class="modal-footer">
@@ -267,9 +329,6 @@
                     <input type="hidden" name="leave_type" value="{{ leave_type }}">
                     <button type="submit" class="btn btn-success">
                         🏖️ قصد استفاده دارم
-                        {% if unused_leave|length > 1 %}
-                        ({{ 'استحقاقی' if leave_type == 'AL' else 'استعلاجی' }})
-                        {% endif %}
                     </button>
                 </form>
                 <form method="post" action="/carry-forward/choose" class="d-inline">
@@ -277,12 +336,16 @@
                     <input type="hidden" name="leave_type" value="{{ leave_type }}">
                     <button type="submit" class="btn btn-primary">
                         💰 درخواست بازخرید
-                        {% if unused_leave|length > 1 %}
-                        ({{ 'استحقاقی' if leave_type == 'AL' else 'استعلاجی' }})
-                        {% endif %}
                     </button>
                 </form>
                 {% endfor %}
+
+                <!-- دکمه بعداً -->
+                <form method="post" action="/carry-forward/postpone" class="d-inline">
+                    <button type="submit" class="btn btn-outline-secondary">
+                        ⏰ بعداً تصمیم می‌گیرم
+                    </button>
+                </form>
             </div>
         </div>
     </div>

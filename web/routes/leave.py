@@ -26,6 +26,7 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templa
 LEAVE_TYPES = {
     'AL': 'استحقاقی',
     'SL': 'استعلاجی',
+    'CW': 'ذخیره سال قبل',  # 🆕
 }
 
 STATUS_NAMES = {
@@ -37,6 +38,7 @@ STATUS_NAMES = {
 
 
 def build_redirect_url(referer: str, key: str, value: str) -> str:
+    """ساخت URL بازگشت با رعایت query string موجود"""
     separator = '&' if '?' in referer else '?'
     return f"{referer}{separator}{key}={value}"
 
@@ -55,7 +57,7 @@ def calculate_leave_days(
     ۲. جمعه → شمرده نمی‌شود
     ۳. روزهای عادی → شمرده می‌شود
     """
-    # دریافت گروه کاربر
+    # دریافت گروه کاربر (برای تعطیلات گروهی)
     employee = db.query(Employee).filter(Employee.user_id == user_id).first()
     user_group = employee.department if employee else None
 
@@ -85,7 +87,7 @@ def calculate_leave_days(
 
 
 def get_user_leave_balance(db: Session, user_id: str, year: int) -> dict:
-    """دریافت مانده مرخصی کاربر"""
+    """دریافت مانده مرخصی کاربر برای یک سال"""
     balances = db.query(LeaveBalance).filter(
         and_(
             LeaveBalance.user_id == user_id,
@@ -108,6 +110,16 @@ async def leave_page(
 
     # دریافت مانده مرخصی سال جاری
     balances = get_user_leave_balance(db, user.user_id, current_year)
+
+    # 🆕 فقط انواع مرخصی که کاربر مانده دارد را نشان بده
+    available_leave_types = {}
+    for code, name in LEAVE_TYPES.items():
+        if code == 'CW':
+            # CW فقط اگر مانده دارد نمایش داده شود
+            if balances.get('CW', 0) > 0:
+                available_leave_types[code] = name
+        else:
+            available_leave_types[code] = name
 
     # دریافت درخواست‌های اخیر
     recent_requests_raw = db.query(LeaveRequest).filter(
@@ -152,11 +164,12 @@ async def leave_page(
         "balances": balances,
         "al_balance": balances.get('AL', 0),
         "sl_balance": balances.get('SL', 0),
+        "cw_balance": balances.get('CW', 0),  # 🆕 مانده ذخیره سال قبل
         "recent_requests": recent_requests,
         "pending_count": pending_count,
         "approved_count": approved_count,
         "rejected_count": rejected_count,
-        "leave_types": LEAVE_TYPES,
+        "leave_types": available_leave_types,  # 🆕 فقط انواع موجود
         "is_admin": user.is_admin,
     })
 
