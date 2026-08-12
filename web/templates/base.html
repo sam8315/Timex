@@ -117,6 +117,11 @@
                             <i class="bi bi-file-earmark-text"></i> قراردادها
                         </a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if '/education' in request.url.path %}active{% endif %}" href="/education">
+                            <i class="bi bi-mortarboard"></i> تحصیلات
+                        </a>
+                    </li>
 
                     {% if is_admin %}
                     <!-- ═══════ جداکننده بخش مدیریت ═══════ -->
@@ -185,6 +190,8 @@
                                 <i class="bi bi-file-earmark-text"></i> مدیریت قراردادها</a></li>
                             <li><a class="dropdown-item {% if '/admin/users' in request.url.path %}active{% endif %}" href="/admin/users">
                                 <i class="bi bi-people-fill"></i> مدیریت کاربران</a></li>
+                            <li><a class="dropdown-item {% if '/admin/users' in request.url.path %}active{% endif %}" href="/admin/education">
+                                <i class="bi bi-people-fill"></i> مدارک تحصیلی</a></li>
                         </ul>
                     </li>
 

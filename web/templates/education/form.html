@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}{% if is_edit %}ویرایش مدرک{% else %}افزودن مدرک{% endif %}{% endblock %}
+{% block content %}
+
+{% if request.query_params.get('error') %}
+<div class="alert alert-danger alert-dismissible fade show">
+    <i class="bi bi-exclamation-triangle"></i> {{ request.query_params.get('error') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<div class="card">
+    <div class="card-header bg-white">
+        <h5>
+            {% if is_edit %}
+            <i class="bi bi-pencil"></i> ویرایش مدرک تحصیلی
+            {% else %}
+            <i class="bi bi-plus-circle"></i> افزودن مدرک تحصیلی
+            {% endif %}
+        </h5>
+    </div>
+    <div class="card-body">
+        <form method="post"
+              action="{% if is_edit %}/education/{{ education.id }}{% else %}/education{% endif %}"
+              enctype="multipart/form-data">
+
+            <div class="row g-3">
+                <!-- گروه تحصیلی -->
+                <div class="col-md-6">
+                    <label class="form-label">گروه تحصیلی <span class="text-danger">*</span></label>
+                    <select name="education_group" class="form-select" required>
+                        <option value="">انتخاب کنید...</option>
+                        {% for code, name in education_groups.items() %}
+                        <option value="{{ code }}" {% if education and education.education_group == code %}selected{% endif %}>
+                            {{ name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- مقطع تحصیلی -->
+                <div class="col-md-6">
+                    <label class="form-label">مقطع تحصیلی <span class="text-danger">*</span></label>
+                    <select name="degree_level" class="form-select" required>
+                        <option value="">انتخاب کنید...</option>
+                        {% for code, name in degree_levels.items() %}
+                        <option value="{{ code }}" {% if education and education.degree_level == code %}selected{% endif %}>
+                            {{ name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- رشته تحصیلی -->
+                <div class="col-md-6">
+                    <label class="form-label">رشته تحصیلی <span class="text-danger">*</span></label>
+                    <input type="text" name="major" class="form-control"
+                           value="{{ education.major if education else '' }}" required>
+                </div>
+
+                <!-- تاریخ دریافت مدرک -->
+                <div class="col-md-6">
+                    <label class="form-label">تاریخ دریافت مدرک <span class="text-danger">*</span></label>
+                    <input type="text" name="graduation_date_str" class="form-control jalali-date"
+                           value="{{ graduation_date_j if is_edit else '' }}" required>
+                </div>
+
+                <!-- آپلود مدرک -->
+                <div class="col-12">
+                    <label class="form-label">عکس/PDF مدرک (اختیاری)</label>
+                    <input type="file" name="certificate" class="form-control"
+                           accept=".jpg,.jpeg,.png,.pdf">
+                    <small class="text-muted">حداکثر 5MB - فرمت‌های مجاز: JPG, PNG, PDF</small>
+                    {% if education and education.certificate_path %}
+                    <div class="mt-2">
+                        <a href="{{ education.certificate_path }}" target="_blank" class="btn btn-outline-primary btn-sm">
+                            مشاهده فایل فعلی
+                        </a>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <!-- توضیحات -->
+                <div class="col-12">
+                    <label class="form-label">توضیحات (اختیاری)</label>
+                    <textarea name="notes" class="form-control" rows="3">{{ education.notes if education else '' }}</textarea>
+                </div>
+            </div>
+
+            <hr>
+
+            <button type="submit" class="btn btn-success">
+                <i class="bi bi-check-lg"></i>
+                {% if is_edit %}ذخیره تغییرات{% else %}ثبت مدرک{% endif %}
+            </button>
+            <a href="/education" class="btn btn-outline-secondary">انصراف</a>
+        </form>
+    </div>
+</div>
+
+{% endblock %}
