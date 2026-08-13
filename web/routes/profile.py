@@ -10,6 +10,7 @@ import jdatetime
 from web.dependencies import get_db, check_password_change
 from models.user import User
 from models.employee import Employee
+from models.employee_phone import EmployeePhone
 
 router = APIRouter(tags=["Profile"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
@@ -102,6 +103,11 @@ async def profile_page(
     else:
         last_login_display = "اولین ورود شما"
 
+    # 🆕 دریافت شماره‌های تلفن کاربر
+    phones = db.query(EmployeePhone).filter(
+        EmployeePhone.user_id == user.user_id
+    ).order_by(EmployeePhone.is_default.desc(), EmployeePhone.created_at).all()
+
     return templates.TemplateResponse(request, "profile.html", {
         "user": user,
         "employee": employee,
@@ -116,4 +122,5 @@ async def profile_page(
         "is_admin": user.is_admin,
         "photo_path": employee.photo_path if employee else None,
         "last_login_display": last_login_display,
+        "phones": phones,
     })

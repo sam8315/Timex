@@ -19,6 +19,7 @@ from web.routes.attendance import calculate_work_hours, STATUS_NIGHT_SHIFT
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from sqlalchemy import and_, or_, func, nulls_last
 from datetime import timedelta  # اگر نیست
+from models.employee_phone import EmployeePhone
 
 def build_redirect_url(referer: str, key: str, value: str) -> str:
     """ساخت URL بازگشت با رعایت query string موجود"""
@@ -580,6 +581,11 @@ async def admin_view_profile(
         colors = ['primary', 'success', 'info', 'warning', 'danger', 'secondary', 'dark']
         avatar_color = colors[name_hash % len(colors)]
 
+    # 🆕 دریافت شماره‌های تلفن کاربر مورد نظر
+    target_phones = db.query(EmployeePhone).filter(
+        EmployeePhone.user_id == target_user_id
+    ).order_by(EmployeePhone.is_default.desc(), EmployeePhone.created_at).all()
+
     return templates.TemplateResponse(request, "admin/user_profile.html", {
         "user": user,
         "target_user": target_user,
@@ -594,6 +600,7 @@ async def admin_view_profile(
         "avatar_color": avatar_color,
         "is_admin": True,
         "is_super_admin": user.is_super_admin,
+        "target_phones": target_phones,
     })
 
 
