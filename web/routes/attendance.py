@@ -380,7 +380,7 @@ def calculate_work_hours(
         try:
             diff = (effective_exit - effective_enter).total_seconds() / 3600
             work_hours = max(0, diff)
-            logger.info(f"✅ Work hours calculated: {work_hours:.2f} hours")
+            # logger.info(f"✅ Work hours calculated: {work_hours:.2f} hours")
             return work_hours, effective_enter, effective_exit
         except Exception as e:
             logger.error(f"❌ Error calculating diff: {e}")

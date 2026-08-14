@@ -414,13 +414,13 @@
                 </div>
                 <div class="btn-group btn-group-sm">
                     {% if not phone.is_default %}
-                    <form method="post" action="/admin/profile/{{ target_user_id }}/phones/{{ phone.id }}/set-default" class="d-inline">
+                    <form method="post" action="/admin/profile/{{ target_user.user_id }}/phones/{{ phone.id }}/set-default" class="d-inline">
                         <button type="submit" class="btn btn-outline-primary" title="تنظیم به عنوان پیش‌فرض">
                             <i class="bi bi-star"></i>
                         </button>
                     </form>
                     {% endif %}
-                    <form method="post" action="/admin/profile/{{ target_user_id }}/phones/{{ phone.id }}/delete" class="d-inline"
+                    <form method="post" action="/admin/profile/{{ target_user.user_id }}/phones/{{ phone.id }}/delete" class="d-inline"
                           onsubmit="return confirm('آیا مطمئن هستید؟ این شماره حذف می‌شود.');">
                         <button type="submit" class="btn btn-outline-danger" title="حذف">
                             <i class="bi bi-trash"></i>
@@ -443,7 +443,7 @@
     <div class="modal fade" id="adminAddPhoneModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form method="post" action="/admin/profile/{{ target_user_id }}/phones/add">
+            <form method="post" action="/admin/profile/{{ target_user.user_id }}/phones/add">
                 <div class="modal-header">
                     <h5 class="modal-title"><i class="bi bi-plus-circle"></i> افزودن شماره تلفن</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
