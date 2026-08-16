@@ -16,13 +16,13 @@
                     {% if photo_path %}
                     <img src="{{ photo_path }}?v={{ employee.updated_at.timestamp() | int if employee else 0 }}"
                          class="rounded-circle border border-4 border-white shadow"
-                         style="width: 110px; height: 110px; object-fit: cover;margin-top: -50px;"
+                         style="width: 20%; height: 20%; object-fit: cover;margin-top: -50px; object-position: center; display: block;"
                          alt="{{ employee.full_name if employee else user.name }}">
                     {% else %}
-                    <div class="rounded-circle bg-{{ avatar_color }} text-white d-flex align-items-center justify-content-center border border-4 border-white shadow"
-                         style="width: 110px; height: 110px; font-size: 2.2rem; font-weight: bold;">
-                        {{ avatar_initials }}
-                    </div>
+                    <img src="/static/uploads/avatars/image.png"
+                         class="rounded-circle border border-4 border-white shadow"
+                         style="width: 20%; height: 20%; object-fit: cover;margin-top: -50px; object-position: center; display: block;"
+                         alt="{{ employee.full_name }}">
                     {% endif %}
 
                     <!-- نام و اطلاعات -->

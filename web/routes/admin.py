@@ -9,7 +9,7 @@ from models.user import User
 from models.leave_request import LeaveRequest
 from datetime import timedelta, date, date as date_type
 from sqlalchemy import and_, func
-import jdatetime
+import time
 from typing import Optional
 from fastapi import Query
 from fastapi import UploadFile, File
@@ -836,7 +836,7 @@ async def admin_upload_photo(
                 old_file.unlink()
 
         # ذخیره فایل جدید با نام user_id
-        filename = f"{target_user_id}{ext}"
+        filename = f"{target_user_id}_{int(time.time())}{ext}"
         file_path = UPLOAD_DIR / filename
 
         with open(file_path, 'wb') as f:

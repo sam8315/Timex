@@ -19,6 +19,7 @@ from datetime import datetime
 from models.leave_request import LeaveRequest
 from models.contract import Contract, CONTRACT_TYPES
 from sqlalchemy import func
+from datetime import datetime, timedelta  # 🆕 timedelta
 
 router = APIRouter(tags=["Admin Leave"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
@@ -379,47 +380,51 @@ from models.leave_request import LeaveRequest
 # ============================================
 @router.get("/leave-requests", response_class=HTMLResponse)
 async def leave_requests_page(
-        request: Request,
-        status_filter: Optional[str] = Query(None),
-        leave_type: Optional[str] = Query(None),
-        search: Optional[str] = Query(None),
-        show_all: Optional[str] = Query(None),
-        user: User = Depends(require_admin),
-        db: Session = Depends(get_db)
+    request: Request,
+    status_filter: Optional[str] = Query(None),
+    leave_type: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    show_all: Optional[str] = Query(None),
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
 ):
     """لیست درخواست‌های مرخصی"""
-    has_filter = any([status_filter, leave_type, search, show_all])
+
+    search_term = (search or "").strip()
+
+    has_filter = any([status_filter, leave_type, search_term, show_all])
+
     requests_data = []
+    total_days = 0
 
     if has_filter:
         query = db.query(LeaveRequest)
 
-        # فیلتر وضعیت (پیش‌فرض: در انتظار)
+        # ✅ فقط اگر وضعیت انتخاب شده بود، فیلتر شود
         if status_filter:
             query = query.filter(LeaveRequest.status == status_filter)
-        elif not show_all:
-            # اگر فیلتری نیست و show_all هم نیست، فقط در انتظارها را نشان بده
-            query = query.filter(LeaveRequest.status == 'P')
 
         # فیلتر نوع مرخصی
         if leave_type:
             query = query.filter(LeaveRequest.leave_type == leave_type)
 
-        # جستجو
-        if search and search.strip():
-            term = search.strip()
-            query = query.outerjoin(Employee, LeaveRequest.user_id == Employee.user_id).filter(
+        # ✅ جستجو
+        if search_term:
+            query = query.outerjoin(
+                Employee,
+                LeaveRequest.user_id == Employee.user_id
+            ).filter(
                 or_(
-                    LeaveRequest.user_id.ilike(f"%{term}%"),
-                    Employee.first_name.ilike(f"%{term}%"),
-                    Employee.last_name.ilike(f"%{term}%")
+                    LeaveRequest.user_id.ilike(f"%{search_term}%"),
+                    Employee.first_name.ilike(f"%{search_term}%"),
+                    Employee.last_name.ilike(f"%{search_term}%")
                 )
             )
 
-        requests = query.order_by(LeaveRequest.created_at.desc()).limit(200).all()
+        # مرتب‌سازی بر اساس تاریخ شروع
+        requests = query.order_by(LeaveRequest.from_date.desc()).limit(200).all()
 
         for r in requests:
-            # تبدیل تاریخ‌ها به شمسی
             from_j = jdatetime.date.fromgregorian(date=r.from_date).strftime('%Y/%m/%d')
             to_j = jdatetime.date.fromgregorian(date=r.to_date).strftime('%Y/%m/%d')
 
@@ -430,14 +435,18 @@ async def leave_requests_page(
                 except Exception:
                     created_j = str(r.created_at)
 
-            # بررسی مانده کاربر برای این نوع مرخصی
-            year_j = jdatetime.date.fromgregorian(date=r.from_date).year
-            balance = db.query(LeaveBalance).filter(
-                LeaveBalance.user_id == r.user_id,
-                LeaveBalance.year == year_j,
-                LeaveBalance.leave_type == r.leave_type
-            ).first()
-            current_balance = balance.balance if balance else 0
+            # 🆕 محاسبه مانده مرخصی کاربر (فقط برای درخواست‌های در انتظار)
+            current_balance = 0
+            if r.status == 'P':
+                req_year_j = jdatetime.date.fromgregorian(date=r.from_date).year
+                balance = db.query(LeaveBalance).filter(
+                    and_(
+                        LeaveBalance.user_id == r.user_id,
+                        LeaveBalance.year == req_year_j,
+                        LeaveBalance.leave_type == r.leave_type
+                    )
+                ).first()
+                current_balance = balance.balance if balance else 0
 
             requests_data.append({
                 'request': r,
@@ -446,27 +455,40 @@ async def leave_requests_page(
                 'to_j': to_j,
                 'created_j': created_j,
                 'leave_type_name': LEAVE_TYPES.get(r.leave_type, r.leave_type),
-                'current_balance': current_balance,
-                'has_enough_balance': current_balance >= r.days_count,
+                'current_balance': current_balance,  # 🆕
             })
+        total_days = sum(item['request'].days_count for item in requests_data)
 
-    # آمار درخواست‌های در انتظار
     pending_count = db.query(LeaveRequest).filter(LeaveRequest.status == 'P').count()
+    # دریافت لیست کارمندان فعال برای انتخاب
+    employees = db.query(Employee).filter(
+        Employee.is_active == True
+    ).order_by(Employee.first_name, Employee.last_name).all()
+
+    employees_list = [
+        {
+            'user_id': emp.user_id,
+            'full_name': emp.full_name,
+            'department': emp.department or '-',
+        }
+        for emp in employees
+    ]
 
     return templates.TemplateResponse(request, "admin/leave_requests.html", {
         "user": user,
         "requests": requests_data,
         "total_count": len(requests_data),
+        "total_days": total_days,
         "has_filter": has_filter,
         "show_all": show_all,
         "status_filter": status_filter or "",
         "leave_type": leave_type or "",
-        "search": search or "",
+        "search": search_term,
         "pending_count": pending_count,
         "leave_types": LEAVE_TYPES,
         "is_admin": True,
+        "employees": employees_list,  # لیست کارمندان
     })
-
 
 # ============================================
 # تایید درخواست مرخصی
@@ -857,3 +879,309 @@ async def import_previous_leave_results(
         "summary": summary,
         "is_admin": True,
     })
+
+
+# ============================================
+# 🆕 ثبت مرخصی برای سایر کاربران (توسط مدیر ارشد)
+# ============================================
+
+def calculate_leave_days_admin(db, user_id, from_date, to_date) -> int:
+    """محاسبه تعداد روزهای مرخصی با کسر تعطیلات و جمعه‌ها"""
+    from models.employee import Employee
+    from models.holiday import Holiday
+
+    employee = db.query(Employee).filter(Employee.user_id == user_id).first()
+    user_group = employee.department if employee else None
+
+    days = 0
+    current = from_date
+
+    while current <= to_date:
+        # بررسی تعطیل بودن
+        holiday = db.query(Holiday).filter(Holiday.holiday_date == current).first()
+        is_holiday_for_user = False
+        if holiday:
+            if holiday.group_id is None or holiday.group_id == user_group:
+                is_holiday_for_user = True
+
+        # 🆕 بررسی جمعه (current میلادی است، جمعه = 4)
+        is_friday = current.weekday() == 4
+
+        if not is_holiday_for_user and not is_friday:
+            days += 1
+
+        current += timedelta(days=1)
+
+    return days
+
+
+@router.get("/leave-requests/register", response_class=HTMLResponse)
+async def register_leave_form(
+        request: Request,
+        user: User = Depends(require_admin),
+        db: Session = Depends(get_db)
+):
+    """فرم ثبت مرخصی برای سایر کاربران"""
+    from models.employee import Employee
+
+    # دریافت لیست کارمندان فعال برای انتخاب
+    employees = db.query(Employee).filter(
+        Employee.is_active == True
+    ).order_by(Employee.first_name, Employee.last_name).all()
+
+    employees_list = [
+        {
+            'user_id': emp.user_id,
+            'full_name': emp.full_name,
+            'department': emp.department or '-',
+        }
+        for emp in employees
+    ]
+
+    return templates.TemplateResponse(request, "admin/leave_register.html", {
+        "user": user,
+        "employees": employees_list,
+        "leave_types": LEAVE_TYPES,
+        "is_admin": True,
+    })
+
+
+@router.post("/leave-requests/register")
+async def register_leave_for_user(
+        request: Request,
+        target_user_id: str = Form(...),
+        leave_type: str = Form(...),
+        from_date_str: str = Form(...),
+        to_date_str: str = Form(...),
+        reason: str = Form(""),
+        user: User = Depends(require_admin),
+        db: Session = Depends(get_db)
+):
+    """ثبت مرخصی برای یک کاربر (توسط مدیر) - در حالت در انتظار بررسی"""
+    from models.employee import Employee
+    from models.leave_request import LeaveRequest
+
+    try:
+        # بررسی وجود کاربر هدف
+        target_employee = db.query(Employee).filter(
+            Employee.user_id == target_user_id
+        ).first()
+        if not target_employee:
+            raise ValueError("کاربر مورد نظر یافت نشد")
+
+        # اعتبارسنجی نوع مرخصی
+        if leave_type not in LEAVE_TYPES:
+            raise ValueError("نوع مرخصی نامعتبر است")
+
+        # تبدیل تاریخ‌های شمسی به میلادی
+        from_j = jdatetime.datetime.strptime(from_date_str.strip(), "%Y/%m/%d").date()
+        to_j = jdatetime.datetime.strptime(to_date_str.strip(), "%Y/%m/%d").date()
+        from_date = from_j.togregorian()
+        to_date = to_j.togregorian()
+
+        # اعتبارسنجی بازه تاریخ
+        if from_date > to_date:
+            raise ValueError("تاریخ شروع باید قبل یا مساوی تاریخ پایان باشد")
+
+        # نکته: هیچ محدودیتی برای تاریخ گذشته وجود ندارد
+
+        # محاسبه تعداد روزها (با کسر تعطیلات و جمعه‌ها)
+        days_count = calculate_leave_days_admin(db, target_user_id, from_date, to_date)
+
+        if days_count <= 0:
+            raise ValueError("در بازه انتخابی، هیچ روز کاری وجود ندارد (همه تعطیل هستند)")
+
+        # بررسی همپوشانی با درخواست‌های قبلی
+        overlapping = db.query(LeaveRequest).filter(
+            and_(
+                LeaveRequest.user_id == target_user_id,
+                LeaveRequest.status.in_(['P', 'A']),
+                LeaveRequest.from_date <= to_date,
+                LeaveRequest.to_date >= from_date
+            )
+        ).first()
+
+        if overlapping:
+            raise ValueError("کاربر در این بازه، درخواست مرخصی دیگری دارد")
+
+        # 🆕 ثبت درخواست مرخصی در حالت در انتظار بررسی
+        new_request = LeaveRequest(
+            user_id=target_user_id,
+            leave_type=leave_type,
+            from_date=from_date,
+            to_date=to_date,
+            days_count=days_count,
+            reason=reason.strip() or f"ثبت شده توسط : {user.user_id}",
+            status='P',  # 🆕 در انتظار بررسی
+        )
+        db.add(new_request)
+        db.commit()
+
+        type_name = LEAVE_TYPES.get(leave_type, '')
+        target_name = target_employee.full_name
+
+        return RedirectResponse(
+            url=f"/admin/leave-requests/register?success=درخواست مرخصی {type_name} ({days_count} روز) برای {target_name} در حالت در انتظار بررسی ثبت شد",
+            status_code=302
+        )
+    except ValueError as e:
+        return RedirectResponse(
+            url=f"/admin/leave-requests/register?error={str(e)}",
+            status_code=302
+        )
+    except Exception as e:
+        return RedirectResponse(
+            url=f"/admin/leave-requests/register?error=خطا: {str(e)}",
+            status_code=302
+        )
+
+
+# ============================================
+# 🆕 ویرایش درخواست مرخصی (توسط ادمین)
+# ============================================
+
+@router.get("/leave-requests/{request_id}/edit", response_class=HTMLResponse)
+async def edit_leave_request_form(
+        request: Request,
+        request_id: int,
+        user: User = Depends(require_admin),
+        db: Session = Depends(get_db)
+):
+    """فرم ویرایش درخواست مرخصی"""
+    leave_request = db.query(LeaveRequest).filter(LeaveRequest.id == request_id).first()
+
+    if not leave_request:
+        return RedirectResponse(url="/admin/leave-requests?error=درخواست یافت نشد", status_code=302)
+
+    # فقط درخواست‌های در انتظار قابل ویرایش هستند
+    if leave_request.status != 'P':
+        return RedirectResponse(
+            url="/admin/leave-requests?error=فقط درخواست‌های در انتظار قابل ویرایش هستند",
+            status_code=302
+        )
+
+    # تبدیل تاریخ‌ها به شمسی
+    from_j = jdatetime.date.fromgregorian(date=leave_request.from_date).strftime('%Y/%m/%d')
+    to_j = jdatetime.date.fromgregorian(date=leave_request.to_date).strftime('%Y/%m/%d')
+
+    # دریافت لیست کارمندان فعال
+    employees = db.query(Employee).filter(
+        Employee.is_active == True
+    ).order_by(Employee.first_name, Employee.last_name).all()
+
+    employees_list = [
+        {
+            'user_id': emp.user_id,
+            'full_name': emp.full_name,
+            'department': emp.department or '-',
+        }
+        for emp in employees
+    ]
+
+    # دریافت اطلاعات کاربر فعلی برای نمایش در جستجوگر
+    current_employee = db.query(Employee).filter(
+        Employee.user_id == leave_request.user_id
+    ).first()
+
+    return templates.TemplateResponse(request, "admin/leave_request_edit.html", {
+        "user": user,
+        "leave_request": leave_request,
+        "from_j": from_j,
+        "to_j": to_j,
+        "employees": employees_list,
+        "current_employee_name": current_employee.full_name if current_employee else leave_request.user_id,
+        "leave_types": LEAVE_TYPES,
+        "is_admin": True,
+    })
+
+
+@router.post("/leave-requests/{request_id}/edit")
+async def edit_leave_request_submit(
+        request: Request,
+        request_id: int,
+        target_user_id: str = Form(...),
+        leave_type: str = Form(...),
+        from_date_str: str = Form(...),
+        to_date_str: str = Form(...),
+        reason: str = Form(""),
+        user: User = Depends(require_admin),
+        db: Session = Depends(get_db)
+):
+    """ثبت تغییرات درخواست مرخصی"""
+    try:
+        leave_request = db.query(LeaveRequest).filter(LeaveRequest.id == request_id).first()
+
+        if not leave_request:
+            raise ValueError("درخواست یافت نشد")
+
+        if leave_request.status != 'P':
+            raise ValueError("فقط درخواست‌های در انتظار قابل ویرایش هستند")
+
+        # بررسی وجود کاربر هدف
+        target_employee = db.query(Employee).filter(
+            Employee.user_id == target_user_id
+        ).first()
+        if not target_employee:
+            raise ValueError("کاربر مورد نظر یافت نشد")
+
+        # اعتبارسنجی نوع مرخصی
+        if leave_type not in LEAVE_TYPES:
+            raise ValueError("نوع مرخصی نامعتبر است")
+
+        # تبدیل تاریخ‌های شمسی به میلادی
+        from_j = jdatetime.datetime.strptime(from_date_str.strip(), "%Y/%m/%d").date()
+        to_j = jdatetime.datetime.strptime(to_date_str.strip(), "%Y/%m/%d").date()
+        from_date = from_j.togregorian()
+        to_date = to_j.togregorian()
+
+        # اعتبارسنجی بازه تاریخ
+        if from_date > to_date:
+            raise ValueError("تاریخ شروع باید قبل یا مساوی تاریخ پایان باشد")
+
+        # محاسبه تعداد روزها (با کسر تعطیلات و جمعه‌ها)
+        days_count = calculate_leave_days_admin(db, target_user_id, from_date, to_date)
+
+        if days_count <= 0:
+            raise ValueError("در بازه انتخابی، هیچ روز کاری وجود ندارد (همه تعطیل هستند)")
+
+        # بررسی همپوشانی (به جز درخواست فعلی)
+        overlapping = db.query(LeaveRequest).filter(
+            and_(
+                LeaveRequest.user_id == target_user_id,
+                LeaveRequest.id != request_id,  # 🆕 به جز درخواست فعلی
+                LeaveRequest.status.in_(['P', 'A']),
+                LeaveRequest.from_date <= to_date,
+                LeaveRequest.to_date >= from_date
+            )
+        ).first()
+
+        if overlapping:
+            raise ValueError("کاربر در این بازه، درخواست مرخصی دیگری دارد")
+
+        # به‌روزرسانی فیلدها
+        leave_request.user_id = target_user_id
+        leave_request.leave_type = leave_type
+        leave_request.from_date = from_date
+        leave_request.to_date = to_date
+        leave_request.days_count = days_count
+        leave_request.reason = reason.strip()
+
+        db.commit()
+
+        type_name = LEAVE_TYPES.get(leave_type, '')
+        target_name = target_employee.full_name
+
+        return RedirectResponse(
+            url=f"/admin/leave-requests?success=درخواست مرخصی {type_name} برای {target_name} با موفقیت ویرایش شد",
+            status_code=302
+        )
+    except ValueError as e:
+        return RedirectResponse(
+            url=f"/admin/leave-requests/{request_id}/edit?error={str(e)}",
+            status_code=302
+        )
+    except Exception as e:
+        return RedirectResponse(
+            url=f"/admin/leave-requests/{request_id}/edit?error=خطا: {str(e)}",
+            status_code=302
+        )
