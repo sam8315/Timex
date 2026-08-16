@@ -188,12 +188,10 @@ def handle_text_message(chat_id, text: str):
 
     # 🆕 اگر کاربر در حال وارد کردن تاریخ روز خاص است
     if user_states.get(chat_id) == 'waiting_for_date':
-        # /start = انصراف
         if is_keyword(text, 'start'):
             user_states.pop(chat_id, None)
             handle_start(chat_id)
             return
-        # پردازش تاریخ
         handle_specific_date(chat_id, text)
         return
 
@@ -213,9 +211,14 @@ def handle_text_message(chat_id, text: str):
         handle_attendance_request(chat_id, yesterday, "دیروز")
         return
 
-    # 🆕 specific day
+    # specific day
     if is_keyword(text, 'specific'):
         handle_specific_day_request(chat_id)
+        return
+
+    # 🆕 balance (مانده مرخصی)
+    if is_keyword(text, 'balance'):
+        handle_balance_request(chat_id)
         return
 
     # 🔐 اگر کاربر شماره را تایپ کرد (به جای دکمه)
@@ -235,9 +238,11 @@ def handle_text_message(chat_id, text: str):
         "لطفاً از یکی از گزینه‌های زیر استفاده کنید:\n"
         "• <code>today</code> یا «امروز» → تردد امروز\n"
         "• <code>yesterday</code> یا «دیروز» → تردد دیروز\n"
-        "• «روز خاص» → تردد یک روز خاص",
+        "• «روز خاص» → تردد یک روز خاص\n"
+        "• «مانده» → مانده مرخصی",
         reply_markup=bale_api.MAIN_MENU_KEYBOARD
     )
+
 
 def handle_message(message: dict):
     """پردازش کلی پیام"""
@@ -254,3 +259,62 @@ def handle_message(message: dict):
     text = message.get('text', '')
     if text:
         handle_text_message(chat_id, text)
+
+
+# ============================================
+# 🆕 مانده مرخصی
+# ============================================
+
+def format_balance_message(full_name: str, year_j: int, balances: dict) -> str:
+    """🆕 ساخت پیام مانده مرخصی"""
+    message = f"👤 <b>{full_name}</b>\n"
+    message += f"💰 مانده مرخصی سال <b>{year_j}</b>\n"
+    message += f"━━━━━━━━━━━━━━━\n"
+
+    # نام انواع مرخصی با ایموجی
+    leave_types_info = {
+        'AL': ('🌴', 'استحقاقی'),
+        'SL': ('🏥', 'استعلاجی'),
+        'RL': ('🎁', 'تشویقی'),
+        'CW': ('📦', 'ذخیره سال قبل'),
+    }
+
+    for code, (emoji, name) in leave_types_info.items():
+        balance = balances.get(code, 0)
+        message += f"{emoji} {name}: <b>{balance}</b> روز\n"
+
+    # جمع کل
+    total = sum(balances.values())
+    message += f"━━━━━━━━━━━━━━━\n"
+    message += f"📊 جمع کل: <b>{total}</b> روز"
+
+    return message
+
+
+def handle_balance_request(chat_id):
+    """🆕 نمایش مانده مرخصی کاربر"""
+    db_session = SessionLocal()
+    try:
+        bale_user = db.get_bale_user(db_session, chat_id)
+
+        if not bale_user:
+            handle_start(chat_id)
+            return
+
+        full_name = db.get_employee_name(db_session, bale_user.user_id)
+
+        # سال جاری شمسی
+        current_year_j = jdatetime.date.today().year
+
+        # دریافت مانده مرخصی
+        balances = db.get_leave_balances(db_session, bale_user.user_id, current_year_j)
+
+        message = format_balance_message(full_name, current_year_j, balances)
+
+        bale_api.send_message(
+            chat_id,
+            message,
+            reply_markup=bale_api.MAIN_MENU_KEYBOARD
+        )
+    finally:
+        db_session.close()

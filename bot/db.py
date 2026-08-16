@@ -96,3 +96,28 @@ def get_attendance_records(db: Session, user_id: str, target_date: date) -> list
     ).order_by(Attendance.timestamp).all()
 
     return records
+
+
+def get_leave_balances(db: Session, user_id: str, year: int) -> dict:
+    """🆕 دریافت مانده مرخصی کاربر برای یک سال"""
+    from models.leave_balance import LeaveBalance
+
+    balances = db.query(LeaveBalance).filter(
+        and_(
+            LeaveBalance.user_id == user_id,
+            LeaveBalance.year == year
+        )
+    ).all()
+
+    result = {
+        'AL': 0,  # استحقاقی
+        'SL': 0,  # استعلاجی
+        'RL': 0,  # تشویقی
+        'CW': 0,  # ذخیره سال قبل
+    }
+
+    for b in balances:
+        if b.leave_type in result:
+            result[b.leave_type] = b.balance
+
+    return result

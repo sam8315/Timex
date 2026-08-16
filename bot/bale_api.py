@@ -64,7 +64,7 @@ CONTACT_KEYBOARD = {
 MAIN_MENU_KEYBOARD = {
     "keyboard": [
         [{"text": "📅 تردد امروز"}, {"text": "📆 تردد دیروز"}],
-        [{"text": "🗓️ تردد یک روز خاص"}]  # 🆕
+        [{"text": "🗓️ تردد یک روز خاص"}, {"text": "💰 مانده مرخصی"}]  # 🆕
     ],
     "resize_keyboard": True
 }
