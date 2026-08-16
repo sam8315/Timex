@@ -20,23 +20,23 @@ CONTRACT_TYPES = {
     '2': {
         'name': 'وظیفه',
         'annual_leave': 35,
-        'sick_leave': 30,
+        'sick_leave': 0,
         'allow_service_deduction': True,
         'editable_leave': False,
         'carry_forward_max': 0,  # 🆕 وظیفه: بدون ذخیره
     },
     '3': {
         'name': 'خریدخدمت',
-        'annual_leave': 0,
+        'annual_leave': 30,
         'sick_leave': 0,
         'allow_service_deduction': False,
         'editable_leave': False,
-        'carry_forward_max': 0,  # 🆕 بدون ذخیره
+        'carry_forward_max': 9,  # 🆕 بدون ذخیره
     },
     '4': {
         'name': 'قراردادی',
         'annual_leave': 30,
-        'sick_leave': 30,
+        'sick_leave': 0,
         'allow_service_deduction': False,
         'editable_leave': False,
         'carry_forward_max': 9,  # 🆕 قراردادی: حداکثر ۹ روز
@@ -139,7 +139,7 @@ class Contract(TimestampMixin, Base):
         """مدت قرارداد به روز"""
         if self.end_date is None:
             return None  # قرارداد باز
-        return (self.end_date - self.start_date).days
+        return (self.end_date - self.start_date).days + 1
 
     @property
     def actual_end_date(self) -> Optional[date]:
@@ -168,6 +168,38 @@ class Contract(TimestampMixin, Base):
             return "⏰ منقضی"
         return "⏳ در انتظار شروع"
 
+    @property
+    def prorated_annual_leave(self) -> int:
+        """مرخصی استحقاقی تناسبی بر اساس مدت سپری شده قرارداد"""
+        if self.start_date is None:
+            return 0
+
+        today = date.today()
+        effective_end = min(today, self.end_date) if self.end_date else today
+
+        if effective_end < self.start_date:
+            return 0
+
+        days_passed = (effective_end - self.start_date).days
+        # محاسبه تناسبی: (روزهای سپری شده / 365) × کل مرخصی سالانه
+        prorated = int((days_passed / 365.0) * self.annual_leave_days)
+        return max(0, min(prorated, self.annual_leave_days))
+
+    @property
+    def prorated_sick_leave(self) -> int:
+        """مرخصی استعلاجی تناسبی بر اساس مدت سپری شده قرارداد"""
+        if self.start_date is None:
+            return 0
+
+        today = date.today()
+        effective_end = min(today, self.end_date) if self.end_date else today
+
+        if effective_end < self.start_date:
+            return 0
+
+        days_passed = (effective_end - self.start_date).days
+        prorated = int((days_passed / 365.0) * self.sick_leave_days)
+        return max(0, min(prorated, self.sick_leave_days))
     def to_dict(self) -> dict:
         return {
             'id': self.id,

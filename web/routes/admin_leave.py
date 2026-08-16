@@ -60,12 +60,24 @@ def get_employee_name(db, user_id: str) -> str:
 # ============================================
 # صفحه مانده مرخصی
 # ============================================
+def _has_negative_balance(row: dict) -> bool:
+    """🆕 بررسی داشتن مانده منفی در یک ردیف"""
+    return (
+        (row.get('AL') is not None and row['AL'] < 0) or
+        (row.get('SL') is not None and row['SL'] < 0) or
+        (row.get('RL') is not None and row['RL'] < 0) or
+        (row.get('CW') is not None and row['CW'] < 0)
+    )
+
+
 @router.get("/leave-balances", response_class=HTMLResponse)
 async def leave_balances_page(
         request: Request,
         year: Optional[str] = Query(None),
         search: Optional[str] = Query(None),
-        contract_type: Optional[str] = Query(None),  # 🆕 فیلتر نوع قرارداد
+        contract_type: Optional[str] = Query(None),
+        leave_type: Optional[str] = Query(None),      # 🆕 فیلتر نوع مرخصی
+        negative_only: Optional[str] = Query(None),   # 🆕 فقط مانده منفی
         show_all: Optional[str] = Query(None),
         user: User = Depends(require_admin),
         db: Session = Depends(get_db)
@@ -81,10 +93,22 @@ async def leave_balances_page(
         except ValueError:
             year_int = None
 
+    # اعتبارسنجی نوع مرخصی
+    valid_leave_types = ('AL', 'SL', 'RL', 'CW')
+    if leave_type and leave_type not in valid_leave_types:
+        leave_type = None
+
     # اگر هر فیلتری باشد، اعمال می‌شود
-    has_filter = any([search, show_all, year_int is not None, contract_type])
+    has_filter = any([
+        search, show_all,
+        year_int is not None,
+        contract_type,
+        leave_type,           # 🆕
+        negative_only         # 🆕
+    ])
 
     balances_data = []
+    summary = {'total': 0, 'negative_count': 0, 'positive_count': 0}
 
     if has_filter:
         query = db.query(LeaveBalance)
@@ -93,9 +117,12 @@ async def leave_balances_page(
         if year_int:
             query = query.filter(LeaveBalance.year == year_int)
 
-        # 🆕 فیلتر نوع قرارداد (بر اساس آخرین قرارداد هر کاربر)
+        # 🆕 فیلتر نوع مرخصی (در سطح query برای بهینه‌سازی)
+        if leave_type:
+            query = query.filter(LeaveBalance.leave_type == leave_type)
+
+        # فیلتر نوع قرارداد (بر اساس آخرین قرارداد هر کاربر)
         if contract_type:
-            # subquery: آخرین start_date قرارداد هر کاربر
             latest_contract_subq = (
                 db.query(
                     Contract.user_id,
@@ -105,7 +132,6 @@ async def leave_balances_page(
                 .subquery()
             )
 
-            # پیدا کردن کاربرانی که آخرین قراردادشان نوع مورد نظر است
             users_with_type = (
                 db.query(Contract.user_id)
                 .join(
@@ -124,7 +150,6 @@ async def leave_balances_page(
             if user_ids:
                 query = query.filter(LeaveBalance.user_id.in_(user_ids))
             else:
-                # هیچ کاربری با این نوع قرارداد نیست
                 query = query.filter(LeaveBalance.user_id == "___NONE___")
 
         # جستجو
@@ -150,16 +175,16 @@ async def leave_balances_page(
                     'year': b.year,
                     'AL': None,
                     'SL': None,
+                    'RL': None,
                     'CW': None,
                 }
-            if b.leave_type in ('AL', 'SL', 'CW'):
+            if b.leave_type in valid_leave_types:
                 grouped[key][b.leave_type] = b.balance
 
-        # 🆕 دریافت نوع قرارداد هر کاربر برای نمایش
+        # دریافت نوع قرارداد هر کاربر برای نمایش
         user_ids_in_result = list(set([row['user_id'] for row in grouped.values()]))
         contract_types_map = {}
         if user_ids_in_result:
-            # آخرین قرارداد هر کاربر
             for uid in user_ids_in_result:
                 last_contract = db.query(Contract).filter(
                     Contract.user_id == uid
@@ -178,6 +203,17 @@ async def leave_balances_page(
             row['contract_type'] = contract_types_map.get(row['user_id'], {'code': None, 'name': '-'})
             balances_data.append(row)
 
+        # 🆕 فیلتر فقط مانده منفی (بعد از گروه‌بندی)
+        if negative_only:
+            balances_data = [row for row in balances_data if _has_negative_balance(row)]
+
+        # 🆕 محاسبه خلاصه آمار
+        summary['total'] = len(balances_data)
+        summary['negative_count'] = sum(
+            1 for row in balances_data if _has_negative_balance(row)
+        )
+        summary['positive_count'] = summary['total'] - summary['negative_count']
+
     # لیست سال‌های موجود در دیتابیس + سال جاری
     existing_years = db.query(LeaveBalance.year).distinct().all()
     available_years = sorted(
@@ -193,14 +229,16 @@ async def leave_balances_page(
         "show_all": show_all,
         "year": year_int,
         "search": search or "",
-        "contract_type": contract_type or "",  # 🆕
+        "contract_type_filter": contract_type or "",   # 🆕 تغییر نام برای template
+        "leave_type": leave_type or "",                 # 🆕
+        "negative_only": negative_only,                 # 🆕
         "available_years": available_years,
-        "contract_types": CONTRACT_TYPES,  # 🆕
+        "contract_types": CONTRACT_TYPES,
         "leave_types": LEAVE_TYPES,
+        "summary": summary,                             # 🆕
         "is_admin": True,
         "is_super_admin": user.is_super_admin,
     })
-
 
 # ============================================
 # صفحه تراکنش‌های مرخصی

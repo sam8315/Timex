@@ -60,6 +60,7 @@ class LeaveRequest(TimestampMixin, Base):
         types = {
             'AL': 'استحقاقی',
             'SL': 'استعلاجی',
+            'RL': 'تشویقی',
         }
         return types.get(self.leave_type, self.leave_type)
 

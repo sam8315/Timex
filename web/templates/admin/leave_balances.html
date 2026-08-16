@@ -1,208 +1,519 @@
 {% extends "base.html" %}
 {% block title %}مانده مرخصی | پنل مدیریت{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* 🎨 پس‌زمینه و کلیات */
+    .balances-wrapper {
+        --positive: #10b981;
+        --positive-bg: #d1fae5;
+        --negative: #ef4444;
+        --negative-bg: #fee2e2;
+        --zero: #6b7280;
+        --zero-bg: #f3f4f6;
+    }
+
+    /* 🎨 کارت‌های آمار */
+    .summary-card {
+        border: none;
+        border-radius: 16px;
+        overflow: hidden;
+        position: relative;
+        transition: transform 0.25s ease, box-shadow 0.25s ease;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+    .summary-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+    }
+    .summary-card .icon-wrapper {
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.4rem;
+    }
+    .summary-card .value {
+        font-size: 1.75rem;
+        font-weight: 700;
+        line-height: 1;
+    }
+    .summary-card .label {
+        font-size: 0.8rem;
+        opacity: 0.75;
+    }
+
+    /* 🎨 فیلترها */
+    .filter-card {
+        border: none;
+        border-radius: 16px;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+    }
+    .filter-card .form-label {
+        font-size: 0.78rem;
+        font-weight: 600;
+        color: #4b5563;
+        margin-bottom: 4px;
+    }
+
+    /* 🎨 مقادیر مانده - اصلاح جهت برای عدد منفی */
+    .balance-pill {
+        direction: ltr;           /* ✅ کلید حل مشکل منفی */
+        unicode-bidi: embed;      /* ✅ ایزوله کردن جهت */
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 64px;
+        padding: 5px 14px;
+        border-radius: 999px;
+        font-weight: 700;
+        font-size: 0.92rem;
+        font-variant-numeric: tabular-nums;
+        transition: transform 0.15s ease;
+    }
+    .balance-pill:hover {
+        transform: scale(1.08);
+    }
+    .balance-positive {
+        background: var(--positive-bg);
+        color: #065f46;
+        box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.3);
+    }
+    .balance-negative {
+        background: var(--negative-bg);
+        color: #991b1b;
+        box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.3);
+        animation: negativePulse 2.5s ease-in-out infinite;
+    }
+    .balance-zero {
+        background: var(--zero-bg);
+        color: var(--zero);
+        box-shadow: inset 0 0 0 1px rgba(107, 114, 128, 0.2);
+    }
+    .balance-empty {
+        color: #d1d5db;
+        font-weight: 400;
+    }
+
+    @keyframes negativePulse {
+        0%, 100% { box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.3); }
+        50% { box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.6), 0 0 12px rgba(239, 68, 68, 0.25); }
+    }
+
+    /* 🎨 ردیف‌های منفی */
+    .table-balances tbody tr {
+        transition: background 0.15s ease;
+    }
+    .table-balances tbody tr.has-negative {
+        background: #fef2f2;
+    }
+    .table-balances tbody tr.has-negative:hover {
+        background: #fee2e2;
+    }
+    .table-balances thead th {
+        background: #f9fafb;
+        font-size: 0.78rem;
+        font-weight: 700;
+        color: #6b7280;
+        text-transform: none;
+        padding: 12px 10px;
+        white-space: nowrap;
+        border-bottom: 2px solid #e5e7eb;
+    }
+    .table-balances td {
+        vertical-align: middle;
+        padding: 12px 10px;
+        font-size: 0.9rem;
+    }
+
+    /* 🎨 نقطه هشدار منفی */
+    .neg-dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--negative);
+        margin-right: 6px;
+        box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15);
+        animation: negativePulse 2.5s ease-in-out infinite;
+    }
+
+    /* 🎨 فرم تنظیم دستی */
+    .adjust-card {
+        border: 2px dashed #f59e0b;
+        background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+        border-radius: 16px;
+    }
+
+    /* 🎨 Badge نوع قرارداد */
+    .contract-badge {
+        font-size: 0.72rem;
+        font-weight: 600;
+        padding: 4px 10px;
+        border-radius: 999px;
+    }
+
+    /* 🎨 دکمه‌های فیلتر سریع */
+    .quick-filter-btn {
+        border-radius: 999px;
+        font-size: 0.82rem;
+        padding: 6px 16px;
+        transition: all 0.2s ease;
+    }
+    .quick-filter-btn:hover {
+        transform: translateY(-1px);
+    }
+
+    /* 🎨 راهنمای رنگ‌ها */
+    .legend-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
+<div class="balances-wrapper">
 
-<!-- پیام‌ها -->
-{% if request.query_params.get('success') %}
-<div class="alert alert-success alert-dismissible fade show">
-    <i class="bi bi-check-circle"></i> {{ request.query_params.get('success') }}
-    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-</div>
-{% endif %}
-{% if request.query_params.get('error') %}
-<div class="alert alert-danger alert-dismissible fade show">
-    <i class="bi bi-exclamation-triangle"></i> {{ request.query_params.get('error') }}
-    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-</div>
-{% endif %}
-
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h4><i class="bi bi-wallet2"></i> مانده مرخصی کاربران</h4>
-    <a href="/admin/" class="btn btn-outline-primary btn-sm">
-        <i class="bi bi-arrow-right"></i> بازگشت به پنل مدیریت
-    </a>
-</div>
-
-<!-- فرم تنظیم دستی (فقط مدیر ارشد) -->
-{% if is_super_admin %}
-<div class="card mb-4 border-warning">
-    <div class="card-header bg-warning text-dark">
-        <h6 class="mb-0"><i class="bi bi-sliders"></i> تنظیم دستی مانده (مدیر ارشد)</h6>
+    <!-- پیام‌ها -->
+    {% if request.query_params.get('success') %}
+    <div class="alert alert-success alert-dismissible fade show shadow-sm border-0" role="alert">
+        <i class="bi bi-check-circle-fill"></i> {{ request.query_params.get('success') }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
-    <div class="card-body">
-        <form method="post" action="/admin/leave-balances/adjust" class="row g-3 align-items-end">
-            <div class="col-md-2">
-                <label class="form-label">👤 کد پرسنلی <span class="text-danger">*</span></label>
-                <input type="text" name="user_id" class="form-control" placeholder="NN-1234" required>
-            </div>
-            <div class="col-md-2">
-                <label class="form-label">📅 سال <span class="text-danger">*</span></label>
-                <input type="number" name="year" class="form-control" value="{{ year if year else '' }}" required>
-            </div>
-            <div class="col-md-2">
-                <label class="form-label">🏷️ نوع مرخصی</label>
-                <select name="leave_type" class="form-select">
-                    <option value="AL">استحقاقی</option>
-                    <option value="SL">استعلاجی</option>
-                </select>
-            </div>
-            <div class="col-md-2">
-                <label class="form-label">➕/➖ مقدار تغییر <span class="text-danger">*</span></label>
-                <input type="number" name="amount" class="form-control" placeholder="مثلاً 5 یا -3" required>
-            </div>
-            <div class="col-md-3">
-                <label class="form-label">📝 توضیحات</label>
-                <input type="text" name="description" class="form-control" placeholder="دلیل تنظیم دستی">
-            </div>
-            <div class="col-md-1">
-                <button type="submit" class="btn btn-warning w-100">
-                    <i class="bi bi-check"></i> اعمال
-                </button>
-            </div>
-        </form>
-        <small class="text-muted d-block mt-2">
-            <i class="bi bi-info-circle"></i>
-            مقدار مثبت = افزایش مانده | مقدار منفی = کاهش مانده | هر تغییر در تراکنش‌ها ثبت می‌شود
-        </small>
+    {% endif %}
+    {% if request.query_params.get('error') %}
+    <div class="alert alert-danger alert-dismissible fade show shadow-sm border-0" role="alert">
+        <i class="bi bi-exclamation-triangle-fill"></i> {{ request.query_params.get('error') }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
-</div>
-{% endif %}
+    {% endif %}
 
-<!-- فیلترها -->
-<div class="card mb-4">
-    <div class="card-body py-2">
-        <form method="get" action="/admin/leave-balances" class="d-flex flex-wrap align-items-center gap-2">
-            <input type="text" name="search" class="form-control form-control-sm" style="width: 220px;"
-                   value="{{ search }}" placeholder="🔍 جستجو: نام یا کد پرسنلی">
-            <select name="year" class="form-select form-select-sm" style="width: auto;">
-                <option value="" {% if year is none %}selected{% endif %}>همه سال‌ها</option>
-                {% for y in available_years %}
-                <option value="{{ y }}" {% if year == y %}selected{% endif %}>{{ y }}</option>
-                {% endfor %}
-            </select>
-
-            <!-- 🆕 فیلتر نوع قرارداد -->
-            <select name="contract_type" class="form-select form-select-sm" style="width: auto;">
-                <option value="" {% if not contract_type %}selected{% endif %}>همه انواع قرارداد</option>
-                {% for code, config in contract_types.items() %}
-                <option value="{{ code }}" {% if contract_type == code %}selected{% endif %}>
-                    {{ config.name }}
-                </option>
-                {% endfor %}
-            </select>
-
-            <button type="submit" class="btn btn-primary btn-sm">
-                <i class="bi bi-search"></i> اعمال
-            </button>
-            <a href="/admin/leave-balances?show_all=1" class="btn btn-success btn-sm {% if show_all and year is none and not contract_type %}disabled{% endif %}">
-                <i class="bi bi-list"></i> نمایش همه (همه سال‌ها)
-            </a>
-            {% if has_filter %}
-            <a href="/admin/leave-balances" class="btn btn-outline-secondary btn-sm">
-                <i class="bi bi-x-circle"></i> پاک کردن
-            </a>
-            {% endif %}
-        </form>
-    </div>
-</div>
-
-<!-- جدول مانده‌ها -->
-{% if not has_filter %}
-<div class="card">
-    <div class="card-body text-center py-5">
-        <i class="bi bi-search display-4 text-muted"></i>
-        <h5 class="mt-3 text-muted">برای مشاهده مانده مرخصی، جستجو کنید یا "نمایش همه" را بزنید</h5>
-        <a href="/admin/leave-balances?show_all=1" class="btn btn-success mt-2">
-            <i class="bi bi-list"></i> نمایش همه (همه سال‌ها)
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h4 class="mb-1 fw-bold">
+                <i class="bi bi-wallet2 text-primary"></i> مانده مرخصی کاربران
+            </h4>
+            <small class="text-muted">مدیریت و پایش مانده مرخصی کارکنان</small>
+        </div>
+        <a href="/admin/" class="btn btn-outline-primary btn-sm rounded-pill">
+            <i class="bi bi-arrow-right"></i> بازگشت به پنل مدیریت
         </a>
     </div>
-</div>
 
-{% elif total_count == 0 %}
-<div class="card">
-    <div class="card-body text-center py-5">
-        <i class="bi bi-emoji-frown display-4 text-muted"></i>
-        <h5 class="mt-3 text-muted">
-            {% if year %}
-            هیچ مانده‌ای برای سال {{ year }} یافت نشد
-            {% else %}
-            هیچ مانده‌ای یافت نشد
-            {% endif %}
-        </h5>
+    <!-- 🆕 کارت‌های خلاصه -->
+    {% if summary is defined and summary.total > 0 %}
+    <div class="row g-3 mb-4">
+        <div class="col-lg-3 col-md-6">
+            <div class="card summary-card bg-white">
+                <div class="card-body d-flex align-items-center gap-3">
+                    <div class="icon-wrapper bg-primary bg-opacity-10 text-primary">
+                        <i class="bi bi-collection"></i>
+                    </div>
+                    <div>
+                        <div class="value">{{ summary.total }}</div>
+                        <div class="label">کل رکوردها</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-6">
+            <div class="card summary-card bg-white">
+                <div class="card-body d-flex align-items-center gap-3">
+                    <div class="icon-wrapper bg-danger bg-opacity-10 text-danger">
+                        <i class="bi bi-exclamation-triangle"></i>
+                    </div>
+                    <div>
+                        <div class="value text-danger">{{ summary.negative_count }}</div>
+                        <div class="label">دارای مانده منفی</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-6">
+            <div class="card summary-card bg-white">
+                <div class="card-body d-flex align-items-center gap-3">
+                    <div class="icon-wrapper bg-success bg-opacity-10 text-success">
+                        <i class="bi bi-check-circle"></i>
+                    </div>
+                    <div>
+                        <div class="value text-success">{{ summary.positive_count }}</div>
+                        <div class="label">بدون مانده منفی</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-6">
+            <div class="card summary-card bg-white">
+                <div class="card-body d-flex align-items-center gap-3">
+                    <div class="icon-wrapper bg-info bg-opacity-10 text-info">
+                        <i class="bi bi-calendar3"></i>
+                    </div>
+                    <div>
+                        <div class="value text-info">{{ available_years|length }}</div>
+                        <div class="label">سال‌های موجود</div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
-</div>
+    {% endif %}
 
-{% else %}
-<div class="card">
-    <div class="card-header bg-white d-flex justify-content-between align-items-center">
-        <h6 class="mb-0">
-            <i class="bi bi-list-ul"></i> مانده مرخصی
-            {% if year %}
-            سال {{ year }}
-            {% else %}
-            (همه سال‌ها)
-            {% endif %}
-        </h6>
-        <span class="badge bg-primary fs-6">{{ total_count }} رکورد</span>
+    <!-- 🎨 فرم تنظیم دستی مانده -->
+    {% if is_super_admin %}
+    <div class="card adjust-card mb-4">
+        <div class="card-header bg-transparent d-flex justify-content-between align-items-center py-3">
+            <h6 class="mb-0 fw-bold">
+                <i class="bi bi-sliders text-warning"></i> تنظیم دستی مانده
+                <span class="badge bg-warning text-dark ms-2">مدیر ارشد</span>
+            </h6>
+            <button class="btn btn-sm btn-warning rounded-pill" type="button"
+                    data-bs-toggle="collapse" data-bs-target="#manualAdjustForm">
+                <i class="bi bi-chevron-down"></i>
+            </button>
+        </div>
+        <div class="collapse" id="manualAdjustForm">
+            <div class="card-body">
+                <form method="post" action="/admin/leave-balances/adjust" class="row g-2 align-items-end">
+                    <div class="col-md-2">
+                        <label class="form-label">👤 کد پرسنلی <span class="text-danger">*</span></label>
+                        <input type="text" name="user_id" class="form-control form-control-sm" required>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">📅 سال <span class="text-danger">*</span></label>
+                        <input type="number" name="year" class="form-control form-control-sm"
+                               value="{{ current_year_j if current_year_j is defined else '' }}" required>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">🏷️ نوع مرخصی</label>
+                        <select name="leave_type" class="form-select form-select-sm">
+                            <option value="AL">🌴 استحقاقی</option>
+                            <option value="SL">🏥 استعلاجی</option>
+                            <option value="RL">🎁 تشویقی</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">➕/➖ مقدار <span class="text-danger">*</span></label>
+                        <input type="number" name="amount" class="form-control form-control-sm"
+                               required placeholder="+5 یا -3" style="direction: ltr;">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">📝 توضیحات</label>
+                        <input type="text" name="description" class="form-control form-control-sm">
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-warning btn-sm w-100 rounded-pill fw-bold">
+                            <i class="bi bi-check-lg"></i> اعمال
+                        </button>
+                    </div>
+                </form>
+                <small class="text-muted d-block mt-2">
+                    <i class="bi bi-info-circle"></i>
+                    مقدار مثبت = افزایش | مقدار منفی = کاهش | هر تغییر در تراکنش‌ها ثبت می‌شود
+                </small>
+            </div>
+        </div>
     </div>
-    <div class="card-body">
+    {% endif %}
+
+    <!-- 🎨 فرم فیلترها -->
+    <div class="card filter-card mb-4">
+        <div class="card-body p-4">
+            <form method="get" action="/admin/leave-balances" class="row g-3 align-items-end">
+                <div class="col-lg-3 col-md-6">
+                    <label class="form-label">🔍 جستجوی کاربر</label>
+                    <input type="text" name="search" class="form-control form-control-sm"
+                           value="{{ search or '' }}" placeholder="نام یا کد پرسنلی...">
+                </div>
+                <div class="col-lg-2 col-md-6 col-6">
+                    <label class="form-label">📅 سال</label>
+                    <select name="year" class="form-select form-select-sm">
+                        <option value="">همه سال‌ها</option>
+                        {% for y in available_years %}
+                        <option value="{{ y }}" {% if year and year|string == y|string %}selected{% endif %}>{{ y }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-lg-2 col-md-6 col-6">
+                    <label class="form-label">🏷️ نوع مرخصی</label>
+                    <select name="leave_type" class="form-select form-select-sm">
+                        <option value="">همه انواع</option>
+                        <option value="AL" {% if leave_type == 'AL' %}selected{% endif %}>🌴 استحقاقی</option>
+                        <option value="SL" {% if leave_type == 'SL' %}selected{% endif %}>🏥 استعلاجی</option>
+                        <option value="RL" {% if leave_type == 'RL' %}selected{% endif %}>🎁 تشویقی</option>
+                        <option value="CW" {% if leave_type == 'CW' %}selected{% endif %}>📦 ذخیره</option>
+                    </select>
+                </div>
+                <div class="col-lg-2 col-md-6 col-6">
+                    <label class="form-label">📋 نوع قرارداد</label>
+                    <select name="contract_type" class="form-select form-select-sm">
+                        <option value="">همه انواع</option>
+                        {% for code, config in contract_types.items() %}
+                        <option value="{{ code }}" {% if contract_type_filter == code %}selected{% endif %}>
+                            {{ config.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-lg-2 col-md-6 col-6">
+                    <label class="form-label d-block">⚠️ وضعیت</label>
+                    <div class="form-check form-switch mt-2">
+                        <input class="form-check-input" type="checkbox" name="negative_only"
+                               id="negativeOnly" value="1" {% if negative_only %}checked{% endif %}>
+                        <label class="form-check-label small" for="negativeOnly">فقط منفی‌ها</label>
+                    </div>
+                </div>
+                <div class="col-lg-1 col-md-12">
+                    <button type="submit" class="btn btn-primary btn-sm w-100 rounded-pill">
+                        <i class="bi bi-search"></i>
+                    </button>
+                </div>
+            </form>
+
+            <!-- دکمه‌های سریع -->
+            <div class="d-flex gap-2 mt-3 flex-wrap">
+                <a href="/admin/leave-balances?show_all=1" class="btn btn-outline-primary quick-filter-btn">
+                    <i class="bi bi-list-ul"></i> نمایش همه
+                </a>
+                <a href="/admin/leave-balances?show_all=1&negative_only=1" class="btn btn-outline-danger quick-filter-btn">
+                    <i class="bi bi-exclamation-triangle"></i> فقط منفی‌ها
+                </a>
+                {% if has_filter %}
+                <a href="/admin/leave-balances" class="btn btn-outline-secondary quick-filter-btn">
+                    <i class="bi bi-x-lg"></i> پاک کردن فیلترها
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- وضعیت نمایش -->
+    {% if not has_filter %}
+    <div class="alert alert-info border-0 shadow-sm rounded-4">
+        <i class="bi bi-info-circle-fill"></i>
+        برای مشاهده مانده مرخصی، جستجو کنید یا دکمه «نمایش همه» را بزنید
+    </div>
+    {% elif total_count == 0 %}
+    <div class="alert alert-warning border-0 shadow-sm rounded-4">
+        <i class="bi bi-inbox"></i>
+        {% if negative_only %}
+        هیچ مانده منفی یافت نشد 🎉
+        {% elif year %}
+        هیچ مانده‌ای برای سال {{ year }} یافت نشد
+        {% else %}
+        هیچ مانده‌ای یافت نشد
+        {% endif %}
+    </div>
+    {% else %}
+
+    <!-- 📊 جدول مانده مرخصی -->
+    <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
+            <div class="fw-bold">
+                <i class="bi bi-table text-primary"></i> لیست مانده مرخصی
+                {% if year %}<span class="badge bg-primary ms-2">سال {{ year }}</span>{% endif %}
+                {% if negative_only %}<span class="badge bg-danger ms-2">فقط منفی‌ها</span>{% endif %}
+                {% if leave_type %}<span class="badge bg-info ms-2">{{ leave_type }}</span>{% endif %}
+            </div>
+            <span class="badge bg-secondary rounded-pill">{{ total_count }} رکورد</span>
+        </div>
         <div class="table-responsive">
-            <table class="table table-hover">
+            <table class="table table-balances table-hover mb-0">
                 <thead>
-                    <tr>
-                        <th>ردیف</th>
-                        <th class="text-center">سال</th>
-                        <th>کد پرسنلی</th>
-                        <th>نام کامل</th>
-                        <th class="text-center">نوع قرارداد</th>  <!-- 🆕 -->
-                        <th class="text-center">🏖️ مانده استحقاقی</th>
-                        <th class="text-center">🏥 مانده استعلاجی</th>
-                        <th class="text-center">📦 ذخیره سال قبل</th>
-                        <th class="text-center">عملیات</th>
+                    <tr class="text-center">
+                        <th style="width: 50px;">#</th>
+                        <th>سال</th>
+                        <th class="text-start">کد پرسنلی</th>
+                        <th class="text-start">نام کامل</th>
+                        <th>نوع قرارداد</th>
+                        <th>🌴 استحقاقی</th>
+                        <th>🏥 استعلاجی</th>
+                        <th>🎁 تشویقی</th>
+                        <th>📦 ذخیره</th>
+                        <th>عملیات</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for item in balances %}
-                    <tr>
-                        <td>{{ loop.index }}</td>
+                    {% set has_negative =
+                        (item.AL is not none and item.AL < 0) or
+                        (item.SL is not none and item.SL < 0) or
+                        (item.RL is not none and item.RL < 0) or
+                        (item.CW is not none and item.CW < 0)
+                    %}
+                    <tr class="{{ 'has-negative' if has_negative else '' }}">
+                        <td class="text-center text-muted">{{ loop.index }}</td>
                         <td class="text-center">
-                            <span class="badge bg-primary">{{ item.year }}</span>
+                            <span class="badge bg-light text-dark border rounded-pill">{{ item.year }}</span>
                         </td>
-                        <td>{{ item.user_id }}</td>
-                        <td>{{ item.full_name }}</td>
-                        <!-- 🆕 ستون نوع قرارداد -->
+                        <td class="text-start"><code>{{ item.user_id }}</code></td>
+                        <td class="text-start">
+                            <strong>{{ item.full_name }}</strong>
+                            {% if has_negative %}
+                            <span class="neg-dot" title="دارای مانده منفی"></span>
+                            {% endif %}
+                        </td>
                         <td class="text-center">
                             {% if item.contract_type.code %}
-                            <span class="badge bg-secondary">{{ item.contract_type.name }}</span>
+                            <span class="contract-badge badge bg-info">{{ item.contract_type.name }}</span>
                             {% else %}
-                            <span class="text-muted">{{ item.contract_type.name }}</span>
+                            <span class="contract-badge badge bg-secondary">{{ item.contract_type.name }}</span>
                             {% endif %}
                         </td>
+
+                        <!-- 🌴 استحقاقی -->
                         <td class="text-center">
                             {% if item.AL is not none %}
-                            <span class="badge bg-success fs-6">{{ item.AL }} روز</span>
+                            <span class="balance-pill {% if item.AL < 0 %}balance-negative{% elif item.AL == 0 %}balance-zero{% else %}balance-positive{% endif %}">
+                                {{ item.AL }}
+                            </span>
                             {% else %}
-                            <span class="text-muted">-</span>
+                            <span class="balance-empty">—</span>
                             {% endif %}
                         </td>
+
+                        <!-- 🏥 استعلاجی -->
                         <td class="text-center">
                             {% if item.SL is not none %}
-                            <span class="badge bg-info fs-6">{{ item.SL }} روز</span>
+                            <span class="balance-pill {% if item.SL < 0 %}balance-negative{% elif item.SL == 0 %}balance-zero{% else %}balance-positive{% endif %}">
+                                {{ item.SL }}
+                            </span>
                             {% else %}
-                            <span class="text-muted">-</span>
+                            <span class="balance-empty">—</span>
                             {% endif %}
                         </td>
+
+                        <!-- 🎁 تشویقی -->
                         <td class="text-center">
-                            {% if item.CW is not none and item.CW > 0 %}
-                            <span class="badge bg-secondary fs-6">{{ item.CW }} روز</span>
+                            {% if item.RL is not none %}
+                            <span class="balance-pill {% if item.RL < 0 %}balance-negative{% elif item.RL == 0 %}balance-zero{% else %}balance-positive{% endif %}">
+                                {{ item.RL }}
+                            </span>
                             {% else %}
-                            <span class="text-muted">-</span>
+                            <span class="balance-empty">—</span>
                             {% endif %}
                         </td>
+
+                        <!-- 📦 ذخیره -->
+                        <td class="text-center">
+                            {% if item.CW is not none and item.CW != 0 %}
+                            <span class="balance-pill {% if item.CW < 0 %}balance-negative{% else %}balance-positive{% endif %}">
+                                {{ item.CW }}
+                            </span>
+                            {% else %}
+                            <span class="balance-empty">—</span>
+                            {% endif %}
+                        </td>
+
+                        <!-- عملیات -->
                         <td class="text-center">
                             <a href="/admin/leave-transactions?search={{ item.user_id }}&year={{ item.year }}&show_all=1"
-                               class="btn btn-sm btn-outline-primary" title="مشاهده تراکنش‌های این سال">
-                                <i class="bi bi-arrow-left-right"></i> تراکنش‌ها
+                               class="btn btn-outline-primary btn-sm rounded-pill" title="مشاهده تراکنش‌ها">
+                                <i class="bi bi-arrow-left-right"></i>
                             </a>
                         </td>
                     </tr>
@@ -211,7 +522,32 @@
             </table>
         </div>
     </div>
-</div>
-{% endif %}
 
+    <!-- 🎨 راهنمای رنگ‌ها -->
+    <div class="card border-0 shadow-sm rounded-4 mt-3">
+        <div class="card-body py-3">
+            <div class="d-flex gap-4 flex-wrap align-items-center small">
+                <strong class="text-muted"><i class="bi bi-palette"></i> راهنما:</strong>
+                <span class="legend-item">
+                    <span class="balance-pill balance-positive" style="min-width: auto; padding: 2px 10px; direction: ltr;">10</span>
+                    مانده مثبت
+                </span>
+                <span class="legend-item">
+                    <span class="balance-pill balance-negative" style="min-width: auto; padding: 2px 10px; direction: ltr;">-5</span>
+                    مانده منفی
+                </span>
+                <span class="legend-item">
+                    <span class="balance-pill balance-zero" style="min-width: auto; padding: 2px 10px; direction: ltr;">0</span>
+                    صفر
+                </span>
+                <span class="legend-item">
+                    <span class="balance-empty">—</span>
+                    ثبت نشده
+                </span>
+            </div>
+        </div>
+    </div>
+
+    {% endif %}
+</div>
 {% endblock %}
