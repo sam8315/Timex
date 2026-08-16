@@ -253,10 +253,14 @@
                     <label class="form-label">وضعیت</label>
                     <select name="status_filter" class="form-select">
                         <option value="">همه وضعیت‌ها</option>
-                        <option value="P" {% if status_filter == 'P' %}selected{% endif %}>⏳ در انتظار</option>
-                        <option value="A" {% if status_filter == 'A' %}selected{% endif %}>✅ تایید شده</option>
-                        <option value="R" {% if status_filter == 'R' %}selected{% endif %}>❌ رد شده</option>
-                        <option value="D" {% if status_filter == 'D' %}selected{% endif %}>🗑️ حذف شده</option>
+                        <option value="P" {% if status_filter==
+                        'P' %}selected{% endif %}>⏳ در انتظار</option>
+                        <option value="A" {% if status_filter==
+                        'A' %}selected{% endif %}>✅ تایید شده</option>
+                        <option value="R" {% if status_filter==
+                        'R' %}selected{% endif %}>❌ رد شده</option>
+                        <option value="D" {% if status_filter==
+                        'D' %}selected{% endif %}>🗑️ حذف شده</option>
                     </select>
                 </div>
 
@@ -266,7 +270,7 @@
                     <select name="leave_type" class="form-select">
                         <option value="">همه انواع</option>
                         {% for code, name in leave_types.items() %}
-                        <option value="{{ code }}" {% if leave_type == code %}selected{% endif %}>{{ name }}</option>
+                        <option value="{{ code }}" {% if leave_type== code %}selected{% endif %}>{{ name }}</option>
                         {% endfor %}
                     </select>
                 </div>
@@ -344,87 +348,103 @@
         <div class="table-responsive">
             <table class="table table-hover table-striped">
                 <thead>
-                    <tr>
-                        <th>ردیف</th>
-                        <th>تاریخ ثبت</th>
-                        <th>کد پرسنلی</th>
-                        <th>نام و نام خانوادگی</th>
-                        <th class="text-center">نوع مرخصی</th>
-                        <th>از تاریخ</th>
-                        <th>تا تاریخ</th>
-                        <th class="text-center">روزها</th>
-                        <th>دلیل</th>
-                        <th class="text-center">وضعیت</th>
-                        <th class="text-center">عملیات</th>
-                    </tr>
+                <tr>
+                    <th>ردیف</th>
+                    <th>تاریخ ثبت</th>
+                    <th>کد پرسنلی</th>
+                    <th>نام و نام خانوادگی</th>
+                    <th class="text-center">نوع مرخصی</th>
+                    <th>از تاریخ</th>
+                    <th>تا تاریخ</th>
+                    <th class="text-center">روزها</th>
+                    <th>دلیل</th>
+                    <th class="text-center">وضعیت</th>
+                    <th class="text-center">عملیات</th>
+                </tr>
                 </thead>
                 <tbody>
-                    {% for item in requests %}
-                    <tr class="{% if item.request.status == 'P' %}table-warning{% endif %}">
-                        <td>{{ loop.index }}</td>
-                        <td><small class="text-muted">{{ item.created_j or '-' }}</small></td>
-                        <td><strong>{{ item.request.user_id }}</strong></td>
-                        <td>{{ item.full_name }}</td>
-                        <td class="text-center">
-                            {% if item.request.leave_type == 'AL' %}
-                            <span class="badge bg-success">استحقاقی</span>
-                            {% elif item.request.leave_type == 'SL' %}
-                            <span class="badge bg-info text-dark">استعلاجی</span>
-                            {% elif item.request.leave_type == 'UL' %}
-                            <span class="badge bg-danger">بدون حقوق</span>
-                            {% else %}
-                            <span class="badge bg-secondary">{{ item.leave_type_name }}</span>
-                            {% endif %}
-                        </td>
-                        <td>{{ item.from_j }}</td>
-                        <td>{{ item.to_j }}</td>
-                        <td class="text-center fw-bold">{{ item.request.days_count }}</td>
-                        <td>
-                            <small class="text-muted" title="{{ item.request.reason or '' }}">
-                                {{ item.request.reason[:30] + '...' if item.request.reason and item.request.reason|length > 30 else item.request.reason or '-' }}
-                            </small>
-                        </td>
-                        <td class="text-center">
-                            {% if item.request.status == 'P' %}
-                            <span class="badge bg-warning text-dark">⏳ در انتظار</span>
-                            {% elif item.request.status == 'A' %}
-                            <span class="badge bg-success">✅ تایید شده</span>
-                            {% elif item.request.status == 'R' %}
-                            <span class="badge bg-danger">❌ رد شده</span>
-                            {% elif item.request.status == 'D' %}
-                            <span class="badge bg-secondary">🗑️ حذف شده</span>
-                            {% endif %}
-                        </td>
-<td class="text-center">
-    <!-- 🆕 عدد مانده (فقط در انتظار) -->
-    {% if item.request.status == 'P' %}
-    <span class="badge {% if item.current_balance >= item.request.days_count %}bg-success{% else %}bg-danger{% endif %}"
-          title="مانده: {{ item.current_balance }} روز | درخواست: {{ item.request.days_count }} روز">
+                {% for item in requests %}
+                <tr class="{% if item.request.status == 'P' %}table-warning{% endif %}">
+                    <td>{{ loop.index }}</td>
+                    <td><small class="text-muted">{{ item.created_j or '-' }}</small></td>
+                    <td><strong>{{ item.request.user_id }}</strong></td>
+                    <td>{{ item.full_name }}</td>
+                    <td class="text-center">
+                        {% if item.request.leave_type == 'AL' %}
+                        <span class="badge bg-success">استحقاقی</span>
+                        {% elif item.request.leave_type == 'SL' %}
+                        <span class="badge bg-info text-dark">استعلاجی</span>
+                        {% elif item.request.leave_type == 'UL' %}
+                        <span class="badge bg-danger">بدون حقوق</span>
+                        {% else %}
+                        <span class="badge bg-secondary">{{ item.leave_type_name }}</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ item.from_j }}</td>
+                    <td>{{ item.to_j }}</td>
+                    <td class="text-center fw-bold">{{ item.request.days_count }}</td>
+                    <td>
+                        <small class="text-muted" title="{{ item.request.reason or '' }}">
+                            {{ item.request.reason[:30] + '...' if item.request.reason and item.request.reason|length >
+                            30 else item.request.reason or '-' }}
+                        </small>
+                    </td>
+                    <td class="text-center">
+                        {% if item.request.status == 'P' %}
+                        <span class="badge bg-warning text-dark">⏳ در انتظار</span>
+                        {% elif item.request.status == 'A' %}
+                        <span class="badge bg-success">✅ تایید شده</span>
+                        {% elif item.request.status == 'R' %}
+                        <span class="badge bg-danger">❌ رد شده</span>
+                        {% elif item.request.status == 'D' %}
+                        <span class="badge bg-secondary">🗑️ حذف شده</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-center">
+                        <!-- عدد مانده (فقط در انتظار) -->
+                        {% if item.request.status == 'P' %}
+                        <span class="badge {% if item.current_balance >= item.request.days_count %}bg-success{% else %}bg-danger{% endif %}"
+                              title="مانده: {{ item.current_balance }} روز | درخواست: {{ item.request.days_count }} روز">
         <i class="bi bi-wallet2"></i> {{ item.current_balance }}
     </span>
-    {% endif %}
+                        {% endif %}
 
-    <!-- دکمه‌های تایید/رد (فقط در انتظار) -->
-    {% if item.request.status == 'P' %}
-    <div class="btn-group btn-group-sm ms-2">
-        <form method="post" action="/admin/leave-requests/{{ item.request.id }}/approve" class="d-inline">
-            <button type="submit" class="btn btn-success" title="تایید">
-                <i class="bi bi-check-lg"></i>
-            </button>
-        </form>
-        <form method="post" action="/admin/leave-requests/{{ item.request.id }}/reject" class="d-inline">
-            <button type="submit" class="btn btn-danger" title="رد">
-                <i class="bi bi-x-lg"></i>
-            </button>
-        </form>
-    </div>
-    {% else %}
-    <span class="badge bg-{{ 'success' if item.request.status == 'A' else 'secondary' }}">
-        {{ 'تایید شده' if item.request.status == 'A' else 'رد شده' }}
-    </span>
-    {% endif %}
-</td>                    </tr>
-                    {% endfor %}
+                        <!-- دکمه‌های عملیات -->
+                        <div class="btn-group btn-group-sm ms-2">
+                            <!-- ویرایش (برای همه درخواست‌ها) -->
+                            <a href="/admin/leave-requests/{{ item.request.id }}/edit"
+                               class="btn btn-outline-primary" title="ویرایش">
+                                <i class="bi bi-pencil"></i>
+                            </a>
+
+                            <!-- تایید/رد فقط برای در انتظار -->
+                            {% if item.request.status == 'P' %}
+                            <form method="post" action="/admin/leave-requests/{{ item.request.id }}/approve"
+                                  class="d-inline">
+                                <button type="submit" class="btn btn-success" title="تایید">
+                                    <i class="bi bi-check-lg"></i>
+                                </button>
+                            </form>
+                            <form method="post" action="/admin/leave-requests/{{ item.request.id }}/reject"
+                                  class="d-inline">
+                                <button type="submit" class="btn btn-warning" title="رد">
+                                    <i class="bi bi-x-lg"></i>
+                                </button>
+                            </form>
+                            {% endif %}
+
+                            <!-- 🆕 حذف (برای همه درخواست‌ها) -->
+                            <form method="post" action="/admin/leave-requests/{{ item.request.id }}/delete"
+                                  class="d-inline"
+                                  onsubmit="return confirm('آیا از حذف این درخواست مرخصی مطمئن هستید؟ این عمل قابل بازگشت نیست.');">
+                                <button type="submit" class="btn btn-outline-danger" title="حذف">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
                 </tbody>
             </table>
         </div>
@@ -449,49 +469,49 @@
 
 <!-- ===== مودال‌های رد درخواست ===== -->
 {% for item in requests %}
-    {% if item.request.status == 'P' %}
-    <div class="modal fade" id="rejectModal{{ item.request.id }}" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <form method="post" action="/admin/leave-requests/{{ item.request.id }}/reject">
-                    <div class="modal-header bg-danger text-white">
-                        <h5 class="modal-title">
-                            <i class="bi bi-x-circle"></i> رد درخواست مرخصی
-                        </h5>
-                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+{% if item.request.status == 'P' %}
+<div class="modal fade" id="rejectModal{{ item.request.id }}" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="/admin/leave-requests/{{ item.request.id }}/reject">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title">
+                        <i class="bi bi-x-circle"></i> رد درخواست مرخصی
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-secondary">
+                        <strong>{{ item.full_name }}</strong> -
+                        {{ item.request.days_count }} روز مرخصی {{ item.leave_type_name }}
+                        <br>
+                        <small>از {{ item.from_j }} تا {{ item.to_j }}</small>
                     </div>
-                    <div class="modal-body">
-                        <div class="alert alert-secondary">
-                            <strong>{{ item.full_name }}</strong> -
-                            {{ item.request.days_count }} روز مرخصی {{ item.leave_type_name }}
-                            <br>
-                            <small>از {{ item.from_j }} تا {{ item.to_j }}</small>
-                        </div>
 
-                        {% if item.request.reason %}
-                        <div class="mb-3">
-                            <label class="form-label">📝 دلیل درخواست:</label>
-                            <p class="text-muted">{{ item.request.reason }}</p>
-                        </div>
-                        {% endif %}
+                    {% if item.request.reason %}
+                    <div class="mb-3">
+                        <label class="form-label">📝 دلیل درخواست:</label>
+                        <p class="text-muted">{{ item.request.reason }}</p>
+                    </div>
+                    {% endif %}
 
-                        <div class="mb-3">
-                            <label class="form-label">📝 دلیل رد (اختیاری)</label>
-                            <textarea name="rejection_reason" class="form-control" rows="3"
-                                      placeholder="دلیل رد درخواست را وارد کنید..."></textarea>
-                        </div>
+                    <div class="mb-3">
+                        <label class="form-label">📝 دلیل رد (اختیاری)</label>
+                        <textarea name="rejection_reason" class="form-control" rows="3"
+                                  placeholder="دلیل رد درخواست را وارد کنید..."></textarea>
                     </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
-                        <button type="submit" class="btn btn-danger">
-                            <i class="bi bi-x-lg"></i> رد درخواست
-                        </button>
-                    </div>
-                </form>
-            </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
+                    <button type="submit" class="btn btn-danger">
+                        <i class="bi bi-x-lg"></i> رد درخواست
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
-    {% endif %}
+</div>
+{% endif %}
 {% endfor %}
 
 {% endif %}
@@ -500,206 +520,206 @@
 
 {% block extra_js %}
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    // ===== داده‌های کارمندان از سرور =====
-    const employeesData = {{ employees | tojson | default('[]', true) }};
+    document.addEventListener('DOMContentLoaded', function() {
+        // ===== داده‌های کارمندان از سرور =====
+        const employeesData = {{ employees | tojson | default('[]', true) }};
 
-    // ===== متغیرهای سراسری =====
-    let highlightedIndex = -1;
-    let filteredEmployees = [];
-    let searchTimeout = null;
+        // ===== متغیرهای سراسری =====
+        let highlightedIndex = -1;
+        let filteredEmployees = [];
+        let searchTimeout = null;
 
-    // ===== المان‌های DOM =====
-    const searchInput = document.getElementById('userSearchInput');
-    const searchResults = document.getElementById('userSearchResults');
-    const targetUserId = document.getElementById('targetUserId');
-    const selectedUserInfo = document.getElementById('selectedUserInfo');
-    const selectedUserName = document.getElementById('selectedUserName');
-    const selectedUserDept = document.getElementById('selectedUserDept');
-    const clearUserBtn = document.getElementById('clearUserBtn');
-    const removeUserBtn = document.getElementById('removeUserBtn');
+        // ===== المان‌های DOM =====
+        const searchInput = document.getElementById('userSearchInput');
+        const searchResults = document.getElementById('userSearchResults');
+        const targetUserId = document.getElementById('targetUserId');
+        const selectedUserInfo = document.getElementById('selectedUserInfo');
+        const selectedUserName = document.getElementById('selectedUserName');
+        const selectedUserDept = document.getElementById('selectedUserDept');
+        const clearUserBtn = document.getElementById('clearUserBtn');
+        const removeUserBtn = document.getElementById('removeUserBtn');
 
-    if (!searchInput || !searchResults) return;
+        if (!searchInput || !searchResults) return;
 
-    // ===== بازیابی کاربر انتخاب شده از URL =====
-    const initialValue = searchInput.value.trim();
-    if (initialValue) {
-        const selectedEmp = employeesData.find(emp =>
-            emp.user_id === initialValue ||
-            emp.full_name === initialValue
-        );
+        // ===== بازیابی کاربر انتخاب شده از URL =====
+        const initialValue = searchInput.value.trim();
+        if (initialValue) {
+            const selectedEmp = employeesData.find(emp =>
+                emp.user_id === initialValue ||
+                emp.full_name === initialValue
+            );
 
-        if (selectedEmp) {
-            searchInput.value = selectedEmp.full_name;
+            if (selectedEmp) {
+                searchInput.value = selectedEmp.full_name;
+                searchInput.classList.add('user-selected');
+                selectedUserName.textContent = selectedEmp.full_name;
+                selectedUserDept.textContent = `(${selectedEmp.user_id}) - ${selectedEmp.department}`;
+                selectedUserInfo.style.display = 'block';
+                clearUserBtn.style.display = 'block';
+            } else {
+                // اگر کاربر پیدا نشد، مقدار فعلی را نگه دار
+                clearUserBtn.style.display = 'block';
+            }
+        }
+
+        // ===== تابع جستجو =====
+        function searchEmployees(query) {
+            if (!Array.isArray(employeesData)) return [];
+
+            if (!query.trim()) {
+                return employeesData.slice(0, 50);
+            }
+
+            const q = query.trim().toLowerCase();
+            return employeesData.filter(emp => {
+                const fullName = (emp.full_name || '').toLowerCase();
+                const userId = (emp.user_id || '').toLowerCase();
+                const dept = (emp.department || '').toLowerCase();
+                return fullName.includes(q) || userId.includes(q) || dept.includes(q);
+            }).slice(0, 50);
+        }
+
+        // ===== نمایش نتایج =====
+        function renderResults(employees) {
+            filteredEmployees = employees;
+            highlightedIndex = -1;
+
+            if (employees.length === 0) {
+                searchResults.innerHTML = `
+                    <div class="user-search-no-result">
+                        <i class="bi bi-search"></i> کاربری یافت نشد
+                    </div>
+                `;
+                searchResults.classList.add('show');
+                return;
+            }
+
+            let html = `<div class="user-search-count">${employees.length} کاربر یافت شد</div>`;
+
+            employees.forEach((emp, index) => {
+                html += `
+                    <div class="user-search-item" data-index="${index}" data-user-id="${emp.user_id}">
+                        <div>
+                            <div class="user-name">${emp.full_name || 'بدون نام'}</div>
+                            <div class="user-id">${emp.user_id}</div>
+                        </div>
+                        <span class="user-dept">${emp.department || '-'}</span>
+                    </div>
+                `;
+            });
+
+            searchResults.innerHTML = html;
+            searchResults.classList.add('show');
+
+            // اضافه کردن event listener
+            searchResults.querySelectorAll('.user-search-item').forEach(item => {
+                item.addEventListener('click', function() {
+                    const index = parseInt(this.dataset.index);
+                    selectEmployee(filteredEmployees[index]);
+                });
+
+                item.addEventListener('mouseenter', function() {
+                    highlightItem(parseInt(this.dataset.index));
+                });
+            });
+        }
+
+        // ===== هایلایت آیتم =====
+        function highlightItem(index) {
+            const items = searchResults.querySelectorAll('.user-search-item');
+            items.forEach(item => item.classList.remove('highlighted'));
+
+            if (index >= 0 && index < items.length) {
+                items[index].classList.add('highlighted');
+                items[index].scrollIntoView({ block: 'nearest' });
+                highlightedIndex = index;
+            }
+        }
+
+        // ===== انتخاب کارمند =====
+        function selectEmployee(emp) {
+            // 🆕 ذخیره کد کاربر در فیلد مخفی
+            targetUserId.value = emp.user_id;
+            searchInput.value = emp.full_name;
             searchInput.classList.add('user-selected');
-            selectedUserName.textContent = selectedEmp.full_name;
-            selectedUserDept.textContent = `(${selectedEmp.user_id}) - ${selectedEmp.department}`;
+
+            selectedUserName.textContent = emp.full_name || 'بدون نام';
+            selectedUserDept.textContent = `(${emp.user_id}) - ${emp.department || '-'}`;
             selectedUserInfo.style.display = 'block';
             clearUserBtn.style.display = 'block';
-        } else {
-            // اگر کاربر پیدا نشد، مقدار فعلی را نگه دار
-            clearUserBtn.style.display = 'block';
-        }
-    }
 
-    // ===== تابع جستجو =====
-    function searchEmployees(query) {
-        if (!Array.isArray(employeesData)) return [];
-
-        if (!query.trim()) {
-            return employeesData.slice(0, 50);
+            searchResults.classList.remove('show');
+            searchInput.blur();
         }
 
-        const q = query.trim().toLowerCase();
-        return employeesData.filter(emp => {
-            const fullName = (emp.full_name || '').toLowerCase();
-            const userId = (emp.user_id || '').toLowerCase();
-            const dept = (emp.department || '').toLowerCase();
-            return fullName.includes(q) || userId.includes(q) || dept.includes(q);
-        }).slice(0, 50);
-    }
-
-    // ===== نمایش نتایج =====
-    function renderResults(employees) {
-        filteredEmployees = employees;
-        highlightedIndex = -1;
-
-        if (employees.length === 0) {
-            searchResults.innerHTML = `
-                <div class="user-search-no-result">
-                    <i class="bi bi-search"></i> کاربری یافت نشد
-                </div>
-            `;
-            searchResults.classList.add('show');
-            return;
-        }
-
-        let html = `<div class="user-search-count">${employees.length} کاربر یافت شد</div>`;
-
-        employees.forEach((emp, index) => {
-            html += `
-                <div class="user-search-item" data-index="${index}" data-user-id="${emp.user_id}">
-                    <div>
-                        <div class="user-name">${emp.full_name || 'بدون نام'}</div>
-                        <div class="user-id">${emp.user_id}</div>
-                    </div>
-                    <span class="user-dept">${emp.department || '-'}</span>
-                </div>
-            `;
-        });
-
-        searchResults.innerHTML = html;
-        searchResults.classList.add('show');
-
-        // اضافه کردن event listener
-        searchResults.querySelectorAll('.user-search-item').forEach(item => {
-            item.addEventListener('click', function() {
-                const index = parseInt(this.dataset.index);
-                selectEmployee(filteredEmployees[index]);
-            });
-
-            item.addEventListener('mouseenter', function() {
-                highlightItem(parseInt(this.dataset.index));
-            });
-        });
-    }
-
-    // ===== هایلایت آیتم =====
-    function highlightItem(index) {
-        const items = searchResults.querySelectorAll('.user-search-item');
-        items.forEach(item => item.classList.remove('highlighted'));
-
-        if (index >= 0 && index < items.length) {
-            items[index].classList.add('highlighted');
-            items[index].scrollIntoView({ block: 'nearest' });
-            highlightedIndex = index;
-        }
-    }
-
-    // ===== انتخاب کارمند =====
-    function selectEmployee(emp) {
-        // 🆕 ذخیره کد کاربر در فیلد مخفی
-        targetUserId.value = emp.user_id;
-        searchInput.value = emp.full_name;
-        searchInput.classList.add('user-selected');
-
-        selectedUserName.textContent = emp.full_name || 'بدون نام';
-        selectedUserDept.textContent = `(${emp.user_id}) - ${emp.department || '-'}`;
-        selectedUserInfo.style.display = 'block';
-        clearUserBtn.style.display = 'block';
-
-        searchResults.classList.remove('show');
-        searchInput.blur();
-    }
-
-    // ===== پاک کردن انتخاب =====
-    function clearSelection() {
-        targetUserId.value = '';
-        searchInput.value = '';
-        searchInput.classList.remove('user-selected');
-        selectedUserInfo.style.display = 'none';
-        clearUserBtn.style.display = 'none';
-        searchInput.focus();
-    }
-
-    // ===== رویدادهای جستجو =====
-    searchInput.addEventListener('input', function() {
-        // اگر کاربر قبلاً انتخاب شده و متن تغییر کند
-        if (targetUserId.value) {
+        // ===== پاک کردن انتخاب =====
+        function clearSelection() {
             targetUserId.value = '';
-            selectedUserInfo.style.display = 'none';
+            searchInput.value = '';
             searchInput.classList.remove('user-selected');
+            selectedUserInfo.style.display = 'none';
+            clearUserBtn.style.display = 'none';
+            searchInput.focus();
         }
 
-        const results = searchEmployees(this.value);
-        renderResults(results);
+        // ===== رویدادهای جستجو =====
+        searchInput.addEventListener('input', function() {
+            // اگر کاربر قبلاً انتخاب شده و متن تغییر کند
+            if (targetUserId.value) {
+                targetUserId.value = '';
+                selectedUserInfo.style.display = 'none';
+                searchInput.classList.remove('user-selected');
+            }
 
-        clearUserBtn.style.display = this.value ? 'block' : 'none';
-    });
-
-    searchInput.addEventListener('focus', function() {
-        if (!targetUserId.value) {
             const results = searchEmployees(this.value);
             renderResults(results);
-        }
-    });
 
-    // ===== پشتیبانی از کیبورد =====
-    searchInput.addEventListener('keydown', function(e) {
-        const items = searchResults.querySelectorAll('.user-search-item');
+            clearUserBtn.style.display = this.value ? 'block' : 'none';
+        });
 
-        if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            if (highlightedIndex < items.length - 1) {
-                highlightItem(highlightedIndex + 1);
+        searchInput.addEventListener('focus', function() {
+            if (!targetUserId.value) {
+                const results = searchEmployees(this.value);
+                renderResults(results);
             }
-        } else if (e.key === 'ArrowUp') {
-            e.preventDefault();
-            if (highlightedIndex > 0) {
-                highlightItem(highlightedIndex - 1);
-            }
-        } else if (e.key === 'Enter') {
-            e.preventDefault();
-            if (highlightedIndex >= 0 && filteredEmployees[highlightedIndex]) {
-                selectEmployee(filteredEmployees[highlightedIndex]);
-            } else if (filteredEmployees.length > 0) {
-                selectEmployee(filteredEmployees[0]);
-            }
-        } else if (e.key === 'Escape') {
-            searchResults.classList.remove('show');
-        }
-    });
+        });
 
-    // ===== دکمه‌های پاک کردن =====
-    if (clearUserBtn) clearUserBtn.addEventListener('click', clearSelection);
-    if (removeUserBtn) removeUserBtn.addEventListener('click', clearSelection);
+        // ===== پشتیبانی از کیبورد =====
+        searchInput.addEventListener('keydown', function(e) {
+            const items = searchResults.querySelectorAll('.user-search-item');
 
-    // ===== بستن dropdown با کلیک بیرون =====
-    document.addEventListener('click', function(e) {
-        if (!e.target.closest('.user-search-wrapper')) {
-            searchResults.classList.remove('show');
-        }
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                if (highlightedIndex < items.length - 1) {
+                    highlightItem(highlightedIndex + 1);
+                }
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (highlightedIndex > 0) {
+                    highlightItem(highlightedIndex - 1);
+                }
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (highlightedIndex >= 0 && filteredEmployees[highlightedIndex]) {
+                    selectEmployee(filteredEmployees[highlightedIndex]);
+                } else if (filteredEmployees.length > 0) {
+                    selectEmployee(filteredEmployees[0]);
+                }
+            } else if (e.key === 'Escape') {
+                searchResults.classList.remove('show');
+            }
+        });
+
+        // ===== دکمه‌های پاک کردن =====
+        if (clearUserBtn) clearUserBtn.addEventListener('click', clearSelection);
+        if (removeUserBtn) removeUserBtn.addEventListener('click', clearSelection);
+
+        // ===== بستن dropdown با کلیک بیرون =====
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.user-search-wrapper')) {
+                searchResults.classList.remove('show');
+            }
+        });
     });
-});
 </script>
 {% endblock %}

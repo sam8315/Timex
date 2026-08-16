@@ -1037,7 +1037,7 @@ async def register_leave_for_user(
 
 
 # ============================================
-# 🆕 ویرایش درخواست مرخصی (توسط ادمین)
+# 🆕 ویرایش درخواست مرخصی (توسط ادمین) - همه وضعیت‌ها
 # ============================================
 
 @router.get("/leave-requests/{request_id}/edit", response_class=HTMLResponse)
@@ -1047,18 +1047,13 @@ async def edit_leave_request_form(
         user: User = Depends(require_admin),
         db: Session = Depends(get_db)
 ):
-    """فرم ویرایش درخواست مرخصی"""
+    """فرم ویرایش درخواست مرخصی (همه وضعیت‌ها)"""
     leave_request = db.query(LeaveRequest).filter(LeaveRequest.id == request_id).first()
 
     if not leave_request:
         return RedirectResponse(url="/admin/leave-requests?error=درخواست یافت نشد", status_code=302)
 
-    # فقط درخواست‌های در انتظار قابل ویرایش هستند
-    if leave_request.status != 'P':
-        return RedirectResponse(
-            url="/admin/leave-requests?error=فقط درخواست‌های در انتظار قابل ویرایش هستند",
-            status_code=302
-        )
+    # ⚠️ هیچ محدودیت status وجود ندارد - همه قابل ویرایش هستند
 
     # تبدیل تاریخ‌ها به شمسی
     from_j = jdatetime.date.fromgregorian(date=leave_request.from_date).strftime('%Y/%m/%d')
@@ -1078,7 +1073,7 @@ async def edit_leave_request_form(
         for emp in employees
     ]
 
-    # دریافت اطلاعات کاربر فعلی برای نمایش در جستجوگر
+    # دریافت اطلاعات کاربر فعلی
     current_employee = db.query(Employee).filter(
         Employee.user_id == leave_request.user_id
     ).first()
@@ -1091,6 +1086,11 @@ async def edit_leave_request_form(
         "employees": employees_list,
         "current_employee_name": current_employee.full_name if current_employee else leave_request.user_id,
         "leave_types": LEAVE_TYPES,
+        "statuses": {
+            'P': 'در انتظار بررسی',
+            'A': 'تایید شده',
+            'R': 'رد شده',
+        },
         "is_admin": True,
     })
 
@@ -1104,18 +1104,29 @@ async def edit_leave_request_submit(
         from_date_str: str = Form(...),
         to_date_str: str = Form(...),
         reason: str = Form(""),
+        status: str = Form('P'),
         user: User = Depends(require_admin),
         db: Session = Depends(get_db)
 ):
-    """ثبت تغییرات درخواست مرخصی"""
+    """ثبت تغییرات درخواست مرخصی (همه وضعیت‌ها)"""
     try:
         leave_request = db.query(LeaveRequest).filter(LeaveRequest.id == request_id).first()
 
         if not leave_request:
             raise ValueError("درخواست یافت نشد")
 
-        if leave_request.status != 'P':
-            raise ValueError("فقط درخواست‌های در انتظار قابل ویرایش هستند")
+        # ⚠️ هیچ محدودیت status وجود ندارد
+
+        # اعتبارسنجی وضعیت
+        if status not in ('P', 'A', 'R'):
+            raise ValueError("وضعیت نامعتبر است")
+
+        # ذخیره وضعیت قبلی برای محاسبات بالانس
+        old_status = leave_request.status
+        old_leave_type = leave_request.leave_type
+        old_days_count = leave_request.days_count
+        old_user_id = leave_request.user_id
+        old_year_j = jdatetime.date.fromgregorian(date=leave_request.from_date).year
 
         # بررسی وجود کاربر هدف
         target_employee = db.query(Employee).filter(
@@ -1138,7 +1149,7 @@ async def edit_leave_request_submit(
         if from_date > to_date:
             raise ValueError("تاریخ شروع باید قبل یا مساوی تاریخ پایان باشد")
 
-        # محاسبه تعداد روزها (با کسر تعطیلات و جمعه‌ها)
+        # محاسبه تعداد روزها
         days_count = calculate_leave_days_admin(db, target_user_id, from_date, to_date)
 
         if days_count <= 0:
@@ -1148,7 +1159,7 @@ async def edit_leave_request_submit(
         overlapping = db.query(LeaveRequest).filter(
             and_(
                 LeaveRequest.user_id == target_user_id,
-                LeaveRequest.id != request_id,  # 🆕 به جز درخواست فعلی
+                LeaveRequest.id != request_id,
                 LeaveRequest.status.in_(['P', 'A']),
                 LeaveRequest.from_date <= to_date,
                 LeaveRequest.to_date >= from_date
@@ -1158,13 +1169,78 @@ async def edit_leave_request_submit(
         if overlapping:
             raise ValueError("کاربر در این بازه، درخواست مرخصی دیگری دارد")
 
-        # به‌روزرسانی فیلدها
+        # مرحله ۱: اگر درخواست قبلاً تایید شده، کسر قبلی را برمی‌گردانیم
+        if old_status == 'A':
+            balance = db.query(LeaveBalance).filter(
+                and_(
+                    LeaveBalance.user_id == old_user_id,
+                    LeaveBalance.year == old_year_j,
+                    LeaveBalance.leave_type == old_leave_type
+                )
+            ).first()
+            if balance:
+                balance.balance += old_days_count
+
+            # حذف تراکنش USE قبلی مرتبط با این درخواست
+            old_tx = db.query(LeaveTransaction).filter(
+                and_(
+                    LeaveTransaction.reference_id == request_id,
+                    LeaveTransaction.transaction_type == 'USE'
+                )
+            ).first()
+            if old_tx:
+                db.delete(old_tx)
+
+        # مرحله ۲: به‌روزرسانی فیلدها
         leave_request.user_id = target_user_id
         leave_request.leave_type = leave_type
         leave_request.from_date = from_date
         leave_request.to_date = to_date
         leave_request.days_count = days_count
         leave_request.reason = reason.strip()
+        leave_request.status = status
+
+        # مرحله ۳: اگر وضعیت جدید "تایید شده" است، کسر جدید اعمال شود
+        if status == 'A':
+            new_year_j = from_j.year
+            balance = db.query(LeaveBalance).filter(
+                and_(
+                    LeaveBalance.user_id == target_user_id,
+                    LeaveBalance.year == new_year_j,
+                    LeaveBalance.leave_type == leave_type
+                )
+            ).first()
+            if balance:
+                balance.balance -= days_count
+            else:
+                new_balance = LeaveBalance(
+                    user_id=target_user_id,
+                    year=new_year_j,
+                    leave_type=leave_type,
+                    balance=-days_count
+                )
+                db.add(new_balance)
+
+            # ثبت تراکنش USE جدید
+            new_tx = LeaveTransaction(
+                user_id=target_user_id,
+                year=new_year_j,
+                leave_type=leave_type,
+                amount=days_count,
+                transaction_type='USE',
+                description=f"مرخصی ویرایش شده (درخواست #{request_id})",
+                reference_id=request_id
+            )
+            db.add(new_tx)
+
+            # تنظیم approved_by و approved_at اگر قبلاً تایید نشده بوده
+            if old_status != 'A':
+                leave_request.approved_by = user.user_id
+                leave_request.approved_at = datetime.now()
+        else:
+            # اگر وضعیت جدید "تایید شده" نیست، اطلاعات تایید پاک شود
+            leave_request.approved_by = None
+            leave_request.approved_at = None
 
         db.commit()
 
