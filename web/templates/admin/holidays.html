@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+{% block title %}مدیریت تعطیلات | پنل مدیریت{% endblock %}
+{% block content %}
+
+<!-- پیام‌ها -->
+{% if request.query_params.get('success') %}
+<div class="alert alert-success alert-dismissible fade show">
+    <i class="bi bi-check-circle"></i> {{ request.query_params.get('success') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+{% if request.query_params.get('error') %}
+<div class="alert alert-danger alert-dismissible fade show">
+    <i class="bi bi-exclamation-triangle"></i> {{ request.query_params.get('error') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4><i class="bi bi-calendar-heart"></i> مدیریت تعطیلات</h4>
+    <a href="/admin/" class="btn btn-outline-primary btn-sm">
+        <i class="bi bi-arrow-right"></i> بازگشت به پنل مدیریت
+    </a>
+</div>
+
+<!-- فرم افزودن -->
+<div class="card mb-4">
+    <div class="card-header bg-white">
+        <h6><i class="bi bi-plus-circle"></i> افزودن تعطیلی جدید</h6>
+    </div>
+    <div class="card-body">
+        <form method="post" action="/admin/holidays/add" class="row g-3 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label">📅 تاریخ (شمسی) <span class="text-danger">*</span></label>
+                <input type="text" name="date_str" class="form-control" placeholder="1405/05/19" required>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">📝 عنوان <span class="text-danger">*</span></label>
+                <input type="text" name="title" class="form-control" placeholder="عید نوروز" required>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">👥 گروه</label>
+                <select name="group_id" class="form-select">
+                    <option value="">ملی (همه)</option>
+                    <option value="1">رسمی</option>
+                    <option value="2">وظیفه</option>
+                    <option value="3">خریدخدمت</option>
+                    <option value="4">قراردادی</option>
+                    <option value="5">پزشک</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-success w-100">
+                    <i class="bi bi-plus"></i> افزودن
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- فیلترها -->
+<div class="card mb-4">
+    <div class="card-body py-2">
+        <form method="get" action="/admin/holidays" class="d-flex flex-wrap align-items-center gap-2">
+            <span class="text-muted"><i class="bi bi-funnel"></i> فیلتر:</span>
+            <select name="year" class="form-select form-select-sm" style="width: auto;">
+                {% for y in available_years %}
+                <option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>
+                {% endfor %}
+            </select>
+            <select name="group_filter" class="form-select form-select-sm" style="width: auto;">
+                <option value="">همه گروه‌ها</option>
+                <option value="national" {% if group_filter == 'national' %}selected{% endif %}>ملی (همه)</option>
+                <option value="1" {% if group_filter == '1' %}selected{% endif %}>رسمی</option>
+                <option value="2" {% if group_filter == '2' %}selected{% endif %}>وظیفه</option>
+                <option value="3" {% if group_filter == '3' %}selected{% endif %}>خریدخدمت</option>
+                <option value="4" {% if group_filter == '4' %}selected{% endif %}>قراردادی</option>
+                <option value="5" {% if group_filter == '5' %}selected{% endif %}>پزشک</option>
+            </select>
+            <button type="submit" class="btn btn-primary btn-sm">
+                <i class="bi bi-search"></i> اعمال
+            </button>
+        </form>
+    </div>
+</div>
+
+<!-- جدول تعطیلات -->
+<div class="card">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h6 class="mb-0"><i class="bi bi-list-ul"></i> تعطیلات سال {{ year }}</h6>
+        <span class="badge bg-primary fs-6">{{ total_count }} مورد</span>
+    </div>
+    <div class="card-body">
+        {% if holidays %}
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>ردیف</th>
+                        <th>تاریخ شمسی</th>
+                        <th>روز هفته</th>
+                        <th>عنوان</th>
+                        <th class="text-center">گروه</th>
+                        <th class="text-center">عملیات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for h in holidays %}
+                    <tr class="{% if h.date_j_obj.weekday() == 6 %}table-warning{% endif %}">
+                        <td>{{ loop.index }}</td>
+                        <td class="fw-bold">{{ h.date_j }}</td>
+                        <td>
+                            {{ h.day_name }}
+                            {% if h.date_j_obj.weekday() == 6 %}
+                            <span class="badge bg-warning text-dark">جمعه</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ h.title }}</td>
+                        <td class="text-center">
+                            {% if h.group_id is none %}
+                            <span class="badge bg-primary">ملی (همه)</span>
+                            {% elif h.group_id == '1' %}
+                            <span class="badge bg-secondary">رسمی</span>
+                            {% elif h.group_id == '2' %}
+                            <span class="badge bg-info">وظیفه</span>
+                            {% elif h.group_id == '3' %}
+                            <span class="badge bg-warning text-dark">خریدخدمت</span>
+                            {% elif h.group_id == '4' %}
+                            <span class="badge bg-success">قراردادی</span>
+                            {% elif h.group_id == '5' %}
+                            <span class="badge bg-danger">پزشک</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            <div class="btn-group btn-group-sm">
+                                <!-- ویرایش -->
+                                <button type="button" class="btn btn-outline-warning"
+                                        data-bs-toggle="modal" data-bs-target="#editModal{{ h.id }}">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <!-- حذف -->
+                                <form method="post" action="/admin/holidays/{{ h.id }}/delete" class="d-inline"
+                                      onsubmit="return confirm('آیا مطمئن هستید؟');">
+                                    <button type="submit" class="btn btn-outline-danger">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+
+                    <!-- Modal ویرایش -->
+                    <div class="modal fade" id="editModal{{ h.id }}" tabindex="-1">
+                        <div class="modal-dialog">
+                            <div class="modal-content">
+                                <form method="post" action="/admin/holidays/{{ h.id }}/edit">
+                                    <div class="modal-header">
+                                        <h5 class="modal-title">✏️ ویرایش تعطیلی</h5>
+                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <div class="mb-3">
+                                            <label class="form-label">📅 تاریخ</label>
+                                            <input type="text" class="form-control" value="{{ h.date_j }}" disabled>
+                                        </div>
+                                        <div class="mb-3">
+                                            <label class="form-label">📝 عنوان</label>
+                                            <input type="text" name="title" class="form-control" value="{{ h.title }}" required>
+                                        </div>
+                                        <div class="mb-3">
+                                            <label class="form-label">👥 گروه</label>
+                                            <select name="group_id" class="form-select">
+                                                <option value="" {% if h.group_id is none %}selected{% endif %}>ملی (همه)</option>
+                                                <option value="1" {% if h.group_id == '1' %}selected{% endif %}>رسمی</option>
+                                                <option value="2" {% if h.group_id == '2' %}selected{% endif %}>وظیفه</option>
+                                                <option value="3" {% if h.group_id == '3' %}selected{% endif %}>خریدخدمت</option>
+                                                <option value="4" {% if h.group_id == '4' %}selected{% endif %}>قراردادی</option>
+                                                <option value="5" {% if h.group_id == '5' %}selected{% endif %}>پزشک</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="modal-footer">
+                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
+                                        <button type="submit" class="btn btn-primary">ذخیره</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5">
+            <i class="bi bi-calendar-x display-4 text-muted"></i>
+            <h5 class="mt-3 text-muted">هیچ تعطیلی برای سال {{ year }} ثبت نشده است</h5>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% endblock %}

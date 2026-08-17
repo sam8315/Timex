@@ -44,3 +44,48 @@ body {
 .fade-in {
     animation: fadeIn 0.3s ease-in;
 }
+<style>
+    /* ... سایر استایل‌های موجود ... */
+
+    /* 🆕 استایل آواتار دایره‌ای */
+    .avatar-wrapper {
+        width: 130px;
+        height: 130px;
+        border-radius: 50%;
+        overflow: hidden;
+        margin: 0 auto 15px auto;
+        border: 4px solid #fff;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+    }
+
+    /* 🆕 عکس داخل دایره - کلید حل مشکل */
+    .avatar-wrapper img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;        /* عکس کل دایره را پر می‌کند */
+        object-position: center;  /* مرکز عکس نمایش داده می‌شود */
+        display: block;
+    }
+
+    /* 🆕 حروف اولیه وقتی عکس نیست */
+    .avatar-initials {
+        color: #fff;
+        font-size: 2.8rem;
+        font-weight: bold;
+        user-select: none;
+    }
+
+    /* 🆕 نسخه کوچک برای لیست‌ها (اختیاری) */
+    .avatar-wrapper.avatar-sm {
+        width: 50px;
+        height: 50px;
+    }
+    .avatar-wrapper.avatar-sm .avatar-initials {
+        font-size: 1.2rem;
+    }
+</style>

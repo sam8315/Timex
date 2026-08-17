@@ -96,13 +96,13 @@
                     {% if employee and employee.photo_path %}
                     <img src="{{ employee.photo_path }}?v={{ employee.updated_at.timestamp() | int }}"
                          class="rounded-circle border border-4 border-white shadow"
-                         style="width: 110px; height: 110px; object-fit: cover;margin-top: -50px;"
+                         style="width: 20%; height: 20%; object-fit: cover;margin-top: -50px; object-position: center; display: block;"
                          alt="{{ employee.full_name }}">
                     {% else %}
-                    <div class="rounded-circle bg-{{ avatar_color }} text-white d-flex align-items-center justify-content-center border border-4 border-white shadow"
-                         style="width: 110px; height: 110px; font-size: 2.2rem; font-weight: bold;">
-                        {{ avatar_initials }}
-                    </div>
+                    <img src="/static/uploads/avatars/image.png"
+                         class="rounded-circle border border-4 border-white shadow"
+                         style="width: 20%; height: 20%; object-fit: cover;margin-top: -50px; object-position: center; display: block;"
+                         alt="{{ employee.full_name }}">
                     {% endif %}
                     <div class="ms-3 mb-2">
                         <h3 class="mb-1">
@@ -276,7 +276,7 @@
         </div>
     </div>
 
-    <!-- 🔧 عملیات مدیریتی (فقط super_admin) -->
+        <!-- 🔧 عملیات مدیریتی (فقط super_admin) -->
     <div class="col-md-6">
         <div class="card h-100 border-dark">
             <div class="card-header bg-dark text-white">
@@ -390,6 +390,99 @@
             </div>
         </div>
     </div>
+
+    <!-- 🆕 بخش شماره‌های تماس (پنل ادمین) -->
+    <div class="card mb-4">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h6 class="mb-0"><i class="bi bi-telephone"></i> شماره‌های تماس</h6>
+        <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#adminAddPhoneModal">
+            <i class="bi bi-plus-circle"></i> افزودن شماره
+        </button>
+    </div>
+    <div class="card-body">
+        {% if target_phones %}
+        <div class="list-group">
+            {% for phone in target_phones %}
+            <div class="list-group-item d-flex justify-content-between align-items-center">
+                <div>
+                    <i class="bi bi-phone text-primary"></i>
+                    <strong class="ms-2">{{ phone.phone_number }}</strong>
+                    <span class="badge bg-secondary ms-2">{{ phone.label }}</span>
+                    {% if phone.is_default %}
+                    <span class="badge bg-primary ms-1">⭐ پیش‌فرض</span>
+                    {% endif %}
+                </div>
+                <div class="btn-group btn-group-sm">
+                    {% if not phone.is_default %}
+                    <form method="post" action="/admin/profile/{{ target_user.user_id }}/phones/{{ phone.id }}/set-default" class="d-inline">
+                        <button type="submit" class="btn btn-outline-primary" title="تنظیم به عنوان پیش‌فرض">
+                            <i class="bi bi-star"></i>
+                        </button>
+                    </form>
+                    {% endif %}
+                    <form method="post" action="/admin/profile/{{ target_user.user_id }}/phones/{{ phone.id }}/delete" class="d-inline"
+                          onsubmit="return confirm('آیا مطمئن هستید؟ این شماره حذف می‌شود.');">
+                        <button type="submit" class="btn btn-outline-danger" title="حذف">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </form>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-center py-4">
+            <i class="bi bi-phone display-6 text-muted"></i>
+            <p class="text-muted mt-2 mb-0">هیچ شماره تلفنی ثبت نشده است</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+    <!-- 🆕 مودال افزودن شماره (پنل ادمین) -->
+    <div class="modal fade" id="adminAddPhoneModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="/admin/profile/{{ target_user.user_id }}/phones/add">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-plus-circle"></i> افزودن شماره تلفن</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">شماره موبایل <span class="text-danger">*</span></label>
+                        <input type="text" name="phone_number" class="form-control"
+                               placeholder="09121234567" required
+                               pattern="09[0-9]{9}" maxlength="11">
+                        <small class="text-muted">مثال: 09121234567</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">برچسب</label>
+                        <select name="label" class="form-select">
+                            <option value="همراه" selected>📱 همراه</option>
+                            <option value="منزل">🏠 منزل</option>
+                            <option value="اضطراری">🚨 اضطراری</option>
+                        </select>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="is_default" id="adminIsDefault">
+                        <label class="form-check-label" for="adminIsDefault">
+                            ⭐ به عنوان شماره پیش‌فرض
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="bi bi-plus-circle"></i> افزودن
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+
 </div>
 {% else %}
 <div class="alert alert-warning">

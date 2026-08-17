@@ -2,6 +2,24 @@
 {% block title %}تردد {{ target_employee.full_name if target_employee else target_user_id }} | پنل مدیریت{% endblock %}
 {% block content %}
 
+<!-- 🆕 نمایش پیام‌های موفقیت/خطا -->
+{% if request.query_params.get('success') %}
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+    <i class="bi bi-check-circle"></i>
+    {{ request.query_params.get('success') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+{% if request.query_params.get('error') %}
+<div class="alert alert-danger alert-dismissible fade show" role="alert">
+    <i class="bi bi-exclamation-triangle"></i>
+    {{ request.query_params.get('error') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<!-- بقیه محتوای صفحه -->
 <!-- هدر کاربر هدف -->
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h4>

@@ -1,0 +1,396 @@
+{% extends "base.html" %}
+{% block extra_css %}
+<style>
+    .user-search-results {
+        position: absolute;
+        top: 100%;
+        right: 0;
+        left: 0;
+        background: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        max-height: 300px;
+        overflow-y: auto;
+        z-index: 1050;
+        display: none;
+        margin-top: 4px;
+    }
+
+    .user-search-results.show {
+        display: block;
+    }
+
+    .user-search-item {
+        padding: 10px 15px;
+        cursor: pointer;
+        border-bottom: 1px solid #f0f0f0;
+        transition: background 0.15s ease;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .user-search-item:last-child {
+        border-bottom: none;
+    }
+
+    .user-search-item:hover,
+    .user-search-item.highlighted {
+        background: #e9ecef;
+    }
+
+    .user-search-item .user-name {
+        font-weight: 500;
+        color: #212529;
+    }
+
+    .user-search-item .user-id {
+        font-size: 0.8rem;
+        color: #6c757d;
+    }
+
+    .user-search-item .user-dept {
+        font-size: 0.75rem;
+        background: #e9ecef;
+        padding: 2px 8px;
+        border-radius: 10px;
+        color: #495057;
+    }
+
+    .user-search-no-result {
+        padding: 15px;
+        text-align: center;
+        color: #6c757d;
+    }
+
+    .user-search-count {
+        padding: 6px 15px;
+        font-size: 0.75rem;
+        color: #6c757d;
+        background: #f8f9fa;
+        border-bottom: 1px solid #dee2e6;
+    }
+
+    /* استایل وقتی کاربر انتخاب شده */
+    #userSearchInput.user-selected {
+        border-color: #198754;
+        background-color: #f0fff4;
+    }
+</style>
+{% endblock %}
+{% block title %}ثبت مرخصی برای کاربر{% endblock %}
+{% block content %}
+
+<!-- پیام‌ها -->
+{% if request.query_params.get('success') %}
+<div class="alert alert-success alert-dismissible fade show">
+    <i class="bi bi-check-circle"></i> {{ request.query_params.get('success') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+{% if request.query_params.get('error') %}
+<div class="alert alert-danger alert-dismissible fade show">
+    <i class="bi bi-exclamation-triangle"></i> {{ request.query_params.get('error') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4><i class="bi bi-person-plus"></i> ثبت مرخصی برای کاربر</h4>
+    <a href="/admin/leave-requests" class="btn btn-outline-primary btn-sm">
+        <i class="bi bi-arrow-right"></i> بازگشت به درخواست‌ها
+    </a>
+</div>
+
+<div class="card">
+    <div class="card-header bg-white">
+        <h6 class="mb-0"><i class="bi bi-info-circle"></i> ثبت مرخصی برای سایر کاربران (بدون محدودیت تاریخ گذشته)</h6>
+    </div>
+    <div class="card-body">
+        <form method="post" action="/admin/leave-requests/register" id="registerLeaveForm">
+
+            <div class="row g-3">
+                <!-- 🆕 انتخاب کاربر با جستجو -->
+                <div class="col-md-6">
+                    <label class="form-label">👤 کاربر <span class="text-danger">*</span></label>
+
+                    <div class="user-search-wrapper position-relative">
+                        <!-- فیلد جستجو -->
+                        <div class="input-group">
+                            <span class="input-group-text"><i class="bi bi-search"></i></span>
+                            <input type="text"
+                                   class="form-control"
+                                   id="userSearchInput"
+                                   placeholder="جستجو بر اساس نام، کد پرسنلی یا عضویت..."
+                                   autocomplete="off"
+                                   required>
+                            <button type="button" class="btn btn-outline-secondary" id="clearUserBtn"
+                                    style="display:none;">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </div>
+
+                        <!-- فیلد مخفی برای ارسال user_id -->
+                        <input type="hidden" name="target_user_id" id="targetUserId" required>
+
+                        <!-- لیست نتایج جستجو -->
+                        <div class="user-search-results" id="userSearchResults"></div>
+
+                        <!-- نمایش کاربر انتخاب شده -->
+                        <div class="selected-user-info mt-2" id="selectedUserInfo" style="display:none;">
+                            <div class="alert alert-success py-2 mb-0 d-flex justify-content-between align-items-center">
+                <span>
+                    <i class="bi bi-check-circle"></i>
+                    <strong id="selectedUserName"></strong>
+                    <small class="text-muted ms-2" id="selectedUserDept"></small>
+                </span>
+                                <button type="button" class="btn btn-sm btn-outline-danger" id="removeUserBtn">
+                                    <i class="bi bi-x"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- نوع مرخصی -->
+                <div class="col-md-6">
+                    <label class="form-label">🏷️ نوع مرخصی <span class="text-danger">*</span></label>
+                    <select name="leave_type" class="form-select" required>
+                        {% for code, name in leave_types.items() %}
+                        <option value="{{ code }}">{{ name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- تاریخ شروع -->
+                <div class="col-md-6">
+                    <label class="form-label">📅 از تاریخ <span class="text-danger">*</span></label>
+                    <input type="text" name="from_date_str" class="form-control jalali-date"
+                           id="fromDate" required placeholder="انتخاب تاریخ">
+                    <small class="text-muted">امکان انتخاب تاریخ گذشته وجود دارد</small>
+                </div>
+
+                <!-- تاریخ پایان -->
+                <div class="col-md-6">
+                    <label class="form-label">📅 تا تاریخ <span class="text-danger">*</span></label>
+                    <input type="text" name="to_date_str" class="form-control jalali-date"
+                           id="toDate" required placeholder="انتخاب تاریخ">
+                </div>
+
+                <!-- دلیل -->
+                <div class="col-12">
+                    <label class="form-label">📝 دلیل (اختیاری)</label>
+                    <textarea name="reason" class="form-control" rows="2"
+                              placeholder="دلیل مرخصی..."></textarea>
+                </div>
+
+            </div>
+
+            <hr>
+
+<div class="alert alert-info">
+    <i class="bi bi-info-circle"></i>
+    <strong>نکات:</strong>
+    <ul class="mb-0 mt-2">
+        <li>مرخصی به صورت <strong>در انتظار بررسی</strong> ثبت می‌شود و باید توسط مدیر تایید شود.</li>
+        <li>امکان ثبت مرخصی برای <strong>تاریخ‌های گذشته</strong> وجود دارد.</li>
+        <li>تعطیلات رسمی و جمعه‌ها از تعداد روزها کسر می‌شوند.</li>
+        <li>پس از تایید، تعداد روزهای مرخصی از بالانس کاربر کسر خواهد شد.</li>
+    </ul>
+</div>
+
+            <button type="submit" class="btn btn-success">
+                <i class="bi bi-check-lg"></i> ثبت مرخصی
+            </button>
+            <a href="/admin/leave-requests" class="btn btn-outline-secondary">انصراف</a>
+        </form>
+    </div>
+</div>
+
+{% endblock %}
+{% block extra_js %}
+<script>
+    // 🆕 داده‌های کارمندان (از سرور)
+    const employeesData = {{ employees | tojson }};
+
+    // متغیرهای سراسری
+    let highlightedIndex = -1;
+    let filteredEmployees = [];
+
+    // المان‌ها
+    const searchInput = document.getElementById('userSearchInput');
+    const searchResults = document.getElementById('userSearchResults');
+    const targetUserId = document.getElementById('targetUserId');
+    const selectedUserInfo = document.getElementById('selectedUserInfo');
+    const selectedUserName = document.getElementById('selectedUserName');
+    const selectedUserDept = document.getElementById('selectedUserDept');
+    const clearUserBtn = document.getElementById('clearUserBtn');
+    const removeUserBtn = document.getElementById('removeUserBtn');
+
+    // تابع جستجو و فیلتر
+    function searchEmployees(query) {
+        if (!query.trim()) {
+            return employeesData.slice(0, 50); // نمایش 50 نفر اول اگر جستجو خالی بود
+        }
+
+        const q = query.trim().toLowerCase();
+        return employeesData.filter(emp => {
+            const fullName = (emp.full_name || '').toLowerCase();
+            const userId = (emp.user_id || '').toLowerCase();
+            const dept = (emp.department || '').toLowerCase();
+            return fullName.includes(q) || userId.includes(q) || dept.includes(q);
+        }).slice(0, 50); // محدودیت 50 نتیجه
+    }
+
+    // نمایش نتایج جستجو
+    function renderResults(employees) {
+        filteredEmployees = employees;
+        highlightedIndex = -1;
+
+        if (employees.length === 0) {
+            searchResults.innerHTML = `
+                <div class="user-search-no-result">
+                    <i class="bi bi-search"></i> کاربری یافت نشد
+                </div>
+            `;
+            searchResults.classList.add('show');
+            return;
+        }
+
+        let html = `<div class="user-search-count">${employees.length} کاربر یافت شد</div>`;
+
+        employees.forEach((emp, index) => {
+            html += `
+                <div class="user-search-item" data-index="${index}" data-user-id="${emp.user_id}">
+                    <div>
+                        <div class="user-name">${emp.full_name}</div>
+                        <div class="user-id">${emp.user_id}</div>
+                    </div>
+                    <span class="user-dept">${emp.department}</span>
+                </div>
+            `;
+        });
+
+        searchResults.innerHTML = html;
+        searchResults.classList.add('show');
+
+        // اضافه کردن event listener به آیتم‌ها
+        searchResults.querySelectorAll('.user-search-item').forEach(item => {
+            item.addEventListener('click', function() {
+                const index = parseInt(this.dataset.index);
+                selectEmployee(filteredEmployees[index]);
+            });
+
+            item.addEventListener('mouseenter', function() {
+                highlightItem(parseInt(this.dataset.index));
+            });
+        });
+    }
+
+    // هایلایت کردن آیتم
+    function highlightItem(index) {
+        const items = searchResults.querySelectorAll('.user-search-item');
+        items.forEach(item => item.classList.remove('highlighted'));
+
+        if (index >= 0 && index < items.length) {
+            items[index].classList.add('highlighted');
+            items[index].scrollIntoView({ block: 'nearest' });
+            highlightedIndex = index;
+        }
+    }
+
+    // انتخاب کارمند
+    function selectEmployee(emp) {
+        targetUserId.value = emp.user_id;
+        searchInput.value = emp.full_name;
+        searchInput.classList.add('user-selected');
+
+        selectedUserName.textContent = emp.full_name;
+        selectedUserDept.textContent = `(${emp.user_id}) - ${emp.department}`;
+        selectedUserInfo.style.display = 'block';
+        clearUserBtn.style.display = 'block';
+
+        searchResults.classList.remove('show');
+        searchInput.blur();
+    }
+
+    // پاک کردن انتخاب
+    function clearSelection() {
+        targetUserId.value = '';
+        searchInput.value = '';
+        searchInput.classList.remove('user-selected');
+        selectedUserInfo.style.display = 'none';
+        clearUserBtn.style.display = 'none';
+        searchInput.focus();
+    }
+
+    // 🎯 رویدادهای جستجو
+    searchInput.addEventListener('input', function() {
+        // اگر کاربر قبلاً انتخاب شده، پاک شود
+        if (targetUserId.value) {
+            targetUserId.value = '';
+            selectedUserInfo.style.display = 'none';
+            searchInput.classList.remove('user-selected');
+        }
+
+        const results = searchEmployees(this.value);
+        renderResults(results);
+
+        clearUserBtn.style.display = this.value ? 'block' : 'none';
+    });
+
+    searchInput.addEventListener('focus', function() {
+        if (!targetUserId.value) {
+            const results = searchEmployees(this.value);
+            renderResults(results);
+        }
+    });
+
+    // پشتیبانی از کیبورد
+    searchInput.addEventListener('keydown', function(e) {
+        const items = searchResults.querySelectorAll('.user-search-item');
+
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            if (highlightedIndex < items.length - 1) {
+                highlightItem(highlightedIndex + 1);
+            }
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (highlightedIndex > 0) {
+                highlightItem(highlightedIndex - 1);
+            }
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            if (highlightedIndex >= 0 && filteredEmployees[highlightedIndex]) {
+                selectEmployee(filteredEmployees[highlightedIndex]);
+            } else if (filteredEmployees.length > 0) {
+                selectEmployee(filteredEmployees[0]);
+            }
+        } else if (e.key === 'Escape') {
+            searchResults.classList.remove('show');
+        }
+    });
+
+    // دکمه پاک کردن
+    clearUserBtn.addEventListener('click', clearSelection);
+    removeUserBtn.addEventListener('click', clearSelection);
+
+    // بستن dropdown با کلیک بیرون
+    document.addEventListener('click', function(e) {
+        if (!e.target.closest('.user-search-wrapper')) {
+            searchResults.classList.remove('show');
+        }
+    });
+
+    // اعتبارسنجی فرم قبل از ارسال
+    document.getElementById('registerLeaveForm').addEventListener('submit', function(e) {
+        if (!targetUserId.value) {
+            e.preventDefault();
+            alert('⚠️ لطفاً یک کاربر انتخاب کنید');
+            searchInput.focus();
+            return false;
+        }
+    });
+</script>
+{% endblock %}

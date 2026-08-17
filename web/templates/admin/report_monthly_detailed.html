@@ -1,0 +1,675 @@
+{% extends "base.html" %}
+{% block title %}گزارش تفصیلی ماهانه | پنل مدیریت{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* ============================================ */
+    /* 🎨 جستجوگر کاربر - نسخه اصلاح شده            */
+    /* ============================================ */
+
+    /* Container اصلی باید relative باشد */
+    .user-search-wrapper {
+        position: relative;
+        width: 100%;
+        max-width: 100%;  /* ✅ جلوگیری از بیرون‌زدگی */
+        overflow: visible; /* ✅ dropdown بتواند بیرون بزند */
+    }
+
+    /* Dropdown نتایج */
+    .user-search-results {
+        position: absolute;
+        top: calc(100% + 4px);  /* ✅ فاصله از input */
+        right: 0;
+        left: 0;
+        width: 100%;           /* ✅ دقیقاً هم‌عرض input */
+        max-width: 100%;       /* ✅ هرگز بیشتر از parent نشود */
+        background: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+        max-height: 280px;
+        overflow-y: auto;
+        overflow-x: hidden;    /* ✅ جلوگیری از اسکرول افقی */
+        z-index: 9999;         /* ✅ بالاترین اولویت */
+        display: none;
+    }
+
+    .user-search-results.show {
+        display: block;
+    }
+
+/* آیتم‌های لیست - نسخه اصلاح شده */
+.user-search-item {
+    padding: 10px 15px;
+    cursor: pointer;
+    border-bottom: 1px solid #f0f0f0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;              /* ✅ فاصله بین نام و عضویت */
+    transition: background 0.15s ease;
+}
+
+.user-search-item:last-child {
+    border-bottom: none;
+}
+
+.user-search-item:hover,
+.user-search-item.highlighted {
+    background: #e9ecef;
+}
+
+/* ✅ بخش نام و کد پرسنلی - بدون محدودیت عرض */
+.user-search-item .user-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;           /* ✅ اجازه کوچک شدن در flex */
+    flex: 1;                /* ✅ فضای موجود را پر کند */
+}
+
+.user-search-item .user-name {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: #212529;
+    white-space: normal;    /* ✅ اجازه شکستن خط برای نام‌های طولانی */
+    word-break: break-word; /* ✅ شکستن کلمات بلند */
+    line-height: 1.3;
+}
+
+.user-search-item .user-id {
+    font-size: 0.75rem;
+    color: #6c757d;
+    direction: ltr;
+    text-align: right;      /* ✅ راست‌چین در RTL */
+    margin-top: 2px;
+}
+
+/* ✅ بخش عضویت - ثابت و کوچک */
+.user-search-item .user-dept {
+    font-size: 0.7rem;
+    background: #e9ecef;
+    padding: 3px 10px;
+    border-radius: 10px;
+    color: #495057;
+    white-space: nowrap;
+    flex-shrink: 0;         /* ✅ هرگز کوچک نشود */
+    max-width: 100px;       /* ✅ حداکثر عرض ثابت */
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+    /* پیام خالی */
+    .user-search-no-result {
+        padding: 20px 15px;
+        text-align: center;
+        color: #6c757d;
+        font-size: 0.9rem;
+    }
+
+    /* شمارنده نتایج */
+    .user-search-count {
+        padding: 6px 15px;
+        font-size: 0.72rem;
+        color: #6c757d;
+        background: #f8f9fa;
+        border-bottom: 1px solid #dee2e6;
+        border-radius: 8px 8px 0 0;
+    }
+
+    /* Input انتخاب شده */
+    #userSearchInput.user-selected {
+        border-color: #198754 !important;
+        background-color: #f0fff4 !important;
+    }
+
+    /* ============================================ */
+    /* 🎨 استایل جدول گزارش                         */
+    /* ============================================ */
+    .report-table {
+        font-size: 0.82rem;
+    }
+    .report-table th {
+        background: #f8f9fa;
+        font-weight: 600;
+        white-space: nowrap;
+        font-size: 0.75rem;
+    }
+    .report-table td {
+        vertical-align: middle;
+        padding: 6px 8px;
+    }
+
+    .day-row.holiday { background: #fff3cd; }
+    .day-row.friday { background: #e2e3e5; }
+    .day-row.leave { background: #cfe2ff; }
+    .day-row.absent { background: #f8d7da; }
+
+    .summary-card {
+        border: none;
+        border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+    .summary-card .value {
+        font-size: 1.5rem;
+        font-weight: 700;
+        line-height: 1;
+    }
+    .summary-card .label {
+        font-size: 0.75rem;
+        opacity: 0.7;
+    }
+
+    .hour-value {
+        direction: ltr;
+        unicode-bidi: embed;
+        font-variant-numeric: tabular-nums;
+        display: inline-block;
+        min-width: 50px;
+        text-align: center;
+    }
+    .hour-positive { color: #198754; font-weight: 600; }
+    .hour-negative { color: #dc3545; font-weight: 600; }
+
+    .attendance-pair {
+        display: inline-block;
+        background: #e9ecef;
+        border-radius: 6px;
+        padding: 2px 8px;
+        margin: 1px;
+        font-size: 0.75rem;
+        direction: ltr;
+    }
+    .attendance-pair .enter { color: #198754; font-weight: 600; }
+    .attendance-pair .exit { color: #dc3545; font-weight: 600; }
+
+    .status-badge {
+        font-size: 0.7rem;
+        padding: 2px 8px;
+        border-radius: 10px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- پیام‌ها -->
+{% if request.query_params.get('error') %}
+<div class="alert alert-danger alert-dismissible fade show">
+    <i class="bi bi-exclamation-triangle"></i> {{ request.query_params.get('error') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="mb-0"><i class="bi bi-calendar2-week text-primary"></i> گزارش تفصیلی ماهانه</h4>
+    <a href="/reports" class="btn btn-outline-primary btn-sm">
+        <i class="bi bi-arrow-right"></i> بازگشت به گزارشات
+    </a>
+</div>
+
+<!-- 🎨 فرم انتخاب -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+        <form method="post" action="/reports/monthly-detailed" class="row g-3 align-items-end" id="reportForm">
+            <!-- انتخاب کاربر -->
+            <div class="col-md-5">
+                <label class="form-label">👤 کارمند <span class="text-danger">*</span></label>
+                <!-- ✅ wrapper با position: relative -->
+                <div class="user-search-wrapper">
+                    <div class="input-group">
+                        <span class="input-group-text"><i class="bi bi-search"></i></span>
+                        <input type="text"
+                               class="form-control"
+                               id="userSearchInput"
+                               value="{{ report.employee.full_name if report else '' }}"
+                               placeholder="جستجوی کاربر..."
+                               autocomplete="off"
+                               required>
+                    </div>
+                    <input type="hidden" name="target_user_id" id="targetUserId"
+                           value="{{ selected_user_id if selected_user_id else '' }}" required>
+                    <!-- ✅ dropdown داخل wrapper -->
+                    <div class="user-search-results" id="userSearchResults"></div>
+                </div>
+            </div>
+            <!-- سال -->
+            <div class="col-md-2">
+                <label class="form-label">📅 سال <span class="text-danger">*</span></label>
+                <select name="year" class="form-select" required>
+                    {% for y in available_years %}
+                    <option value="{{ y }}" {% if selected_year== y %}selected{% endif %}>{{ y }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- ماه -->
+            <div class="col-md-3">
+                <label class="form-label">🗓️ ماه <span class="text-danger">*</span></label>
+                <select name="month" class="form-select" required>
+                    {% for m, name in jalali_months.items() %}
+                    <option value="{{ m }}" {% if selected_month== m %}selected{% endif %}>{{ name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- دکمه تولید -->
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="bi bi-lightning"></i> تولید گزارش
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 📊 نمایش گزارش -->
+{% if report %}
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <div>
+            <i class="bi bi-person"></i>
+            <strong>{{ report.employee.full_name }}</strong>
+            <span class="badge bg-primary ms-2">{{ report.employee.user_id }}</span>
+            <span class="badge bg-info ms-2">{{ report.month_name }} {{ report.year }}</span>
+        </div>
+    </div>
+    <div class="card-body">
+
+        <!-- 📈 کارت‌های خلاصه -->
+        <div class="row g-3 mb-4">
+            <div class="col-md-3 col-6">
+                <div class="card summary-card bg-light">
+                    <div class="card-body text-center">
+                        <div class="value">{{ report.summary.duty_days }}</div>
+                        <div class="label">روز موظفی</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="card summary-card bg-success bg-opacity-10">
+                    <div class="card-body text-center">
+                        <div class="value text-success">{{ report.summary.present_days }}</div>
+                        <div class="label text-success">روز حضور</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="card summary-card bg-info bg-opacity-10">
+                    <div class="card-body text-center">
+                        <div class="value text-info">{{ report.summary.leave_days }}</div>
+                        <div class="label text-info">روز مرخصی</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="card summary-card bg-danger bg-opacity-10">
+                    <div class="card-body text-center">
+                        <div class="value text-danger">{{ report.summary.absent_days }}</div>
+                        <div class="label text-danger">روز غیبت</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 📊 خلاصه ساعات -->
+        <div class="row g-3 mb-4">
+            <div class="col-md-3 col-6">
+                <div class="card summary-card bg-primary bg-opacity-10">
+                    <div class="card-body text-center">
+                        <div class="value text-primary">
+                            <span class="hour-value">{{ "%.2f"|format(report.summary.total_work_hours) }}</span>
+                        </div>
+                        <div class="label text-primary">مجموع ساعات کاری</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="card summary-card bg-light">
+                    <div class="card-body text-center">
+                        <div class="value">
+                            <span class="hour-value">{{ "%.2f"|format(report.summary.duty_hours) }}</span>
+                        </div>
+                        <div class="label">ساعات موظفی</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="card summary-card bg-success bg-opacity-10">
+                    <div class="card-body text-center">
+                        <div class="value text-success">
+                            <span class="hour-value">+{{ "%.2f"|format(report.summary.total_surplus) }}</span>
+                        </div>
+                        <div class="label text-success">مجموع اضافی</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="card summary-card bg-danger bg-opacity-10">
+                    <div class="card-body text-center">
+                        <div class="value text-danger">
+                            <span class="hour-value">-{{ "%.2f"|format(report.summary.total_deficit) }}</span>
+                        </div>
+                        <div class="label text-danger">مجموع کسری</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 📊 وضعیت کلی -->
+        <div class="alert {% if report.summary.overall_status == 'اضافی' %}alert-success{% elif report.summary.overall_status == 'کسری' %}alert-danger{% else %}alert-info{% endif %}">
+            <i class="bi bi-info-circle"></i>
+            وضعیت کلی: <strong>{{ report.summary.overall_status }}</strong>
+            | خالص: <strong class="hour-value">{{ "%.2f"|format(report.summary.net_balance) }}</strong> ساعت
+            | اضافه کار هفتگی: <strong class="hour-value">{{ "%.2f"|format(report.summary.weekly_overtime) }}</strong>
+            ساعت
+            | جمعه کاری: <strong class="hour-value">{{ "%.2f"|format(report.summary.friday_work_hours) }}</strong> ساعت
+            | تعطیل کاری: <strong class="hour-value">{{ "%.2f"|format(report.summary.holiday_work_hours) }}</strong>
+            ساعت
+        </div>
+
+        <!-- 📋 جدول تفصیلی روزانه -->
+        <h6 class="mb-3"><i class="bi bi-table"></i> جزئیات روزانه</h6>
+        <div class="table-responsive">
+            <table class="table table-bordered table-hover report-table">
+                <thead>
+                <tr class="text-center">
+                    <th>ردیف</th>
+                    <th>تاریخ</th>
+                    <th>روز</th>
+                    <th>وضعیت روز</th>
+                    <th>وضعیت فرد</th>
+                    <th>ورود / خروج</th>
+                    <th>ساعت کاری</th>
+                    <th>اضافی</th>
+                    <th>کسری</th>
+                    <th>صبح</th>
+                    <th>عصر</th>
+                    <th>شب</th>
+                    <th>موظفی</th>
+                </tr>
+                </thead>
+                <tbody>
+                {% for day in report.days %}
+                {% set row_class = '' %}
+                {% if day.person_status == 'L' %}
+                {% set row_class = 'leave' %}
+                {% elif day.person_status == 'A' %}
+                {% set row_class = 'absent' %}
+                {% elif day.is_holiday %}
+                {% set row_class = 'holiday' %}
+                {% elif day.is_friday %}
+                {% set row_class = 'friday' %}
+                {% endif %}
+                <tr class="day-row {{ row_class }} text-center">
+                    <td>{{ loop.index }}</td>
+                    <td>{{ day.jalali_date }}</td>
+                    <td>{{ day.day_name }}</td>
+                    <td>
+                        {% if day.is_day_off %}
+                        <span class="badge bg-warning text-dark">تعطیل</span>
+                        {% else %}
+                        <span class="badge bg-light text-dark border">کاری</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if day.person_status == 'P' %}
+                        <span class="badge bg-success status-badge">حاضر</span>
+                        {% elif day.person_status == 'L' %}
+                        <span class="badge bg-info status-badge">مرخصی</span>
+                        {% elif day.person_status == 'A' %}
+                        <span class="badge bg-danger status-badge">غایب</span>
+                        {% elif day.person_status == 'R' %}
+                        <span class="badge bg-secondary status-badge">استراحت</span>
+                        {% elif day.person_status == 'H' %}
+                        <span class="badge bg-warning text-dark status-badge">تعطیل</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if day.attendance_pairs %}
+                        {% for pair in day.attendance_pairs %}
+                        <span class="attendance-pair">
+                                <span class="enter">{{ pair.enter.strftime('%H:%M') }}</span>
+                                →
+                                <span class="exit">{{ pair.exit.strftime('%H:%M') }}</span>
+                            </span>
+                        {% endfor %}
+                        {% if day.has_incomplete %}
+                        <i class="bi bi-exclamation-triangle text-warning" title="تردد ناقص"></i>
+                        {% endif %}
+                        {% else %}
+                        <span class="text-muted">-</span>
+                        {% endif %}
+                    </td>
+                    <td><span class="hour-value">{{ "%.2f"|format(day.work_hours) }}</span></td>
+                    <td>
+                        {% if day.surplus > 0 %}
+                        <span class="hour-value hour-positive">+{{ "%.2f"|format(day.surplus) }}</span>
+                        {% else %}
+                        <span class="text-muted">-</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if day.deficit > 0 %}
+                        <span class="hour-value hour-negative">-{{ "%.2f"|format(day.deficit) }}</span>
+                        {% else %}
+                        <span class="text-muted">-</span>
+                        {% endif %}
+                    </td>
+                    <td><span class="hour-value">{{ "%.1f"|format(day.morning_hours) }}</span></td>
+                    <td><span class="hour-value">{{ "%.1f"|format(day.evening_hours) }}</span></td>
+                    <td><span class="hour-value">{{ "%.1f"|format(day.night_hours) }}</span></td>
+                    <td><span class="hour-value">{{ "%.2f"|format(day.daily_duty) }}</span></td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- راهنمای رنگ‌ها -->
+        <div class="d-flex gap-3 mt-3 small flex-wrap">
+            <strong class="text-muted">راهنما:</strong>
+            <span><span class="badge bg-success">سبز</span> حاضر</span>
+            <span><span class="badge bg-info">آبی</span> مرخصی</span>
+            <span><span class="badge bg-danger">قرمز</span> غایب</span>
+            <span><span class="badge bg-warning text-dark">زرد</span> تعطیل کاری</span>
+            <span><span class="badge bg-secondary">خاکستری</span> جمعه</span>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_css_2 %}
+<style>
+    /* 🎨 استایل جستجوگر کاربر */
+    .user-search-results {
+        position: absolute;
+        top: 100%;
+        right: 0;
+        left: 0;
+        background: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        max-height: 300px;
+        overflow-y: auto;
+        z-index: 1050;
+        display: none;
+        margin-top: 4px;
+    }
+    .user-search-results.show { display: block; }
+    .user-search-item {
+        padding: 10px 15px;
+        cursor: pointer;
+        border-bottom: 1px solid #f0f0f0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .user-search-item:hover, .user-search-item.highlighted { background: #e9ecef; }
+    .user-search-item .user-name { font-weight: 500; }
+    .user-search-item .user-id { font-size: 0.8rem; color: #6c757d; }
+    .user-search-item .user-dept {
+        font-size: 0.75rem;
+        background: #e9ecef;
+        padding: 2px 8px;
+        border-radius: 10px;
+    }
+    .user-search-no-result { padding: 15px; text-align: center; color: #6c757d; }
+    .user-search-count {
+        padding: 6px 15px;
+        font-size: 0.75rem;
+        color: #6c757d;
+        background: #f8f9fa;
+        border-bottom: 1px solid #dee2e6;
+    }
+    #userSearchInput.user-selected {
+        border-color: #198754;
+        background-color: #f0fff4;
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// 🎨 جستجوگر کاربر - نسخه اصلاح شده
+const employeesData = {{ employees | tojson }};
+let highlightedIndex = -1;
+let filteredEmployees = [];
+
+const searchInput = document.getElementById('userSearchInput');
+const searchResults = document.getElementById('userSearchResults');
+const targetUserId = document.getElementById('targetUserId');
+
+function searchEmployees(query) {
+    if (!query.trim()) return employeesData.slice(0, 50);
+    const q = query.trim().toLowerCase();
+    return employeesData.filter(emp => {
+        return (emp.full_name || '').toLowerCase().includes(q) ||
+               (emp.user_id || '').toLowerCase().includes(q) ||
+               (emp.department || '').toLowerCase().includes(q);
+    }).slice(0, 50);
+}
+
+function renderResults(employees) {
+    filteredEmployees = employees;
+    highlightedIndex = -1;
+
+    if (employees.length === 0) {
+        searchResults.innerHTML = '<div class="user-search-no-result"><i class="bi bi-search"></i> کاربری یافت نشد</div>';
+        searchResults.classList.add('show');
+        return;
+    }
+
+    let html = `<div class="user-search-count">${employees.length} کاربر یافت شد</div>`;
+    employees.forEach((emp, index) => {
+        // ✅ ساختار جدید: user-info wrapper برای نام + کد
+        html += `
+            <div class="user-search-item" data-index="${index}"
+                 title="${emp.full_name} (${emp.user_id}) - ${emp.department}">
+                <div class="user-info">
+                    <div class="user-name">${emp.full_name}</div>
+                    <div class="user-id">${emp.user_id}</div>
+                </div>
+                <span class="user-dept">${emp.department}</span>
+            </div>
+        `;
+    });
+
+    searchResults.innerHTML = html;
+    searchResults.classList.add('show');
+
+    searchResults.querySelectorAll('.user-search-item').forEach(item => {
+        item.addEventListener('click', function(e) {
+            e.stopPropagation();
+            selectEmployee(filteredEmployees[parseInt(this.dataset.index)]);
+        });
+        item.addEventListener('mouseenter', function() {
+            highlightItem(parseInt(this.dataset.index));
+        });
+    });
+}
+
+function highlightItem(index) {
+    const items = searchResults.querySelectorAll('.user-search-item');
+    items.forEach(item => item.classList.remove('highlighted'));
+    if (index >= 0 && index < items.length) {
+        items[index].classList.add('highlighted');
+        items[index].scrollIntoView({ block: 'nearest' });
+        highlightedIndex = index;
+    }
+}
+
+function selectEmployee(emp) {
+    targetUserId.value = emp.user_id;
+    searchInput.value = emp.full_name;
+    searchInput.classList.add('user-selected');
+    closeDropdown();
+}
+
+function closeDropdown() {
+    searchResults.classList.remove('show');
+    highlightedIndex = -1;
+}
+
+// رویدادها
+searchInput.addEventListener('input', function() {
+    targetUserId.value = '';
+    searchInput.classList.remove('user-selected');
+    renderResults(searchEmployees(this.value));
+});
+
+searchInput.addEventListener('focus', function() {
+    if (!targetUserId.value || this.value !== '') {
+        renderResults(searchEmployees(this.value));
+    }
+});
+
+searchInput.addEventListener('keydown', function(e) {
+    const items = searchResults.querySelectorAll('.user-search-item');
+    if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (!searchResults.classList.contains('show')) {
+            renderResults(searchEmployees(this.value));
+        } else if (highlightedIndex < items.length - 1) {
+            highlightItem(highlightedIndex + 1);
+        }
+    } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (highlightedIndex > 0) highlightItem(highlightedIndex - 1);
+    } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (highlightedIndex >= 0 && filteredEmployees[highlightedIndex]) {
+            selectEmployee(filteredEmployees[highlightedIndex]);
+        } else if (filteredEmployees.length > 0) {
+            selectEmployee(filteredEmployees[0]);
+        }
+    } else if (e.key === 'Escape') {
+        closeDropdown();
+    }
+});
+
+// ✅ بستن dropdown با کلیک بیرون (اصلاح شده)
+document.addEventListener('click', function(e) {
+    // اگر کلیک روی wrapper جستجو نباشد
+    if (!e.target.closest('.user-search-wrapper')) {
+        closeDropdown();
+    }
+});
+
+// ✅ جلوگیری از بسته شدن هنگام کلیک روی خود dropdown
+searchResults.addEventListener('click', function(e) {
+    e.stopPropagation();
+});
+
+// اعتبارسنجی فرم
+document.getElementById('reportForm').addEventListener('submit', function(e) {
+    if (!targetUserId.value) {
+        e.preventDefault();
+        alert('⚠️ لطفاً یک کاربر انتخاب کنید');
+        searchInput.focus();
+        return false;
+    }
+});
+</script>
+{% endblock %}

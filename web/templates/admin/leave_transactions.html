@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block title %}تراکنش‌های مرخصی | پنل مدیریت{% endblock %}
+{% block content %}
+
+<!-- پیام‌ها -->
+{% if request.query_params.get('success') %}
+<div class="alert alert-success alert-dismissible fade show">
+    <i class="bi bi-check-circle"></i> {{ request.query_params.get('success') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+{% if request.query_params.get('error') %}
+<div class="alert alert-danger alert-dismissible fade show">
+    <i class="bi bi-exclamation-triangle"></i> {{ request.query_params.get('error') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4><i class="bi bi-arrow-left-right"></i> تراکنش‌های مرخصی</h4>
+    <a href="/admin/" class="btn btn-outline-primary btn-sm">
+        <i class="bi bi-arrow-right"></i> بازگشت به پنل مدیریت
+    </a>
+</div>
+
+<!-- فیلترها -->
+<div class="card mb-4">
+    <div class="card-body py-2">
+        <form method="get" action="/admin/leave-transactions" class="d-flex flex-wrap align-items-center gap-2">
+            <input type="text" name="search" class="form-control form-control-sm" style="width: 220px;"
+                   value="{{ search }}" placeholder="🔍 جستجو: نام یا کد پرسنلی">
+            <select name="year" class="form-select form-select-sm" style="width: auto;">
+                <option value="" {% if year is none %}selected{% endif %}>همه سال‌ها</option>
+                {% for y in available_years %}
+                <option value="{{ y }}" {% if year == y %}selected{% endif %}>{{ y }}</option>
+                {% endfor %}
+            </select>
+            <select name="leave_type" class="form-select form-select-sm" style="width: auto;">
+                <option value="">همه انواع مرخصی</option>
+                {% for code, name in leave_types.items() %}
+                <option value="{{ code }}" {% if leave_type == code %}selected{% endif %}>{{ name }}</option>
+                {% endfor %}
+            </select>
+            <select name="tx_type" class="form-select form-select-sm" style="width: auto;">
+                <option value="">همه عملیات</option>
+                {% for code, name in transaction_types.items() %}
+                <option value="{{ code }}" {% if tx_type == code %}selected{% endif %}>{{ name }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit" class="btn btn-primary btn-sm">
+                <i class="bi bi-search"></i> اعمال
+            </button>
+            <a href="/admin/leave-transactions?show_all=1" class="btn btn-success btn-sm {% if show_all and year is none %}disabled{% endif %}">
+                <i class="bi bi-list"></i> نمایش همه (همه سال‌ها)
+            </a>
+            {% if has_filter %}
+            <a href="/admin/leave-transactions" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-x-circle"></i> پاک کردن
+            </a>
+            {% endif %}
+        </form>
+    </div>
+</div>
+
+<!-- جدول تراکنش‌ها -->
+{% if not has_filter %}
+<div class="card">
+    <div class="card-body text-center py-5">
+        <i class="bi bi-search display-4 text-muted"></i>
+        <h5 class="mt-3 text-muted">برای مشاهده تراکنش‌ها، فیلتر اعمال کنید یا "نمایش همه" را بزنید</h5>
+        <a href="/admin/leave-transactions?show_all=1" class="btn btn-success mt-2">
+            <i class="bi bi-list"></i> نمایش همه (همه سال‌ها)
+        </a>
+    </div>
+</div>
+
+{% elif total_count == 0 %}
+<div class="card">
+    <div class="card-body text-center py-5">
+        <i class="bi bi-emoji-frown display-4 text-muted"></i>
+        <h5 class="mt-3 text-muted">
+            {% if year %}
+            هیچ تراکنشی برای سال {{ year }} یافت نشد
+            {% else %}
+            هیچ تراکنشی یافت نشد
+            {% endif %}
+        </h5>
+    </div>
+</div>
+
+{% else %}
+<div class="card">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h6 class="mb-0">
+            <i class="bi bi-list-ul"></i> تراکنش‌ها
+            {% if year %}
+            سال {{ year }}
+            {% else %}
+            (همه سال‌ها)
+            {% endif %}
+        </h6>
+        <span class="badge bg-primary fs-6">{{ total_count }} تراکنش</span>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>ردیف</th>
+                        <th>تاریخ</th>
+                        <th class="text-center">سال</th>
+                        <th>کد پرسنلی</th>
+                        <th>نام کامل</th>
+                        <th class="text-center">نوع مرخصی</th>
+                        <th class="text-center">مقدار</th>
+                        <th class="text-center">نوع عملیات</th>
+                        <th>توضیحات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for t in transactions %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td><small class="text-muted">{{ t.created_j }}</small></td>
+                        <td class="text-center">
+                            <span class="badge bg-primary">{{ t.year }}</span>
+                        </td>
+                        <td>{{ t.user_id }}</td>
+                        <td>{{ t.full_name }}</td>
+                        <td class="text-center">
+                            {% if t.leave_type == 'AL' %}
+                            <span class="badge bg-success">استحقاقی</span>
+                            {% elif t.leave_type == 'SL' %}
+                            <span class="badge bg-info">استعلاجی</span>
+                            {% else %}
+                            <span class="badge bg-secondary">{{ t.leave_type_name }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center fw-bold">
+                            {% if t.transaction_type in ['CHARGE', 'ADJUST', 'CF_IN'] %}
+                            <span class="text-success">{{ t.amount }}+</span>
+                            {% else %}
+                            <span class="text-danger">{{ t.amount }}-</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">{{ t.transaction_type_name }}</td>
+                        <td><small>{{ t.description or '-' }}</small></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% if total_count >= 500 %}
+        <div class="alert alert-info mt-3 mb-0">
+            <i class="bi bi-info-circle"></i>
+            فقط ۵۰۰ تراکنش اخیر نمایش داده می‌شود. برای مشاهده بیشتر، فیلتر اعمال کنید.
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}

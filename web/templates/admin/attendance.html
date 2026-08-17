@@ -31,8 +31,9 @@
 
             <!-- فرم انتخاب مستقیم -->
             <form method="get" action="/admin/attendance" class="d-flex align-items-center gap-2">
-                <input type="text" name="date_str" class="form-control form-control-sm"
+                <input type="text" name="date_str" class="form-control jalali-date"
                        value="{{ date_str_input }}" placeholder="1405/05/19" style="width: 130px;">
+
                 {% if department %}
                 <input type="hidden" name="department" value="{{ department }}">
                 {% endif %}
@@ -75,8 +76,13 @@
         <form method="get" action="/admin/attendance" class="row g-3 align-items-end">
             <div class="col-md-3">
                 <label class="form-label">📅 تاریخ (شمسی)</label>
-                <input type="text" name="date_str" class="form-control"
-                       value="{{ date_str_input }}" placeholder="1405/05/19">
+<input type="text"
+       name="date_str"
+       class="form-control jalali-date"
+       id="attendanceDate"
+       value="{{ date_str_input }}"
+       placeholder="انتخاب تاریخ"
+       autocomplete="off">
             </div>
             <div class="col-md-3">
                 <label class="form-label">🏢 دپارتمان</label>

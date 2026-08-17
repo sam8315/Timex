@@ -10,6 +10,7 @@ import jdatetime
 from web.dependencies import get_db, check_password_change
 from models.user import User
 from models.employee import Employee
+from models.employee_phone import EmployeePhone
 
 router = APIRouter(tags=["Profile"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
@@ -88,14 +89,24 @@ async def profile_page(
     if employee and employee.termination_date:
         termination_j_display = jdatetime.date.fromgregorian(date=employee.termination_date).strftime('%Y/%m/%d')
 
-    # 🆕 تبدیل آخرین ورود به شمسی
+    # 🆕 خواندن آخرین ورود قبلی از session
     last_login_display = None
-    if user.last_login:
+    previous_login_str = request.session.get('previous_login')
+    if previous_login_str:
         try:
-            last_login_j = jdatetime.datetime.fromgregorian(datetime=user.last_login)
+            from datetime import datetime
+            previous_login = datetime.fromisoformat(previous_login_str)
+            last_login_j = jdatetime.datetime.fromgregorian(datetime=previous_login)
             last_login_display = last_login_j.strftime('%Y/%m/%d - %H:%M')
         except Exception:
-            last_login_display = user.last_login.strftime('%Y/%m/%d - %H:%M')
+            last_login_display = previous_login_str
+    else:
+        last_login_display = "اولین ورود شما"
+
+    # 🆕 دریافت شماره‌های تلفن کاربر
+    phones = db.query(EmployeePhone).filter(
+        EmployeePhone.user_id == user.user_id
+    ).order_by(EmployeePhone.is_default.desc(), EmployeePhone.created_at).all()
 
     return templates.TemplateResponse(request, "profile.html", {
         "user": user,
@@ -111,4 +122,5 @@ async def profile_page(
         "is_admin": user.is_admin,
         "photo_path": employee.photo_path if employee else None,
         "last_login_display": last_login_display,
+        "phones": phones,
     })

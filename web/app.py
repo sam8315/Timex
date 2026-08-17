@@ -3,11 +3,15 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 from pathlib import Path
+from starlette.middleware.sessions import SessionMiddleware
 
-from web.routes import auth, dashboard, attendance, leave, admin, contract, profile
+from web.routes import auth, dashboard, attendance, leave, admin, contract, profile, holidays, admin_contracts, admin_leave, admin_daily_status, carry_forward, education, phones, reports
 BASE_PATH = Path(__file__).parent
 
 app = FastAPI(title="Timex - سامانه حضور و غیاب", version="1.0.0")
+
+# 🆕 اضافه کردن SessionMiddleware برای ذخیره session
+app.add_middleware(SessionMiddleware, secret_key="timex-web-secret-key-2024-change-in-production")
 
 # Static files
 app.mount("/static", StaticFiles(directory=str(BASE_PATH / "static")), name="static")
@@ -20,7 +24,14 @@ app.include_router(leave.router)
 app.include_router(admin.router)
 app.include_router(contract.router)
 app.include_router(profile.router)
-
+app.include_router(holidays.router, prefix="/admin")
+app.include_router(admin_contracts.router, prefix="/admin")
+app.include_router(admin_leave.router, prefix="/admin")
+app.include_router(admin_daily_status.router, prefix="/admin")
+app.include_router(carry_forward.router)
+app.include_router(education.router)
+app.include_router(phones.router)
+app.include_router(reports.router)
 
 @app.get("/")
 async def root():

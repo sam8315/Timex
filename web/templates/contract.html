@@ -1,78 +1,401 @@
 {% extends "base.html" %}
-{% block title %}قراردادها{% endblock %}
+{% block title %}قراردادهای من{% endblock %}
+
+{% block extra_css %}
+<style>
+    .stat-card {
+        border: none;
+        border-radius: 12px;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        overflow: hidden;
+        position: relative;
+    }
+    .stat-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+    }
+    .stat-card .stat-icon {
+        font-size: 2rem;
+        opacity: 0.3;
+        position: absolute;
+        top: 15px;
+        left: 15px;
+    }
+
+    .active-contract-card {
+        background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        border: none;
+        border-radius: 16px;
+        color: white;
+        box-shadow: 0 10px 30px rgba(17, 153, 142, 0.3);
+        position: relative;
+        overflow: hidden;
+    }
+    .active-contract-card::before {
+        content: '✅';
+        position: absolute;
+        top: -20px;
+        left: -20px;
+        font-size: 120px;
+        opacity: 0.1;
+        transform: rotate(-15deg);
+    }
+    .active-contract-card h4,
+    .active-contract-card .info-label {
+        color: rgba(255,255,255,0.85);
+        font-size: 0.85rem;
+        margin-bottom: 0.25rem;
+    }
+    .active-contract-card .info-value {
+        color: white;
+        font-size: 1.1rem;
+        font-weight: 600;
+    }
+
+    /* 🆕 Progress Circle */
+    .progress-circle-container {
+        position: relative;
+        width: 120px;
+        height: 120px;
+        margin: 0 auto;
+    }
+    .progress-circle-svg {
+        transform: rotate(-90deg);
+    }
+    .progress-circle-bg {
+        fill: none;
+        stroke: rgba(255,255,255,0.2);
+        stroke-width: 8;
+    }
+    .progress-circle-bar {
+        fill: none;
+        stroke: white;
+        stroke-width: 8;
+        stroke-linecap: round;
+        transition: stroke-dashoffset 0.6s ease;
+    }
+    .progress-circle-text {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        text-align: center;
+        color: white;
+    }
+    .progress-circle-percent {
+        font-size: 1.5rem;
+        font-weight: 700;
+        display: block;
+    }
+    .progress-circle-label {
+        font-size: 0.75rem;
+        opacity: 0.8;
+    }
+
+    /* 🆕 Days remaining card */
+    .days-remaining-card {
+        background: rgba(255,255,255,0.15);
+        border-radius: 12px;
+        padding: 15px;
+        text-align: center;
+    }
+    .days-remaining-number {
+        font-size: 2.5rem;
+        font-weight: 700;
+        line-height: 1;
+    }
+    .days-remaining-label {
+        font-size: 0.85rem;
+        opacity: 0.85;
+        margin-top: 4px;
+    }
+
+    .contract-timeline {
+        position: relative;
+        padding-right: 30px;
+    }
+    .contract-timeline::before {
+        content: '';
+        position: absolute;
+        right: 8px;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: linear-gradient(180deg, #11998e 0%, #dee2e6 100%);
+    }
+    .timeline-item {
+        position: relative;
+        padding-right: 20px;
+        margin-bottom: 20px;
+    }
+    .timeline-item::before {
+        content: '';
+        position: absolute;
+        right: -30px;
+        top: 20px;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: white;
+        border: 3px solid #dee2e6;
+        z-index: 1;
+    }
+    .timeline-item.is-active::before {
+        border-color: #198754;
+        background: #198754;
+        box-shadow: 0 0 0 4px rgba(25, 135, 84, 0.2);
+    }
+    .timeline-item.is-expired::before {
+        border-color: #dc3545;
+        background: #dc3545;
+    }
+    .timeline-item.is-pending::before {
+        border-color: #ffc107;
+        background: #ffc107;
+    }
+
+    .contract-card {
+        background: white;
+        border: 1px solid #e9ecef;
+        border-radius: 12px;
+        padding: 20px;
+        transition: all 0.2s ease;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    }
+    .contract-card:hover {
+        box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+        border-color: #dee2e6;
+    }
+    .contract-card.is-active {
+        border-color: #198754;
+        border-width: 2px;
+    }
+
+    .contract-type-badge {
+        font-size: 0.75rem;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-weight: 600;
+    }
+    .type-1 { background: #e7f3ff; color: #0d6efd; }
+    .type-2 { background: #fff3e0; color: #f57c00; }
+    .type-3 { background: #f3e5f5; color: #7b1fa2; }
+    .type-4 { background: #e0f2f1; color: #00796b; }
+    .type-5 { background: #ffebee; color: #c62828; }
+    .type-6 { background: #f5f5f5; color: #616161; }
+    .type-7 { background: #fff8e1; color: #f57f17; }
+
+    .leave-progress {
+        height: 8px;
+        border-radius: 4px;
+        background: #e9ecef;
+        overflow: hidden;
+        margin-top: 6px;
+    }
+    .leave-progress-bar {
+        height: 100%;
+        border-radius: 4px;
+        background: linear-gradient(90deg, #11998e, #38ef7d);
+        transition: width 0.6s ease;
+    }
+
+    .info-row {
+        display: flex;
+        align-items: center;
+        padding: 6px 0;
+    }
+    .info-row i {
+        width: 24px;
+        color: #6c757d;
+        margin-left: 8px;
+    }
+    .info-row strong {
+        margin-right: auto;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
+
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <h4><i class="bi bi-file-earmark-text"></i> قراردادهای من</h4>
-    <span class="text-muted">{{ today_j.strftime('%Y/%m/%d') }}</span>
+    <div>
+        <h3 class="mb-1"><i class="bi bi-file-earmark-text text-primary"></i> قراردادهای من</h3>
+        <small class="text-muted">
+            <i class="bi bi-calendar3"></i> تاریخ امروز: <strong>{{ today_j.strftime('%Y/%m/%d') }}</strong>
+        </small>
+    </div>
 </div>
 
-{% if active_contract %}
-<!-- قرارداد فعال -->
-<div class="card border-success mb-4">
-    <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
-        <h6 class="mb-0"><i class="bi bi-check-circle"></i> قرارداد فعال</h6>
-        <span class="badge bg-light text-success">{{ active_contract.contract_type_name }}</span>
-    </div>
-    <div class="card-body">
-        <div class="row">
-            <div class="col-md-3">
-                <div class="text-muted small">تاریخ شروع</div>
-                <div class="fw-bold">{{ active_contract.start_date_j }}</div>
-            </div>
-            <div class="col-md-3">
-                <div class="text-muted small">تاریخ پایان</div>
-                <div class="fw-bold">{{ active_contract.end_date_j }}</div>
-            </div>
-            <div class="col-md-3">
-                <div class="text-muted small">نوع قرارداد</div>
-                <div class="fw-bold">{{ active_contract.contract_type_name }}</div>
-            </div>
-            <div class="col-md-3">
-                <div class="text-muted small">توضیحات</div>
-                <div class="fw-bold">{{ active_contract.description }}</div>
+<!-- 📊 کارت‌های آماری -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3 col-6">
+        <div class="card stat-card bg-light">
+            <div class="card-body">
+                <i class="bi bi-files stat-icon text-secondary"></i>
+                <div class="text-muted small">کل قراردادها</div>
+                <h3 class="mb-0 mt-2">{{ stats.total_contracts }}</h3>
             </div>
         </div>
+    </div>
+    <div class="col-md-3 col-6">
+        <div class="card stat-card bg-success bg-opacity-10">
+            <div class="card-body">
+                <i class="bi bi-check-circle stat-icon text-success"></i>
+                <div class="text-success small">فعال</div>
+                <h3 class="mb-0 mt-2 text-success">{{ stats.active_contracts }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-6">
+        <div class="card stat-card bg-danger bg-opacity-10">
+            <div class="card-body">
+                <i class="bi bi-hourglass-split stat-icon text-danger"></i>
+                <div class="text-danger small">منقضی</div>
+                <h3 class="mb-0 mt-2 text-danger">{{ stats.expired_contracts }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-6">
+        <div class="card stat-card bg-warning bg-opacity-10">
+            <div class="card-body">
+                <i class="bi bi-hourglass stat-icon text-warning"></i>
+                <div class="text-warning small">در انتظار شروع</div>
+                <h3 class="mb-0 mt-2 text-warning">{{ stats.pending_contracts }}</h3>
+            </div>
+        </div>
+    </div>
+</div>
 
-        <hr>
+<!-- ✅ قرارداد فعال -->
+{% if active_contract %}
+<div class="card active-contract-card mb-4">
+    <div class="card-body position-relative" style="z-index: 2;">
+        <div class="d-flex justify-content-between align-items-start mb-3">
+            <div>
+                <span class="badge bg-white bg-opacity-25 text-white mb-2">
+                    <i class="bi bi-star-fill"></i> قرارداد فعال
+                </span>
+                <h4 class="mb-1">{{ active_contract.contract_type_name }}</h4>
+                <small class="opacity-75">
+                    <i class="bi bi-clock"></i> {{ active_contract.duration_text }} قرارداد
+                </small>
+            </div>
+            <i class="bi bi-file-earmark-check display-5 opacity-25"></i>
+        </div>
 
-        <h6 class="text-muted mb-3"><i class="bi bi-gift"></i> مرخصی‌های سالانه</h6>
         <div class="row g-3">
-            <div class="col-md-3">
-                <div class="card bg-light">
-                    <div class="card-body text-center py-3">
-                        <div class="text-muted small">استحقاقی</div>
-                        <div class="fs-4 fw-bold text-primary">{{ active_contract.annual_leave_days }}</div>
-                        <div class="text-muted small">روز در سال</div>
+            <div class="col-md-4">
+                <div class="info-label">📅 شروع</div>
+                <div class="info-value">{{ active_contract.start_date_j }}</div>
+            </div>
+            <div class="col-md-4">
+                <div class="info-label">🏁 پایان</div>
+                <div class="info-value">{{ active_contract.end_date_j }}</div>
+            </div>
+            <div class="col-md-4">
+                <div class="info-label">🎂 پایان واقعی</div>
+                <div class="info-value">{{ active_contract.actual_end_date_j }}</div>
+            </div>
+
+            <div class="col-12">
+                <hr class="border-white border-opacity-25">
+            </div>
+
+            <!-- 🆕 Progress Circle و Days Remaining -->
+            <div class="col-md-4">
+                {% if active_contract.progress_percent is not none %}
+                <div class="progress-circle-container">
+                    <svg class="progress-circle-svg" width="120" height="120">
+                        <circle class="progress-circle-bg" cx="60" cy="60" r="50"></circle>
+                        <circle class="progress-circle-bar" cx="60" cy="60" r="50"
+                                stroke-dasharray="314.16"
+                                stroke-dashoffset="{{ 314.16 - (314.16 * active_contract.progress_percent / 100) }}"></circle>
+                    </svg>
+                    <div class="progress-circle-text">
+                        <span class="progress-circle-percent">{{ active_contract.progress_percent }}%</span>
+                        <span class="progress-circle-label">پیشرفت</span>
                     </div>
                 </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card bg-light">
-                    <div class="card-body text-center py-3">
-                        <div class="text-muted small">استعلاجی</div>
-                        <div class="fs-4 fw-bold text-info">{{ active_contract.sick_leave_days }}</div>
-                        <div class="text-muted small">روز در سال</div>
+                {% else %}
+                <div class="progress-circle-container d-flex align-items-center justify-content-center">
+                    <div class="text-center">
+                        <i class="bi bi-infinity display-4"></i>
+                        <div class="small opacity-75 mt-2">قرارداد باز</div>
                     </div>
                 </div>
+                {% endif %}
             </div>
-            <div class="col-md-3">
-                <div class="card bg-light">
-                    <div class="card-body text-center py-3">
-                        <div class="text-muted small">تشویقی</div>
-                        <div class="fs-4 fw-bold text-warning">{{ active_contract.reward_leave_days }}</div>
-                        <div class="text-muted small">روز در سال</div>
-                    </div>
+
+            <div class="col-md-4">
+                <div class="days-remaining-card">
+                    {% if active_contract.days_remaining is not none %}
+                    <div class="days-remaining-number">{{ active_contract.days_remaining }}</div>
+                    <div class="days-remaining-label">روز باقیمانده</div>
+                    {% else %}
+                    <div class="days-remaining-number">∞</div>
+                    <div class="days-remaining-label">نامحدود</div>
+                    {% endif %}
                 </div>
             </div>
-            <div class="col-md-3">
-                <div class="card bg-light">
-                    <div class="card-body text-center py-3">
-                        <div class="text-muted small">بدون حقوق</div>
-                        <div class="fs-4 fw-bold text-secondary">{{ active_contract.unpaid_leave_days }}</div>
-                        <div class="text-muted small">روز در سال</div>
-                    </div>
+
+            <div class="col-md-4">
+                <div class="days-remaining-card">
+                    <div class="days-remaining-number">{{ active_contract.days_elapsed }}</div>
+                    <div class="days-remaining-label">روز گذشته</div>
                 </div>
             </div>
+
+            <div class="col-12">
+                <hr class="border-white border-opacity-25">
+            </div>
+
+            <!-- مرخصی استحقاقی -->
+            <div class="col-md-6">
+                <div class="info-label">🌴 مرخصی استحقاقی</div>
+                <div class="info-value">
+                    {{ active_contract.prorated_annual_leave }} از {{ active_contract.annual_leave_days }} روز
+                </div>
+                {% if active_contract.annual_leave_days > 0 %}
+                {% set pct = (active_contract.prorated_annual_leave / active_contract.annual_leave_days * 100) %}
+                <div class="leave-progress" style="background: rgba(255,255,255,0.2);">
+                    <div class="leave-progress-bar" style="width: {{ pct }}%; background: white;"></div>
+                </div>
+                <small class="opacity-75">{{ pct | round(0) | int }}٪ سپری شده</small>
+                {% endif %}
+            </div>
+
+            <!-- مرخصی استعلاجی -->
+            <div class="col-md-6">
+                <div class="info-label">🏥 مرخصی استعلاجی</div>
+                <div class="info-value">
+                    {{ active_contract.prorated_sick_leave }} از {{ active_contract.sick_leave_days }} روز
+                </div>
+                {% if active_contract.sick_leave_days > 0 %}
+                {% set pct_sick = (active_contract.prorated_sick_leave / active_contract.sick_leave_days * 100) %}
+                <div class="leave-progress" style="background: rgba(255,255,255,0.2);">
+                    <div class="leave-progress-bar" style="width: {{ pct_sick }}%; background: white;"></div>
+                </div>
+                <small class="opacity-75">{{ pct_sick | round(0) | int }}٪ سپری شده</small>
+                {% endif %}
+            </div>
+
+            {% if active_contract.allow_service_deduction and active_contract.service_deduction_days > 0 %}
+            <div class="col-12">
+                <div class="alert alert-white bg-opacity-10 border-0 mb-0">
+                    <i class="bi bi-info-circle"></i>
+                    کسر خدمت: <strong>{{ active_contract.service_deduction_days }}</strong> روز
+                </div>
+            </div>
+            {% endif %}
+
+            {% if active_contract.has_file %}
+            <div class="col-12">
+                <a href="{{ active_contract.file_path }}" target="_blank"
+                   class="btn btn-sm btn-light bg-opacity-25 text-white border-0">
+                    <i class="bi bi-download"></i> دانلود فایل قرارداد
+                </a>
+            </div>
+            {% endif %}
         </div>
     </div>
 </div>
@@ -83,53 +406,120 @@
 </div>
 {% endif %}
 
-<!-- تاریخچه قراردادها -->
+<!-- 📜 تاریخچه قراردادها -->
+{% if contracts %}
 <div class="card">
     <div class="card-header bg-white">
-        <h6><i class="bi bi-clock-history"></i> تاریخچه قراردادها</h6>
+        <h6 class="mb-0"><i class="bi bi-clock-history"></i> تاریخچه قراردادها</h6>
     </div>
     <div class="card-body">
-        {% if contracts %}
-        <div class="table-responsive">
-            <table class="table table-hover">
-                <thead>
-                    <tr>
-                        <th>نوع قرارداد</th>
-                        <th>تاریخ شروع</th>
-                        <th>تاریخ پایان</th>
-                        <th class="text-center">استحقاقی</th>
-                        <th class="text-center">استعلاجی</th>
-                        <th class="text-center">تشویقی</th>
-                        <th>وضعیت</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for c in contracts %}
-                    <tr class="{% if c.is_active %}table-success{% endif %}">
-                        <td>
-                            <i class="bi bi-file-earmark-text text-primary"></i>
-                            {{ c.contract_type_name }}
-                        </td>
-                        <td>{{ c.start_date_j }}</td>
-                        <td>{{ c.end_date_j }}</td>
-                        <td class="text-center">{{ c.annual_leave_days }} روز</td>
-                        <td class="text-center">{{ c.sick_leave_days }} روز</td>
-                        <td class="text-center">{{ c.reward_leave_days }} روز</td>
-                        <td>
+        <div class="contract-timeline">
+            {% for c in contracts %}
+            <div class="timeline-item {% if c.is_active %}is-active{% elif c.status_name == '⏰ منقضی' %}is-expired{% elif c.status_name == '⏳ در انتظار شروع' %}is-pending{% endif %}">
+                <div class="contract-card {% if c.is_active %}is-active{% endif %}">
+                    <div class="d-flex justify-content-between align-items-start mb-3">
+                        <div>
+                            <span class="contract-type-badge type-{{ c.contract_type_code }}">
+                                {{ c.contract_type_name }}
+                            </span>
                             {% if c.is_active %}
-                            <span class="badge bg-success">✅ فعال</span>
+                            <span class="badge bg-success ms-2">فعال</span>
+                            {% elif c.status_name == '⏰ منقضی' %}
+                            <span class="badge bg-danger ms-2">منقضی</span>
                             {% else %}
-                            <span class="badge bg-secondary">⏸️ پایان یافته</span>
+                            <span class="badge bg-warning text-dark ms-2">در انتظار</span>
                             {% endif %}
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+                        </div>
+                        <small class="text-muted">
+                            <i class="bi bi-calendar-range"></i> {{ c.duration_text }}
+                        </small>
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <div class="info-row">
+                                <i class="bi bi-play-circle-fill text-success"></i>
+                                <small class="text-muted ms-2">شروع:</small>
+                                <strong>{{ c.start_date_j }}</strong>
+                            </div>
+                            <div class="info-row">
+                                <i class="bi bi-stop-circle-fill text-danger"></i>
+                                <small class="text-muted ms-2">پایان:</small>
+                                <strong>{{ c.end_date_j }}</strong>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <div class="info-row">
+                                <i class="bi bi-sun text-info"></i>
+                                <small class="text-muted ms-2">استحقاقی:</small>
+                                <strong>{{ c.annual_leave_days }} روز</strong>
+                            </div>
+                            <div class="info-row">
+                                <i class="bi bi-heart-pulse text-danger"></i>
+                                <small class="text-muted ms-2">استعلاجی:</small>
+                                <strong>{{ c.sick_leave_days }} روز</strong>
+                            </div>
+                        </div>
+
+                        <!-- 🆕 Progress برای قراردادهای فعال -->
+                        {% if c.is_active and c.progress_percent is not none %}
+                        <div class="col-12">
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <small class="text-muted">
+                                    <i class="bi bi-graph-up"></i> پیشرفت قرارداد
+                                </small>
+                                <strong>{{ c.progress_percent }}%</strong>
+                            </div>
+                            <div class="progress" style="height: 8px;">
+                                <div class="progress-bar bg-success" style="width: {{ c.progress_percent }}%"></div>
+                            </div>
+                            <div class="d-flex justify-content-between mt-1">
+                                <small class="text-muted">{{ c.days_elapsed }} روز گذشته</small>
+                                <small class="text-muted">{{ c.days_remaining }} روز باقیمانده</small>
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        {% if c.allow_service_deduction and c.service_deduction_days > 0 %}
+                        <div class="col-12">
+                            <div class="info-row bg-warning bg-opacity-10 rounded p-2">
+                                <i class="bi bi-clock-history text-warning"></i>
+                                <small>کسر خدمت:</small>
+                                <strong>{{ c.service_deduction_days }} روز</strong>
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        {% if c.description and c.description != '-' %}
+                        <div class="col-12">
+                            <small class="text-muted">
+                                <i class="bi bi-chat-text"></i> {{ c.description }}
+                            </small>
+                        </div>
+                        {% endif %}
+
+                        {% if c.has_file %}
+                        <div class="col-12">
+                            <a href="{{ c.file_path }}" target="_blank" class="btn btn-sm btn-outline-primary">
+                                <i class="bi bi-download"></i> فایل قرارداد
+                            </a>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
         </div>
-        {% else %}
-        <p class="text-muted text-center mb-0">هیچ قراردادی ثبت نشده است</p>
-        {% endif %}
     </div>
 </div>
+{% else %}
+<div class="card">
+    <div class="card-body text-center py-5">
+        <i class="bi bi-file-earmark-x display-4 text-muted"></i>
+        <p class="text-muted mt-3 mb-0">هیچ قراردادی ثبت نشده است</p>
+    </div>
+</div>
+{% endif %}
+
 {% endblock %}

@@ -1,667 +1,355 @@
 """
-خروجی PDF گزارش تفصیلی ماهانه
+سرویس خروجی PDF گزارشات - با پشتیبانی کامل از فارسی
 """
-from datetime import date
+from pathlib import Path
 from typing import Dict
-from pathlib import Path
-from fpdf import FPDF
-import jdatetime
 import os
+
+try:
+    from fpdf import FPDF
+except ImportError:
+    raise ImportError("لطفاً ابتدا fpdf2 را نصب کنید: pip install fpdf2")
 
 try:
     import arabic_reshaper
     from bidi.algorithm import get_display
-    RTL_SUPPORT = True
+    HAS_RTL_SUPPORT = True
 except ImportError:
-    RTL_SUPPORT = False
-    print("⚠️  کتابخانه‌های arabic_reshaper و python-bidi نصب نشده‌اند")
+    HAS_RTL_SUPPORT = False
+    print("⚠️ arabic_reshaper یا python-bidi نصب نیست. متن فارسی ممکن است برعکس نمایش داده شود.")
+
+# مسیرهای احتمالی فونت
+BASE_DIR = Path(__file__).parent.parent.parent
+POSSIBLE_FONT_PATHS = [
+    BASE_DIR / "static" / "fonts",
+    BASE_DIR / "fonts",
+    BASE_DIR / "web" / "static" / "fonts",
+]
+
+OUTPUT_DIR = BASE_DIR / "static" / "exports"
 
 
-class DetailedPDFExporter:
-    """خروجی PDF گزارش تفصیلی"""
+class PdfReportExporter:
+    """تولید PDF گزارش تفصیلی ماهانه با پشتیبانی کامل از فارسی"""
 
-    def __init__(self, output_dir: str = "exports"):
-        self.output_dir = Path(output_dir)
-        self.output_dir.mkdir(exist_ok=True)
-        self.font_path = self._find_persian_font()
+    def __init__(self):
+        self.output_dir = OUTPUT_DIR
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.font_dir = self._find_font_dir()
+        self.font_name = None
 
-    def _find_persian_font(self) -> str:
-        """پیدا کردن فونت فارسی در سیستم"""
-        font_paths = [
-            "C:/Windows/Fonts/tahoma.ttf",
-            "C:/Windows/Fonts/arial.ttf",
-            "C:/Windows/Fonts/segoeui.ttf",
-        ]
-
-        for path in font_paths:
-            if os.path.exists(path):
+    def _find_font_dir(self) -> Path:
+        """پیدا کردن پوشه فونت"""
+        for path in POSSIBLE_FONT_PATHS:
+            if path.exists():
                 return path
 
-        return "C:/Windows/Fonts/tahoma.ttf"
-
-    def _fix_rtl(self, text: str) -> str:
-        """✅ اصلاح متن فارسی برای نمایش صحیح RTL"""
-        if RTL_SUPPORT and any('\u0600' <= c <= '\u06FF' for c in text):
-            reshaped_text = arabic_reshaper.reshape(text)
-            bidi_text = get_display(reshaped_text)
-            return bidi_text
-        return text
-
-    def export_detailed_report(self, report: Dict) -> str:
-        """خروجی گزارش تفصیلی به PDF"""
-        pdf = FPDF()
-        pdf.add_page()
-
-        # اضافه کردن فونت فارسی
-        if os.path.exists(self.font_path):
-            pdf.add_font('Persian', '', self.font_path, uni=True)
-            pdf.add_font('Persian', 'B', self.font_path, uni=True)
-            font_name = 'Persian'
-        else:
-            font_name = 'Helvetica'
-
-        emp = report['employee']
-        summary = report['summary']
-
-        # هدر
-        pdf.set_font(font_name, 'B', 16)
-        pdf.cell(0, 10, self._fix_rtl(f"گزارش تفصیلی ماهانه - {emp['full_name']}"), ln=True, align='C')
-        pdf.set_font(font_name, '', 12)
-        pdf.cell(0, 8, self._fix_rtl(f"کد پرسنلی: {emp['user_id']} | دپارتمان: {emp['department']}"), ln=True, align='C')
-        pdf.cell(0, 8, self._fix_rtl(f"ماه: {report['month_name']} {report['year']}"), ln=True, align='C')
-        pdf.ln(5)
-
-        # ✅ جدول روزانه از راست به چپ
-        pdf.set_font(font_name, 'B', 10)
-        pdf.cell(0, 8, self._fix_rtl('گزارش روزانه'), ln=True, align='R')
-        pdf.ln(2)
-
-        # ✅ هدر جدول - ترتیب عادی (تاریخ اول)
-        pdf.set_font(font_name, 'B', 7)
-        headers = ['تاریخ', 'روز', 'وضعیت روز', 'وضعیت فرد', 'ورود', 'خروج', 'کارکرد', 'اضافه']
-        col_widths = [25, 20, 20, 25, 15, 15, 15, 15]
-
-        # ✅ محاسبه موقعیت شروع برای RTL
-        page_width = pdf.w - 2 * pdf.l_margin
-        table_width = sum(col_widths)
-        start_x = pdf.l_margin + (page_width - table_width)
-
-        # رسم هدر جدول از راست به چپ
-        current_x = start_x + table_width
-        for i, header in enumerate(headers):
-            current_x -= col_widths[i]
-            pdf.set_xy(current_x, pdf.get_y())
-            pdf.cell(col_widths[i], 6, self._fix_rtl(header), border=1, align='C')
-        pdf.ln()
-
-        # ✅ داده‌ها از راست به چپ
-        pdf.set_font(font_name, '', 6)
-        for day in report['days']:
-            def fmt_time(dt):
-                return dt.strftime('%H:%M') if dt else '-'
-
-            def fmt_hours(h):
-                if h == 0:
-                    return '-'
-                hours = int(h)
-                minutes = int((h - hours) * 60)
-                return f"{hours:02d}:{minutes:02d}"
-
-            # ✅ مقادیر به ترتیب عادی (تاریخ اول)
-            values = [
-                day['jalali_date'],
-                day['day_name'][:8],
-                'تعطیل' if day['is_day_off'] else 'کاری',
-                day['person_status_name'][:12],
-                fmt_time(day['first_enter']),
-                fmt_time(day['last_exit']),
-                fmt_hours(day['work_hours']),
-                fmt_hours(day['overtime'])
-            ]
-
-            # رسم سلول‌ها از راست به چپ
-            current_x = start_x + table_width
-            for i, value in enumerate(values):
-                current_x -= col_widths[i]
-                pdf.set_xy(current_x, pdf.get_y())
-                # ✅ اعداد و تاریخ‌ها را اصلاح RTL نکن
-                if i in [0, 4, 5, 6, 7]:  # تاریخ، ورود، خروج، کارکرد، اضافه
-                    pdf.cell(col_widths[i], 5, value, border=1, align='C')
-                else:  # متن فارسی
-                    pdf.cell(col_widths[i], 5, self._fix_rtl(value), border=1, align='C')
-            pdf.ln()
-
-        pdf.ln(3)
-
-        # ✅ خلاصه ماهانه - بررسی فضا
-        remaining_space = pdf.h - pdf.get_y() - 20
-        required_space = 50  # فضای مورد نیاز برای خلاصه فشرده
-
-        if remaining_space < required_space:
-            pdf.add_page()
-
-        pdf.set_font(font_name, 'B', 10)
-        pdf.cell(0, 8, self._fix_rtl('خلاصه ماهانه'), ln=True, align='R')
-        pdf.ln(2)
-
-        # ✅ فشرده‌تر کردن خلاصه
-        pdf.set_font(font_name, '', 8)
-
-        # موظفی
-        pdf.set_font(font_name, 'B', 8)
-        pdf.cell(0, 5, self._fix_rtl('موظفی:'), ln=True, align='R')
-        pdf.set_font(font_name, '', 8)
-        pdf.cell(0, 4, self._fix_rtl(f"روزهای موظفی: {summary['duty_days']} | ساعات موظفی: {self._fmt_hours(summary['duty_hours'])}"), ln=True, align='R')
-
-        pdf.ln(1)
-
-        # وضعیت روزها
-        pdf.set_font(font_name, 'B', 8)
-        pdf.cell(0, 5, self._fix_rtl('وضعیت روزها:'), ln=True, align='R')
-        pdf.set_font(font_name, '', 8)
-        pdf.cell(0, 4, self._fix_rtl(f"حضور: {summary['present_days']} | مرخصی: {summary['leave_days']} | غیبت: {summary['absent_days']} | استراحت: {summary['rest_days']} | جمعه کاری: {summary['friday_work_days']}"), ln=True, align='R')
-
-        pdf.ln(1)
-
-        # ساعات کاری
-        pdf.set_font(font_name, 'B', 8)
-        pdf.cell(0, 5, self._fix_rtl('ساعات کاری:'), ln=True, align='R')
-        pdf.set_font(font_name, '', 8)
-        pdf.cell(0, 4, self._fix_rtl(f"کارکرد ماهانه: {self._fmt_hours(summary['total_work_hours'])} | صبح: {self._fmt_hours(summary['total_morning'])} | عصر: {self._fmt_hours(summary['total_evening'])} | شب: {self._fmt_hours(summary['total_night'])}"), ln=True, align='R')
-
-        pdf.ln(1)
-
-        # اضافه کاری
-        pdf.set_font(font_name, 'B', 8)
-        pdf.cell(0, 5, self._fix_rtl('اضافه کاری:'), ln=True, align='R')
-        pdf.set_font(font_name, '', 8)
-        pdf.cell(0, 4, self._fix_rtl(f"روزانه: {self._fmt_hours(summary['daily_overtime'])} | هفتگی: {self._fmt_hours(summary['weekly_overtime'])} | جمعه کاری: {self._fmt_hours(summary['friday_work_hours'])}"), ln=True, align='R')
-
-        pdf.ln(1)
-
-        # کسری و اضافی
-        pdf.set_font(font_name, 'B', 8)
-        pdf.cell(0, 5, self._fix_rtl('کسری و اضافی:'), ln=True, align='R')
-        pdf.set_font(font_name, '', 8)
-        pdf.cell(0, 4, self._fix_rtl(f"مجموع کسری: {self._fmt_hours(summary['deficit'])} | مجموع اضافی: {self._fmt_hours(summary['surplus'])}"), ln=True, align='R')
-
-        # ذخیره
-        filename = self.output_dir / f"گزارش_تفصیلی_{emp['full_name']}_{report['month_name']}_{report['year']}.pdf"
-        pdf.output(str(filename))
-        return str(filename)
-
-    def _fmt_hours(self, h: float) -> str:
-        """فرمت ساعات"""
-        if h == 0:
-            return '00:00'
-        hours = int(h)
-        minutes = int((h - hours) * 60)
-        return f"{hours:02d}:{minutes:02d}"
-
-    def export_all_employees_report(self, reports: List[Dict], year: int, month: int, month_name: str) -> str:
-        """خروجی گزارش همه کارمندان در یک فایل PDF"""
-        pdf = FPDF()
-        pdf.set_auto_page_break(auto=True, margin=15)
-
-        # اضافه کردن فونت فارسی
-        if os.path.exists(self.font_path):
-            pdf.add_font('Persian', '', self.font_path, uni=True)
-            pdf.add_font('Persian', 'B', self.font_path, uni=True)
-            font_name = 'Persian'
-        else:
-            font_name = 'Helvetica'
-
-        # ✅ صفحه اول: خلاصه کلی
-        pdf.add_page()
-        pdf.set_font(font_name, 'B', 16)
-        pdf.cell(0, 10, self._fix_rtl(f"خلاصه گزارش ماهانه - {month_name} {year}"), ln=True, align='C')
-        pdf.set_font(font_name, '', 12)
-        pdf.cell(0, 8, self._fix_rtl(f"تعداد کارمندان: {len(reports)}"), ln=True, align='C')
-        pdf.ln(5)
-
-        # جدول خلاصه
-        pdf.set_font(font_name, 'B', 8)
-        headers = ['ردیف', 'کد', 'نام', 'موظفی', 'حضور', 'مرخصی', 'غیبت', 'کارکرد', 'اضافه', 'کسری']
-        col_widths = [12, 18, 35, 18, 15, 15, 15, 18, 18, 18]
-
-        page_width = pdf.w - 2 * pdf.l_margin
-        table_width = sum(col_widths)
-        start_x = pdf.l_margin + (page_width - table_width)
-
-        # رسم هدر
-        current_x = start_x + table_width
-        for i, header in enumerate(headers):
-            current_x -= col_widths[i]
-            pdf.set_xy(current_x, pdf.get_y())
-            pdf.cell(col_widths[i], 6, self._fix_rtl(header), border=1, align='C')
-        pdf.ln()
-
-        # داده‌ها
-        pdf.set_font(font_name, '', 7)
-        for idx, report in enumerate(reports, 1):
-            emp = report['employee']
-            summary = report['summary']
-
-            values = [
-                str(idx),
-                emp['user_id'],
-                emp['full_name'][:15],
-                self._fmt_hours(summary['duty_hours']),
-                str(summary['present_days']),
-                str(summary['leave_days']),
-                str(summary['absent_days']),
-                self._fmt_hours(summary['total_work_hours']),
-                self._fmt_hours(summary['surplus']),
-                self._fmt_hours(summary['deficit'])
-            ]
-
-            current_x = start_x + table_width
-            for i, value in enumerate(values):
-                current_x -= col_widths[i]
-                pdf.set_xy(current_x, pdf.get_y())
-                if i in [0, 1, 4, 5, 6]:  # اعداد
-                    pdf.cell(col_widths[i], 5, value, border=1, align='C')
-                else:
-                    pdf.cell(col_widths[i], 5, self._fix_rtl(value), border=1, align='C')
-            pdf.ln()
-
-        # ✅ صفحات بعدی: گزارش تفصیلی هر کارمند
-        for report in reports:
-            pdf.add_page()
-            self._add_employee_detail_to_pdf(pdf, report, font_name)
-
-        # ذخیره
-        filename = self.output_dir / f"گزارش_کلی_کارمندان_{month_name}_{year}.pdf"
-        pdf.output(str(filename))
-        return str(filename)
-
-
-"""
-خروجی PDF گزارش تفصیلی ماهانه
-"""
-from datetime import date
-from typing import Dict, List
-from pathlib import Path
-from fpdf import FPDF
-import jdatetime
-import os
-
-try:
-    import arabic_reshaper
-    from bidi.algorithm import get_display
-
-    RTL_SUPPORT = True
-except ImportError:
-    RTL_SUPPORT = False
-    print("⚠️  کتابخانه‌های arabic_reshaper و python-bidi نصب نشده‌اند")
-
-
-class DetailedPDFExporter:
-    """خروجی PDF گزارش تفصیلی"""
-
-    def __init__(self, output_dir: str = "exports"):
-        self.output_dir = Path(output_dir)
-        self.output_dir.mkdir(exist_ok=True)
-        self.font_path = self._find_persian_font()
-
-    def _find_persian_font(self) -> str:
-        """پیدا کردن فونت فارسی در سیستم"""
-        font_paths = [
-            "C:/Windows/Fonts/tahoma.ttf",
-            "C:/Windows/Fonts/arial.ttf",
-            "C:/Windows/Fonts/segoeui.ttf",
-        ]
-
-        for path in font_paths:
-            if os.path.exists(path):
-                return path
-
-        return "C:/Windows/Fonts/tahoma.ttf"
-
-    def _fix_rtl(self, text: str) -> str:
-        """✅ اصلاح متن فارسی برای نمایش صحیح RTL"""
-        if RTL_SUPPORT and any('\u0600' <= c <= '\u06FF' for c in text):
-            reshaped_text = arabic_reshaper.reshape(text)
-            bidi_text = get_display(reshaped_text)
-            return bidi_text
-        return text
-
-    def _fmt_hours(self, h: float) -> str:
-        """فرمت ساعات"""
-        if h == 0:
-            return '00:00'
-        hours = int(h)
-        minutes = int((h - hours) * 60)
-        return f"{hours:02d}:{minutes:02d}"
+        # اگر نبود، ایجاد کن
+        font_dir = BASE_DIR / "static" / "fonts"
+        font_dir.mkdir(parents=True, exist_ok=True)
+        return font_dir
 
     def _setup_font(self, pdf: FPDF) -> str:
         """تنظیم فونت فارسی"""
-        if os.path.exists(self.font_path):
-            pdf.add_font('Persian', '', self.font_path, uni=True)
-            pdf.add_font('Persian', 'B', self.font_path, uni=True)
-            return 'Persian'
-        return 'Helvetica'
+        font_name = 'Vazir'
+
+        # مسیرهای احتمالی فونت
+        regular_font = self.font_dir / "Vazirmatn-Regular.ttf"
+        bold_font = self.font_dir / "Vazirmatn-Bold.ttf"
+
+        # اگر Bold نبود، از Regular استفاده کن
+        if not bold_font.exists():
+            bold_font = regular_font
+
+        try:
+            if regular_font.exists():
+                # در fpdf2 نیازی به uni=True نیست
+                pdf.add_font(font_name, '', str(regular_font))
+                if bold_font.exists():
+                    pdf.add_font(font_name, 'B', str(bold_font))
+                else:
+                    pdf.add_font(font_name, 'B', str(regular_font))
+                self.font_name = font_name
+                return font_name
+            else:
+                print(f"⚠️ فونت فارسی در {self.font_dir} یافت نشد")
+                print(f"   لطفاً Vazirmatn-Regular.ttf را در {self.font_dir} قرار دهید")
+                # استفاده از فونت پیش‌فرض
+                return 'helvetica'
+        except Exception as e:
+            print(f"⚠️ خطا در لود فونت: {e}")
+            return 'helvetica'
+
+    def _fix_rtl(self, text: str) -> str:
+        """اصلاح متن راست‌به‌چپ برای نمایش صحیح در PDF"""
+        if text is None:
+            return ''
+        text = str(text)
+        if not HAS_RTL_SUPPORT:
+            return text
+        try:
+            reshaped = arabic_reshaper.reshape(text)
+            return get_display(reshaped)
+        except Exception:
+            return text
+
+    def _fmt_hours(self, hours: float) -> str:
+        """تبدیل ساعت اعشاری به فرمت HH:MM"""
+        if hours is None or hours == 0:
+            return '-'
+        total_minutes = int(round(float(hours) * 60))
+        h = total_minutes // 60
+        m = total_minutes % 60
+        return f"{h:02d}:{m:02d}"
+
+    def _fmt_time(self, dt) -> str:
+        """فرمت datetime به HH:MM"""
+        if dt is None:
+            return '-'
+        try:
+            return dt.strftime('%H:%M')
+        except Exception:
+            return '-'
+
+    def _get_first_last(self, day: dict):
+        """استخراج اولین ورود و آخرین خروج از attendance_pairs"""
+        pairs = day.get('attendance_pairs', [])
+        if not pairs:
+            return None, None
+        first_enter = pairs[0].get('enter')
+        last_exit = pairs[-1].get('exit')
+        return first_enter, last_exit
+
+    def _draw_rtl_cell(self, pdf: FPDF, width: int, height: int, text: str,
+                       border: int = 1, align: str = 'C', is_number: bool = False):
+        """رسم سلول با متن راست‌به‌چپ"""
+        if is_number:
+            # اعداد نیازی به reshaping ندارند
+            pdf.cell(width, height, str(text), border=border, align=align)
+        else:
+            pdf.cell(width, height, self._fix_rtl(text), border=border, align=align)
 
     def export_detailed_report(self, report: Dict) -> str:
         """خروجی گزارش تفصیلی یک کارمند به PDF"""
-        pdf = FPDF()
+        # 🆕 استفاده از جهت افقی برای ستون‌های بیشتر
+        pdf = FPDF(orientation='L', unit='mm', format='A4')
         pdf.add_page()
-
-        font_name = self._setup_font(pdf)
-        emp = report['employee']
-        summary = report['summary']
-
-        # هدر
-        pdf.set_font(font_name, 'B', 16)
-        pdf.cell(0, 10, self._fix_rtl(f"گزارش تفصیلی ماهانه - {emp['full_name']}"), ln=True, align='C')
-        pdf.set_font(font_name, '', 12)
-        pdf.cell(0, 8, self._fix_rtl(f"کد پرسنلی: {emp['user_id']} | دپارتمان: {emp['department']}"), ln=True,
-                 align='C')
-        pdf.cell(0, 8, self._fix_rtl(f"ماه: {report['month_name']} {report['year']}"), ln=True, align='C')
-        pdf.ln(5)
-
-        # ✅ جدول روزانه از راست به چپ
-        pdf.set_font(font_name, 'B', 10)
-        pdf.cell(0, 8, self._fix_rtl('گزارش روزانه'), ln=True, align='R')
-        pdf.ln(2)
-
-        # هدر جدول با ستون وضعیت تردد
-        pdf.set_font(font_name, 'B', 7)
-        headers = ['تاریخ', 'روز', 'وضعیت روز', 'وضعیت فرد', 'ورود', 'خروج', 'وضعیت تردد', 'کارکرد', 'اضافه']
-        col_widths = [22, 18, 16, 22, 13, 13, 20, 13, 13]
-
-        page_width = pdf.w - 2 * pdf.l_margin
-        table_width = sum(col_widths)
-        start_x = pdf.l_margin + (page_width - table_width)
-
-        # رسم هدر
-        current_x = start_x + table_width
-        for i, header in enumerate(headers):
-            current_x -= col_widths[i]
-            pdf.set_xy(current_x, pdf.get_y())
-            pdf.cell(col_widths[i], 6, self._fix_rtl(header), border=1, align='C')
-        pdf.ln()
-
-        # داده‌ها
-        pdf.set_font(font_name, '', 6)
-        for day in report['days']:
-            def fmt_time(dt):
-                return dt.strftime('%H:%M') if dt else '-'
-
-            def fmt_hours(h):
-                if h == 0:
-                    return '-'
-                hours = int(h)
-                minutes = int((h - hours) * 60)
-                return f"{hours:02d}:{minutes:02d}"
-
-            attendance_str = day['attendance_status']
-            if attendance_str == 'بدون تردد':
-                attendance_str = '-'
-
-            values = [
-                day['jalali_date'],
-                day['day_name'][:8],
-                'تعطیل' if day['is_day_off'] else 'کاری',
-                day['person_status_name'][:12],
-                fmt_time(day['first_enter']),
-                fmt_time(day['last_exit']),
-                attendance_str[:12],
-                fmt_hours(day['work_hours']),
-                fmt_hours(day['overtime'])
-            ]
-
-            current_x = start_x + table_width
-            for i, value in enumerate(values):
-                current_x -= col_widths[i]
-                pdf.set_xy(current_x, pdf.get_y())
-                if i in [0, 4, 5, 7, 8]:
-                    pdf.cell(col_widths[i], 5, value, border=1, align='C')
-                else:
-                    pdf.cell(col_widths[i], 5, self._fix_rtl(value), border=1, align='C')
-            pdf.ln()
-
-        pdf.ln(5)
-
-        # خلاصه ماهانه
-        remaining_space = pdf.h - pdf.get_y() - 20
-        required_space = 80
-
-        if remaining_space < required_space:
-            pdf.add_page()
-
-        pdf.set_font(font_name, 'B', 10)
-        pdf.cell(0, 8, self._fix_rtl('خلاصه ماهانه'), ln=True, align='R')
-        pdf.ln(2)
-
-        pdf.set_font(font_name, '', 8)
-
-        pdf.set_font(font_name, 'B', 8)
-        pdf.cell(0, 5, self._fix_rtl('موظفی:'), ln=True, align='R')
-        pdf.set_font(font_name, '', 8)
-        pdf.cell(0, 4, self._fix_rtl(
-            f"روزهای موظفی: {summary['duty_days']} | ساعات موظفی: {self._fmt_hours(summary['duty_hours'])}"), ln=True,
-                 align='R')
-
-        pdf.ln(1)
-
-        pdf.set_font(font_name, 'B', 8)
-        pdf.cell(0, 5, self._fix_rtl('وضعیت روزها:'), ln=True, align='R')
-        pdf.set_font(font_name, '', 8)
-        pdf.cell(0, 4, self._fix_rtl(
-            f"حضور: {summary['present_days']} | مرخصی: {summary['leave_days']} | غیبت: {summary['absent_days']} | استراحت: {summary['rest_days']} | جمعه کاری: {summary['friday_work_days']}"),
-                 ln=True, align='R')
-
-        pdf.ln(1)
-
-        pdf.set_font(font_name, 'B', 8)
-        pdf.cell(0, 5, self._fix_rtl('ساعات کاری:'), ln=True, align='R')
-        pdf.set_font(font_name, '', 8)
-        pdf.cell(0, 4, self._fix_rtl(
-            f"کارکرد ماهانه: {self._fmt_hours(summary['total_work_hours'])} | صبح: {self._fmt_hours(summary['total_morning'])} | عصر: {self._fmt_hours(summary['total_evening'])} | شب: {self._fmt_hours(summary['total_night'])}"),
-                 ln=True, align='R')
-
-        pdf.ln(1)
-
-        pdf.set_font(font_name, 'B', 8)
-        pdf.cell(0, 5, self._fix_rtl('اضافه کاری:'), ln=True, align='R')
-        pdf.set_font(font_name, '', 8)
-        pdf.cell(0, 4, self._fix_rtl(
-            f"روزانه: {self._fmt_hours(summary['daily_overtime'])} | هفتگی: {self._fmt_hours(summary['weekly_overtime'])} | جمعه کاری: {self._fmt_hours(summary['friday_work_hours'])}"),
-                 ln=True, align='R')
-
-        pdf.ln(1)
-
-        pdf.set_font(font_name, 'B', 8)
-        pdf.cell(0, 5, self._fix_rtl('کسری و اضافی:'), ln=True, align='R')
-        pdf.set_font(font_name, '', 8)
-        pdf.cell(0, 4, self._fix_rtl(
-            f"مجموع کسری: {self._fmt_hours(summary['deficit'])} | مجموع اضافی: {self._fmt_hours(summary['surplus'])}"),
-                 ln=True, align='R')
-
-        # ذخیره
-        filename = self.output_dir / f"گزارش_تفصیلی_{emp['full_name']}_{report['month_name']}_{report['year']}.pdf"
-        pdf.output(str(filename))
-        return str(filename)
-
-    def export_all_employees_report(self, reports: List[Dict], year: int, month: int, month_name: str) -> str:
-        """خروجی گزارش همه کارمندان در یک فایل PDF"""
-        pdf = FPDF()
         pdf.set_auto_page_break(auto=True, margin=15)
 
         font_name = self._setup_font(pdf)
-
-        # ✅ صفحه اول: خلاصه کلی
-        pdf.add_page()
-        pdf.set_font(font_name, 'B', 16)
-        pdf.cell(0, 10, self._fix_rtl(f"خلاصه گزارش ماهانه - {month_name} {year}"), ln=True, align='C')
-        pdf.set_font(font_name, '', 12)
-        pdf.cell(0, 8, self._fix_rtl(f"تعداد کارمندان: {len(reports)}"), ln=True, align='C')
-        pdf.ln(5)
-
-        # جدول خلاصه
-        pdf.set_font(font_name, 'B', 8)
-        headers = ['ردیف', 'کد', 'نام', 'موظفی', 'حضور', 'مرخصی', 'غیبت', 'کارکرد', 'اضافه', 'کسری']
-        col_widths = [12, 18, 35, 18, 15, 15, 15, 18, 18, 18]
-
-        page_width = pdf.w - 2 * pdf.l_margin
-        table_width = sum(col_widths)
-        start_x = pdf.l_margin + (page_width - table_width)
-
-        # رسم هدر
-        current_x = start_x + table_width
-        for i, header in enumerate(headers):
-            current_x -= col_widths[i]
-            pdf.set_xy(current_x, pdf.get_y())
-            pdf.cell(col_widths[i], 6, self._fix_rtl(header), border=1, align='C')
-        pdf.ln()
-
-        # داده‌ها
-        pdf.set_font(font_name, '', 7)
-        for idx, report in enumerate(reports, 1):
-            emp = report['employee']
-            summary = report['summary']
-
-            values = [
-                str(idx),
-                emp['user_id'],
-                emp['full_name'][:15],
-                self._fmt_hours(summary['duty_hours']),
-                str(summary['present_days']),
-                str(summary['leave_days']),
-                str(summary['absent_days']),
-                self._fmt_hours(summary['total_work_hours']),
-                self._fmt_hours(summary['surplus']),
-                self._fmt_hours(summary['deficit'])
-            ]
-
-            current_x = start_x + table_width
-            for i, value in enumerate(values):
-                current_x -= col_widths[i]
-                pdf.set_xy(current_x, pdf.get_y())
-                if i in [0, 1, 4, 5, 6]:
-                    pdf.cell(col_widths[i], 5, value, border=1, align='C')
-                else:
-                    pdf.cell(col_widths[i], 5, self._fix_rtl(value), border=1, align='C')
-            pdf.ln()
-
-        # ✅ صفحات بعدی: گزارش تفصیلی هر کارمند
-        for report in reports:
-            pdf.add_page()
-            self._add_employee_detail_to_pdf(pdf, report, font_name)
-
-        # ذخیره
-        filename = self.output_dir / f"گزارش_کلی_کارمندان_{month_name}_{year}.pdf"
-        pdf.output(str(filename))
-        return str(filename)
-
-    def _add_employee_detail_to_pdf(self, pdf: FPDF, report: Dict, font_name: str):
-        """اضافه کردن گزارش تفصیلی یک کارمند به PDF"""
         emp = report['employee']
         summary = report['summary']
 
-        # ✅ هدر کارمند - فونت بزرگ‌تر
+        # ============================================
+        # هدر
+        # ============================================
         pdf.set_font(font_name, 'B', 16)
-        pdf.cell(0, 12, self._fix_rtl(f"گزارش تفصیلی - {emp['full_name']} ({emp['user_id']})"), ln=True, align='C')
-        pdf.set_font(font_name, '', 11)
-        pdf.cell(0, 7, self._fix_rtl(f"دپارتمان: {emp['department']} | ماه: {report['month_name']} {report['year']}"),
+        pdf.cell(0, 10, self._fix_rtl(f"گزارش تفصیلی ماهانه - {emp['full_name']}"),
                  ln=True, align='C')
-        pdf.ln(4)
 
-        # ✅ جدول روزانه با ستون وضعیت تردد - فونت بزرگ‌تر
-        pdf.set_font(font_name, 'B', 9)
-        pdf.cell(0, 7, self._fix_rtl('گزارش روزانه'), ln=True, align='R')
+        pdf.set_font(font_name, '', 11)
+        pdf.cell(0, 8, self._fix_rtl(
+            f"کد پرسنلی: {emp['user_id']} | دپارتمان: {emp['department'] or '-'}"
+        ), ln=True, align='C')
+
+        pdf.cell(0, 8, self._fix_rtl(
+            f"ماه: {report['month_name']} {report['year']}"
+        ), ln=True, align='C')
+        pdf.ln(5)
+
+        # ============================================
+        # جدول روزانه
+        # ============================================
+        pdf.set_font(font_name, 'B', 11)
+        pdf.cell(0, 8, self._fix_rtl('گزارش روزانه'), ln=True, align='R')
         pdf.ln(2)
 
-        pdf.set_font(font_name, 'B', 7)
-        headers = ['تاریخ', 'روز', 'وضعیت روز', 'وضعیت فرد', 'ورود', 'خروج', 'وضعیت تردد', 'کارکرد', 'اضافه']
-        col_widths = [22, 18, 16, 22, 13, 13, 20, 13, 13]
+        # تعریف ستون‌ها (از راست به چپ)
+        headers = ['تاریخ', 'روز', 'وضعیت روز', 'وضعیت فرد',
+                   'ورود', 'خروج', 'وضعیت تردد',
+                   'کارکرد', 'اضافه', 'کسری']
+        col_widths = [28, 20, 20, 30, 16, 16, 28, 16, 16, 16]
 
+        # عرض صفحه و محاسبه start_x
         page_width = pdf.w - 2 * pdf.l_margin
         table_width = sum(col_widths)
-        start_x = pdf.l_margin + (page_width - table_width)
+        start_x = pdf.l_margin + (page_width - table_width) / 2
 
-        # رسم هدر
+        # رسم هدر جدول
+        pdf.set_font(font_name, 'B', 8)
+        pdf.set_fill_color(30, 41, 59)  # رنگ تیره
+        pdf.set_text_color(255, 255, 255)
+
         current_x = start_x + table_width
         for i, header in enumerate(headers):
             current_x -= col_widths[i]
             pdf.set_xy(current_x, pdf.get_y())
-            pdf.cell(col_widths[i], 6, self._fix_rtl(header), border=1, align='C')
+            pdf.cell(col_widths[i], 7, self._fix_rtl(header), border=1, align='C', fill=True)
         pdf.ln()
 
-        # ✅ داده‌ها با ستون وضعیت تردد - فونت بزرگ‌تر
+        # رنگ‌بندی ردیف‌ها
+        pdf.set_text_color(0, 0, 0)
+
+        # ============================================
+        # داده‌های روزانه
+        # ============================================
         pdf.set_font(font_name, '', 7)
+
         for day in report['days']:
-            def fmt_time(dt):
-                return dt.strftime('%H:%M') if dt else '-'
+            # بررسی نیاز به صفحه جدید
+            if pdf.get_y() > pdf.h - 20:
+                pdf.add_page()
 
-            def fmt_hours(h):
-                if h == 0:
-                    return '-'
-                hours = int(h)
-                minutes = int((h - hours) * 60)
-                return f"{hours:02d}:{minutes:02d}"
+            # رنگ پس‌زمینه بر اساس وضعیت
+            is_friday = day.get('is_friday', False)
+            is_holiday = day.get('is_holiday', False)
+            is_day_off = day.get('is_day_off', False)
+            person_status = day.get('person_status', '')
 
-            attendance_str = day['attendance_status']
+            if person_status == 'L':
+                pdf.set_fill_color(219, 234, 254)  # آبی روشن - مرخصی
+                fill = True
+            elif person_status == 'A':
+                pdf.set_fill_color(254, 226, 226)  # قرمز روشن - غیبت
+                fill = True
+            elif is_friday:
+                pdf.set_fill_color(241, 245, 249)  # خاکستری روشن - جمعه
+                fill = True
+            elif is_holiday:
+                pdf.set_fill_color(254, 243, 199)  # زرد روشن - تعطیل
+                fill = True
+            else:
+                fill = False
+
+            # استخراج ورود/خروج
+            first_enter, last_exit = self._get_first_last(day)
+
+            # وضعیت تردد
+            attendance_str = day.get('attendance_status', 'بدون تردد')
             if attendance_str == 'بدون تردد':
                 attendance_str = '-'
 
+            # اضافه و کسری
+            surplus = day.get('surplus', 0)
+            deficit = day.get('deficit', 0)
+            surplus_str = self._fmt_hours(surplus) if surplus > 0 else '-'
+            deficit_str = self._fmt_hours(deficit) if deficit > 0 else '-'
+
+            # مقادیر ستون‌ها
             values = [
-                day['jalali_date'],
-                day['day_name'][:8],
-                'تعطیل' if day['is_day_off'] else 'کاری',
-                day['person_status_name'][:12],
-                fmt_time(day['first_enter']),
-                fmt_time(day['last_exit']),
-                attendance_str[:12],
-                fmt_hours(day['work_hours']),
-                fmt_hours(day['overtime'])
+                (day['jalali_date'], True),           # تاریخ (عدد)
+                (day['day_name'][:8], False),         # روز
+                ('تعطیل' if is_day_off else 'کاری', False),
+                (day.get('person_status_name', '-')[:14], False),
+                (self._fmt_time(first_enter), True),  # ورود (عدد)
+                (self._fmt_time(last_exit), True),    # خروج (عدد)
+                (attendance_str[:14], False),
+                (self._fmt_hours(day['work_hours']), True),
+                (surplus_str, True),
+                (deficit_str, True),
             ]
 
-            # بررسی فضا
-            if pdf.get_y() > pdf.h - 20:
-                pdf.add_page()
-                # رسم مجدد هدر
-                pdf.set_font(font_name, 'B', 7)
-                current_x = start_x + table_width
-                for i, header in enumerate(headers):
-                    current_x -= col_widths[i]
-                    pdf.set_xy(current_x, pdf.get_y())
-                    pdf.cell(col_widths[i], 6, self._fix_rtl(header), border=1, align='C')
-                pdf.ln()
-                pdf.set_font(font_name, '', 7)
-
+            # رسم ردیف
             current_x = start_x + table_width
-            for i, value in enumerate(values):
+            for i, (value, is_number) in enumerate(values):
                 current_x -= col_widths[i]
                 pdf.set_xy(current_x, pdf.get_y())
-                # ✅ اعداد و تاریخ‌ها را اصلاح RTL نکن
-                if i in [0, 4, 5, 7, 8]:  # تاریخ، ورود، خروج، کارکرد، اضافه
-                    pdf.cell(col_widths[i], 5, value, border=1, align='C')
-                else:  # متن فارسی
-                    pdf.cell(col_widths[i], 5, self._fix_rtl(value), border=1, align='C')
+
+                # رنگ متن برای اضافه/کسری
+                if i == 8 and surplus > 0:  # اضافه - سبز
+                    pdf.set_text_color(5, 150, 105)
+                elif i == 9 and deficit > 0:  # کسری - قرمز
+                    pdf.set_text_color(220, 38, 38)
+                else:
+                    pdf.set_text_color(0, 0, 0)
+
+                if is_number:
+                    pdf.cell(col_widths[i], 5, str(value), border=1, align='C', fill=fill)
+                else:
+                    pdf.cell(col_widths[i], 5, self._fix_rtl(str(value)),
+                             border=1, align='C', fill=fill)
+
+            pdf.set_text_color(0, 0, 0)
             pdf.ln()
 
-        pdf.ln(4)
+        # ============================================
+        # خلاصه ماهانه
+        # ============================================
+        pdf.ln(5)
+        if pdf.get_y() > pdf.h - 80:
+            pdf.add_page()
 
-        # ✅ خلاصه - فونت بزرگ‌تر
         pdf.set_font(font_name, 'B', 11)
-        pdf.cell(0, 7, self._fix_rtl('خلاصه ماهانه'), ln=True, align='R')
+        pdf.cell(0, 8, self._fix_rtl('خلاصه ماهانه'), ln=True, align='R')
         pdf.ln(2)
 
+        # بخش موظفی
+        pdf.set_font(font_name, 'B', 9)
+        pdf.cell(0, 6, self._fix_rtl('موظفی:'), ln=True, align='R')
         pdf.set_font(font_name, '', 9)
-        pdf.cell(0, 5,
-                 self._fix_rtl(f"موظفی: {summary['duty_days']} روز / {self._fmt_hours(summary['duty_hours'])} ساعت"),
-                 ln=True, align='R')
         pdf.cell(0, 5, self._fix_rtl(
-            f"حضور: {summary['present_days']} | مرخصی: {summary['leave_days']} | غیبت: {summary['absent_days']} | استراحت: {summary['rest_days']} | جمعه کاری: {summary['friday_work_days']}"),
-                 ln=True, align='R')
+            f"روزهای موظفی: {summary['duty_days']} | ساعات موظفی: {self._fmt_hours(summary['duty_hours'])}"
+        ), ln=True, align='R')
+        pdf.ln(1)
+
+        # وضعیت روزها
+        pdf.set_font(font_name, 'B', 9)
+        pdf.cell(0, 6, self._fix_rtl('وضعیت روزها:'), ln=True, align='R')
+        pdf.set_font(font_name, '', 9)
         pdf.cell(0, 5, self._fix_rtl(
-            f"کارکرد: {self._fmt_hours(summary['total_work_hours'])} | صبح: {self._fmt_hours(summary['total_morning'])} | عصر: {self._fmt_hours(summary['total_evening'])} | شب: {self._fmt_hours(summary['total_night'])}"),
-                 ln=True, align='R')
+            f"حضور: {summary['present_days']} | مرخصی: {summary['leave_days']} | "
+            f"غیبت: {summary['absent_days']} | استراحت: {summary['rest_days']} | "
+            f"تعطیل: {summary['holiday_days']} | جمعه کاری: {summary.get('friday_work_days', 0)}"
+        ), ln=True, align='R')
+        pdf.ln(1)
+
+        # ساعات کاری
+        pdf.set_font(font_name, 'B', 9)
+        pdf.cell(0, 6, self._fix_rtl('ساعات کاری:'), ln=True, align='R')
+        pdf.set_font(font_name, '', 9)
         pdf.cell(0, 5, self._fix_rtl(
-            f"اضافه روزانه: {self._fmt_hours(summary['daily_overtime'])} | هفتگی: {self._fmt_hours(summary['weekly_overtime'])} | جمعه کاری: {self._fmt_hours(summary['friday_work_hours'])}"),
-                 ln=True, align='R')
+            f"کارکرد: {self._fmt_hours(summary['total_work_hours'])} | "
+            f"صبح: {self._fmt_hours(summary['total_morning'])} | "
+            f"عصر: {self._fmt_hours(summary['total_evening'])} | "
+            f"شب: {self._fmt_hours(summary['total_night'])}"
+        ), ln=True, align='R')
+        pdf.ln(1)
+
+        # اضافه کاری
+        pdf.set_font(font_name, 'B', 9)
+        pdf.cell(0, 6, self._fix_rtl('اضافه کاری:'), ln=True, align='R')
+        pdf.set_font(font_name, '', 9)
         pdf.cell(0, 5, self._fix_rtl(
-            f"کسری: {self._fmt_hours(summary['deficit'])} | اضافی: {self._fmt_hours(summary['surplus'])}"), ln=True,
-                 align='R')
+            f"هفتگی: {self._fmt_hours(summary['weekly_overtime'])} | "
+            f"جمعه کاری: {self._fmt_hours(summary['friday_work_hours'])} | "
+            f"تعطیل کاری: {self._fmt_hours(summary['holiday_work_hours'])}"
+        ), ln=True, align='R')
+        pdf.ln(1)
+
+        # کسری و اضافی
+        pdf.set_font(font_name, 'B', 9)
+        pdf.cell(0, 6, self._fix_rtl('کسری و اضافی:'), ln=True, align='R')
+        pdf.set_font(font_name, '', 9)
+        pdf.cell(0, 5, self._fix_rtl(
+            f"مجموع کسری: {self._fmt_hours(summary['total_deficit'])} | "
+            f"مجموع اضافی: {self._fmt_hours(summary['total_surplus'])} | "
+            f"وضعیت کلی: {summary['overall_status']} ({self._fmt_hours(summary['net_balance_hours'])} ساعت)"
+        ), ln=True, align='R')
+
+        # ============================================
+        # ذخیره فایل
+        # ============================================
+        safe_name = (emp['full_name']
+                     .replace(' ', '_')
+                     .replace('/', '_')
+                     .replace('\\', '_'))
+        filename = self.output_dir / f"گزارش_تفصیلی_{safe_name}_{report['month_name']}_{report['year']}.pdf"
+
+        # جلوگیری از overwrite با اضافه کردن timestamp
+        if filename.exists():
+            from datetime import datetime
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = self.output_dir / f"گزارش_تفصیلی_{safe_name}_{report['month_name']}_{report['year']}_{timestamp}.pdf"
+
+        pdf.output(str(filename))
+        return str(filename)

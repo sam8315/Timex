@@ -76,6 +76,13 @@ async def login_submit(
     # موفق
     user.failed_attempts = 0
     user.locked_until = None
+    # 🆕 ذخیره آخرین ورود قبلی در session (قبل از آپدیت)
+    if user.last_login:
+        request.session['previous_login'] = user.last_login.isoformat()
+    else:
+        request.session['previous_login'] = None
+
+    # آپدیت last_login به زمان فعلی
     user.last_login = datetime.now()
     db.commit()
 
@@ -90,12 +97,19 @@ async def login_submit(
 
 
 @router.get("/change-password", response_class=HTMLResponse)
-async def change_password_page(request: Request):
+async def change_password_page(request: Request, db: Session = Depends(get_db)):
     session = get_session_from_request(request)
     if not session:
         return RedirectResponse(url="/login", status_code=302)
+
+    # 🆕 دریافت اطلاعات کاربر برای بررسی حالت اجباری
+    user = db.query(User).filter(User.user_id == session["user_id"]).first()
+    must_change = user.must_change_password if user else False
+
     return templates.TemplateResponse(request, "change_password.html", {
-        "error": None, "success": None
+        "error": None,
+        "success": None,
+        "must_change": must_change,  # 🆕
     })
 
 
