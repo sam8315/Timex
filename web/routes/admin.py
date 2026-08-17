@@ -44,30 +44,320 @@ from models.attendance import Attendance
 from models.employee import Employee
 from models.holiday import Holiday
 
-router = APIRouter(prefix="/admin", tags=["Admin"])
+"""
+داشبورد مدیریت
+"""
+from datetime import date, datetime, timedelta
+from fastapi import APIRouter, Request, Depends
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+from pathlib import Path
+from sqlalchemy.orm import Session
+from sqlalchemy import and_, or_, func, distinct
+import jdatetime
+
+from web.dependencies import get_db, require_admin
+from models.user import User
+from models.employee import Employee
+from models.leave_balance import LeaveBalance
+from models.leave_request import LeaveRequest
+from models.attendance import Attendance
+from models.daily_status import DailyStatus
+from models.contract import Contract
+from models.leave_carry_forward_request import LeaveCarryForwardRequest
+from models.bale_user import BaleUser  # 🆕 ربات بله
+
+router = APIRouter(tags=["Admin"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
 
+# نام انواع مرخصی
+LEAVE_TYPE_NAMES = {
+    'AL': 'استحقاقی',
+    'SL': 'استعلاجی',
+    'RL': 'تشویقی',
+    'UL': 'بدون حقوق',
+    'CW': 'ذخیره سال قبل'
+}
 
-@router.get("/", response_class=HTMLResponse)
+STATUS_NAMES = {
+    'P': 'در انتظار',
+    'A': 'تایید شده',
+    'R': 'رد شده'
+}
+
+
+@router.get("/admin", response_class=HTMLResponse)
 async def admin_dashboard(
     request: Request,
     user: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
-    total_employees = db.query(Employee).filter(Employee.is_active == True).count()
-    total_web_users = db.query(User).filter(User.web_enabled == True).count()
-    pending_requests = db.query(LeaveRequest).filter(LeaveRequest.status == 'P').count()
+    """داشبورد مدیریت"""
+    today_j = jdatetime.date.today()
+    today_g = today_j.togregorian()
+    yesterday_g = today_g - timedelta(days=1)  # 🆕 دیروز
 
-    pending_list = db.query(LeaveRequest).filter(
+    # ============================================
+    # 📊 کارت‌های KPI
+    # ============================================
+
+    # ۱. کل کارمندان فعال
+    total_employees = db.query(Employee).filter(
+        Employee.is_active == True
+    ).count()
+
+    # 🆕 ۲. حاضرین امروز (از Attendance زنده)
+    present_user_ids = set(u[0] for u in db.query(Attendance.user_id).filter(
+        and_(
+            func.date(Attendance.timestamp) == today_g,
+            Attendance.punch == 0,
+            Attendance.is_deleted == False
+        )
+    ).distinct().all())
+    present_today = len(present_user_ids)
+
+    # 🆕 ۳. غایبین دیروز (از DailyStatus)
+    absent_yesterday = db.query(DailyStatus).filter(
+        and_(
+            DailyStatus.status_date == yesterday_g,
+            DailyStatus.status_code == 'A'
+        )
+    ).count()
+
+    # 🆕 ۴. مرخصی‌های امروز (از LeaveRequest تایید شده)
+    on_leave_today = db.query(LeaveRequest).filter(
+        and_(
+            LeaveRequest.status == 'A',
+            LeaveRequest.from_date <= today_g,
+            LeaveRequest.to_date >= today_g
+        )
+    ).count()
+
+    # ۵. درخواست‌های در انتظار
+    pending_leave_requests = db.query(LeaveRequest).filter(
         LeaveRequest.status == 'P'
-    ).order_by(LeaveRequest.created_at.asc()).limit(10).all()
+    ).count()
+
+    # ۶. کاربران ربات بله
+    total_bale_users = db.query(BaleUser).count()
+    active_bale_users = db.query(BaleUser).filter(
+        BaleUser.is_active == True
+    ).count()
+
+    # ============================================
+    # ⚠️ هشدارهای فوری
+    # ============================================
+
+    # قراردادهای رو به انقضا
+    expiration_warning_date = today_g + timedelta(days=30)
+    expiring_contracts_count = db.query(Contract).filter(
+        and_(
+            Contract.end_date != None,
+            Contract.end_date <= expiration_warning_date,
+            Contract.end_date >= today_g
+        )
+    ).count()
+
+    # مانده‌های منفی
+    negative_balances_count = db.query(LeaveBalance).filter(
+        and_(
+            LeaveBalance.year == today_j.year,
+            LeaveBalance.balance < 0
+        )
+    ).count()
+
+    # انتقال مرخصی‌های معلق
+    pending_carry_forward_count = db.query(LeaveCarryForwardRequest).filter(
+        LeaveCarryForwardRequest.status == 'P'
+    ).count()
+
+    # 🆕 ترددهای ناقص دیروز (ورود بدون خروج)
+    yesterday_enters = set(u[0] for u in db.query(Attendance.user_id).filter(
+        and_(
+            func.date(Attendance.timestamp) == yesterday_g,
+            Attendance.punch == 0,
+            Attendance.is_deleted == False
+        )
+    ).distinct().all())
+
+    yesterday_exits = set(u[0] for u in db.query(Attendance.user_id).filter(
+        and_(
+            func.date(Attendance.timestamp) == yesterday_g,
+            Attendance.punch == 1,
+            Attendance.is_deleted == False
+        )
+    ).distinct().all())
+
+    incomplete_user_ids = yesterday_enters - yesterday_exits
+    incomplete_count = len(incomplete_user_ids)
+
+    # ============================================
+    # 📋 لیست حاضرین امروز (از Attendance)
+    # ============================================
+    present_list = []
+    for uid in present_user_ids:
+        employee = db.query(Employee).filter(
+            Employee.user_id == uid
+        ).first()
+
+        # اولین و آخرین ورود امروز
+        first_enter = db.query(Attendance).filter(
+            and_(
+                Attendance.user_id == uid,
+                func.date(Attendance.timestamp) == today_g,
+                Attendance.punch == 0,
+                Attendance.is_deleted == False
+            )
+        ).order_by(Attendance.timestamp).first()
+
+        present_list.append({
+            'user_id': uid,
+            'full_name': employee.full_name if employee else uid,
+            'department': employee.department if employee else '-',
+            'enter_time': first_enter.timestamp.strftime('%H:%M') if first_enter else '-',
+        })
+
+    present_list.sort(key=lambda x: x['full_name'])
+
+    # ============================================
+    # 📋 لیست غایبین دیروز
+    # ============================================
+    absent_list = []
+    absent_statuses = db.query(DailyStatus).filter(
+        and_(
+            DailyStatus.status_date == yesterday_g,
+            DailyStatus.status_code == 'A'
+        )
+    ).all()
+
+    for ds in absent_statuses:
+        employee = db.query(Employee).filter(
+            Employee.user_id == ds.user_id
+        ).first()
+
+        absent_list.append({
+            'user_id': ds.user_id,
+            'full_name': employee.full_name if employee else ds.user_id,
+            'department': employee.department if employee else '-',
+        })
+
+    absent_list.sort(key=lambda x: x['full_name'])
+
+    # ============================================
+    # 📋 لیست درخواست‌های در انتظار
+    # ============================================
+    pending_list = []
+    pending_requests = db.query(LeaveRequest).filter(
+        LeaveRequest.status == 'P'
+    ).order_by(LeaveRequest.created_at.desc()).limit(10).all()
+
+    for req in pending_requests:
+        employee = db.query(Employee).filter(
+            Employee.user_id == req.user_id
+        ).first()
+        j_from = jdatetime.date.fromgregorian(date=req.from_date)
+        j_to = jdatetime.date.fromgregorian(date=req.to_date)
+
+        pending_list.append({
+            'id': req.id,
+            'user_id': req.user_id,
+            'full_name': employee.full_name if employee else req.user_id,
+            'leave_type': req.leave_type,
+            'leave_type_name': LEAVE_TYPE_NAMES.get(req.leave_type, req.leave_type),
+            'from_date_j': j_from.strftime('%Y/%m/%d'),
+            'to_date_j': j_to.strftime('%Y/%m/%d'),
+            'days_count': req.days_count,
+        })
+
+    # ============================================
+    # 🤖 آخرین کاربران ربات بله
+    # ============================================
+    recent_bale_users = []
+    bale_users = db.query(BaleUser).order_by(
+        BaleUser.registered_at.desc()
+    ).limit(10).all()
+
+    for bu in bale_users:
+        employee = db.query(Employee).filter(
+            Employee.user_id == bu.user_id
+        ).first()
+        reg_j = jdatetime.datetime.fromgregorian(datetime=bu.registered_at) if bu.registered_at else None
+
+        recent_bale_users.append({
+            'chat_id': bu.chat_id,
+            'user_id': bu.user_id,
+            'full_name': employee.full_name if employee else bu.user_id,
+            'phone_number': bu.phone_number or '-',
+            'is_active': bu.is_active,
+            'registered_at_j': reg_j.strftime('%Y/%m/%d') if reg_j else '-',
+        })
+
+    # ============================================
+    # 📋 لیست ترددهای ناقص دیروز
+    # ============================================
+    incomplete_list = []
+    for uid in incomplete_user_ids:
+        employee = db.query(Employee).filter(
+            Employee.user_id == uid
+        ).first()
+
+        last_enter = db.query(Attendance).filter(
+            and_(
+                Attendance.user_id == uid,
+                func.date(Attendance.timestamp) == yesterday_g,
+                Attendance.punch == 0,
+                Attendance.is_deleted == False
+            )
+        ).order_by(Attendance.timestamp.desc()).first()
+
+        incomplete_list.append({
+            'user_id': uid,
+            'full_name': employee.full_name if employee else uid,
+            'enter_time': last_enter.timestamp.strftime('%H:%M') if last_enter else '-',
+        })
+
+    incomplete_list.sort(key=lambda x: x['full_name'])
+
+    # ============================================
+    # محاسبه درصد حضور دیروز
+    # ============================================
+    attendance_rate = 0
+    if total_employees > 0:
+        present_yesterday_count = db.query(DailyStatus).filter(
+            and_(
+                DailyStatus.status_date == yesterday_g,
+                DailyStatus.status_code == 'P'
+            )
+        ).count()
+        attendance_rate = round((present_yesterday_count / total_employees) * 100, 1)
 
     return templates.TemplateResponse(request, "admin/dashboard.html", {
         "user": user,
+        "today_j": today_j,
+
+        # 📊 KPI
         "total_employees": total_employees,
-        "total_web_users": total_web_users,
-        "pending_requests": pending_requests,
+        "present_today": present_today,
+        "absent_yesterday": absent_yesterday,   # 🆕
+        "on_leave_today": on_leave_today,
+        "pending_leave_requests": pending_leave_requests,
+        "total_bale_users": total_bale_users,
+        "active_bale_users": active_bale_users,
+        "attendance_rate": attendance_rate,
+
+        # ⚠️ هشدارها
+        "expiring_contracts_count": expiring_contracts_count,
+        "negative_balances_count": negative_balances_count,
+        "pending_carry_forward_count": pending_carry_forward_count,
+        "incomplete_count": incomplete_count,
+
+        # 📋 لیست‌ها
+        "present_list": present_list,
+        "absent_list": absent_list,
         "pending_list": pending_list,
+        "recent_bale_users": recent_bale_users,
+        "incomplete_list": incomplete_list,
+
         "is_admin": True,
     })
 

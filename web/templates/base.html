@@ -5,362 +5,663 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}سامانه حضور و غیاب{% endblock %}</title>
 
-    <!-- Bootstrap RTL -->
+    <!-- Bootstrap 5 RTL -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.rtl.min.css" rel="stylesheet">
-    <!-- Bootstrap Icons -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
-<!-- تقویم شمسی -->
-<link href="https://cdn.jsdelivr.net/npm/md.bootstrappersiandatetimepicker@4.5.0/dist/mds.bs.datetimepicker.style.min.css" rel="stylesheet">
+
+    <!-- Vazirmatn Font -->
+    <link href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" rel="stylesheet">
 
     <style>
+        /* ============================================ */
+        /* 🎨 متغیرهای رنگی (Light / Dark)              */
+        /* ============================================ */
+        :root {
+            --bg-body: #f0f2f5;
+            --bg-card: #ffffff;
+            --bg-sidebar: #ffffff;
+            --bg-topbar: #ffffff;
+            --bg-hover: #f0f2f5;
+            --bg-active: #e7f3ff;
+            --text-primary: #212529;
+            --text-secondary: #6c757d;
+            --text-muted: #adb5bd;
+            --border-color: #e9ecef;
+            --primary: #0d6efd;
+            --primary-soft: #e7f3ff;
+            --shadow-sm: 0 1px 3px rgba(0,0,0,0.05);
+            --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+        }
+
+        [data-theme="dark"] {
+            --bg-body: #18191a;
+            --bg-card: #242526;
+            --bg-sidebar: #242526;
+            --bg-topbar: #242526;
+            --bg-hover: #3a3b3c;
+            --bg-active: #263c5c;
+            --text-primary: #e4e6eb;
+            --text-secondary: #b0b3b8;
+            --text-muted: #8a8d91;
+            --border-color: #3a3b3c;
+            --primary: #4dabf7;
+            --primary-soft: #263c5c;
+            --shadow-sm: 0 1px 3px rgba(0,0,0,0.3);
+            --shadow-md: 0 4px 12px rgba(0,0,0,0.4);
+        }
+
+        /* ============================================ */
+        /* 🎨 استایل کلی                                */
+        /* ============================================ */
+        * {
+            font-family: 'Vazirmatn', 'Tahoma', sans-serif;
+        }
+
         body {
-            font-family: 'Vazirmatn', Tahoma, sans-serif;
-            background: #f4f6f9;
+            background: var(--bg-body);
+            color: var(--text-primary);
+            transition: background 0.3s ease, color 0.3s ease;
+            min-height: 100vh;
         }
-        /* 🎨 تم نوار و زیرمنوها */
-        .timex-navbar {
-            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+
+        /* ============================================ */
+        /* 🎨 Sidebar (سمت راست)                        */
+        /* ============================================ */
+        .app-sidebar {
+            position: fixed;
+            top: 0;
+            right: 0;
+            width: 260px;
+            height: 100vh;
+            background: var(--bg-sidebar);
+            border-left: 1px solid var(--border-color);
+            box-shadow: var(--shadow-sm);
+            z-index: 1040;
+            display: flex;
+            flex-direction: column;
+            transition: transform 0.3s ease, background 0.3s ease;
+            overflow-y: auto;
         }
-        .timex-navbar .nav-link {
-            color: rgba(255, 255, 255, 0.85) !important;
-            transition: all 0.2s ease;
-            border-radius: 6px;
-            margin: 0 2px;
-        }
-        .timex-navbar .nav-link:hover,
-        .timex-navbar .nav-link.active {
-            color: #fff !important;
-            background: rgba(255, 255, 255, 0.15);
-        }
-        .timex-navbar .dropdown-menu {
-            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-            border: none;
-            border-radius: 8px;
-            box-shadow: 0 4px 16px rgba(0,0,0,0.3);
-            margin-top: 8px;
-        }
-        .timex-navbar .dropdown-item {
-            color: rgba(255, 255, 255, 0.85);
-            padding: 8px 16px;
-            transition: all 0.2s ease;
-        }
-        .timex-navbar .dropdown-item:hover,
-        .timex-navbar .dropdown-item.active {
-            background: rgba(255, 255, 255, 0.15);
-            color: #fff;
-        }
-        .timex-navbar .dropdown-divider {
-            border-color: rgba(255, 255, 255, 0.2);
-        }
-        /* 🏷️ برچسب بخش مدیریت */
-        .admin-section-label {
-            color: #ffc107;
-            font-size: 0.75rem;
-            font-weight: bold;
-            padding: 0 10px;
+
+        .sidebar-logo {
+            padding: 20px;
+            border-bottom: 1px solid var(--border-color);
             display: flex;
             align-items: center;
-            border-left: 2px solid rgba(255, 255, 255, 0.3);
-            border-right: 2px solid rgba(255, 255, 255, 0.3);
-            margin: 0 8px;
-            height: 24px;
+            gap: 12px;
+            text-decoration: none;
+            color: var(--text-primary);
         }
-        /* کارت‌های آماری */
-        .stat-card {
-            border: none;
+
+        .sidebar-logo .logo-icon {
+            width: 42px;
+            height: 42px;
+            background: linear-gradient(135deg, #0d6efd, #6610f2);
             border-radius: 12px;
-            transition: transform 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 1.3rem;
+            flex-shrink: 0;
         }
-        .stat-card:hover {
-            transform: translateY(-3px);
+
+        .sidebar-logo .logo-text {
+            font-weight: 700;
+            font-size: 1.05rem;
+            line-height: 1.2;
+        }
+
+        .sidebar-logo .logo-sub {
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+            font-weight: 400;
+        }
+
+        .sidebar-section {
+            padding: 16px 12px 8px;
+        }
+
+        .sidebar-section-title {
+            font-size: 0.68rem;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            padding: 0 12px 8px;
+        }
+
+        .sidebar-link {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 12px;
+            color: var(--text-secondary);
+            text-decoration: none;
+            border-radius: 10px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: all 0.15s ease;
+            margin-bottom: 2px;
+        }
+
+        .sidebar-link:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+
+        .sidebar-link.active {
+            background: var(--primary-soft);
+            color: var(--primary);
+            font-weight: 600;
+        }
+
+        .sidebar-link i {
+            font-size: 1.1rem;
+            width: 22px;
+            text-align: center;
+        }
+
+        .sidebar-link .badge-count {
+            margin-right: auto;
+            background: #dc3545;
+            color: white;
+            font-size: 0.68rem;
+            padding: 2px 7px;
+            border-radius: 10px;
+            font-weight: 600;
+        }
+
+        /* 🎨 زیرمنوها (Collapse) */
+        .sidebar-submenu {
+            padding-right: 20px;
+        }
+
+        .sidebar-submenu .sidebar-link {
+            font-size: 0.85rem;
+            padding: 7px 12px;
+        }
+
+        .sidebar-toggle-icon {
+            margin-right: auto;
+            transition: transform 0.2s ease;
+            font-size: 0.8rem;
+        }
+
+        .sidebar-link[aria-expanded="true"] .sidebar-toggle-icon {
+            transform: rotate(180deg);
+        }
+
+        /* ============================================ */
+        /* 🎨 Topbar                                    */
+        /* ============================================ */
+        .app-topbar {
+            position: fixed;
+            top: 0;
+            right: 260px;
+            left: 0;
+            height: 64px;
+            background: var(--bg-topbar);
+            border-bottom: 1px solid var(--border-color);
+            box-shadow: var(--shadow-sm);
+            z-index: 1030;
+            display: flex;
+            align-items: center;
+            padding: 0 24px;
+            gap: 16px;
+            transition: background 0.3s ease;
+        }
+
+        .topbar-toggle-btn {
+            display: none;
+            border: none;
+            background: transparent;
+            color: var(--text-primary);
+            font-size: 1.4rem;
+            padding: 4px;
+        }
+
+        .topbar-title {
+            font-weight: 600;
+            font-size: 1rem;
+            color: var(--text-primary);
+        }
+
+        .topbar-actions {
+            margin-right: auto;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .theme-toggle-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-hover);
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem;
+            transition: all 0.2s ease;
+        }
+
+        .theme-toggle-btn:hover {
+            background: var(--primary-soft);
+            color: var(--primary);
+        }
+
+        .user-dropdown-btn {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 6px 12px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-hover);
+            color: var(--text-primary);
+            text-decoration: none;
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        .user-dropdown-btn:hover {
+            background: var(--primary-soft);
+        }
+
+        .user-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #0d6efd, #6610f2);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.9rem;
+        }
+
+        /* ============================================ */
+        /* 🎨 Content Area                              */
+        /* ============================================ */
+        .app-content {
+            margin-right: 260px;
+            padding: 84px 24px 24px;
+            min-height: 100vh;
+            transition: margin 0.3s ease;
+        }
+
+        /* 🎨 کارت‌ها و المان‌ها در dark mode */
+        [data-theme="dark"] .card {
+            background: var(--bg-card);
+            border-color: var(--border-color);
+            color: var(--text-primary);
+        }
+
+        [data-theme="dark"] .card-header {
+            background: var(--bg-card);
+            border-color: var(--border-color);
+        }
+
+        [data-theme="dark"] .table {
+            color: var(--text-primary);
+            border-color: var(--border-color);
+        }
+
+        [data-theme="dark"] .table-light,
+        [data-theme="dark"] .table thead th {
+            background: var(--bg-hover) !important;
+            color: var(--text-primary);
+            border-color: var(--border-color);
+        }
+
+        [data-theme="dark"] .table-hover tbody tr:hover {
+            background: var(--bg-hover);
+        }
+
+        [data-theme="dark"] .form-control,
+        [data-theme="dark"] .form-select {
+            background: var(--bg-hover);
+            border-color: var(--border-color);
+            color: var(--text-primary);
+        }
+
+        [data-theme="dark"] .input-group-text {
+            background: var(--bg-hover);
+            border-color: var(--border-color);
+            color: var(--text-secondary);
+        }
+
+        [data-theme="dark"] .modal-content {
+            background: var(--bg-card);
+            color: var(--text-primary);
+        }
+
+        [data-theme="dark"] .dropdown-menu {
+            background: var(--bg-card);
+            border-color: var(--border-color);
+        }
+
+        [data-theme="dark"] .dropdown-item {
+            color: var(--text-primary);
+        }
+
+        [data-theme="dark"] .dropdown-item:hover {
+            background: var(--bg-hover);
+        }
+
+        [data-theme="dark"] .alert-info {
+            background: #1a3a5c;
+            border-color: #263c5c;
+            color: #b3d4fc;
+        }
+
+        [data-theme="dark"] .text-muted {
+            color: var(--text-muted) !important;
+        }
+
+        [data-theme="dark"] .border {
+            border-color: var(--border-color) !important;
+        }
+
+        [data-theme="dark"] .bg-light {
+            background: var(--bg-hover) !important;
+        }
+
+        [data-theme="dark"] .btn-outline-secondary {
+            color: var(--text-secondary);
+            border-color: var(--border-color);
+        }
+
+        /* ============================================ */
+        /* 📱 Responsive                                */
+        /* ============================================ */
+        @media (max-width: 992px) {
+            .app-sidebar {
+                transform: translateX(100%);
+            }
+            .app-sidebar.show {
+                transform: translateX(0);
+            }
+            .app-topbar {
+                right: 0;
+            }
+            .app-content {
+                margin-right: 0;
+            }
+            .topbar-toggle-btn {
+                display: block;
+            }
+        }
+
+        /* 🎨 Overlay برای موبایل */
+        .sidebar-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1035;
+        }
+
+        .sidebar-overlay.show {
+            display: block;
+        }
+
+        /* 🎨 Scrollbar سفارشی */
+        .app-sidebar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .app-sidebar::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 3px;
         }
     </style>
+
     {% block extra_css %}{% endblock %}
 </head>
 <body>
 
 {% if request.url.path not in ['/login', '/change-password'] %}
 
-    <!-- ================= نوار منو ================= -->
-    <nav class="navbar navbar-expand-lg navbar-dark timex-navbar sticky-top">
-        <div class="container-fluid">
-            <a class="navbar-brand fw-bold" href="/dashboard">
-                <i class="bi bi-clock-history"></i> Timex
-                <small class="d-none d-lg-inline ms-2 opacity-75">سامانه حضور و غیاب</small>
+    <!-- 🎨 Sidebar (سمت راست) -->
+    <aside class="app-sidebar" id="appSidebar">
+        <!-- لوگو -->
+        <a href="/dashboard" class="sidebar-logo">
+            <div class="logo-icon">
+                <i class="bi bi-clock-history"></i>
+            </div>
+            <div>
+                <div class="logo-text">Timex</div>
+                <div class="logo-sub">سامانه حضور و غیاب</div>
+            </div>
+        </a>
+
+        <!-- منوی اصلی -->
+        <div class="sidebar-section">
+            <div class="sidebar-section-title">منوی اصلی</div>
+            <a href="/dashboard" class="sidebar-link {% if request.url.path == '/dashboard' %}active{% endif %}">
+                <i class="bi bi-speedometer2"></i> داشبورد
             </a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNavbar">
-                <span class="navbar-toggler-icon"></span>
+            <a href="/attendance" class="sidebar-link {% if request.url.path == '/attendance' %}active{% endif %}">
+                <i class="bi bi-clock-history"></i> رکوردهای تردد
+            </a>
+            <a href="/leave" class="sidebar-link {% if request.url.path.startswith('/leave') %}active{% endif %}">
+                <i class="bi bi-calendar-check"></i> مرخصی‌ها
+            </a>
+            <a href="/contract" class="sidebar-link {% if request.url.path == '/contract' %}active{% endif %}">
+                <i class="bi bi-file-earmark-text"></i> قراردادها
+            </a>
+            <a href="/education" class="sidebar-link {% if request.url.path == '/education' %}active{% endif %}">
+                <i class="bi bi-mortarboard"></i> تحصیلات
+            </a>
+        </div>
+
+        {% if is_admin %}
+        <!-- منوی مدیریت -->
+        <div class="sidebar-section">
+            <div class="sidebar-section-title">مدیریت</div>
+
+            <a href="/admin/" class="sidebar-link {% if request.url.path == '/admin/' %}active{% endif %}">
+                <i class="bi bi-grid-1x2"></i> پنل مدیریت
+            </a>
+
+            <!-- حضور و غیاب -->
+            {% set att_active = '/admin/attendance' in request.url.path or '/admin/incomplete' in request.url.path or '/admin/daily-status' in request.url.path %}
+            <a class="sidebar-link {% if att_active %}active{% endif %}" data-bs-toggle="collapse" href="#attMenu" role="button" aria-expanded="{{ 'true' if att_active else 'false' }}">
+                <i class="bi bi-people"></i> حضور و غیاب
+                <i class="bi bi-chevron-down sidebar-toggle-icon"></i>
+            </a>
+            <div class="collapse sidebar-submenu {% if att_active %}show{% endif %}" id="attMenu">
+                <a href="/admin/attendance" class="sidebar-link {% if request.url.path == '/admin/attendance' %}active{% endif %}">
+                    <i class="bi bi-clock"></i> تردد کارمندان
+                </a>
+                <a href="/admin/incomplete" class="sidebar-link {% if request.url.path == '/admin/incomplete' %}active{% endif %}">
+                    <i class="bi bi-exclamation-triangle"></i> ترددهای ناقص
+                </a>
+                <a href="/admin/daily-status" class="sidebar-link {% if request.url.path == '/admin/daily-status' %}active{% endif %}">
+                    <i class="bi bi-calendar-day"></i> مأموریت و استراحت
+                </a>
+            </div>
+
+            <!-- مرخصی‌ها -->
+            {% set leave_active = '/admin/leave' in request.url.path or '/admin/carry-forward' in request.url.path %}
+            <a class="sidebar-link {% if leave_active %}active{% endif %}" data-bs-toggle="collapse" href="#leaveMenu" role="button" aria-expanded="{{ 'true' if leave_active else 'false' }}">
+                <i class="bi bi-calendar2-week"></i> مرخصی‌ها
+                <i class="bi bi-chevron-down sidebar-toggle-icon"></i>
+            </a>
+            <div class="collapse sidebar-submenu {% if leave_active %}show{% endif %}" id="leaveMenu">
+                <a href="/admin/leave-requests?status_filter=P" class="sidebar-link {% if request.url.path == '/admin/leave-requests' %}active{% endif %}">
+                    <i class="bi bi-hourglass-split"></i> درخواست‌های مرخصی
+                    {% if pending_count is defined and pending_count > 0 %}
+                    <span class="badge-count">{{ pending_count }}</span>
+                    {% endif %}
+                </a>
+                <a href="/admin/leave-balances" class="sidebar-link {% if request.url.path == '/admin/leave-balances' %}active{% endif %}">
+                    <i class="bi bi-wallet2"></i> مانده مرخصی
+                </a>
+                <a href="/admin/leave-transactions" class="sidebar-link {% if request.url.path == '/admin/leave-transactions' %}active{% endif %}">
+                    <i class="bi bi-arrow-left-right"></i> تراکنش‌های مرخصی
+                </a>
+                <a href="/admin/carry-forward-requests?status_filter=P" class="sidebar-link {% if request.url.path == '/admin/carry-forward-requests' %}active{% endif %}">
+                    <i class="bi bi-box-arrow-in-right"></i> انتقال/بازخرید مرخصی
+                    {% if pending_cf_count is defined and pending_cf_count > 0 %}
+                    <span class="badge-count">{{ pending_cf_count }}</span>
+                    {% endif %}
+                </a>
+            </div>
+
+            <!-- قراردادها و کاربران -->
+            {% set org_active = '/admin/contracts' in request.url.path or '/admin/users' in request.url.path %}
+            <a class="sidebar-link {% if org_active %}active{% endif %}" data-bs-toggle="collapse" href="#orgMenu" role="button" aria-expanded="{{ 'true' if org_active else 'false' }}">
+                <i class="bi bi-briefcase"></i> قراردادها و کاربران
+                <i class="bi bi-chevron-down sidebar-toggle-icon"></i>
+            </a>
+            <div class="collapse sidebar-submenu {% if org_active %}show{% endif %}" id="orgMenu">
+                <a href="/admin/contracts" class="sidebar-link {% if request.url.path == '/admin/contracts' %}active{% endif %}">
+                    <i class="bi bi-file-earmark-text"></i> مدیریت قراردادها
+                </a>
+                <a href="/admin/users" class="sidebar-link {% if request.url.path == '/admin/users' %}active{% endif %}">
+                    <i class="bi bi-people"></i> مدیریت کاربران
+                </a>
+                <a href="/admin/education" class="sidebar-link {% if request.url.path == '/admin/education' %}active{% endif %}">
+                    <i class="bi bi-mortarboard"></i> مدارک تحصیلی
+                </a>
+            </div>
+
+            <!-- گزارشات -->
+            <a href="/reports" class="sidebar-link {% if request.url.path.startswith('/reports') %}active{% endif %}">
+                <i class="bi bi-bar-chart-line"></i> گزارشات
+            </a>
+
+            <!-- تنظیمات -->
+            {% set set_active = '/admin/holidays' in request.url.path or '/admin/import-previous-leave' in request.url.path %}
+            <a class="sidebar-link {% if set_active %}active{% endif %}" data-bs-toggle="collapse" href="#setMenu" role="button" aria-expanded="{{ 'true' if set_active else 'false' }}">
+                <i class="bi bi-gear"></i> تنظیمات
+                <i class="bi bi-chevron-down sidebar-toggle-icon"></i>
+            </a>
+            <div class="collapse sidebar-submenu {% if set_active %}show{% endif %}" id="setMenu">
+                <a href="/admin/holidays" class="sidebar-link {% if request.url.path == '/admin/holidays' %}active{% endif %}">
+                    <i class="bi bi-calendar-x"></i> مدیریت تعطیلات
+                </a>
+                <a href="/admin/import-previous-leave" class="sidebar-link {% if request.url.path == '/admin/import-previous-leave' %}active{% endif %}">
+                    <i class="bi bi-box-arrow-in-down"></i> ورود مرخصی سال قبل
+                </a>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- منوی کاربر (پایین sidebar) -->
+        <div class="sidebar-section" style="margin-top: auto; border-top: 1px solid var(--border-color);">
+            <a href="/profile" class="sidebar-link {% if request.url.path == '/profile' %}active{% endif %}">
+                <i class="bi bi-person-circle"></i> {{ user.name if user else 'کاربر' }}
+            </a>
+            <a href="/change-password" class="sidebar-link">
+                <i class="bi bi-key"></i> تغییر رمز
+            </a>
+            <a href="/logout" class="sidebar-link" style="color: #dc3545;">
+                <i class="bi bi-box-arrow-right"></i> خروج
+            </a>
+        </div>
+    </aside>
+
+    <!-- 🎨 Overlay برای موبایل -->
+    <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+    <!-- 🎨 Topbar -->
+    <header class="app-topbar">
+        <button class="topbar-toggle-btn" onclick="toggleSidebar()">
+            <i class="bi bi-list"></i>
+        </button>
+
+        <div class="topbar-title">
+            {% block topbar_title %}سامانه حضور و غیاب{% endblock %}
+        </div>
+
+        <div class="topbar-actions">
+            <!-- 🌙 دکمه حالت روز/شب -->
+            <button class="theme-toggle-btn" onclick="toggleTheme()" title="تغییر حالت روز/شب">
+                <i class="bi bi-moon-stars" id="themeIcon"></i>
             </button>
 
-            <div class="collapse navbar-collapse" id="mainNavbar">
-                <ul class="navbar-nav me-auto mb-2 mb-lg-0">
-
-                    <!-- ══════════ بخش کاربر ══════════ -->
-                    <li class="nav-item">
-                        <a class="nav-link {% if '/dashboard' in request.url.path %}active{% endif %}" href="/dashboard">
-                            <i class="bi bi-house-door"></i> داشبورد
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {% if '/attendance' in request.url.path %}active{% endif %}" href="/attendance">
-                            <i class="bi bi-list-check"></i> رکوردهای تردد
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {% if request.url.path.startswith('/leave') %}active{% endif %}" href="/leave">
-                            <i class="bi bi-calendar-check"></i> مرخصی‌ها
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {% if '/contract' in request.url.path %}active{% endif %}" href="/contract">
-                            <i class="bi bi-file-earmark-text"></i> قراردادها
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {% if '/education' in request.url.path %}active{% endif %}" href="/education">
-                            <i class="bi bi-mortarboard"></i> تحصیلات
-                        </a>
-                    </li>
-
-                    {% if is_admin %}
-                    <!-- ═══════ جداکننده بخش مدیریت ═══════ -->
-                    <li class="nav-item d-none d-lg-flex align-items-center">
-                        <span class="admin-section-label">
-                            <i class="bi bi-shield-lock ms-1"></i> مدیریت
-                        </span>
-                    </li>
-
-                    <!-- ══════════ بخش ادمین ══════════ -->
-                    <li class="nav-item">
-                        <a class="nav-link {% if request.url.path == '/admin/' %}active{% endif %}" href="/admin/">
-                            <i class="bi bi-speedometer2"></i> پنل مدیریت
-                        </a>
-                    </li>
-
-                    <!-- 📁 گروه ۱: حضور و غیاب -->
-                    {% set att_active = '/admin/attendance' in request.url.path or '/admin/incomplete' in request.url.path or '/admin/daily-status' in request.url.path %}
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle {% if att_active %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                            <i class="bi bi-clock-history"></i> حضور و غیاب
-                        </a>
-                        <ul class="dropdown-menu">
-                            <li><a class="dropdown-item {% if '/admin/attendance' in request.url.path %}active{% endif %}" href="/admin/attendance">
-                                <i class="bi bi-people"></i> تردد کارمندان</a></li>
-                            <li><a class="dropdown-item {% if '/admin/incomplete' in request.url.path %}active{% endif %}" href="/admin/incomplete">
-                                <i class="bi bi-exclamation-triangle"></i> ترددهای ناقص</a></li>
-                            <li><a class="dropdown-item {% if '/admin/daily-status' in request.url.path %}active{% endif %}" href="/admin/daily-status">
-                                <i class="bi bi-briefcase"></i> مأموریت و استراحت</a></li>
-                        </ul>
-                    </li>
-
-                    <!-- 📁 گروه ۲: مرخصی‌ها -->
-                    {% set leave_active = '/admin/leave' in request.url.path or '/admin/carry-forward' in request.url.path %}
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle {% if leave_active %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                            <i class="bi bi-calendar-week"></i> مرخصی‌ها
-                        </a>
-                        <ul class="dropdown-menu">
-                            <li><a class="dropdown-item {% if '/admin/leave-requests' in request.url.path %}active{% endif %}" href="/admin/leave-requests?status_filter=P">
-                                <i class="bi bi-inbox"></i> درخواست‌های مرخصی
-                                {% if pending_count is defined and pending_count > 0 %}
-                                <span class="badge bg-warning text-dark ms-1">{{ pending_count }}</span>
-                                {% endif %}</a></li>
-                            <li><a class="dropdown-item {% if '/admin/leave-balances' in request.url.path %}active{% endif %}" href="/admin/leave-balances">
-                                <i class="bi bi-wallet2"></i> مانده مرخصی</a></li>
-                            <li><a class="dropdown-item {% if '/admin/leave-transactions' in request.url.path %}active{% endif %}" href="/admin/leave-transactions">
-                                <i class="bi bi-arrow-left-right"></i> تراکنش‌های مرخصی</a></li>
-                            <li><hr class="dropdown-divider"></li>
-                            <li><a class="dropdown-item {% if '/admin/carry-forward' in request.url.path %}active{% endif %}" href="/admin/carry-forward-requests?status_filter=P">
-                                <i class="bi bi-cash-coin"></i> انتقال/بازخرید مرخصی
-                                {% if pending_cf_count is defined and pending_cf_count > 0 %}
-                                <span class="badge bg-warning text-dark ms-1">{{ pending_cf_count }}</span>
-                                {% endif %}</a></li>
-                        </ul>
-                    </li>
-
-                    <!-- 📁 گروه ۳: قراردادها و کاربران و گزارشات -->
-                    {% set org_active = '/admin/contracts' in request.url.path or '/admin/users' in request.url.path %}
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle {% if org_active %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                            <i class="bi bi-person-badge"></i> قراردادها و کاربران
-                        </a>
-                        <ul class="dropdown-menu">
-                            <li><a class="dropdown-item {% if '/admin/contracts' in request.url.path %}active{% endif %}" href="/admin/contracts">
-                                <i class="bi bi-file-earmark-text"></i> مدیریت قراردادها</a></li>
-                            <li><a class="dropdown-item {% if '/admin/users' in request.url.path %}active{% endif %}" href="/admin/users">
-                                <i class="bi bi-people-fill"></i> مدیریت کاربران</a></li>
-                            <li><a class="dropdown-item {% if '/admin/users' in request.url.path %}active{% endif %}" href="/admin/education">
-                                <i class="bi bi-people-fill"></i> مدارک تحصیلی</a></li>
-                        </ul>
-                        <li><a class="dropdown-item {% if '/admin/reports' in request.url.path %}active{% endif %}"
-       href="/reports">
-    <i class="bi bi-bar-chart-line"></i> گزارشات</a></li>
-                    </li>
-
-                    <!-- 📁 گروه ۴: تنظیمات -->
-                    {% set set_active = '/admin/holidays' in request.url.path or '/admin/import-previous-leave' in request.url.path %}
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle {% if set_active %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                            <i class="bi bi-gear"></i> تنظیمات
-                        </a>
-                        <ul class="dropdown-menu">
-                            <li><a class="dropdown-item {% if '/admin/holidays' in request.url.path %}active{% endif %}" href="/admin/holidays">
-                                <i class="bi bi-calendar-event"></i> مدیریت تعطیلات</a></li>
-                            <li><a class="dropdown-item {% if '/admin/import-previous-leave' in request.url.path %}active{% endif %}" href="/admin/import-previous-leave">
-                                <i class="bi bi-cloud-upload"></i> ورود مرخصی سال قبل</a></li>
-                        </ul>
-                    </li>
-                    {% endif %}
-                </ul>
-
-
-                <!-- ══════════ سمت چپ: کاربر و خروج ══════════ -->
-                <ul class="navbar-nav ms-auto mb-2 mb-lg-0">
-                    <li class="nav-item">
-                        <a class="nav-link {% if '/profile' in request.url.path %}active{% endif %}" href="/profile">
-                            <i class="bi bi-person-circle"></i> {{ user.name if user else 'کاربر' }}
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="/change-password">
-                            <i class="bi bi-key"></i> تغییر رمز
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link text-warning" href="/logout">
-                            <i class="bi bi-box-arrow-right"></i> خروج
-                        </a>
-                    </li>
+            <!-- 👤 منوی کاربر -->
+            <div class="dropdown">
+                <button class="user-dropdown-btn dropdown-toggle" data-bs-toggle="dropdown">
+                    <div class="user-avatar">
+                        <i class="bi bi-person"></i>
+                    </div>
+                    <span class="d-none d-md-inline">{{ user.name if user else 'کاربر' }}</span>
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end">
+                    <li><a class="dropdown-item" href="/profile"><i class="bi bi-person-circle"></i> پروفایل</a></li>
+                    <li><a class="dropdown-item" href="/change-password"><i class="bi bi-key"></i> تغییر رمز</a></li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><a class="dropdown-item text-danger" href="/logout"><i class="bi bi-box-arrow-right"></i> خروج</a></li>
                 </ul>
             </div>
         </div>
-    </nav>
+    </header>
 
-    <!-- ================= محتوای اصلی ================= -->
-    <main class="container-fluid py-4 px-3 px-md-4">
+    <!-- 🎨 Content -->
+    <main class="app-content">
         {% block content %}{% endblock %}
     </main>
 
 {% else %}
-    <!-- صفحات تمام‌صفحه (login / change-password) -->
     {% block content_full %}{% endblock %}
 {% endif %}
 
 <!-- Bootstrap JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<!-- اسکریپت کتابخانه تقویم -->
-<script src="https://cdn.jsdelivr.net/npm/md.bootstrappersiandatetimepicker@4.5.0/dist/mds.bs.datetimepicker.min.js"></script>
 
-<!-- 🆕 تابع خودکار: فعال‌سازی تقویم با حفظ مقدار اولیه و تنظیم ماه صحیح -->
 <script>
-// 🗓️ تابع تبدیل تاریخ شمسی به Date میلادی (برای تنظیم تقویم)
-function parsePersianToGregorian(persianStr) {
-    if (!persianStr || !persianStr.trim()) return null;
-
-    try {
-        // پشتیبانی از فرمت‌های مختلف: 1405/05/07 یا 1405-05-07
-        const parts = persianStr.trim().split(/[\/\-]/).map(Number);
-        if (parts.length !== 3 || parts.some(isNaN)) return null;
-
-        const jy = parts[0], jm = parts[1], jd = parts[2];
-
-        // الگوریتم تبدیل شمسی به میلادی (Jalali to Gregorian)
-        const jy2 = jy + 1595;
-        let days = -355668 + (365 * jy2) + (Math.floor(jy2 / 33) * 8) +
-                   Math.floor(((jy2 % 33) + 3) / 4) + jd +
-                   ((jm < 7) ? (jm - 1) * 31 : ((jm - 7) * 30) + 186);
-        let gy = 400 * Math.floor(days / 146097);
-        days %= 146097;
-        if (days > 36524) {
-            gy += 100 * Math.floor(--days / 36524);
-            days %= 36524;
-            if (days >= 365) days++;
+    // ============================================
+    // 🌙 مدیریت حالت روز/شب
+    // ============================================
+    function applyTheme(theme) {
+        document.documentElement.setAttribute('data-theme', theme);
+        const icon = document.getElementById('themeIcon');
+        if (icon) {
+            icon.className = theme === 'dark' ? 'bi bi-sun' : 'bi bi-moon-stars';
         }
-        gy += 4 * Math.floor(days / 1461);
-        days %= 1461;
-        if (days > 365) {
-            gy += Math.floor((days - 1) / 365);
-            days = (days - 1) % 365;
-        }
-        let gd = days + 1;
-        const sal_a = [0, 31, ((gy % 4 === 0 && gy % 100 !== 0) || (gy % 400 === 0)) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-        let gm = 0;
-        for (gm = 0; gm < 13 && gd > sal_a[gm]; gm++) gd -= sal_a[gm];
-
-        return new Date(gy, gm - 1, gd);
-    } catch (e) {
-        console.warn('خطا در تبدیل تاریخ:', persianStr, e);
-        return null;
-    }
-}
-
-// 🚀 تابع خودکار برای همه فیلدهای تاریخ
-document.addEventListener('DOMContentLoaded', function() {
-    if (typeof mds === 'undefined' || !mds.MdsPersianDateTimePicker) {
-        console.warn('کتابخانه تقویم لود نشده است');
-        return;
     }
 
-    const dateFields = document.querySelectorAll('input.jalali-date, input[data-jalali-picker]');
+    function toggleTheme() {
+        const current = document.documentElement.getAttribute('data-theme');
+        const newTheme = current === 'dark' ? 'light' : 'dark';
+        applyTheme(newTheme);
+        localStorage.setItem('timex-theme', newTheme);
+    }
 
-    dateFields.forEach(function(field) {
-        // اطمینان از وجود id
-        if (!field.id) {
-            field.id = 'jalali_' + Math.random().toString(36).substr(2, 9);
-        }
+    // بارگذاری تم ذخیره شده در ابتدا
+    (function() {
+        const savedTheme = localStorage.getItem('timex-theme') || 'light';
+        applyTheme(savedTheme);
+    })();
 
-        // 🆕 مرحله ۱: ذخیره مقدار اولیه (قبل از ساخت picker)
-        const initialValue = field.value.trim();
+    // ============================================
+    // 📱 مدیریت Sidebar در موبایل
+    // ============================================
+    function toggleSidebar() {
+        const sidebar = document.getElementById('appSidebar');
+        const overlay = document.getElementById('sidebarOverlay');
+        if (sidebar) sidebar.classList.toggle('show');
+        if (overlay) overlay.classList.toggle('show');
+    }
 
-        // 🆕 مرحله ۲: اگر مقدار اولیه داریم، Date میلادی بسازیم
-        let selectedDateToShow = new Date();
-        if (initialValue) {
-            const parsedDate = parsePersianToGregorian(initialValue);
-            if (parsedDate) {
-                selectedDateToShow = parsedDate;
-            }
-        }
-
-        try {
-            new mds.MdsPersianDateTimePicker(field, {
-                targetTextSelector: '#' + field.id,
-                selectedDateToShow: selectedDateToShow,
-                enableTimePicker: false,
-                monthButtons: true,
-                yearButtons: true,
-                isGregorian: false,
-                persianNumber: false,
-                dateFormat: 'yyyy/MM/dd',
-                textFormat: 'yyyy/MM/dd',
-                onSelected: function(date) {
-                    console.log('تاریخ انتخاب شد:', field.id, '=', field.value);
-                }
-            });
-
-            // 🆕 مرحله ۳: برگرداندن مقدار اولیه (بعد از 100ms)
-            // این یک hack برای غلبه بر رفتار کتابخانه است
-            if (initialValue) {
-                setTimeout(function() {
-                    if (field.value !== initialValue) {
-                        field.value = initialValue;
-                        console.log('مقدار اولیه بازیابی شد:', initialValue);
-                    }
-                }, 100);
-            }
-
-        } catch (e) {
-            console.error('خطا در ساخت تقویم برای فیلد', field.id, e);
+    // بستن sidebar با تغییر اندازه پنجره
+    window.addEventListener('resize', function() {
+        if (window.innerWidth > 992) {
+            const sidebar = document.getElementById('appSidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+            if (sidebar) sidebar.classList.remove('show');
+            if (overlay) overlay.classList.remove('show');
         }
     });
-});
 </script>
 
 {% block extra_js %}{% endblock %}
 
 </body>
 </html>
-
-
-
-
