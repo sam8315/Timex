@@ -179,7 +179,7 @@
                         </ul>
                     </li>
 
-                    <!-- 📁 گروه ۳: قراردادها و کاربران -->
+                    <!-- 📁 گروه ۳: قراردادها و کاربران و گزارشات -->
                     {% set org_active = '/admin/contracts' in request.url.path or '/admin/users' in request.url.path %}
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle {% if org_active %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
@@ -193,6 +193,9 @@
                             <li><a class="dropdown-item {% if '/admin/users' in request.url.path %}active{% endif %}" href="/admin/education">
                                 <i class="bi bi-people-fill"></i> مدارک تحصیلی</a></li>
                         </ul>
+                        <li><a class="dropdown-item {% if '/admin/reports' in request.url.path %}active{% endif %}"
+       href="/reports">
+    <i class="bi bi-bar-chart-line"></i> گزارشات</a></li>
                     </li>
 
                     <!-- 📁 گروه ۴: تنظیمات -->
@@ -210,6 +213,7 @@
                     </li>
                     {% endif %}
                 </ul>
+
 
                 <!-- ══════════ سمت چپ: کاربر و خروج ══════════ -->
                 <ul class="navbar-nav ms-auto mb-2 mb-lg-0">

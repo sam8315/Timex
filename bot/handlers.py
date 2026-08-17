@@ -265,34 +265,80 @@ def handle_message(message: dict):
 # 🆕 مانده مرخصی
 # ============================================
 
-def format_balance_message(full_name: str, year_j: int, balances: dict) -> str:
-    """🆕 ساخت پیام مانده مرخصی"""
-    message = f"👤 <b>{full_name}</b>\n"
-    message += f"💰 مانده مرخصی سال <b>{year_j}</b>\n"
-    message += f"━━━━━━━━━━━━━━━\n"
+def format_balance_message(full_name: str, year_j: int, balances: dict,
+                           prev_year_j: int = None, prev_balances: dict = None,
+                           is_transferred: bool = False, transferred_amount: int = 0) -> str:
+    """ساخت پیام مانده مرخصی (سال جاری + سال قبل + وضعیت انتقال)"""
 
-    # نام انواع مرخصی با ایموجی
     leave_types_info = {
         'AL': ('🌴', 'استحقاقی'),
         'SL': ('🏥', 'استعلاجی'),
         'RL': ('🎁', 'تشویقی'),
-        'CW': ('📦', 'ذخیره سال قبل'),
     }
+
+    # ━━━━━━━━━ سال جاری ━━━━━━━━━
+    message = f"👤 <b>{full_name}</b>\n"
+    message += f"💰 مانده مرخصی سال <b>{year_j}</b>\n"
+    message += f"━━━━━━━━━━━━━━━\n"
 
     for code, (emoji, name) in leave_types_info.items():
         balance = balances.get(code, 0)
         message += f"{emoji} {name}: <b>{balance}</b> روز\n"
 
-    # جمع کل
-    total = sum(balances.values())
+    # 🆕 نمایش ذخیره منتقل شده از سال قبل (CW سال جاری)
+    cw_current = balances.get('CW', 0)
+    if cw_current > 0:
+        message += f"📦 ذخیره از سال قبل: <b>{cw_current}</b> روز\n"
+
+    # جمع کل سال جاری (شامل CW)
+    total = sum(balances.get(code, 0) for code in leave_types_info.keys()) + cw_current
     message += f"━━━━━━━━━━━━━━━\n"
     message += f"📊 جمع کل: <b>{total}</b> روز"
+
+    # ━━━━━━━━━ 🆕 وضعیت مانده سال قبل ━━━━━━━━━
+    if prev_balances and prev_year_j:
+        # محاسبه مانده‌های سال قبل
+        prev_leave_total = sum(
+            prev_balances.get(code, 0) for code in leave_types_info.keys()
+        )
+        prev_cw = prev_balances.get('CW', 0)
+
+        # آیا مانده‌ای در سال قبل وجود دارد یا انتقالی انجام شده؟
+        has_prev_balance = prev_leave_total > 0 or prev_cw > 0
+
+        if has_prev_balance or is_transferred:
+            message += f"\n\n━━━━━━━━━━━━━━━\n"
+            message += f"📦 وضعیت مانده سال <b>{prev_year_j}</b>\n"
+            message += f"━━━━━━━━━━━━━━━\n"
+
+            # نمایش مانده‌های باقی‌مانده در سال قبل (فقط غیرصفر)
+            shown_items = []
+            for code, (emoji, name) in leave_types_info.items():
+                balance = prev_balances.get(code, 0)
+                if balance != 0:
+                    shown_items.append(f"{emoji} {name}: <b>{balance}</b> روز")
+
+            # CW سال قبل (اگر از سال قبل‌تر منتقل شده)
+            if prev_cw != 0:
+                shown_items.append(f"📦 ذخیره از {prev_year_j - 1}: <b>{prev_cw}</b> روز")
+
+            if shown_items:
+                message += "\n".join(shown_items) + "\n"
+                message += f"━━━━━━━━━━━━━━━\n"
+
+            # 🆕 وضعیت انتقال به سال جدید
+            if is_transferred:
+                message += f"✅ به سال {year_j} <b>منتقل شده</b>\n"
+                message += f"📦 مقدار ذخیره: <b>{transferred_amount}</b> روز"
+            elif prev_leave_total > 0:
+                message += f"⚠️ به سال {year_j} <b>منتقل نشده</b>\n"
+                message += f"💡 برای انتقال با منابع انسانی تماس بگیرید"
 
     return message
 
 
 def handle_balance_request(chat_id):
-    """🆕 نمایش مانده مرخصی کاربر"""
+    """نمایش مانده مرخصی کاربر (سال جاری + سال قبل + وضعیت انتقال)"""
     db_session = SessionLocal()
     try:
         bale_user = db.get_bale_user(db_session, chat_id)
@@ -303,13 +349,30 @@ def handle_balance_request(chat_id):
 
         full_name = db.get_employee_name(db_session, bale_user.user_id)
 
-        # سال جاری شمسی
+        # سال جاری و سال قبل شمسی
         current_year_j = jdatetime.date.today().year
+        previous_year_j = current_year_j - 1
 
-        # دریافت مانده مرخصی
-        balances = db.get_leave_balances(db_session, bale_user.user_id, current_year_j)
+        # دریافت مانده مرخصی سال جاری
+        current_balances = db.get_leave_balances(db_session, bale_user.user_id, current_year_j)
 
-        message = format_balance_message(full_name, current_year_j, balances)
+        # دریافت مانده مرخصی سال قبل
+        previous_balances = db.get_leave_balances(db_session, bale_user.user_id, previous_year_j)
+
+        # 🆕 تشخیص انتقال مانده به سال جدید
+        # اگر CW سال جدید مقدار داشته باشد، یعنی انتقال انجام شده
+        transferred_amount = current_balances.get('CW', 0)
+        is_transferred = transferred_amount > 0
+
+        message = format_balance_message(
+            full_name,
+            current_year_j,
+            current_balances,
+            previous_year_j,
+            previous_balances,
+            is_transferred,  # 🆕
+            transferred_amount  # 🆕
+        )
 
         bale_api.send_message(
             chat_id,
