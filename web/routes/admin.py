@@ -365,7 +365,7 @@ async def admin_dashboard(
 from sqlalchemy import or_
 
 
-@router.get("/users", response_class=HTMLResponse)
+@router.get("/admin/users", response_class=HTMLResponse)
 async def admin_users(
     request: Request,
     search: Optional[str] = Query(None),
@@ -461,7 +461,7 @@ async def admin_users(
         "web_status": web_status or "",
     })
 
-@router.get("/attendance", response_class=HTMLResponse)
+@router.get("/admin/attendance", response_class=HTMLResponse)
 async def admin_attendance(
     request: Request,
     date_str: Optional[str] = None,
@@ -618,7 +618,7 @@ async def admin_attendance(
     })
 
 
-@router.get("/attendance/user/{target_user_id}", response_class=HTMLResponse)
+@router.get("/admin/attendance/user/{target_user_id}", response_class=HTMLResponse)
 async def admin_user_attendance(
     request: Request,
     target_user_id: str,
@@ -819,7 +819,7 @@ from models.employee import Employee
 from models.user import User
 
 
-@router.get("/profile/{target_user_id}", response_class=HTMLResponse)
+@router.get("/admin/profile/{target_user_id}", response_class=HTMLResponse)
 async def admin_view_profile(
     request: Request,
     target_user_id: str,
@@ -894,7 +894,7 @@ async def admin_view_profile(
     })
 
 
-@router.get("/profile/{target_user_id}/edit", response_class=HTMLResponse)
+@router.get("/admin/profile/{target_user_id}/edit", response_class=HTMLResponse)
 async def admin_edit_profile_page(
     request: Request,
     target_user_id: str,
@@ -930,7 +930,7 @@ async def admin_edit_profile_page(
     })
 
 
-@router.post("/profile/{target_user_id}/edit")
+@router.post("/admin/profile/{target_user_id}/edit")
 async def admin_edit_profile_submit(
     request: Request,
     target_user_id: str,
@@ -1000,7 +1000,7 @@ async def admin_edit_profile_submit(
         return RedirectResponse(url=f"/admin/profile/{target_user_id}/edit?error={str(e)}", status_code=302)
 
 
-@router.post("/users/{target_user_id}/reset-password")
+@router.post("/admin/users/{target_user_id}/reset-password")
 async def admin_reset_password(
         target_user_id: str,
         user: User = Depends(require_super_admin),
@@ -1034,7 +1034,7 @@ async def admin_reset_password(
     return RedirectResponse(url=f"/admin/profile/{target_user_id}?password_reset=1", status_code=302)
 
 
-@router.post("/users/{target_user_id}/change-role")
+@router.post("/admin/users/{target_user_id}/change-role")
 async def admin_change_role(
     target_user_id: str,
     new_role: str = Form(...),
@@ -1059,7 +1059,7 @@ async def admin_change_role(
     return RedirectResponse(url=f"/admin/profile/{target_user_id}?role_changed=1", status_code=302)
 
 
-@router.post("/users/{target_user_id}/toggle-web")
+@router.post("/admin/users/{target_user_id}/toggle-web")
 async def admin_toggle_web(
     target_user_id: str,
     user: User = Depends(require_super_admin),
@@ -1086,7 +1086,7 @@ ALLOWED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp'}
 MAX_FILE_SIZE = 2 * 1024 * 1024  # 2 مگابایت
 
 
-@router.post("/profile/{target_user_id}/upload-photo")
+@router.post("/admin/profile/{target_user_id}/upload-photo")
 async def admin_upload_photo(
     target_user_id: str,
     file: UploadFile = File(...),
@@ -1147,7 +1147,7 @@ async def admin_upload_photo(
         )
 
 
-@router.post("/profile/{target_user_id}/delete-photo")
+@router.post("/admin/profile/{target_user_id}/delete-photo")
 async def admin_delete_photo(
     target_user_id: str,
     user: User = Depends(require_admin),
@@ -1180,7 +1180,7 @@ from datetime import datetime
 from models.attendance import Attendance
 
 
-@router.post("/attendance/edit/change-punch")
+@router.post("/admin/attendance/edit/change-punch")
 async def admin_change_punch(
     request: Request,
     record_id: int = Form(...),
@@ -1200,7 +1200,7 @@ async def admin_change_punch(
     return RedirectResponse(url=build_redirect_url(referer, "success", "وضعیت تغییر کرد"), status_code=302)
 
 
-@router.post("/attendance/edit/delete")
+@router.post("/admin/attendance/edit/delete")
 async def admin_delete_record(
     request: Request,
     record_id: int = Form(...),
@@ -1222,7 +1222,7 @@ async def admin_delete_record(
     return RedirectResponse(url=redirect_url, status_code=302)
 
 
-@router.post("/attendance/edit/add")
+@router.post("/admin/attendance/edit/add")
 async def admin_add_record(
     request: Request,
     user_id: str = Form(...),
@@ -1262,7 +1262,7 @@ async def admin_add_record(
         redirect_url = add_query_param(referer, "error", str(e))
         return RedirectResponse(url=redirect_url, status_code=302)
 
-@router.get("/incomplete", response_class=HTMLResponse)
+@router.get("/admin/incomplete", response_class=HTMLResponse)
 async def admin_incomplete_attendance(
     request: Request,
     from_date_str: Optional[str] = Query(None),
