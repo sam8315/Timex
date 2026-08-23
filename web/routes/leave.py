@@ -340,7 +340,7 @@ async def cancel_leave_request(
 
 
 @router.get("/leave/calculate-days")
-async def calculate_leave_days(
+async def calculate_leave_days_api(
         from_date: str = Query(...),
         to_date: str = Query(...),
         user: User = Depends(check_password_change),

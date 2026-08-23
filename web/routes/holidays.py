@@ -125,7 +125,7 @@ async def add_holiday(
         db.commit()
 
         referer = request.headers.get("referer", "/admin/holidays")
-        return RedirectResponse(url=f"{referer}&success=تعطیلی اضافه شد", status_code=302)
+        return RedirectResponse(url=f"/admin/holidays?success=تعطیلی اضافه شد", status_code=302)
     except Exception as e:
         referer = request.headers.get("referer", "/admin/holidays")
         return RedirectResponse(url=f"{referer}&error=خطا: {str(e)}", status_code=302)
