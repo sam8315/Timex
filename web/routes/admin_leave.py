@@ -20,6 +20,9 @@ from models.leave_request import LeaveRequest
 from models.contract import Contract, CONTRACT_TYPES
 from sqlalchemy import func
 from datetime import datetime, timedelta  # 🆕 timedelta
+from models.employee_phone import EmployeePhone  # 🆕
+from core.sms_service import SmsService          # 🆕
+import threading                                  # 🆕 برای ارسال async
 
 router = APIRouter(tags=["Admin Leave"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
@@ -538,7 +541,7 @@ async def approve_leave_request(
         user: User = Depends(require_admin),
         db: Session = Depends(get_db)
 ):
-    """تایید درخواست مرخصی + کسر از مانده"""
+    """تایید درخواست مرخصی + کسر از مانده + ارسال پیامک"""
     leave_req = db.query(LeaveRequest).filter(LeaveRequest.id == request_id).first()
     if not leave_req:
         return RedirectResponse(url="/admin/leave-requests?error=درخواست یافت نشد", status_code=302)
@@ -601,12 +604,30 @@ async def approve_leave_request(
         db.add(tx)
         db.commit()
 
+        # 🆕 ۴. ارسال پیامک تایید (async - بدون کندی)
+        phones = _get_user_phones(db, leave_req.user_id)
+        if phones:
+            type_name = LEAVE_TYPES.get(leave_req.leave_type, '')
+            j_from = jdatetime.date.fromgregorian(date=leave_req.from_date)
+            j_to = jdatetime.date.fromgregorian(date=leave_req.to_date)
+
+            sms_message = (
+                f"✅ مرخصی {type_name} شما تأیید شد.\n"
+                f"از تاریخ {j_from.strftime('%Y/%m/%d')} "
+                f"تا {j_to.strftime('%Y/%m/%d')}\n"
+                f"به مدت {leave_req.days_count} روز\n"
+                f"سامانه حضور و غیاب"
+            )
+
+            _send_sms_async(phones, sms_message, leave_req.user_id)
+
         type_name = LEAVE_TYPES.get(leave_req.leave_type, '')
         referer = request.headers.get("referer", "/admin/leave-requests")
         return RedirectResponse(
             url=build_redirect_url(
                 referer, "success",
                 f"درخواست تایید شد | {leave_req.days_count} روز مرخصی {type_name} کسر شد"
+                + (" | پیامک ارسال شد 📱" if phones else "")
             ),
             status_code=302
         )
@@ -617,7 +638,6 @@ async def approve_leave_request(
             url=build_redirect_url(referer, "error", f"خطا: {str(e)}"),
             status_code=302
         )
-
 
 # ============================================
 # رد درخواست مرخصی
@@ -630,7 +650,7 @@ async def reject_leave_request(
         user: User = Depends(require_admin),
         db: Session = Depends(get_db)
 ):
-    """رد درخواست مرخصی (بدون کسر از مانده)"""
+    """رد درخواست مرخصی (بدون کسر از مانده) + ارسال پیامک"""
     leave_req = db.query(LeaveRequest).filter(LeaveRequest.id == request_id).first()
     if not leave_req:
         return RedirectResponse(url="/admin/leave-requests?error=درخواست یافت نشد", status_code=302)
@@ -650,9 +670,30 @@ async def reject_leave_request(
         leave_req.rejection_reason = rejection_reason.strip() or None
         db.commit()
 
+        # 🆕 ارسال پیامک رد (async)
+        phones = _get_user_phones(db, leave_req.user_id)
+        if phones:
+            type_name = LEAVE_TYPES.get(leave_req.leave_type, '')
+            j_from = jdatetime.date.fromgregorian(date=leave_req.from_date)
+            j_to = jdatetime.date.fromgregorian(date=leave_req.to_date)
+
+            sms_message = (
+                f"❌ درخواست مرخصی {type_name} شما رد شد.\n"
+                f"از تاریخ {j_from.strftime('%Y/%m/%d')} "
+                f"تا {j_to.strftime('%Y/%m/%d')}\n"
+            )
+            if leave_req.rejection_reason:
+                sms_message += f"دلیل: {leave_req.rejection_reason}\n"
+            sms_message += "سامانه حضور و غیاب"
+
+            _send_sms_async(phones, sms_message, leave_req.user_id)
+
         referer = request.headers.get("referer", "/admin/leave-requests")
         return RedirectResponse(
-            url=build_redirect_url(referer, "success", "درخواست رد شد"),
+            url=build_redirect_url(
+                referer, "success",
+                "درخواست رد شد" + (" | پیامک ارسال شد 📱" if phones else "")
+            ),
             status_code=302
         )
     except Exception as e:
@@ -662,7 +703,6 @@ async def reject_leave_request(
             url=build_redirect_url(referer, "error", f"خطا: {str(e)}"),
             status_code=302
         )
-
 
 # ============================================
 # حذف مرخصی تایید شده (بازگشت مرخصی)
@@ -1299,3 +1339,48 @@ async def edit_leave_request_submit(
             url=f"/admin/leave-requests/{request_id}/edit?error=خطا: {str(e)}",
             status_code=302
         )
+
+
+# ============================================
+# 🆕 ارسال پیامک ایمن (بدون تأثیر بر فرآیند اصلی)
+# ============================================
+
+def _get_user_phones(db: Session, user_id: str) -> List[str]:
+    """دریافت شماره‌های موبایل کاربر (اول پیش‌فرض، سپس بقیه)"""
+    phones = db.query(EmployeePhone).filter(
+        EmployeePhone.user_id == user_id
+    ).order_by(EmployeePhone.is_default.desc()).all()
+
+    if not phones:
+        return []
+
+    # اول شماره پیش‌فرض، سپس بقیه (بدون تکرار)
+    result = []
+    default_phone = next((p for p in phones if p.is_default), None)
+    if default_phone:
+        result.append(default_phone.phone_number)
+
+    for p in phones:
+        if p.phone_number not in result:
+            result.append(p.phone_number)
+
+    return result
+
+
+def _send_sms_async(phones: List[str], message: str, user_id: str):
+    """ارسال پیامک در thread جداگانه (بدون کند کردن redirect)"""
+
+    def send_task():
+        try:
+            sms = SmsService()
+            result = sms.send_sms(phones, message)
+            if result.get('success'):
+                print(f"✅ پیامک مرخصی به {user_id} ارسال شد: {phones}")
+            else:
+                print(f"⚠️ پیامک به {user_id} ارسال نشد: {result.get('message')}")
+        except Exception as e:
+            print(f"❌ خطای ارسال پیامک به {user_id}: {e}")
+
+    # اجرای async در thread جداگانه
+    thread = threading.Thread(target=send_task, daemon=True)
+    thread.start()

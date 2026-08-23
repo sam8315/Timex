@@ -11,13 +11,14 @@ from sqlalchemy import and_, or_
 import jdatetime
 from typing import Optional
 
-from web.dependencies import get_db, get_current_user
+from web.dependencies import get_db, get_current_user, check_password_change
 from models.user import User
 from models.employee import Employee
 from models.leave_balance import LeaveBalance
 from models.leave_request import LeaveRequest
-from models.holiday import Holiday
 from models.contract import Contract
+from fastapi import Query
+from models.holiday import Holiday
 
 router = APIRouter(tags=["Leave"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
@@ -336,3 +337,45 @@ async def cancel_leave_request(
             url=build_redirect_url(referer, "error", f"خطا: {str(e)}"),
             status_code=302
         )
+
+
+@router.get("/leave/calculate-days")
+async def calculate_leave_days(
+        from_date: str = Query(...),
+        to_date: str = Query(...),
+        user: User = Depends(check_password_change),
+        db: Session = Depends(get_db)
+):
+    """محاسبه تعداد روزهای کاری بین دو تاریخ"""
+    try:
+        # تبدیل تاریخ‌های شمسی به میلادی
+        from_j = jdatetime.datetime.strptime(from_date.strip(), "%Y/%m/%d").date()
+        to_j = jdatetime.datetime.strptime(to_date.strip(), "%Y/%m/%d").date()
+
+        from_g = from_j.togregorian()
+        to_g = to_j.togregorian()
+
+        if from_g > to_g:
+            return {"success": False, "days_count": 0, "message": "تاریخ شروع باید قبل از پایان باشد"}
+
+        # محاسبه روزهای کاری (کسر تعطیلات و جمعه‌ها)
+        days_count = 0
+        current = from_g
+        while current <= to_g:
+            # بررسی جمعه
+            if current.weekday() == 4:  # جمعه
+                current += timedelta(days=1)
+                continue
+
+            # بررسی تعطیلات رسمی
+            holiday = db.query(Holiday).filter(Holiday.holiday_date == current).first()
+            if holiday:
+                current += timedelta(days=1)
+                continue
+
+            days_count += 1
+            current += timedelta(days=1)
+
+        return {"success": True, "days_count": days_count}
+    except Exception as e:
+        return {"success": False, "days_count": 0, "message": str(e)}

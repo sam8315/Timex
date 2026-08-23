@@ -12,7 +12,290 @@
     <!-- Vazirmatn Font -->
     <link href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" rel="stylesheet">
 
+<!-- 📅 Persian DatePicker CSS -->
+<link href="https://cdn.jsdelivr.net/npm/persian-datepicker@1.2.0/dist/css/persian-datepicker.min.css" rel="stylesheet">
+
     <style>
+    /* ============================================ */
+    /* 📅 استایل تقویم شمسی - مدرن و زیبا            */
+    /* ============================================ */
+
+    /* کانتینر اصلی تقویم */
+    .datepicker-plot-area {
+        font-family: 'Vazirmatn', 'Tahoma', sans-serif !important;
+        direction: rtl;
+        border-radius: 16px !important;
+        box-shadow: 0 12px 40px rgba(0,0,0,0.15) !important;
+        border: 1px solid #e9ecef !important;
+        overflow: hidden;
+        min-width: 320px !important;
+        padding: 0 !important;
+    }
+
+    /* هدر تقویم */
+    .datepicker-plot-area .datepicker-header {
+        background: linear-gradient(135deg, #0d6efd 0%, #6610f2 100%) !important;
+        padding: 16px 12px !important;
+        border-bottom: none !important;
+    }
+
+    .datepicker-plot-area .datepicker-header .btn-next,
+    .datepicker-plot-area .datepicker-header .btn-prev {
+        color: white !important;
+        font-size: 1.1rem !important;
+        width: 36px !important;
+        height: 36px !important;
+        border-radius: 10px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        transition: background 0.2s ease !important;
+    }
+
+    .datepicker-plot-area .datepicker-header .btn-next:hover,
+    .datepicker-plot-area .datepicker-header .btn-prev:hover {
+        background: rgba(255,255,255,0.2) !important;
+    }
+
+    .datepicker-plot-area .datepicker-header .btn-switch {
+        color: white !important;
+        font-weight: 700 !important;
+        font-size: 1rem !important;
+        border-radius: 8px !important;
+        padding: 4px 16px !important;
+        transition: background 0.2s ease !important;
+    }
+
+    .datepicker-plot-area .datepicker-header .btn-switch:hover {
+        background: rgba(255,255,255,0.2) !important;
+    }
+
+    /* بدنه تقویم */
+    .datepicker-plot-area .datepicker-body-view {
+        padding: 12px !important;
+    }
+
+    /* نام روزهای هفته */
+    .datepicker-plot-area .datepicker-day-view .table-days th {
+        font-size: 0.75rem !important;
+        font-weight: 600 !important;
+        color: #6c757d !important;
+        padding: 8px 0 !important;
+        border: none !important;
+    }
+
+    /* سلول‌های روز */
+    .datepicker-plot-area .datepicker-day-view .table-days td {
+        padding: 4px !important;
+        border: none !important;
+    }
+
+    .datepicker-plot-area .datepicker-day-view .table-days td span {
+        width: 38px !important;
+        height: 38px !important;
+        line-height: 38px !important;
+        border-radius: 12px !important;
+        font-size: 0.9rem !important;
+        font-weight: 500 !important;
+        color: #212529 !important;
+        transition: all 0.15s ease !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }
+
+    .datepicker-plot-area .datepicker-day-view .table-days td span:hover {
+        background: #e7f3ff !important;
+        color: #0d6efd !important;
+        transform: scale(1.1);
+    }
+
+    /* روز انتخاب شده */
+    .datepicker-plot-area .datepicker-day-view .table-days td.selected span {
+        background: linear-gradient(135deg, #0d6efd 0%, #6610f2 100%) !important;
+        color: white !important;
+        font-weight: 700 !important;
+        box-shadow: 0 4px 12px rgba(13, 110, 253, 0.3) !important;
+    }
+
+    /* روز جاری (امروز) */
+    .datepicker-plot-area .datepicker-day-view .table-days td.today span {
+        border: 2px solid #0d6efd !important;
+        color: #0d6efd !important;
+        font-weight: 700 !important;
+    }
+
+    .datepicker-plot-area .datepicker-day-view .table-days td.today.selected span {
+        background: linear-gradient(135deg, #0d6efd 0%, #6610f2 100%) !important;
+        color: white !important;
+        border-color: transparent !important;
+    }
+
+    /* روزهای غیرفعال */
+    .datepicker-plot-area .datepicker-day-view .table-days td.disabled span {
+        color: #ced4da !important;
+        cursor: not-allowed !important;
+    }
+
+    .datepicker-plot-area .datepicker-day-view .table-days td.disabled span:hover {
+        background: transparent !important;
+        transform: none;
+    }
+
+    /* روزهای تعطیل */
+    .datepicker-plot-area .datepicker-day-view .table-days td.holiday span {
+        color: #dc3545 !important;
+    }
+
+    /* نوار ابزار پایین */
+    .datepicker-plot-area .datepicker-toolbox {
+        padding: 10px 12px !important;
+        border-top: 1px solid #e9ecef !important;
+        background: #f8f9fa !important;
+        display: flex !important;
+        justify-content: center !important;
+        gap: 8px !important;
+    }
+
+    .datepicker-plot-area .datepicker-toolbox .btn-today {
+        background: white !important;
+        border: 1px solid #dee2e6 !important;
+        color: #0d6efd !important;
+        border-radius: 8px !important;
+        padding: 6px 20px !important;
+        font-size: 0.85rem !important;
+        font-weight: 600 !important;
+        font-family: 'Vazirmatn', sans-serif !important;
+        transition: all 0.2s ease !important;
+    }
+
+    .datepicker-plot-area .datepicker-toolbox .btn-today:hover {
+        background: #0d6efd !important;
+        color: white !important;
+        border-color: #0d6efd !important;
+    }
+
+    /* نمای ماه و سال */
+    .datepicker-plot-area .datepicker-month-view .month-item,
+    .datepicker-plot-area .datepicker-year-view .year-item {
+        border-radius: 10px !important;
+        padding: 10px !important;
+        margin: 4px !important;
+        font-size: 0.9rem !important;
+        font-weight: 500 !important;
+        transition: all 0.15s ease !important;
+    }
+
+    .datepicker-plot-area .datepicker-month-view .month-item:hover,
+    .datepicker-plot-area .datepicker-year-view .year-item:hover {
+        background: #e7f3ff !important;
+        color: #0d6efd !important;
+    }
+
+    .datepicker-plot-area .datepicker-month-view .month-item.selected,
+    .datepicker-plot-area .datepicker-year-view .year-item.selected {
+        background: linear-gradient(135deg, #0d6efd 0%, #6610f2 100%) !important;
+        color: white !important;
+    }
+
+    /* ============================================ */
+    /* 🌙 Dark Mode تقویم                           */
+    /* ============================================ */
+    [data-theme="dark"] .datepicker-plot-area {
+        background: #242526 !important;
+        border-color: #3a3b3c !important;
+        box-shadow: 0 12px 40px rgba(0,0,0,0.4) !important;
+    }
+
+    [data-theme="dark"] .datepicker-plot-area .datepicker-header {
+        background: linear-gradient(135deg, #1a3a5c 0%, #2d1b69 100%) !important;
+    }
+
+    [data-theme="dark"] .datepicker-plot-area .datepicker-day-view .table-days th {
+        color: #8a8d91 !important;
+    }
+
+    [data-theme="dark"] .datepicker-plot-area .datepicker-day-view .table-days td span {
+        color: #e4e6eb !important;
+    }
+
+    [data-theme="dark"] .datepicker-plot-area .datepicker-day-view .table-days td span:hover {
+        background: #3a3b3c !important;
+        color: #4dabf7 !important;
+    }
+
+    [data-theme="dark"] .datepicker-plot-area .datepicker-day-view .table-days td.selected span {
+        background: linear-gradient(135deg, #1a73e8 0%, #6c5ce7 100%) !important;
+        color: white !important;
+        box-shadow: 0 4px 12px rgba(26, 115, 232, 0.4) !important;
+    }
+
+    [data-theme="dark"] .datepicker-plot-area .datepicker-day-view .table-days td.today span {
+        border-color: #4dabf7 !important;
+        color: #4dabf7 !important;
+    }
+
+    [data-theme="dark"] .datepicker-plot-area .datepicker-day-view .table-days td.today.selected span {
+        background: linear-gradient(135deg, #1a73e8 0%, #6c5ce7 100%) !important;
+        border-color: transparent !important;
+    }
+
+    [data-theme="dark"] .datepicker-plot-area .datepicker-day-view .table-days td.disabled span {
+        color: #4a4b4d !important;
+    }
+
+    [data-theme="dark"] .datepicker-plot-area .datepicker-day-view .table-days td.holiday span {
+        color: #f87171 !important;
+    }
+
+    [data-theme="dark"] .datepicker-plot-area .datepicker-toolbox {
+        background: #1e1f20 !important;
+        border-color: #3a3b3c !important;
+    }
+
+    [data-theme="dark"] .datepicker-plot-area .datepicker-toolbox .btn-today {
+        background: #3a3b3c !important;
+        border-color: #4a4b4d !important;
+        color: #4dabf7 !important;
+    }
+
+    [data-theme="dark"] .datepicker-plot-area .datepicker-toolbox .btn-today:hover {
+        background: #1a73e8 !important;
+        color: white !important;
+        border-color: #1a73e8 !important;
+    }
+
+    [data-theme="dark"] .datepicker-plot-area .datepicker-month-view .month-item,
+    [data-theme="dark"] .datepicker-plot-area .datepicker-year-view .year-item {
+        color: #e4e6eb !important;
+    }
+
+    [data-theme="dark"] .datepicker-plot-area .datepicker-month-view .month-item:hover,
+    [data-theme="dark"] .datepicker-plot-area .datepicker-year-view .year-item:hover {
+        background: #3a3b3c !important;
+        color: #4dabf7 !important;
+    }
+
+    [data-theme="dark"] .datepicker-plot-area .datepicker-month-view .month-item.selected,
+    [data-theme="dark"] .datepicker-plot-area .datepicker-year-view .year-item.selected {
+        background: linear-gradient(135deg, #1a73e8 0%, #6c5ce7 100%) !important;
+        color: white !important;
+    }
+
+    /* ============================================ */
+    /* 📱 واکنش‌گرایی تقویم                          */
+    /* ============================================ */
+    @media (max-width: 576px) {
+        .datepicker-plot-area {
+            min-width: 280px !important;
+        }
+        .datepicker-plot-area .datepicker-day-view .table-days td span {
+            width: 32px !important;
+            height: 32px !important;
+            line-height: 32px !important;
+            font-size: 0.82rem !important;
+        }
+    }
         /* ============================================ */
         /* 🎨 متغیرهای رنگی (Light / Dark)              */
         /* ============================================ */
@@ -93,6 +376,10 @@
             color: var(--text-primary);
         }
 
+        .sidebar-logo:hover {
+            color: var(--text-primary);
+        }
+
         .sidebar-logo .logo-icon {
             width: 42px;
             height: 42px;
@@ -143,6 +430,7 @@
             font-weight: 500;
             transition: all 0.15s ease;
             margin-bottom: 2px;
+            cursor: pointer;
         }
 
         .sidebar-link:hover {
@@ -209,7 +497,7 @@
             align-items: center;
             padding: 0 24px;
             gap: 16px;
-            transition: background 0.3s ease;
+            transition: background 0.3s ease, right 0.3s ease;
         }
 
         .topbar-toggle-btn {
@@ -219,6 +507,7 @@
             color: var(--text-primary);
             font-size: 1.4rem;
             padding: 4px;
+            cursor: pointer;
         }
 
         .topbar-title {
@@ -246,6 +535,7 @@
             justify-content: center;
             font-size: 1.1rem;
             transition: all 0.2s ease;
+            cursor: pointer;
         }
 
         .theme-toggle-btn:hover {
@@ -265,10 +555,12 @@
             text-decoration: none;
             font-size: 0.9rem;
             font-weight: 500;
+            cursor: pointer;
         }
 
         .user-dropdown-btn:hover {
             background: var(--primary-soft);
+            color: var(--text-primary);
         }
 
         .user-avatar {
@@ -319,12 +611,19 @@
 
         [data-theme="dark"] .table-hover tbody tr:hover {
             background: var(--bg-hover);
+            color: var(--text-primary);
         }
 
         [data-theme="dark"] .form-control,
         [data-theme="dark"] .form-select {
             background: var(--bg-hover);
             border-color: var(--border-color);
+            color: var(--text-primary);
+        }
+
+        [data-theme="dark"] .form-control:focus,
+        [data-theme="dark"] .form-select:focus {
+            background: var(--bg-hover);
             color: var(--text-primary);
         }
 
@@ -358,6 +657,24 @@
             color: #b3d4fc;
         }
 
+        [data-theme="dark"] .alert-warning {
+            background: #3d3521;
+            border-color: #4a4229;
+            color: #ffdb85;
+        }
+
+        [data-theme="dark"] .alert-success {
+            background: #1e3a2f;
+            border-color: #2a4d3e;
+            color: #a3e6c1;
+        }
+
+        [data-theme="dark"] .alert-danger {
+            background: #3d2121;
+            border-color: #4d2a2a;
+            color: #f5a3a3;
+        }
+
         [data-theme="dark"] .text-muted {
             color: var(--text-muted) !important;
         }
@@ -368,11 +685,28 @@
 
         [data-theme="dark"] .bg-light {
             background: var(--bg-hover) !important;
+            color: var(--text-primary);
+        }
+
+        [data-theme="dark"] .bg-white {
+            background: var(--bg-card) !important;
+            color: var(--text-primary);
         }
 
         [data-theme="dark"] .btn-outline-secondary {
             color: var(--text-secondary);
             border-color: var(--border-color);
+        }
+
+        [data-theme="dark"] .btn-outline-secondary:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+
+        [data-theme="dark"] .list-group-item {
+            background: var(--bg-card);
+            border-color: var(--border-color);
+            color: var(--text-primary);
         }
 
         /* ============================================ */
@@ -390,6 +724,7 @@
             }
             .app-content {
                 margin-right: 0;
+                padding: 84px 16px 16px;
             }
             .topbar-toggle-btn {
                 display: block;
@@ -416,6 +751,21 @@
         .app-sidebar::-webkit-scrollbar-thumb {
             background: var(--border-color);
             border-radius: 3px;
+        }
+        .app-sidebar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        /* ============================================ */
+        /* 🎨 انیمیشن‌ها                                 */
+        /* ============================================ */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .app-content {
+            animation: fadeIn 0.3s ease;
         }
     </style>
 
@@ -463,7 +813,7 @@
         <div class="sidebar-section">
             <div class="sidebar-section-title">مدیریت</div>
 
-            <a href="/admin/" class="sidebar-link {% if request.url.path == '/admin/' %}active{% endif %}">
+            <a href="/admin/" class="sidebar-link {% if request.url.path == '/admin/' or request.url.path == '/admin' %}active{% endif %}">
                 <i class="bi bi-grid-1x2"></i> پنل مدیریت
             </a>
 
@@ -553,11 +903,11 @@
         {% endif %}
 
         <!-- منوی کاربر (پایین sidebar) -->
-        <div class="sidebar-section" style="margin-top: auto; border-top: 1px solid var(--border-color);">
+        <div class="sidebar-section" style="margin-top: auto; border-top: 1px solid var(--border-color); padding-top: 16px;">
             <a href="/profile" class="sidebar-link {% if request.url.path == '/profile' %}active{% endif %}">
                 <i class="bi bi-person-circle"></i> {{ user.name if user else 'کاربر' }}
             </a>
-            <a href="/change-password" class="sidebar-link">
+            <a href="/change-password" class="sidebar-link {% if request.url.path == '/change-password' %}active{% endif %}">
                 <i class="bi bi-key"></i> تغییر رمز
             </a>
             <a href="/logout" class="sidebar-link" style="color: #dc3545;">
@@ -587,7 +937,7 @@
 
             <!-- 👤 منوی کاربر -->
             <div class="dropdown">
-                <button class="user-dropdown-btn dropdown-toggle" data-bs-toggle="dropdown">
+                <button class="user-dropdown-btn dropdown-toggle" data-bs-toggle="dropdown" type="button">
                     <div class="user-avatar">
                         <i class="bi bi-person"></i>
                     </div>
@@ -615,6 +965,11 @@
 <!-- Bootstrap JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
+
+<!-- 📅 Persian DatePicker JS (نیاز به jQuery و persian-date دارد) -->
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/persian-date@1.1.0/dist/persian-date.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/persian-datepicker@1.2.0/dist/js/persian-datepicker.min.js"></script>
 <script>
     // ============================================
     // 🌙 مدیریت حالت روز/شب
@@ -659,6 +1014,41 @@
             if (overlay) overlay.classList.remove('show');
         }
     });
+
+    // ============================================
+    // 📅 Helper برای تقویم شمسی (در دسترس همه صفحات)
+    // ============================================
+    window.initPersianDatePicker = function(inputId, options = {}) {
+        // تلاش مجدد برای لود شدن کتابخانه
+        function tryInit(attempts = 0) {
+            if (typeof mds === 'undefined' || !mds.MdsPersianDateTimePicker) {
+                if (attempts < 20) {
+                    setTimeout(() => tryInit(attempts + 1), 200);
+                    return;
+                }
+                console.warn('⚠️ کتابخانه تقویم لود نشد برای:', inputId);
+                return;
+            }
+
+            const element = document.getElementById(inputId);
+            if (!element) return;
+
+            return new mds.MdsPersianDateTimePicker(element, {
+                targetTextSelector: '#' + inputId,
+                selectedDateToShow: options.selectedDate || new Date(),
+                enableTimePicker: options.enableTimePicker || false,
+                monthButtons: true,
+                yearButtons: true,
+                isGregorian: false,
+                persianNumber: false,
+                dateFormat: 'yyyy/MM/dd',
+                textFormat: 'yyyy/MM/dd',
+                onSelected: options.onSelected || function() {}
+            });
+        }
+
+        tryInit();
+    };
 </script>
 
 {% block extra_js %}{% endblock %}

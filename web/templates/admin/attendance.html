@@ -31,7 +31,7 @@
 
             <!-- فرم انتخاب مستقیم -->
             <form method="get" action="/admin/attendance" class="d-flex align-items-center gap-2">
-                <input type="text" name="date_str" class="form-control jalali-date"
+                <input type="text" name="date_str" class="form-control"
                        value="{{ date_str_input }}" placeholder="1405/05/19" style="width: 130px;">
 
                 {% if department %}
@@ -80,7 +80,6 @@
        name="date_str"
        class="form-control jalali-date"
        id="attendanceDate"
-       value="{{ date_str_input }}"
        placeholder="انتخاب تاریخ"
        autocomplete="off">
             </div>
@@ -237,4 +236,11 @@
         </div>
     </div>
 </div>
+{% endblock %}
+{% block extra_js %}
+<script>
+$(document).ready(function() {
+    $('#attendanceDate').pDatepicker({ format: 'YYYY/MM/DD', autoClose: true });
+});
+</script>
 {% endblock %}

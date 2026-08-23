@@ -1,283 +1,562 @@
 {% extends "base.html" %}
 {% block title %}درخواست مرخصی | سامانه حضور و غیاب{% endblock %}
+
+{% block topbar_title %}درخواست مرخصی{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* 🎨 کارت‌های مانده */
+    .balance-card {
+        border: none;
+        border-radius: 16px;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        overflow: hidden;
+        position: relative;
+    }
+    .balance-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+    }
+    .balance-card .balance-icon {
+        width: 52px;
+        height: 52px;
+        border-radius: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+    }
+    .balance-card .balance-value {
+        font-size: 2rem;
+        font-weight: 700;
+        line-height: 1;
+    }
+    .balance-card .balance-label {
+        font-size: 0.85rem;
+        opacity: 0.8;
+    }
+
+    /* 🎨 کارت فرم */
+    .form-card {
+        border: none;
+        border-radius: 16px;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    }
+
+    /* 🎨 نمایش تعداد روز */
+    .days-display {
+        background: linear-gradient(135deg, #10b981 0%, #34d399 100%);
+        color: white;
+        border-radius: 12px;
+        padding: 20px;
+        text-align: center;
+        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+    }
+    .days-display .days-number {
+        font-size: 2.5rem;
+        font-weight: 700;
+        line-height: 1;
+    }
+    .days-display .days-label {
+        font-size: 0.85rem;
+        opacity: 0.9;
+        margin-top: 4px;
+    }
+    .days-display.warning {
+        background: linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%);
+        box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+    }
+    .days-display.danger {
+        background: linear-gradient(135deg, #ef4444 0%, #f87171 100%);
+        box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+    }
+
+    /* 🎨 جدول درخواست‌ها */
+    .requests-table {
+        font-size: 0.88rem;
+    }
+    .requests-table th {
+        background: #f8f9fa;
+        font-size: 0.78rem;
+        font-weight: 600;
+        color: #6b7280;
+        white-space: nowrap;
+        padding: 12px 10px;
+    }
+    .requests-table td {
+        vertical-align: middle;
+        padding: 10px;
+    }
+
+    /* 🎨 Badge وضعیت */
+    .status-badge {
+        font-size: 0.75rem;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-weight: 600;
+    }
+    .status-pending {
+        background: #fef3c7;
+        color: #92400e;
+    }
+    .status-approved {
+        background: #d1fae5;
+        color: #065f46;
+    }
+    .status-rejected {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+    .status-deleted {
+        background: #e5e7eb;
+        color: #374151;
+    }
+
+    /* 🎨 نوع مرخصی Badge */
+    .leave-type-badge {
+        font-size: 0.75rem;
+        padding: 3px 10px;
+        border-radius: 10px;
+    }
+    .leave-type-AL { background: #dbeafe; color: #1e40af; }
+    .leave-type-SL { background: #fce7f3; color: #9f1239; }
+    .leave-type-RL { background: #fef3c7; color: #92400e; }
+    .leave-type-UL { background: #e5e7eb; color: #374151; }
+    .leave-type-CW { background: #ddd6fe; color: #5b21b6; }
+
+    /* 🎨 فیلدهای تاریخ */
+    .date-input-wrapper {
+        position: relative;
+    }
+    .date-input-wrapper .clear-btn {
+        position: absolute;
+        left: 8px;
+        top: 50%;
+        transform: translateY(-50%);
+        background: transparent;
+        border: none;
+        color: #9ca3af;
+        cursor: pointer;
+        padding: 4px 8px;
+        font-size: 0.9rem;
+        z-index: 5;
+    }
+    .date-input-wrapper .clear-btn:hover {
+        color: #ef4444;
+    }
+
+    /* 🎨 Tooltip دلیل رد */
+    .rejection-reason {
+        display: inline-block;
+        max-width: 150px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        vertical-align: middle;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 
 <!-- پیام‌ها -->
 {% if request.query_params.get('success') %}
-<div class="alert alert-success alert-dismissible fade show">
-    <i class="bi bi-check-circle"></i> {{ request.query_params.get('success') }}
+<div class="alert alert-success alert-dismissible fade show shadow-sm border-0" role="alert">
+    <i class="bi bi-check-circle-fill"></i> {{ request.query_params.get('success') }}
     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
 </div>
 {% endif %}
 {% if request.query_params.get('error') %}
-<div class="alert alert-danger alert-dismissible fade show">
-    <i class="bi bi-exclamation-triangle"></i> {{ request.query_params.get('error') }}
+<div class="alert alert-danger alert-dismissible fade show shadow-sm border-0" role="alert">
+    <i class="bi bi-exclamation-triangle-fill"></i> {{ request.query_params.get('error') }}
     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
 </div>
 {% endif %}
 
+<!-- Header -->
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <h4><i class="bi bi-calendar-check"></i> درخواست مرخصی</h4>
-    <a href="/dashboard" class="btn btn-outline-primary btn-sm">
+    <div>
+        <h4 class="mb-1 fw-bold">
+            <i class="bi bi-calendar-check text-primary"></i> درخواست مرخصی
+        </h4>
+        <small class="text-muted">ثبت درخواست مرخصی و مشاهده وضعیت</small>
+    </div>
+    <a href="/dashboard" class="btn btn-outline-primary btn-sm rounded-pill">
         <i class="bi bi-arrow-right"></i> بازگشت به داشبورد
     </a>
 </div>
 
-<!-- کارت‌های آماری -->
-<div class="row mb-4">
+<!-- ============================================ -->
+<!-- 💰 کارت‌های مانده مرخصی -->
+<!-- ============================================ -->
+<div class="row g-3 mb-4">
     <!-- مانده استحقاقی -->
-    <div class="col-md-3 mb-3">
-        <div class="card stat-card bg-success text-white">
-            <div class="card-body">
-                <div class="d-flex justify-content-between">
-                    <div>
-                        <h6>مانده استحقاقی</h6>
-                        <h2>{{ al_balance }} روز</h2>
-                    </div>
-                    <i class="bi bi-calendar-heart fs-1 opacity-50"></i>
+    <div class="col-lg-3 col-md-6 col-6">
+        <div class="card balance-card bg-primary bg-opacity-10">
+            <div class="card-body d-flex align-items-center gap-3">
+                <div class="balance-icon bg-primary bg-opacity-25 text-primary">
+                    <i class="bi bi-sun"></i>
+                </div>
+                <div>
+                    <div class="balance-value text-primary">{{ al_balance }}</div>
+                    <div class="balance-label text-primary">روز استحقاقی</div>
                 </div>
             </div>
         </div>
     </div>
 
     <!-- مانده استعلاجی -->
-    <div class="col-md-3 mb-3">
-        <div class="card stat-card bg-info text-white">
-            <div class="card-body">
-                <div class="d-flex justify-content-between">
-                    <div>
-                        <h6>مانده استعلاجی</h6>
-                        <h2>{{ sl_balance }} روز</h2>
-                    </div>
-                    <i class="bi bi-heart-pulse fs-1 opacity-50"></i>
+    <div class="col-lg-3 col-md-6 col-6">
+        <div class="card balance-card bg-danger bg-opacity-10">
+            <div class="card-body d-flex align-items-center gap-3">
+                <div class="balance-icon bg-danger bg-opacity-25 text-danger">
+                    <i class="bi bi-heart-pulse"></i>
+                </div>
+                <div>
+                    <div class="balance-value text-danger">{{ sl_balance }}</div>
+                    <div class="balance-label text-danger">روز استعلاجی</div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- 🆕 مانده تشویقی -->
     {% if rl_balance > 0 %}
-    <div class="col-md-3 mb-3">
-        <div class="card stat-card bg-warning text-dark">
-            <div class="card-body">
-                <div class="d-flex justify-content-between">
-                    <div>
-                        <h6>مانده تشویقی</h6>
-                        <h2>{{ rl_balance }} روز</h2>
-                    </div>
-                    <i class="bi bi-gift fs-1 opacity-50"></i>
+    <!-- مانده تشویقی -->
+    <div class="col-lg-3 col-md-6 col-6">
+        <div class="card balance-card bg-warning bg-opacity-10">
+            <div class="card-body d-flex align-items-center gap-3">
+                <div class="balance-icon bg-warning bg-opacity-25 text-warning">
+                    <i class="bi bi-gift"></i>
+                </div>
+                <div>
+                    <div class="balance-value text-warning">{{ rl_balance }}</div>
+                    <div class="balance-label text-warning">روز تشویقی</div>
                 </div>
             </div>
         </div>
     </div>
     {% endif %}
 
-    <!-- 🆕 مانده ذخیره سال قبل -->
     {% if cw_balance > 0 %}
-    <div class="col-md-3 mb-3">
-        <div class="card stat-card bg-secondary text-white">
-            <div class="card-body">
-                <div class="d-flex justify-content-between">
-                    <div>
-                        <h6>ذخیره سال قبل</h6>
-                        <h2>{{ cw_balance }} روز</h2>
-                    </div>
-                    <i class="bi bi-archive fs-1 opacity-50"></i>
+    <!-- ذخیره سال قبل -->
+    <div class="col-lg-3 col-md-6 col-6">
+        <div class="card balance-card bg-info bg-opacity-10">
+            <div class="card-body d-flex align-items-center gap-3">
+                <div class="balance-icon bg-info bg-opacity-25 text-info">
+                    <i class="bi bi-box-seam"></i>
+                </div>
+                <div>
+                    <div class="balance-value text-info">{{ cw_balance }}</div>
+                    <div class="balance-label text-info">ذخیره سال قبل</div>
                 </div>
             </div>
         </div>
     </div>
     {% endif %}
-
-    <!-- در انتظار -->
-    <div class="col-md-3 mb-3">
-        <div class="card stat-card bg-primary text-white">
-            <div class="card-body">
-                <div class="d-flex justify-content-between">
-                    <div>
-                        <h6>در انتظار</h6>
-                        <h2>{{ pending_count }}</h2>
-                    </div>
-                    <i class="bi bi-hourglass-split fs-1 opacity-50"></i>
-                </div>
-            </div>
-        </div>
-    </div>
 </div>
 
-<div class="row">
-    <!-- فرم درخواست -->
-    <div class="col-md-4">
-        <div class="card mb-4">
-            <div class="card-header bg-white">
-                <h6><i class="bi bi-plus-circle"></i> درخواست جدید</h6>
+<div class="row g-4">
+    <!-- ============================================ -->
+    <!-- 📝 فرم درخواست مرخصی -->
+    <!-- ============================================ -->
+    <div class="col-lg-7">
+        <div class="card form-card">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
+                <h6 class="mb-0 fw-bold">
+                    <i class="bi bi-plus-circle text-primary"></i> درخواست جدید
+                </h6>
+                {% if pending_count > 0 %}
+                <span class="badge bg-warning text-dark rounded-pill">
+                    <i class="bi bi-hourglass-split"></i> {{ pending_count }} در انتظار
+                </span>
+                {% endif %}
             </div>
             <div class="card-body">
                 <form method="post" action="/leave/request" id="leaveForm">
-                    <div class="mb-3">
-                        <label class="form-label">🏷️ نوع مرخصی <span class="text-danger">*</span></label>
-                        <select name="leave_type" class="form-select" id="leaveType" onchange="updateBalanceDisplay()">
-                            {% for code, name in leave_types.items() %}
-                            <option value="{{ code }}"
-                                    data-balance="{{ balances.get(code, 0) }}"
-                                    data-type-name="{{ name }}">
-                                {{ name }}
-                                {% if code in ['RL', 'CW'] %}
-                                ({{ balances.get(code, 0) }} روز)
-                                {% endif %}
-                            </option>
-                            {% endfor %}
-                        </select>
-                        <!-- 🆕 نمایش راهنما برای انواع خاص -->
-                        <small class="text-muted d-block mt-1" id="leaveTypeHint">
-                            <i class="bi bi-info-circle"></i>
-                            <span id="hintText"></span>
-                        </small>
+                    <div class="row g-3">
+                        <!-- نوع مرخصی -->
+                        <div class="col-12">
+                            <label class="form-label fw-bold">
+                                <i class="bi bi-tag text-primary"></i> نوع مرخصی <span class="text-danger">*</span>
+                            </label>
+                            <select name="leave_type" class="form-select" required id="leaveType">
+                                {% for code, name in leave_types.items() %}
+                                <option value="{{ code }}"
+                                        data-balance="{{ balances.get(code, 0) }}"
+                                        {% if code not in balances or balances.get(code, 0) <= 0 %}disabled{% endif %}>
+                                    {{ name }}
+                                    {% if code in ['RL', 'CW', 'AL', 'SL'] %}
+                                    ({{ balances.get(code, 0) }} روز)
+                                    {% endif %}
+                                </option>
+                                {% endfor %}
+                            </select>
+                            <small class="text-muted">فقط انواعی که مانده دارند قابل انتخاب هستند</small>
+                        </div>
+
+                        <!-- از تاریخ -->
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">
+                                <i class="bi bi-calendar-event text-success"></i> از تاریخ <span class="text-danger">*</span>
+                            </label>
+                            <div class="date-input-wrapper">
+                                <input type="text"
+                                       name="from_date"
+                                       id="fromDate"
+                                       class="form-control form-control-lg text-center"
+                                       placeholder="انتخاب تاریخ"
+                                       autocomplete="off"
+                                       required>
+                                <button type="button" class="clear-btn" onclick="clearDate('fromDate')" title="پاک کردن">
+                                    <i class="bi bi-x-circle"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- تا تاریخ -->
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">
+                                <i class="bi bi-calendar-check text-danger"></i> تا تاریخ <span class="text-danger">*</span>
+                            </label>
+                            <div class="date-input-wrapper">
+                                <input type="text"
+                                       name="to_date"
+                                       id="toDate"
+                                       class="form-control form-control-lg text-center"
+                                       placeholder="انتخاب تاریخ"
+                                       autocomplete="off"
+                                       required>
+                                <button type="button" class="clear-btn" onclick="clearDate('toDate')" title="پاک کردن">
+                                    <i class="bi bi-x-circle"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- نمایش تعداد روز -->
+                        <div class="col-12">
+                            <div class="days-display" id="daysDisplay" style="display: none;">
+                                <div class="days-number" id="daysNumber">0</div>
+                                <div class="days-label">روز کاری (تعطیلات و جمعه‌ها کسر شده)</div>
+                            </div>
+                        </div>
+
+                        <!-- دلیل -->
+                        <div class="col-12">
+                            <label class="form-label fw-bold">
+                                <i class="bi bi-chat-text text-secondary"></i> دلیل (اختیاری)
+                            </label>
+                            <textarea name="reason" class="form-control" rows="3"
+                                      placeholder="دلیل درخواست مرخصی را بنویسید..."></textarea>
+                        </div>
+
+                        <!-- دکمه ثبت -->
+                        <div class="col-12">
+                            <button type="submit" class="btn btn-primary btn-lg w-100" id="submitBtn">
+                                <i class="bi bi-send-fill"></i> ثبت درخواست مرخصی
+                            </button>
+                        </div>
                     </div>
-<!-- 📅 از تاریخ -->
-<div class="mb-3">
-    <label class="form-label">از تاریخ <span class="text-danger">*</span></label>
-    <div class="input-group">
-        <input type="text"
-               name="from_date_str"
-               class="form-control"
-               id="fromDate"
-               readonly
-               required
-               placeholder="انتخاب تاریخ">
-        <button class="btn btn-outline-secondary" type="button" onclick="clearDate('fromDate')" title="پاک کردن">
-            <i class="bi bi-x-lg"></i>
-        </button>
-    </div>
-</div>
-
-<!-- 📅 تا تاریخ -->
-<div class="mb-3">
-    <label class="form-label">تا تاریخ <span class="text-danger">*</span></label>
-    <div class="input-group">
-        <input type="text"
-               name="to_date_str"
-               class="form-control"
-               id="toDate"
-               readonly
-               required
-               placeholder="انتخاب تاریخ">
-        <button class="btn btn-outline-secondary" type="button" onclick="clearDate('toDate')" title="پاک کردن">
-            <i class="bi bi-x-lg"></i>
-        </button>
-    </div>
-</div>
-
-                    <div class="mb-3">
-                        <label class="form-label">📝 دلیل (اختیاری)</label>
-                        <textarea name="reason" class="form-control" rows="2"
-                                  placeholder="دلیل مرخصی..."></textarea>
-                    </div>
-
-                    <!-- نمایش روزهای محاسبه شده -->
-                    <div class="alert alert-info d-none" id="daysPreview">
-                        <i class="bi bi-calculator"></i>
-                        تعداد روزهای کاری: <strong id="daysCount">-</strong> روز
-                        <br>
-                        <small class="text-muted">(تعطیلات و جمعه‌ها کسر شده‌اند)</small>
-                    </div>
-
-                    <button type="submit" class="btn btn-success w-100">
-                        <i class="bi bi-send"></i> ثبت درخواست
-                    </button>
                 </form>
 
-                <hr>
-                <small class="text-muted">
+                <div class="alert alert-info mt-3 mb-0 small">
                     <i class="bi bi-info-circle"></i>
                     تعطیلات رسمی و جمعه‌ها به صورت خودکار از تعداد روزهای مرخصی کسر می‌شوند.
-                </small>
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- لیست درخواست‌ها -->
-    <div class="col-md-8">
-        <div class="card">
-            <div class="card-header bg-white d-flex justify-content-between align-items-center">
-                <h6 class="mb-0"><i class="bi bi-list-ul"></i> درخواست‌های اخیر</h6>
-                <span class="badge bg-primary">{{ recent_requests|length }} مورد</span>
+    <!-- ============================================ -->
+    <!-- 📊 خلاصه وضعیت -->
+    <!-- ============================================ -->
+    <div class="col-lg-5">
+        <div class="card form-card mb-4">
+            <div class="card-header bg-white py-3">
+                <h6 class="mb-0 fw-bold">
+                    <i class="bi bi-info-circle text-primary"></i> راهنمای مرخصی
+                </h6>
             </div>
             <div class="card-body">
-                {% if recent_requests %}
-                <div class="table-responsive">
-                    <table class="table table-hover">
-                        <thead>
-                            <tr>
-                                <th>ردیف</th>
-                                <th>نوع</th>
-                                <th>از تاریخ</th>
-                                <th>تا تاریخ</th>
-                                <th class="text-center">روزها</th>
-                                <th>دلیل</th>
-                                <th class="text-center">وضعیت</th>
-                                <th class="text-center">عملیات</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for req in recent_requests %}
-                            <tr class="{% if req.status == 'P' %}table-warning{% endif %}">
-                                <td>{{ loop.index }}</td>
-                                <td>
-                                    {% if req.leave_type == 'AL' %}
-                                    <span class="badge bg-success">استحقاقی</span>
-                                    {% elif req.leave_type == 'SL' %}
-                                    <span class="badge bg-info">استعلاجی</span>
-                                    {% endif %}
-                                </td>
-                                <td>{{ req.from_date_j }}</td>
-                                <td>{{ req.to_date_j }}</td>
-                                <td class="text-center fw-bold">{{ req.days_count }}</td>
-                                <td>
-                                    <small>{{ req.reason or '-' }}</small>
-                                    {% if req.status == 'R' and req.rejection_reason %}
-                                    <br>
-                                    <small class="text-danger">
-                                        <i class="bi bi-info-circle"></i> {{ req.rejection_reason }}
-                                    </small>
-                                    {% endif %}
-                                </td>
-                                <td class="text-center">
-                                    {% if req.status == 'P' %}
-                                    <span class="badge bg-warning text-dark">⏳ در انتظار</span>
-                                    {% elif req.status == 'A' %}
-                                    <span class="badge bg-success">✅ تایید شده</span>
-                                    {% elif req.status == 'R' %}
-                                    <span class="badge bg-danger">❌ رد شده</span>
-                                    {% elif req.status == 'D' %}
-                                    <span class="badge bg-secondary">🗑️ حذف شده</span>
-                                    {% endif %}
-                                </td>
-                                <td class="text-center">
-                                    {% if req.status == 'P' %}
-                                    <form method="post" action="/leave/request/{{ req.id }}/cancel"
-                                          class="d-inline"
-                                          onsubmit="return confirm('آیا مطمئن هستید؟ این درخواست لغو می‌شود.');">
-                                        <button type="submit" class="btn btn-outline-danger btn-sm" title="لغو">
-                                            <i class="bi bi-x-circle"></i>
-                                        </button>
-                                    </form>
-                                    {% else %}
-                                    <span class="text-muted">-</span>
-                                    {% endif %}
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-                {% else %}
-                <div class="text-center py-5">
-                    <i class="bi bi-inbox display-4 text-muted"></i>
-                    <p class="text-muted mt-3">هنوز درخواستی ثبت نکرده‌اید</p>
-                </div>
-                {% endif %}
+                <ul class="list-unstyled mb-0">
+                    <li class="mb-3">
+                        <div class="d-flex align-items-start gap-2">
+                            <i class="bi bi-check-circle-fill text-success mt-1"></i>
+                            <div>
+                                <strong>مرخصی استحقاقی</strong>
+                                <div class="small text-muted">سالانه ۳۰-۳۵ روز بر اساس قرارداد</div>
+                            </div>
+                        </div>
+                    </li>
+                    <li class="mb-3">
+                        <div class="d-flex align-items-start gap-2">
+                            <i class="bi bi-heart-pulse-fill text-danger mt-1"></i>
+                            <div>
+                                <strong>مرخصی استعلاجی</strong>
+                                <div class="small text-muted">با ارائه گواهی پزشکی</div>
+                            </div>
+                        </div>
+                    </li>
+                    <li class="mb-3">
+                        <div class="d-flex align-items-start gap-2">
+                            <i class="bi bi-gift-fill text-warning mt-1"></i>
+                            <div>
+                                <strong>مرخصی تشویقی</strong>
+                                <div class="small text-muted">اعطا شده توسط مدیریت</div>
+                            </div>
+                        </div>
+                    </li>
+                    <li class="mb-0">
+                        <div class="d-flex align-items-start gap-2">
+                            <i class="bi bi-clock-fill text-info mt-1"></i>
+                            <div>
+                                <strong>زمان بررسی</strong>
+                                <div class="small text-muted">درخواست‌ها معمولاً در ۲۴ ساعت بررسی می‌شوند</div>
+                            </div>
+                        </div>
+                    </li>
+                </ul>
             </div>
+        </div>
+
+        <!-- تماس با پشتیبانی -->
+        <div class="card form-card">
+            <div class="card-body text-center py-4">
+                <i class="bi bi-headset display-5 text-primary mb-2"></i>
+                <h6 class="fw-bold">نیاز به کمک دارید؟</h6>
+                <p class="small text-muted mb-2">برای سوالات یا مشکلات با واحد منابع انسانی تماس بگیرید</p>
+                <a href="mailto:hr@company.com" class="btn btn-outline-primary btn-sm rounded-pill">
+                    <i class="bi bi-envelope"></i> hr@company.com
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================ -->
+<!-- 📋 درخواست‌های اخیر -->
+<!-- ============================================ -->
+<div class="card form-card mt-4">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
+        <h6 class="mb-0 fw-bold">
+            <i class="bi bi-clock-history text-primary"></i> درخواست‌های اخیر
+        </h6>
+        <span class="badge bg-secondary rounded-pill">{{ recent_requests|length }} مورد</span>
+    </div>
+    <div class="card-body p-0">
+        {% if recent_requests %}
+        <div class="table-responsive">
+            <table class="table table-hover requests-table mb-0">
+                <thead>
+                    <tr class="text-center">
+                        <th style="width: 50px;">#</th>
+                        <th>نوع</th>
+                        <th>از تاریخ</th>
+                        <th>تا تاریخ</th>
+                        <th class="text-center">روزها</th>
+                        <th>دلیل</th>
+                        <th class="text-center">وضعیت</th>
+                        <th class="text-center">عملیات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for req in recent_requests %}
+                    <tr>
+                        <td class="text-center text-muted">{{ loop.index }}</td>
+                        <td>
+                            <span class="leave-type-badge leave-type-{{ req.leave_type }}">
+                                {% if req.leave_type == 'AL' %}
+                                <i class="bi bi-sun"></i> استحقاقی
+                                {% elif req.leave_type == 'SL' %}
+                                <i class="bi bi-heart-pulse"></i> استعلاجی
+                                {% elif req.leave_type == 'RL' %}
+                                <i class="bi bi-gift"></i> تشویقی
+                                {% elif req.leave_type == 'CW' %}
+                                <i class="bi bi-box-seam"></i> ذخیره
+                                {% else %}
+                                {{ req.leave_type }}
+                                {% endif %}
+                            </span>
+                        </td>
+                        <td class="text-center">
+                            <span class="badge bg-light text-dark border">{{ req.from_date_j }}</span>
+                        </td>
+                        <td class="text-center">
+                            <span class="badge bg-light text-dark border">{{ req.to_date_j }}</span>
+                        </td>
+                        <td class="text-center">
+                            <strong>{{ req.days_count }}</strong>
+                        </td>
+                        <td>
+                            {% if req.reason %}
+                            <span class="text-muted small">{{ req.reason }}</span>
+                            {% else %}
+                            <span class="text-muted">-</span>
+                            {% endif %}
+                            {% if req.status == 'R' and req.rejection_reason %}
+                            <div class="small text-danger mt-1">
+                                <i class="bi bi-x-circle"></i>
+                                <span class="rejection-reason" title="{{ req.rejection_reason }}">
+                                    {{ req.rejection_reason }}
+                                </span>
+                            </div>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            {% if req.status == 'P' %}
+                            <span class="status-badge status-pending">
+                                <i class="bi bi-hourglass-split"></i> در انتظار
+                            </span>
+                            {% elif req.status == 'A' %}
+                            <span class="status-badge status-approved">
+                                <i class="bi bi-check-circle"></i> تایید شده
+                            </span>
+                            {% elif req.status == 'R' %}
+                            <span class="status-badge status-rejected">
+                                <i class="bi bi-x-circle"></i> رد شده
+                            </span>
+                            {% elif req.status == 'D' %}
+                            <span class="status-badge status-deleted">
+                                <i class="bi bi-trash"></i> حذف شده
+                            </span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            {% if req.status == 'P' %}
+                            <form method="post" action="/leave/request/{{ req.id }}/cancel"
+                                  class="d-inline"
+                                  onsubmit="return confirm('آیا از لغو این درخواست مطمئن هستید؟');">
+                                <button type="submit" class="btn btn-outline-danger btn-sm" title="لغو درخواست">
+                                    <i class="bi bi-x-lg"></i>
+                                </button>
+                            </form>
+                            {% else %}
+                            <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-inbox display-4"></i>
+            <p class="mt-3 mb-0">هنوز درخواستی ثبت نکرده‌اید</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- راهنمای رنگ‌ها -->
+<div class="card form-card mt-3">
+    <div class="card-body py-3">
+        <div class="d-flex gap-4 flex-wrap align-items-center small">
+            <strong class="text-muted"><i class="bi bi-palette"></i> راهنمای وضعیت:</strong>
+            <span><span class="status-badge status-pending">در انتظار</span> در حال بررسی</span>
+            <span><span class="status-badge status-approved">تایید شده</span> از مانده کسر شد</span>
+            <span><span class="status-badge status-rejected">رد شده</span> تایید نشد</span>
+            <span><span class="status-badge status-deleted">حذف شده</span> لغو توسط کاربر</span>
         </div>
     </div>
 </div>
@@ -286,112 +565,109 @@
 
 {% block extra_js %}
 <script>
-// 🗑️ تابع پاک کردن تاریخ
+// ============================================
+// 🗑️ پاک کردن تاریخ
+// ============================================
 function clearDate(inputId) {
     document.getElementById(inputId).value = '';
-    calculateDays();
+    document.getElementById('daysDisplay').style.display = 'none';
 }
 
-// 📅 راه‌اندازی تقویم - نسخه ساده و پایدار
-document.addEventListener('DOMContentLoaded', function() {
-    if (typeof mds === 'undefined' || !mds.MdsPersianDateTimePicker) {
-        console.error('کتابخانه تقویم لود نشده!');
-        return;
+// ============================================
+// 📅 راه‌اندازی تقویم شمسی (persian-datepicker)
+// ============================================
+$(document).ready(function() {
+
+    // تنظیمات مشترک تقویم
+    function createPicker(selector, onChangeCallback) {
+        $(selector).pDatepicker({
+            format: 'YYYY/MM/DD',
+            initialValue: false,
+            persianDigit: false,
+            autoClose: true,
+            calendar: {
+                persian: {
+                    locale: 'fa',
+                    showHint: true,
+                    leapYearMode: 'astronomical'
+                }
+            },
+navigator: {
+    enabled: true,
+    scroll: { enabled: true },
+    text: {
+        btnNextText: '❮',    // ✅ فلش چپ یونیکد
+        btnPrevText: '❯'     // ✅ فلش راست یونیکد
     }
-
-    // 🆕 تابع کمکی برای ساخت تقویم
-    function createPicker(inputId, onSelectedCallback) {
-        const element = document.getElementById(inputId);
-        if (!element) return null;
-
-        return new mds.MdsPersianDateTimePicker(element, {
-            // 🆕 targetTextSelector به صورت string selector یا حذف شود
-            targetTextSelector: '#' + inputId,
-            selectedDateToShow: new Date(),
-            enableTimePicker: false,
-            monthButtons: true,
-            yearButtons: true,
-            isGregorian: false,
-            persianNumber: false,
-            // 🆕 فرمت شمسی
-            dateFormat: 'yyyy/MM/dd',
-            textFormat: 'yyyy/MM/dd',
-            onSelected: onSelectedCallback
+},
+            toolbox: {
+                calendarSwitch: { enabled: true },
+                todayButton: {
+                    enabled: true,
+                    text: { fa: 'امروز' }
+                }
+            },
+            onSelect: function(unix) {
+                // اجرای کال‌بک بعد از انتخاب
+                if (onChangeCallback) {
+                    setTimeout(onChangeCallback, 100);
+                }
+            }
         });
     }
 
     // تقویم "از تاریخ"
-    createPicker('fromDate', function(date) {
-        console.log('از تاریخ انتخاب شد:', document.getElementById('fromDate').value);
-        setTimeout(calculateDays, 100);
+    createPicker('#fromDate', function() {
+        console.log('از تاریخ انتخاب شد:', $('#fromDate').val());
+        calculateDays();
     });
 
     // تقویم "تا تاریخ"
-    createPicker('toDate', function(date) {
-        console.log('تا تاریخ انتخاب شد:', document.getElementById('toDate').value);
-        setTimeout(calculateDays, 100);
+    createPicker('#toDate', function() {
+        console.log('تا تاریخ انتخاب شد:', $('#toDate').val());
+        calculateDays();
     });
+
+    console.log('✅ تقویم‌های شمسی راه‌اندازی شدند');
 });
 
-// 🧮 محاسبه تعداد روزها
-function calculateDays() {
-    const fromStr = document.getElementById('fromDate').value;
-    const toStr = document.getElementById('toDate').value;
-    const preview = document.getElementById('daysPreview');
-    const daysEl = document.getElementById('daysCount');
+// ============================================
+// 📊 محاسبه تعداد روزهای کاری
+// ============================================
+window.calculateDays = async function() {
+    const fromDate = $('#fromDate').val();
+    const toDate = $('#toDate').val();
+    const daysDisplay = document.getElementById('daysDisplay');
+    const daysNumber = document.getElementById('daysNumber');
 
-    if (!fromStr || !toStr) {
-        if (preview) preview.classList.add('d-none');
+    if (!fromDate || !toDate) {
+        daysDisplay.style.display = 'none';
         return;
     }
 
     try {
-        const fromParts = fromStr.split('/').map(Number);
-        const toParts = toStr.split('/').map(Number);
+        const response = await fetch(`/leave/calculate-days?from_date=${encodeURIComponent(fromDate)}&to_date=${encodeURIComponent(toDate)}`);
+        const data = await response.json();
 
-        if (fromParts.length !== 3 || toParts.length !== 3) {
-            if (preview) preview.classList.add('d-none');
-            return;
+        if (data.success) {
+            daysDisplay.style.display = 'block';
+            daysNumber.textContent = data.days_count;
+
+            daysDisplay.className = 'days-display';
+            if (data.days_count > 14) {
+                daysDisplay.classList.add('danger');
+            } else if (data.days_count > 7) {
+                daysDisplay.classList.add('warning');
+            }
+        } else {
+            daysDisplay.style.display = 'block';
+            daysNumber.textContent = '0';
+            daysDisplay.classList.add('danger');
         }
-
-        // محاسبه ساده اختلاف روزها
-        const fromDays = fromParts[0] * 365 + fromParts[1] * 30 + fromParts[2];
-        const toDays = toParts[0] * 365 + toParts[1] * 30 + toParts[2];
-        const diffDays = Math.abs(toDays - fromDays) + 1;
-
-        // تخمین کسر جمعه‌ها
-        const fridays = Math.floor(diffDays / 7);
-        const estimatedDays = diffDays - fridays;
-
-        if (daysEl) daysEl.textContent = `حدود ${estimatedDays} روز (محاسبه دقیق پس از ثبت)`;
-        if (preview) preview.classList.remove('d-none');
-    } catch (e) {
-        console.error(e);
-        if (preview) preview.classList.add('d-none');
+    } catch (error) {
+        console.error('خطا در محاسبه روزها:', error);
+        daysDisplay.style.display = 'none';
     }
-}
-
-// 🆕 راهنمای انواع مرخصی
-const leaveTypeHints = {
-    'AL': 'مرخصی سالانه طبق قرارداد',
-    'SL': 'مرخصی بیماری با تایید پزشک',
-    'RL': 'مرخصی تشویقی اعطا شده توسط مدیریت',
-    'CW': 'مرخصی ذخیره شده از سال قبل',
 };
-
-function updateBalanceDisplay() {
-    const select = document.getElementById('leaveType');
-    if (!select) return;
-    const selectedOption = select.options[select.selectedIndex];
-    const leaveType = selectedOption.value;
-    const hintText = document.getElementById('hintText');
-    if (hintText && leaveTypeHints[leaveType]) {
-        hintText.textContent = leaveTypeHints[leaveType];
-    }
-}
-
-document.addEventListener('DOMContentLoaded', function() {
-    updateBalanceDisplay();
-});
 </script>
 {% endblock %}
