@@ -516,6 +516,16 @@ async def admin_attendance(
     ).all()
     status_by_user = {ds.user_id: ds.status_code for ds in daily_statuses}
 
+    # 🆕 دریافت مرخصی‌های تایید شده که شامل تاریخ هدف هستند
+    approved_leaves = db.query(LeaveRequest).filter(
+        and_(
+            LeaveRequest.status == 'A',
+            LeaveRequest.from_date <= target_date,
+            LeaveRequest.to_date >= target_date
+        )
+    ).all()
+    leave_by_user = {lv.user_id: lv.leave_type for lv in approved_leaves}
+
     # بررسی تعطیل بودن روز
     is_friday = target_date.weekday() == 4
     holiday = db.query(Holiday).filter(
@@ -534,9 +544,29 @@ async def admin_attendance(
 
         # تعیین وضعیت
         daily_status = status_by_user.get(emp.user_id)
-        if daily_status:
+        leave_type = leave_by_user.get(emp.user_id)
+
+        LEAVE_TYPE_NAMES_LOCAL = {
+            'AL': 'استحقاقی',
+            'SL': 'استعلاجی',
+            'RL': 'تشویقی',
+            'UL': 'بدون حقوق',
+            'CW': 'ذخیره',
+        }
+
+        # ✅ اولویت ۱: تعطیل رسمی یا جمعه
+        if is_friday or holiday:
+            if is_friday:
+                status_label = '🟡 جمعه'
+                status_color = 'warning'
+            else:
+                status_label = f'🔴 تعطیل: {holiday.title}'
+                status_color = 'danger'
+        # ✅ اولویت ۲: DailyStatus (وضعیت دستی ثبت شده)
+        elif daily_status:
             if daily_status in ('AL', 'SL', 'RL', 'UL'):
-                status_label = '🌴 مرخصی'
+                type_name = LEAVE_TYPE_NAMES_LOCAL.get(daily_status, '')
+                status_label = f'🌴 مرخصی {type_name}'
                 status_color = 'info'
             elif daily_status == 'M':
                 status_label = '💼 ماموریت'
@@ -547,13 +577,15 @@ async def admin_attendance(
             else:
                 status_label = '📋 ' + daily_status
                 status_color = 'secondary'
+        # ✅ اولویت ۳: مرخصی تایید شده (فقط روز کاری)
+        elif leave_type:
+            type_name = LEAVE_TYPE_NAMES_LOCAL.get(leave_type, '')
+            status_label = f'🌴 مرخصی {type_name}'
+            status_color = 'info'
+        # ✅ اولویت ۴: تحلیل تردد
         elif not user_atts:
-            if is_friday or holiday:
-                status_label = '🟡 تعطیل'
-                status_color = 'warning'
-            else:
-                status_label = '⚪ بدون تردد'
-                status_color = 'secondary'
+            status_label = '⚪ بدون تردد'
+            status_color = 'secondary'
         elif enters and exits and len(enters) == len(exits):
             status_label = '✅ کامل'
             status_color = 'success'
@@ -683,6 +715,32 @@ async def admin_user_attendance(
 
     holidays = holiday_query.all()
     holiday_dates = {h.holiday_date: h.title for h in holidays}
+
+    # 🆕 دریافت مرخصی‌های تایید شده کاربر هدف برای بازه ماه
+    approved_leaves = db.query(LeaveRequest).filter(
+        and_(
+            LeaveRequest.user_id == target_user_id,
+            LeaveRequest.status == 'A',
+            LeaveRequest.from_date <= month_end_g,
+            LeaveRequest.to_date >= month_start_g
+        )
+    ).all()
+
+    # 🆕 ساخت دیکشنری مرخصی‌ها بر اساس تاریخ
+    LEAVE_TYPE_NAMES_LOCAL = {
+        'AL': 'استحقاقی',
+        'SL': 'استعلاجی',
+        'RL': 'تشویقی',
+        'CW': 'ذخیره',
+    }
+    leaves_by_date = {}
+    for leave in approved_leaves:
+        current_leave = leave.from_date
+        while current_leave <= leave.to_date:
+            if month_start_g <= current_leave <= month_end_g:
+                leaves_by_date[current_leave] = leave.leave_type
+            current_leave += timedelta(days=1)
+
     # گروه‌بندی بر اساس روز
     days_dict = {}
     for record in records:
@@ -717,6 +775,14 @@ async def admin_user_attendance(
             is_friday=is_friday,
             holiday_title=holiday_title
         )
+        from web.routes.attendance import STATUS_LEAVE
+        # 🆕 بررسی مرخصی تایید شده (فقط در روزهای کاری)
+        leave_type = leaves_by_date.get(current)
+        if leave_type and not is_friday and not holiday_title:  # ✅ تعطیلات اولویت دارند
+            type_name = LEAVE_TYPE_NAMES_LOCAL.get(leave_type, '')
+            status_info['main_status'] = STATUS_LEAVE
+            status_info['main_label'] = f'🌴 مرخصی {type_name}'
+            status_info['main_color'] = 'info'
 
         # 🆕 محاسبه کارکرد با در نظر گرفتن شیفت شب
         work_hours, first_enter, last_exit = calculate_work_hours(
@@ -751,6 +817,8 @@ async def admin_user_attendance(
         days_list = [d for d in days_list if d['status']['is_friday'] or d['status']['is_holiday']]
     elif status_filter == 'no_attendance':
         days_list = [d for d in days_list if d['status']['main_status'] == STATUS_NO_ATTENDANCE]
+    elif status_filter == 'leave':  # 🆕
+        days_list = [d for d in days_list if d['status']['main_status'] == STATUS_LEAVE]
 
     MONTH_NAMES = {
         1: 'فروردین', 2: 'اردیبهشت', 3: 'خرداد', 4: 'تیر',

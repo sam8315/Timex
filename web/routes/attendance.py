@@ -14,6 +14,7 @@ from web.dependencies import get_db, check_password_change
 from models.user import User
 from models.attendance import Attendance
 from models.holiday import Holiday
+from models.leave_request import LeaveRequest  # 🆕
 
 router = APIRouter(tags=["Attendance"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
@@ -445,6 +446,31 @@ async def attendance_page(
     holidays = holiday_query.all()
     holiday_dates = {h.holiday_date: h.title for h in holidays}
 
+    # 🆕 دریافت مرخصی‌های تایید شده برای بازه ماه
+    approved_leaves = db.query(LeaveRequest).filter(
+        and_(
+            LeaveRequest.user_id == user.user_id,
+            LeaveRequest.status == 'A',
+            LeaveRequest.from_date <= month_end_g,
+            LeaveRequest.to_date >= month_start_g
+        )
+    ).all()
+
+    # 🆕 ساخت دیکشنری مرخصی‌ها بر اساس تاریخ
+    leaves_by_date = {}
+    LEAVE_TYPE_NAMES_LOCAL = {
+        'AL': 'استحقاقی',
+        'SL': 'استعلاجی',
+        'RL': 'تشویقی',
+        'CW': 'ذخیره',
+    }
+    for leave in approved_leaves:
+        current_leave = leave.from_date
+        while current_leave <= leave.to_date:
+            if month_start_g <= current_leave <= month_end_g:
+                leaves_by_date[current_leave] = leave.leave_type
+            current_leave += timedelta(days=1)
+
     # گروه‌بندی بر اساس روز
     days_dict = {}
     for record in records:
@@ -474,6 +500,14 @@ async def attendance_page(
             is_friday=is_friday,
             holiday_title=holiday_title
         )
+        # 🆕 بررسی مرخصی تایید شده
+        # ⚠️ فقط اگر روز تعطیل یا جمعه نباشد (تعطیلات اولویت دارند)
+        leave_type = leaves_by_date.get(current)
+        if leave_type and not is_friday and holiday_title is None:
+            type_name = LEAVE_TYPE_NAMES_LOCAL.get(leave_type, '')
+            status_info['main_status'] = STATUS_LEAVE
+            status_info['main_label'] = f'🌴 مرخصی {type_name}'
+            status_info['main_color'] = 'info'
 
         # 🆕 محاسبه کارکرد با در نظر گرفتن شیفت شب
         work_hours, first_enter, last_exit = calculate_work_hours(
@@ -509,6 +543,8 @@ async def attendance_page(
         days_list = [d for d in days_list if d['status']['is_friday'] or d['status']['is_holiday']]
     elif status_filter == 'no_attendance':
         days_list = [d for d in days_list if d['status']['main_status'] == STATUS_NO_ATTENDANCE]
+    elif status_filter == 'leave':  # 🆕
+        days_list = [d for d in days_list if d['status']['main_status'] == STATUS_LEAVE]
     # 'all' یا None → بدون فیلتر
 
     # آمار
