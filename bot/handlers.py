@@ -483,7 +483,43 @@ def handle_web_panel_request(chat_id):
             )
             return
 
-        # حالت ۳: همه چیز آماده است → نمایش لینک
+        # حالت ۳: کد ملی ثبت شده
+        # 🆕 بررسی اینکه آیا کاربر تا به حال وارد شده یا نه
+        from models.user import User as UserModel
+        web_user = db_session.query(UserModel).filter(
+            UserModel.user_id == bale_user.user_id
+        ).first()
+
+        # آیا نیاز به ریست رمز است؟
+        needs_reset = False
+        if web_user:
+            # اگر کاربر تا به حال وارد نشده یا رمز باید تغییر کند
+            needs_reset = (
+                    web_user.last_login is None or
+                    web_user.must_change_password == True
+            )
+        else:
+            # کاربر در جدول User نیست (حالت غیرعادی)
+            needs_reset = True
+
+        if needs_reset:
+            # 🆕 ریست رمز به کد ملی
+            reset_ok = db.reset_password_to_national_code(db_session, bale_user.user_id)
+            if reset_ok:
+                bale_api.send_message(
+                    chat_id,
+                    "🔑 رمز عبور شما به <b>کد ملی</b> تغییر یافت.\n"
+                    "⚠️ پس از اولین ورود، حتماً رمز خود را تغییر دهید."
+                )
+            else:
+                bale_api.send_message(
+                    chat_id,
+                    "⚠️ خطا در ریست رمز. لطفاً با منابع انسانی تماس بگیرید.",
+                    reply_markup=bale_api.MAIN_MENU_KEYBOARD
+                )
+                return
+
+        # ارسال لینک و راهنمای ورود
         _send_web_access_message(chat_id, employee, bale_user)
 
     finally:
