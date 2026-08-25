@@ -303,3 +303,170 @@ async def admin_set_default_phone(
         )
     except Exception as e:
         return RedirectResponse(url=f"/admin/profile/{target_user_id}?error=خطا: {str(e)}", status_code=302)
+
+
+# ============================================
+# 🔐 تأیید شماره با کد یکبار مصرف (OTP)
+# ============================================
+import random
+from datetime import datetime, timedelta
+from fastapi import Form
+from core.sms_service import SmsService
+
+# 🆕 ذخیره‌سازی موقت کدها در حافظه
+# ساختار: {phone: {'code': '123456', 'user_id': '...', 'expires_at': datetime}}
+otp_store = {}
+
+# ⏱️ مدت اعتبار کد (دقیقه)
+OTP_EXPIRY_MINUTES = 5
+
+
+def _normalize_phone(phone: str) -> str:
+    """نرمال‌سازی شماره موبایل ایرانی"""
+    phone = phone.strip().replace(' ', '').replace('-', '')
+    phone = phone.replace('+98', '0').replace('98', '0', 1)
+    if not phone.startswith('0') and len(phone) == 10:
+        phone = '0' + phone
+    return phone
+
+
+def _generate_otp() -> str:
+    """تولید کد ۶ رقمی تصادفی"""
+    return ''.join(random.choices('0123456789', k=6))
+
+
+@router.post("/profile/phones/send-otp")
+async def send_phone_otp(
+    request: Request,
+    phone_number: str = Form(...),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """🆕 ارسال کد یکبار مصرف به شماره"""
+    try:
+        phone = _normalize_phone(phone_number)
+
+        # اعتبارسنجی شماره
+        if not phone.startswith('09') or len(phone) != 11 or not phone.isdigit():
+            return {"success": False, "message": "شماره موبایل نامعتبر است"}
+
+        # بررسی تکراری نبودن
+        existing = db.query(EmployeePhone).filter(
+            EmployeePhone.phone_number == phone
+        ).first()
+        if existing:
+            if existing.user_id == user.user_id:
+                return {"success": False, "message": "این شماره قبلاً برای شما ثبت شده است"}
+            return {"success": False, "message": "این شماره برای کاربر دیگری ثبت شده است"}
+
+        # 🆕 محدودیت ارسال: هر شماره حداکثر یک بار در دقیقه
+        existing_otp = otp_store.get(phone)
+        if existing_otp:
+            sent_at = existing_otp.get('sent_at')
+            if sent_at and (datetime.now() - sent_at).total_seconds() < 60:
+                remaining = 60 - int((datetime.now() - sent_at).total_seconds())
+                return {"success": False, "message": f"لطفاً {remaining} ثانیه صبر کنید"}
+
+        # تولید کد
+        otp_code = _generate_otp()
+
+        # ذخیره در حافظه
+        otp_store[phone] = {
+            'code': otp_code,
+            'user_id': user.user_id,
+            'expires_at': datetime.now() + timedelta(minutes=OTP_EXPIRY_MINUTES),
+            'sent_at': datetime.now(),
+            'attempts': 0
+        }
+
+        # ارسال پیامک
+        sms = SmsService()
+        message = (
+            f"🔐 کد تأیید شما: {otp_code}\n"
+            f"این کد تا {OTP_EXPIRY_MINUTES} دقیقه معتبر است.\n"
+            f"سامانه حضور و غیاب"
+        )
+        sms_result = sms.send_sms([phone], message)
+
+        if not sms_result.get('success'):
+            # اگر ارسال پیامک ناموفق بود، کد را در کنسول نمایش بده (برای تست)
+            print(f"⚠️ ارسال پیامک ناموفق بود. کد تأیید {user.user_id}: {otp_code}")
+            return {
+                "success": False,
+                "message": "خطا در ارسال پیامک. لطفاً دوباره تلاش کنید."
+            }
+
+        return {
+            "success": True,
+            "message": f"کد تأیید به شماره {phone} ارسال شد"
+        }
+
+    except Exception as e:
+        return {"success": False, "message": f"خطا: {str(e)}"}
+
+
+@router.post("/profile/phones/verify-otp")
+async def verify_phone_otp(
+    request: Request,
+    phone_number: str = Form(...),
+    otp_code: str = Form(...),
+    label: str = Form(""),
+    is_default: str = Form("off"),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """🆕 تأیید کد و ذخیره شماره"""
+    try:
+        phone = _normalize_phone(phone_number)
+        otp_data = otp_store.get(phone)
+
+        # بررسی وجود کد
+        if not otp_data:
+            return {"success": False, "message": "کد تأییدی ارسال نشده است"}
+
+        # بررسی مالکیت کد
+        if otp_data['user_id'] != user.user_id:
+            return {"success": False, "message": "این کد برای شما نیست"}
+
+        # بررسی انقضا
+        if datetime.now() > otp_data['expires_at']:
+            del otp_store[phone]
+            return {"success": False, "message": "کد تأیید منقضی شده است"}
+
+        # بررسی تعداد تلاش‌ها (حداکثر ۵ بار)
+        if otp_data['attempts'] >= 5:
+            del otp_store[phone]
+            return {"success": False, "message": "تعداد تلاش‌ها بیش از حد مجاز است"}
+
+        # بررسی کد
+        if otp_data['code'] != otp_code.strip():
+            otp_data['attempts'] += 1
+            remaining = 5 - otp_data['attempts']
+            return {"success": False, "message": f"کد تأیید نادرست است ({remaining} تلاش باقی مانده)"}
+
+        # ✅ کد درست است → ذخیره شماره
+        new_phone = EmployeePhone(
+            user_id=user.user_id,
+            phone_number=phone,
+            label=label.strip() or None,
+            is_default=(is_default == "on")
+        )
+
+        # اگر این شماره پیش‌فرض است، سایر شماره‌ها را از حالت پیش‌فرض خارج کن
+        if is_default == "on":
+            db.query(EmployeePhone).filter(
+                EmployeePhone.user_id == user.user_id,
+                EmployeePhone.is_default == True
+            ).update({"is_default": False})
+
+        db.add(new_phone)
+        db.commit()
+
+        # حذف کد از حافظه
+        del otp_store[phone]
+
+        return {"success": True, "message": "شماره با موفقیت اضافه شد"}
+
+    except Exception as e:
+        db.rollback()
+        return {"success": False, "message": f"خطا: {str(e)}"}

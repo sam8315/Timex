@@ -323,46 +323,76 @@
     </div>
 </div>
 
-<!-- 🆕 مودال افزودن شماره -->
-<div class="modal fade" id="addPhoneModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <form method="post" action="/profile/phones/add">
-                <div class="modal-header">
-                    <h5 class="modal-title"><i class="bi bi-plus-circle"></i> افزودن شماره تلفن</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+<!-- 🔐 فرم افزودن شماره با تأیید کد -->
+<div class="card border-0 shadow-sm mt-4">
+    <div class="card-header bg-white">
+        <h6 class="mb-0 fw-bold">
+            <i class="bi bi-plus-circle text-primary"></i> افزودن شماره جدید
+        </h6>
+    </div>
+    <div class="card-body">
+        <!-- مرحله ۱: ورود شماره -->
+        <div id="stepPhone">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label fw-bold">📱 شماره موبایل <span class="text-danger">*</span></label>
+                    <input type="tel" id="otpPhoneNumber" class="form-control text-center"
+                           placeholder="09121234567" maxlength="11"
+                           style="direction: ltr; letter-spacing: 2px;">
+                    <small class="text-muted">کد تأیید به این شماره پیامک می‌شود</small>
                 </div>
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <label class="form-label">شماره موبایل <span class="text-danger">*</span></label>
-                        <input type="text" name="phone_number" class="form-control"
-                               placeholder="09121234567" required
-                               pattern="09[0-9]{9}" maxlength="11">
-                        <small class="text-muted">مثال: 09121234567</small>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">برچسب</label>
-                        <select name="label" class="form-select">
-                            <option value="همراه" selected>📱 همراه</option>
-                            <option value="منزل">🏠 منزل</option>
-                            <option value="اضطراری">🚨 اضطراری</option>
-                        </select>
-                    </div>
-                    <div class="form-check">
-                        <input class="form-check-input" type="checkbox" name="is_default" id="isDefault">
-                        <label class="form-check-label" for="isDefault">
-                            ⭐ به عنوان شماره پیش‌فرض
-                        </label>
+                <div class="col-md-3">
+                    <label class="form-label fw-bold">🏷️ برچسب</label>
+                    <select id="otpLabel" class="form-select">
+                        <option value="همراه">همراه</option>
+                        <option value="منزل">منزل</option>
+                        <option value="اضطراری">اضطراری</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label fw-bold">⭐ پیش‌فرض</label>
+                    <div class="form-check form-switch mt-2">
+                        <input class="form-check-input" type="checkbox" id="otpIsDefault">
+                        <label class="form-check-label small" for="otpIsDefault">پیش‌فرض</label>
                     </div>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
-                    <button type="submit" class="btn btn-success">
-                        <i class="bi bi-plus-circle"></i> افزودن
+                <div class="col-12">
+                    <button type="button" class="btn btn-primary w-100" id="btnSendOtp" onclick="sendOtp()">
+                        <i class="bi bi-send"></i> ارسال کد تأیید
                     </button>
                 </div>
-            </form>
+            </div>
         </div>
+
+        <!-- مرحله ۲: ورود کد -->
+        <div id="stepOtp" style="display: none;">
+            <div class="alert alert-info small">
+                <i class="bi bi-info-circle"></i>
+                کد تأیید به شماره <strong id="otpPhoneDisplay" style="direction: ltr;"></strong> ارسال شد.
+                <span id="otpTimer" class="text-danger fw-bold"></span>
+            </div>
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label fw-bold">🔐 کد تأیید <span class="text-danger">*</span></label>
+                    <input type="text" id="otpCode" class="form-control text-center"
+                           placeholder="______" maxlength="6"
+                           style="direction: ltr; letter-spacing: 8px; font-size: 1.3rem;">
+                </div>
+                <div class="col-md-3 d-grid">
+                    <button type="button" class="btn btn-success mt-auto" onclick="verifyOtp()">
+                        <i class="bi bi-check-circle"></i> تأیید کد
+                    </button>
+                </div>
+                <div class="col-md-3 d-grid">
+                    <button type="button" class="btn btn-outline-secondary mt-auto" onclick="cancelOtp()">
+                        <i class="bi bi-x-circle"></i> انصراف
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- پیام وضعیت -->
+        <div id="otpMessage" class="mt-3" style="display: none;"></div>
     </div>
 </div>
 </div>
@@ -373,4 +403,128 @@
 </div>
 {% endif %}
 
+{% endblock %}
+{% block extra_js %}
+<script>
+// ============================================
+// 🔐 مدیریت ارسال و تأیید کد
+// ============================================
+
+let otpTimerInterval = null;
+let otpExpirySeconds = {{ 5 * 60 }};  // ۵ دقیقه
+
+function showOtpMessage(message, type) {
+    const msgDiv = document.getElementById('otpMessage');
+    msgDiv.style.display = 'block';
+    msgDiv.className = `alert alert-${type === 'success' ? 'success' : 'danger'} mt-3`;
+    msgDiv.innerHTML = message;
+}
+
+async function sendOtp() {
+    const phone = document.getElementById('otpPhoneNumber').value.trim();
+    const btn = document.getElementById('btnSendOtp');
+
+    // اعتبارسنجی سمت کلاینت
+    if (!/^09\d{9}$/.test(phone)) {
+        showOtpMessage('❌ شماره موبایل باید ۱۱ رقم و با ۰۹ شروع شود', 'error');
+        return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> در حال ارسال...';
+
+    try {
+        const formData = new FormData();
+        formData.append('phone_number', phone);
+
+        const response = await fetch('/profile/phones/send-otp', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            // نمایش مرحله ۲
+            document.getElementById('stepPhone').style.display = 'none';
+            document.getElementById('stepOtp').style.display = 'block';
+            document.getElementById('otpPhoneDisplay').textContent = phone;
+            showOtpMessage('✅ ' + data.message, 'success');
+            startOtpTimer();
+            document.getElementById('otpCode').focus();
+        } else {
+            showOtpMessage('❌ ' + data.message, 'error');
+        }
+    } catch (error) {
+        showOtpMessage('❌ خطا در ارتباط با سرور', 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-send"></i> ارسال کد تأیید';
+    }
+}
+
+async function verifyOtp() {
+    const phone = document.getElementById('otpPhoneNumber').value.trim();
+    const code = document.getElementById('otpCode').value.trim();
+    const label = document.getElementById('otpLabel').value;
+    const isDefault = document.getElementById('otpIsDefault').checked ? 'on' : 'off';
+
+    if (code.length !== 6) {
+        showOtpMessage('❌ کد تأیید باید ۶ رقم باشد', 'error');
+        return;
+    }
+
+    try {
+        const formData = new FormData();
+        formData.append('phone_number', phone);
+        formData.append('otp_code', code);
+        formData.append('label', label);
+        formData.append('is_default', isDefault);
+
+        const response = await fetch('/profile/phones/verify-otp', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            showOtpMessage('✅ ' + data.message, 'success');
+            // رفرش صفحه بعد از ۱.۵ ثانیه
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            showOtpMessage('❌ ' + data.message, 'error');
+        }
+    } catch (error) {
+        showOtpMessage('❌ خطا در ارتباط با سرور', 'error');
+    }
+}
+
+function cancelOtp() {
+    document.getElementById('stepPhone').style.display = 'block';
+    document.getElementById('stepOtp').style.display = 'none';
+    document.getElementById('otpCode').value = '';
+    document.getElementById('otpMessage').style.display = 'none';
+    if (otpTimerInterval) {
+        clearInterval(otpTimerInterval);
+        otpTimerInterval = null;
+    }
+}
+
+function startOtpTimer() {
+    let remaining = otpExpirySeconds;
+    const timerDiv = document.getElementById('otpTimer');
+
+    otpTimerInterval = setInterval(() => {
+        remaining--;
+        const minutes = Math.floor(remaining / 60);
+        const seconds = remaining % 60;
+        timerDiv.textContent = `(${minutes}:${seconds.toString().padStart(2, '0')})`;
+
+        if (remaining <= 0) {
+            clearInterval(otpTimerInterval);
+            timerDiv.textContent = '(منقضی شد)';
+            showOtpMessage('⏱️ کد تأیید منقضی شد. لطفاً دوباره درخواست دهید.', 'error');
+        }
+    }, 1000);
+}
+</script>
 {% endblock %}
