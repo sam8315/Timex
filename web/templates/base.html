@@ -902,18 +902,19 @@
         </div>
         {% endif %}
 
-        <!-- منوی کاربر (پایین sidebar) -->
-        <div class="sidebar-section" style="margin-top: auto; border-top: 1px solid var(--border-color); padding-top: 16px;">
-            <a href="/profile" class="sidebar-link {% if request.url.path == '/profile' %}active{% endif %}">
-                <i class="bi bi-person-circle"></i> {{ user.name if user else 'کاربر' }}
-            </a>
-            <a href="/change-password" class="sidebar-link {% if request.url.path == '/change-password' %}active{% endif %}">
-                <i class="bi bi-key"></i> تغییر رمز
-            </a>
-            <a href="/logout" class="sidebar-link" style="color: #dc3545;">
-                <i class="bi bi-box-arrow-right"></i> خروج
-            </a>
-        </div>
+<!-- منوی کاربر (پایین sidebar) -->
+<div class="sidebar-section" style="margin-top: auto; border-top: 1px solid var(--border-color);">
+    <a href="/profile" class="sidebar-link {% if request.url.path == '/profile' %}active{% endif %}">
+        <i class="bi bi-person-circle"></i>
+        {{ user.display_name if user and user.display_name else (user.name if user else 'کاربر') }}
+    </a>
+    <a href="/change-password" class="sidebar-link">
+        <i class="bi bi-key"></i> تغییر رمز
+    </a>
+    <a href="/logout" class="sidebar-link" style="color: #dc3545;">
+        <i class="bi bi-box-arrow-right"></i> خروج
+    </a>
+</div>
     </aside>
 
     <!-- 🎨 Overlay برای موبایل -->
@@ -935,21 +936,30 @@
                 <i class="bi bi-moon-stars" id="themeIcon"></i>
             </button>
 
-            <!-- 👤 منوی کاربر -->
-            <div class="dropdown">
-                <button class="user-dropdown-btn dropdown-toggle" data-bs-toggle="dropdown" type="button">
-                    <div class="user-avatar">
-                        <i class="bi bi-person"></i>
-                    </div>
-                    <span class="d-none d-md-inline">{{ user.name if user else 'کاربر' }}</span>
-                </button>
-                <ul class="dropdown-menu dropdown-menu-end">
-                    <li><a class="dropdown-item" href="/profile"><i class="bi bi-person-circle"></i> پروفایل</a></li>
-                    <li><a class="dropdown-item" href="/change-password"><i class="bi bi-key"></i> تغییر رمز</a></li>
-                    <li><hr class="dropdown-divider"></li>
-                    <li><a class="dropdown-item text-danger" href="/logout"><i class="bi bi-box-arrow-right"></i> خروج</a></li>
-                </ul>
-            </div>
+<!-- 👤 منوی کاربر -->
+<div class="dropdown">
+    <button class="user-dropdown-btn dropdown-toggle" data-bs-toggle="dropdown" type="button">
+        <div class="user-avatar">
+            <i class="bi bi-person"></i>
+        </div>
+        <span class="d-none d-md-inline">
+            {{ user.display_name if user and user.display_name else (user.name if user else 'کاربر') }}
+        </span>
+    </button>
+    <ul class="dropdown-menu dropdown-menu-end">
+        <li>
+            <span class="dropdown-item-text small text-muted">
+                <i class="bi bi-person-circle"></i>
+                {{ user.display_name if user and user.display_name else 'کاربر' }}
+            </span>
+        </li>
+        <li><hr class="dropdown-divider"></li>
+        <li><a class="dropdown-item" href="/profile"><i class="bi bi-person-circle"></i> پروفایل</a></li>
+        <li><a class="dropdown-item" href="/change-password"><i class="bi bi-key"></i> تغییر رمز</a></li>
+        <li><hr class="dropdown-divider"></li>
+        <li><a class="dropdown-item text-danger" href="/logout"><i class="bi bi-box-arrow-right"></i> خروج</a></li>
+    </ul>
+</div>
         </div>
     </header>
 

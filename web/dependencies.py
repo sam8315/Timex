@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from database.engine import SessionLocal
 from web.session import get_session_from_request
 from models.user import User
+from models.employee import Employee  # 🆕
 
 
 def get_db():
@@ -24,6 +25,13 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     user = db.query(User).filter(User.user_id == session["user_id"]).first()
     if not user or not user.web_enabled:
         raise HTTPException(status_code=307, headers={"Location": "/login"})
+        # 🆕 اضافه کردن نام کامل از جدول Employee
+    if user:
+        employee = db.query(Employee).filter(
+            Employee.user_id == user.user_id
+        ).first()
+        # ذخیره نام کامل به صورت ویژگی پویا
+        user.display_name = employee.full_name if employee else (user.name or 'کاربر')
 
     return user
 
@@ -47,4 +55,11 @@ def check_password_change(request: Request, user: User = Depends(get_current_use
     """بررسی نیاز به تغییر رمز"""
     if user.must_change_password and request.url.path != "/change-password":
         raise HTTPException(status_code=307, headers={"Location": "/change-password"})
+        # 🆕 اگر از قبل اضافه نشده
+    if user and not hasattr(user, 'display_name'):
+        employee = db.query(Employee).filter(
+            Employee.user_id == user.user_id
+        ).first()
+        user.display_name = employee.full_name if employee else (user.name or 'کاربر')
+
     return user
