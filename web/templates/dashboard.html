@@ -57,80 +57,127 @@
     </a>
 </div>
 {% endif %}
-<!-- کارت‌های آمار -->
-<div class="row g-4 mb-4">
-    <div class="col-md-3">
-        <div class="card stat-card bg-primary text-white">
-            <div class="card-body">
-                <div class="d-flex justify-content-between">
-                    <div>
-                        <h6>ترددهای این ماه</h6>
-                        <h2>{{ month_attendance_count }}</h2>
-                    </div>
-                    <i class="bi bi-calendar-check fs-1 opacity-50"></i>
+<!-- ============================================ -->
+<!-- 📊 کارت‌های آمار - طراحی مدرن                 -->
+<!-- ============================================ -->
+<div class="row g-3 mb-4">
+
+    <!-- 🗓️ ترددهای این ماه -->
+    <div class="col-lg-3 col-md-6">
+        <div class="card border-0 shadow-sm h-100" style="border-radius: 16px; overflow: hidden;">
+            <div class="card-body p-4 d-flex align-items-center gap-3">
+                <div class="rounded-4 d-flex align-items-center justify-content-center flex-shrink-0"
+                     style="width: 56px; height: 56px; background: linear-gradient(135deg, #667eea, #764ba2); color: white; font-size: 1.5rem;">
+                    <i class="bi bi-calendar-check"></i>
                 </div>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card stat-card bg-success text-white">
-            <div class="card-body">
-                <div class="d-flex justify-content-between">
-                    <div>
-                        <h6>مانده مرخصی</h6>
-                        <h2>{{ balances.get('AL', 0) }} روز استحقاقی</h2>
-                        <h2>{{ balances.get('CW', 0) }} روز انتقالی</h2>
-                    </div>
-                    <i class="bi bi-airplane fs-1 opacity-50"></i>
-                </div>
-            </div>
-        </div>
-    </div>
-<div class="col-md-3">
-    <div class="card stat-card bg-warning text-dark">
-        <div class="card-body">
-            <div class="d-flex justify-content-between">
                 <div>
-                    <h6>درخواست‌های در انتظار</h6>
-                    <h2>{{ pending_count }}</h2>
+                    <div class="text-muted small fw-semibold mb-1">ترددهای این ماه</div>
+                    <div class="fs-2 fw-bold text-dark" style="line-height: 1;">{{ month_attendance_count }}</div>
+                    <div class="text-muted small mt-1">روز حضور ثبت شده</div>
                 </div>
-                <i class="bi bi-hourglass-split fs-1 opacity-50"></i>
             </div>
         </div>
     </div>
-</div>
-    <!-- 🆕 کارت قرارداد -->
-    <div class="col-md-3">
-        {% if contract_info %}
-        <div class="card stat-card {% if contract_info.is_expiring_soon %}bg-warning{% elif contract_info.is_expired %}bg-danger{% else %}bg-secondary{% endif %} text-white">
-            <div class="card-body">
-                <div class="d-flex justify-content-between">
-                    <div>
-                        <h6>مانده قرارداد</h6>
-                        {% if contract_info.days_remaining is not none %}
-                        <h2>{{ contract_info.days_remaining }} روز</h2>
-                        {% else %}
-                        <h2>نامحدود</h2>
-                        {% endif %}
+
+    <!-- ✈️ مانده مرخصی -->
+    <div class="col-lg-3 col-md-6">
+        <div class="card border-0 shadow-sm h-100" style="border-radius: 16px; overflow: hidden;">
+            <div class="card-body p-4 d-flex align-items-center gap-3">
+                <div class="rounded-4 d-flex align-items-center justify-content-center flex-shrink-0"
+                     style="width: 56px; height: 56px; background: linear-gradient(135deg, #11998e, #38ef7d); color: white; font-size: 1.5rem;">
+                    <i class="bi bi-airplane"></i>
+                </div>
+                <div>
+                    <div class="text-muted small fw-semibold mb-1">مانده مرخصی</div>
+                    <div class="fs-3 fw-bold text-dark" style="line-height: 1.2;">
+                        {{ balances.get('AL', 0) }} <span class="fs-6 fw-normal text-muted">روز استحقاقی</span>
                     </div>
-                    <i class="bi bi-file-earmark-text fs-1 opacity-50"></i>
+                    {% if balances.get('CW', 0) > 0 %}
+                    <div class="fs-5 fw-bold text-info" style="line-height: 1.2;">
+                        {{ balances.get('CW', 0) }} <span class="fs-6 fw-normal text-muted">روز انتقالی</span>
+                    </div>
+                    {% else %}
+                    <div class="text-muted small mt-1">انتقالی: ۰ روز</div>
+                    {% endif %}
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- ⏳ درخواست‌های در انتظار -->
+    <div class="col-lg-3 col-md-6">
+        <div class="card border-0 shadow-sm h-100" style="border-radius: 16px; overflow: hidden;">
+            <div class="card-body p-4 d-flex align-items-center gap-3">
+                <div class="rounded-4 d-flex align-items-center justify-content-center flex-shrink-0"
+                     style="width: 56px; height: 56px; background: linear-gradient(135deg, #f59e0b, #fbbf24); color: white; font-size: 1.5rem;">
+                    <i class="bi bi-hourglass-split"></i>
+                </div>
+                <div>
+                    <div class="text-muted small fw-semibold mb-1">درخواست‌های در انتظار</div>
+                    <div class="fs-2 fw-bold {% if pending_count > 0 %}text-warning{% else %}text-success{% endif %}" style="line-height: 1;">
+                        {{ pending_count }}
+                    </div>
+                    <div class="text-muted small mt-1">
+                        {% if pending_count > 0 %}نیاز به پیگیری{% else %}همه بررسی شده ✅{% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 📋 قرارداد -->
+    <div class="col-lg-3 col-md-6">
+        {% if contract_info %}
+        <div class="card border-0 shadow-sm h-100" style="border-radius: 16px; overflow: hidden;">
+            <div class="card-body p-4 d-flex align-items-center gap-3">
+                <div class="rounded-4 d-flex align-items-center justify-content-center flex-shrink-0"
+                     style="width: 56px; height: 56px; font-size: 1.5rem; color: white;
+                            background: {% if contract_info.is_expiring_soon %}linear-gradient(135deg, #f59e0b, #fbbf24){% elif contract_info.is_expired %}linear-gradient(135deg, #ef4444, #f87171){% else %}linear-gradient(135deg, #6c757d, #adb5bd){% endif %};">
+                    <i class="bi bi-file-earmark-text"></i>
+                </div>
+                <div>
+                    <div class="text-muted small fw-semibold mb-1">مانده قرارداد</div>
+                    {% if contract_info.days_remaining is not none %}
+                    <div class="fs-2 fw-bold {% if contract_info.is_expiring_soon %}text-warning{% elif contract_info.is_expired %}text-danger{% else %}text-dark{% endif %}" style="line-height: 1;">
+                        {{ contract_info.days_remaining }} <span class="fs-6 fw-normal text-muted">روز</span>
+                    </div>
+                    {% if contract_info.is_expiring_soon %}
+                    <div class="text-warning small mt-1 fw-semibold">⚠️ رو به انقضا</div>
+                    {% elif contract_info.is_expired %}
+                    <div class="text-danger small mt-1 fw-semibold">❌ منقضی شده</div>
+                    {% endif %}
+                    {% else %}
+                    <div class="fs-3 fw-bold text-dark" style="line-height: 1;">نامحدود</div>
+                    {% endif %}
+                </div>
+            </div>
+            <!-- نوار پیشرفت قرارداد -->
+            {% if contract_info.progress_percent is defined and contract_info.total_days %}
+            <div style="height: 4px; background: #e9ecef;">
+                <div style="height: 100%; width: {{ contract_info.progress_percent }}%;
+                            background: {% if contract_info.is_expiring_soon %}#f59e0b{% elif contract_info.is_expired %}#ef4444{% else %}#6c757d{% endif %};
+                            border-radius: 0 2px 2px 0; transition: width 0.6s ease;"></div>
+            </div>
+            {% endif %}
         </div>
         {% else %}
-        <div class="card stat-card bg-light border-danger">
-            <div class="card-body">
-                <div class="d-flex justify-content-between">
-                    <div>
-                        <h6 class="text-danger">قرارداد</h6>
-                        <h2 class="text-danger">ندارد ⚠️</h2>
-                    </div>
-                    <i class="bi bi-exclamation-triangle fs-1 text-danger opacity-50"></i>
+        <!-- بدون قرارداد -->
+        <div class="card border-0 shadow-sm h-100" style="border-radius: 16px; overflow: hidden; border-right: 4px solid #ef4444 !important;">
+            <div class="card-body p-4 d-flex align-items-center gap-3">
+                <div class="rounded-4 d-flex align-items-center justify-content-center flex-shrink-0"
+                     style="width: 56px; height: 56px; background: linear-gradient(135deg, #ef4444, #f87171); color: white; font-size: 1.5rem;">
+                    <i class="bi bi-exclamation-triangle"></i>
+                </div>
+                <div>
+                    <div class="text-muted small fw-semibold mb-1">وضعیت قرارداد</div>
+                    <div class="fs-3 fw-bold text-danger" style="line-height: 1;">ثبت نشده</div>
+                    <div class="text-danger small mt-1">با منابع انسانی تماس بگیرید</div>
                 </div>
             </div>
         </div>
         {% endif %}
     </div>
+
 </div>
 
 <div class="row g-4">
