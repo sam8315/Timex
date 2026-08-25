@@ -415,29 +415,39 @@ def handle_balance_request(chat_id):
 # آدرس پنل وب
 WEB_PANEL_URL = "http://94.183.23.163:8082"
 
+def normalize_digits(text: str) -> str:
+    """تبدیل اعداد فارسی و عربی به انگلیسی"""
+    persian_digits = '۰۱۲۳۴۵۶۷۸۹'
+    arabic_digits = '٠١٢٣٤٥٦٧٨٩'
+    english_digits = '0123456789'
+    
+    result = text
+    for i in range(10):
+        result = result.replace(persian_digits[i], english_digits[i])
+        result = result.replace(arabic_digits[i], english_digits[i])
+    return result
 
 def validate_national_code(code: str) -> bool:
     """اعتبارسنجی کد ملی ایران"""
-    # حذف فاصله و کاراکترهای اضافی
-    code = code.strip()
-
+    # 🆕 نرمال‌سازی اعداد (پشتیبانی از فارسی/عربی)
+    code = normalize_digits(code.strip())
+    
     # بررسی طول و عددی بودن
     if len(code) != 10 or not code.isdigit():
         return False
-
-    # اعداد تکراری نامعتبر (مثل 1111111111)
+    
+    # اعداد تکراری نامعتبر
     if len(set(code)) == 1:
         return False
-
-    # محاسبه رقم کنترل (الگوی استاندارد کد ملی ایران)
+    
+    # محاسبه رقم کنترل
     checksum = sum(int(code[i]) * (10 - i) for i in range(9)) % 11
     check_digit = int(code[9])
-
+    
     if checksum < 2:
         return check_digit == checksum
     else:
         return check_digit == 11 - checksum
-
 
 def handle_web_panel_request(chat_id):
     """مدیریت درخواست ورود به پنل وب"""
@@ -492,7 +502,8 @@ def handle_national_code_input(chat_id, text):
         if not bale_user:
             return True
 
-        national_code = text.strip()
+        # 🆕 نرمال‌سازی: تبدیل اعداد فارسی/عربی به انگلیسی
+        national_code = normalize_digits(text.strip())
 
         # اعتبارسنجی کد ملی
         if not validate_national_code(national_code):
@@ -568,23 +579,49 @@ def handle_national_code_input(chat_id, text):
 
 def _send_web_access_message(chat_id, employee, bale_user):
     """ارسال پیام دسترسی به پنل وب"""
-    message = (
-        f"🌐 <b>ورود به پنل وب</b>\n"
-        f"━━━━━━━━━━━━━━━\n"
-        f"👤 نام: <b>{employee.full_name}</b>\n"
-        f"🆔 کد پرسنلی: <b>{employee.user_id}</b>\n"
-        f"━━━━━━━━━━━━━━━\n"
-        f"🔗 آدرس پنل وب:\n"
-        f"<code>{WEB_PANEL_URL}</code>\n"
-        f"━━━━━━━━━━━━━━━\n"
-        f"📋 <b>راهنمای ورود:</b>\n"
-        f"▫️ نام کاربری: <b>{employee.user_id}</b>\n"
-        f"▫️ رمز عبور: <b>کد ملی</b> شماست\n"
-        f"▫️ پس از ورود، رمز را تغییر دهید 🔒"
-    )
+    db_session = SessionLocal()
+    try:
+        # 🆕 بررسی وضعیت رمز عبور کاربر
+        from models.user import User
+        web_user = db_session.query(User).filter(
+            User.user_id == bale_user.user_id
+        ).first()
 
-    bale_api.send_message(
-        chat_id,
-        message,
-        reply_markup=bale_api.MAIN_MENU_KEYBOARD
-    )
+        must_change = web_user.must_change_password if web_user else False
+        has_logged_in = web_user.last_login is not None if web_user else False
+
+        # 🆕 ساخت پیام راهنما بر اساس وضعیت کاربر
+        if must_change or not has_logged_in:
+            # کاربر هنوز رمز را تغییر نداده یا اولین ورود است
+            password_hint = (
+                f"▫️ رمز عبور: <b>کد ملی</b> شماست\n"
+                f"▫️ ⚠️ پس از ورود، حتماً رمز را تغییر دهید 🔒"
+            )
+        else:
+            # کاربر قبلاً وارد شده و احتمالاً رمز را تغییر داده
+            password_hint = (
+                f"▫️ رمز عبور: <b>رمزی که قبلاً تنظیم کرده‌اید</b>\n"
+                f"▫️ 💡 اگر رمز را فراموش کرده‌اید، با منابع انسانی تماس بگیرید"
+            )
+
+        message = (
+            f"🌐 <b>ورود به پنل وب</b>\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"👤 نام: <b>{employee.full_name}</b>\n"
+            f"🆔 کد پرسنلی: <b>{employee.user_id}</b>\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"🔗 آدرس پنل وب:\n"
+            f"<code>{WEB_PANEL_URL}</code>\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"📋 <b>راهنمای ورود:</b>\n"
+            f"▫️ نام کاربری: <b>{employee.national_code}</b>\n"
+            f"{password_hint}"
+        )
+
+        bale_api.send_message(
+            chat_id,
+            message,
+            reply_markup=bale_api.MAIN_MENU_KEYBOARD
+        )
+    finally:
+        db_session.close()
