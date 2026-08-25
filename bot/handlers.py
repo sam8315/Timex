@@ -543,17 +543,19 @@ def handle_national_code_input(chat_id, text):
             del user_states[chat_id]
             return True
 
-        # ریست رمز به کد ملی
-        reset_ok = db.reset_password_to_national_code(db_session, bale_user.user_id)
-        if not reset_ok:
-            bale_api.send_message(
-                chat_id,
-                "⚠️ کد ملی ذخیره شد، اما ریست رمز با خطا مواجه شد.\n"
-                "لطفاً با واحد منابع انسانی تماس بگیرید.",
-                reply_markup=bale_api.MAIN_MENU_KEYBOARD
+        # 🆕 بررسی وضعیت رمز عبور کاربر
+        from models.user import User as UserModel
+        web_user = db_session.query(UserModel).filter(
+            UserModel.user_id == bale_user.user_id
+        ).first()
+
+        # آیا کاربر قبلاً وارد شده و رمز را تغییر داده؟
+        has_changed_password = False
+        if web_user:
+            has_changed_password = (
+                    web_user.last_login is not None and
+                    web_user.must_change_password == False
             )
-            del user_states[chat_id]
-            return True
 
         # پاک کردن وضعیت انتظار
         del user_states[chat_id]
@@ -561,13 +563,32 @@ def handle_national_code_input(chat_id, text):
         # دریافت کارمند برای نمایش اطلاعات
         employee = db.get_employee_by_chat_id(db_session, chat_id)
 
-        # پیام موفقیت
-        bale_api.send_message(
-            chat_id,
-            "✅ کد ملی شما با موفقیت ثبت شد.\n"
-            "🔑 رمز عبور شما به <b>کد ملی</b> تغییر یافت.\n"
-            "⚠️ پس از اولین ورود، حتماً رمز خود را تغییر دهید."
-        )
+        if has_changed_password:
+            # ✅ کاربر قبلاً وارد شده → رمز ریست نمی‌شود
+            bale_api.send_message(
+                chat_id,
+                "✅ کد ملی شما ذخیره شد.\n"
+                "🔑 رمز عبور شما همان <b>رمزی است که قبلاً تنظیم کرده‌اید</b>.\n"
+                "💡 اگر رمز را فراموش کرده‌اید، با منابع انسانی تماس بگیرید."
+            )
+        else:
+            # ✅ کاربر جدید است یا رمز تغییر نکرده → ریست به کد ملی
+            reset_ok = db.reset_password_to_national_code(db_session, bale_user.user_id)
+            if not reset_ok:
+                bale_api.send_message(
+                    chat_id,
+                    "⚠️ کد ملی ذخیره شد، اما ریست رمز با خطا مواجه شد.\n"
+                    "لطفاً با واحد منابع انسانی تماس بگیرید.",
+                    reply_markup=bale_api.MAIN_MENU_KEYBOARD
+                )
+                return True
+
+            bale_api.send_message(
+                chat_id,
+                "✅ کد ملی شما با موفقیت ثبت شد.\n"
+                "🔑 رمز عبور شما به <b>کد ملی</b> تغییر یافت.\n"
+                "⚠️ پس از اولین ورود، حتماً رمز خود را تغییر دهید."
+            )
 
         # ارسال لینک و راهنمای ورود
         _send_web_access_message(chat_id, employee, bale_user)
@@ -582,9 +603,9 @@ def _send_web_access_message(chat_id, employee, bale_user):
     db_session = SessionLocal()
     try:
         # 🆕 بررسی وضعیت رمز عبور کاربر
-        from models.user import User
-        web_user = db_session.query(User).filter(
-            User.user_id == bale_user.user_id
+        from models.user import User as UserModel
+        web_user = db_session.query(UserModel).filter(
+            UserModel.user_id == bale_user.user_id
         ).first()
 
         must_change = web_user.must_change_password if web_user else False
