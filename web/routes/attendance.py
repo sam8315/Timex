@@ -49,6 +49,23 @@ WARN_FRIDAY_WORK = 'friday_work'
 WARN_HOLIDAY_WORK = 'holiday_work'
 
 
+# ============================================
+# 🆕 ثابت‌ها و توابع کمکی موظفی
+# ============================================
+DAILY_DUTY_HOURS = 7 + 20/60  # 7:20 = 7.333 ساعت
+
+def format_hours_hhmm(hours: float) -> str:
+    """تبدیل ساعت اعشاری به فرمت H:MM"""
+    if hours is None:
+        return '-'
+    total_minutes = int(round(hours * 60))
+    sign = '-' if total_minutes < 0 else ''
+    total_minutes = abs(total_minutes)
+    h = total_minutes // 60
+    m = total_minutes % 60
+    return f"{sign}{h}:{m:02d}"
+
+
 def analyze_day_status(
     day: date_type,
     day_records: List[Attendance],
@@ -530,6 +547,8 @@ async def attendance_page(
             'is_night_shift': status_info['main_status'] == STATUS_NIGHT_SHIFT,
         })
         current += timedelta(days=1)
+    # 🆕 محاسبه کارکرد کل ماه قبل از اعمال فیلتر
+    total_work_hours_month = sum(d['work_hours'] for d in days_list)
 
     # 🆕 اعمال فیلتر
     if status_filter == 'complete':
@@ -546,6 +565,104 @@ async def attendance_page(
     elif status_filter == 'leave':  # 🆕
         days_list = [d for d in days_list if d['status']['main_status'] == STATUS_LEAVE]
     # 'all' یا None → بدون فیلتر
+
+    # ============================================
+    # 🆕 محاسبات موظفی و اضافه/کسر کار
+    # ============================================
+    from models.daily_status import DailyStatus
+
+    # دریافت روزهای استراحت از DailyStatus
+    daily_statuses = db.query(DailyStatus).filter(
+        and_(
+            DailyStatus.user_id == user.user_id,
+            DailyStatus.status_date >= month_start_g,
+            DailyStatus.status_date <= month_end_g,
+            DailyStatus.status_code == 'R'
+        )
+    ).all()
+    rest_dates = {ds.status_date for ds in daily_statuses}
+
+    # ---------- ۱. موظفی ماهانه ----------
+    work_days_in_month = 0  # روزهای کاری (غیر تعطیل و غیر جمعه)
+    leave_days_in_month = 0  # روزهای مرخصی در روز کاری
+    rest_days_in_month = 0  # روزهای استراحت در روز کاری
+
+    current = month_start_g
+    while current <= month_end_g:
+        is_friday = current.weekday() == 4
+        is_holiday = current in holiday_dates
+        is_day_off = is_friday or is_holiday
+
+        if not is_day_off:
+            work_days_in_month += 1
+            if current in leaves_by_date:
+                leave_days_in_month += 1
+            elif current in rest_dates:
+                rest_days_in_month += 1
+        current += timedelta(days=1)
+
+    # روزهای موظفی = روزهای کاری - مرخصی - استراحت
+    duty_days_month = work_days_in_month - leave_days_in_month - rest_days_in_month
+    monthly_duty_hours = duty_days_month * DAILY_DUTY_HOURS
+
+    # ---------- ۲. موظفی لحظه‌ای ----------
+    today_g = today_j.togregorian()
+
+    # تعیین تاریخ مرجع (امروز یا دیروز)
+    if today_g < month_start_g:
+        # ماه آینده: هیچ روزی سپری نشده
+        reference_date = month_start_g - timedelta(days=1)
+    elif today_g > month_end_g:
+        # ماه گذشته: همه روزها سپری شده
+        reference_date = month_end_g
+    else:
+        # ماه جاری: بررسی تردد کامل امروز
+        is_today_complete = False
+        for day in days_list:
+            if day['date'] == today_g:
+                main_status = day['status']['main_status']
+                # اگر وضعیت مشخصی دارد (کامل، مرخصی، تعطیل، استراحت)
+                if main_status in [STATUS_COMPLETE, STATUS_LEAVE] or day['is_holiday'] or day['is_friday']:
+                    is_today_complete = True
+                break
+        reference_date = today_g if is_today_complete else today_g - timedelta(days=1)
+
+    # محاسبه موظفی و کارکرد تا تاریخ مرجع
+    duty_days_until_ref = 0
+    work_hours_until_ref = 0.0
+
+    for day in days_list:
+        if day['date'] <= reference_date:
+            is_day_off = day['is_friday'] or day['is_holiday']
+            is_leave = day['status']['main_status'] == STATUS_LEAVE
+            is_rest = day['date'] in rest_dates
+
+            if not is_day_off and not is_leave and not is_rest:
+                duty_days_until_ref += 1
+
+            work_hours_until_ref += day['work_hours']
+
+    instant_duty_hours = duty_days_until_ref * DAILY_DUTY_HOURS
+
+    # ---------- ۳ و ۴. اضافه/کسر کار ----------
+    # کارکرد واقعی کل ماه (از روزهای بدون فیلتر)
+    # باید از days_list بدون فیلتر استفاده کنیم، پس محاسبه قبل از فیلتر انجام شده
+    # اینجا از مجموع کارکرد همه روزهای ماه استفاده می‌کنیم
+    # 🆕 درصد پیشرفت کارکرد نسبت به موظفی
+    total_work_hours_month = sum(d['work_hours'] for d in days_list)
+    progress_percent = 0
+    if monthly_duty_hours > 0:
+        progress_percent = min(100, round((total_work_hours_month / monthly_duty_hours) * 100, 1))
+
+    # اضافه/کسر کار ماهانه
+    monthly_balance = total_work_hours_month - monthly_duty_hours
+
+    # اضافه/کسر کار لحظه‌ای
+    instant_balance = work_hours_until_ref - instant_duty_hours
+
+    # تاریخ مرجع به شمسی برای نمایش
+    reference_date_j = jdatetime.date.fromgregorian(date=reference_date)
+    reference_date_display = reference_date_j.strftime('%Y/%m/%d')
 
     # آمار
     total_records = sum(len(d['records']) for d in days_list)
@@ -595,4 +712,22 @@ async def attendance_page(
         "months_list": months_list,
         "is_current_month": is_current_month,
         "today_j": today_j,
+        # 🆕 موظفی و اضافه/کسر کار
+        "monthly_duty_display": format_hours_hhmm(monthly_duty_hours),
+        "duty_days_month": duty_days_month,
+        "instant_duty_display": format_hours_hhmm(instant_duty_hours),
+        "duty_days_until_ref": duty_days_until_ref,
+        "reference_date_display": reference_date_display,
+
+        "monthly_balance": monthly_balance,
+        "monthly_balance_display": format_hours_hhmm(monthly_balance),
+        "monthly_is_overtime": monthly_balance >= 0,
+
+        "instant_balance": instant_balance,
+        "instant_balance_display": format_hours_hhmm(instant_balance),
+        "instant_is_overtime": instant_balance >= 0,
+        "total_work_hours_month": total_work_hours_month,
+        "total_work_hours_display": format_hours_hhmm(total_work_hours_month),  # 🆕
+        "progress_percent": progress_percent,
+
     })

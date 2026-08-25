@@ -201,7 +201,7 @@
                             {% endfor %}
                         </td>
                         <td class="text-center">
-                            {% if day.records | length > 0 %}
+                            {% if day.records | length >= 0 %}
                             <button class="btn btn-sm btn-outline-primary"
                                     data-bs-toggle="collapse"
                                     data-bs-target="#details-{{ day.date.strftime('%Y%m%d') }}">
@@ -216,7 +216,7 @@
                         </td>
                     </tr>
 
-                    {% if day.records | length > 0 %}
+                    {% if day.records | length >= 0 %}
                     <tr>
                         <td colspan="8" class="p-0">
                             <div class="collapse" id="details-{{ day.date.strftime('%Y%m%d') }}">

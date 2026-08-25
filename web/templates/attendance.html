@@ -1,5 +1,163 @@
 {% extends "base.html" %}
 {% block title %}رکوردهای تردد{% endblock %}
+{% block extra_css %}
+<style>
+    /* ============================================ */
+    /* 🎨 کارت‌های آمار - طراحی مدرن                */
+    /* ============================================ */
+
+    /* کارت اصلی پیشرفت */
+    .progress-hero-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border: none;
+        border-radius: 20px;
+        color: white;
+        box-shadow: 0 10px 30px rgba(102, 126, 234, 0.35);
+        overflow: hidden;
+        position: relative;
+    }
+    .progress-hero-card::before {
+        content: '';
+        position: absolute;
+        top: -50px;
+        right: -50px;
+        width: 150px;
+        height: 150px;
+        background: rgba(255,255,255,0.1);
+        border-radius: 50%;
+    }
+    .progress-hero-card::after {
+        content: '';
+        position: absolute;
+        bottom: -30px;
+        left: -30px;
+        width: 100px;
+        height: 100px;
+        background: rgba(255,255,255,0.08);
+        border-radius: 50%;
+    }
+
+    /* حلقه پیشرفت */
+    .progress-ring-container {
+        position: relative;
+        width: 150px;
+        height: 150px;
+        flex-shrink: 0;
+    }
+    .progress-ring {
+        transform: rotate(-90deg);
+    }
+    .progress-ring-bg {
+        fill: none;
+        stroke: rgba(255,255,255,0.2);
+        stroke-width: 10;
+    }
+    .progress-ring-bar {
+        fill: none;
+        stroke: white;
+        stroke-width: 10;
+        stroke-linecap: round;
+        transition: stroke-dashoffset 1s ease;
+    }
+    .progress-ring-text {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        text-align: center;
+    }
+    .progress-ring-percent {
+        font-size: 2rem;
+        font-weight: 800;
+        line-height: 1;
+        display: block;
+    }
+    .progress-ring-label {
+        font-size: 0.7rem;
+        opacity: 0.85;
+        margin-top: 4px;
+        display: block;
+    }
+
+    /* کارت‌های کوچک */
+    .stat-card {
+        border: none;
+        border-radius: 16px;
+        transition: all 0.25s ease;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        overflow: hidden;
+        position: relative;
+    }
+    .stat-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+    }
+    .stat-card .stat-icon {
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.2rem;
+        flex-shrink: 0;
+    }
+    .stat-card .stat-value {
+        font-size: 1.4rem;
+        font-weight: 700;
+        line-height: 1.1;
+        direction: ltr;
+        unicode-bidi: embed;
+    }
+    .stat-card .stat-label {
+        font-size: 0.75rem;
+        opacity: 0.75;
+        margin-top: 2px;
+    }
+
+    /* گرادیان‌های رنگی */
+    .gradient-blue {
+        background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        color: white;
+    }
+    .gradient-blue .stat-icon { background: rgba(255,255,255,0.25); }
+
+    .gradient-teal {
+        background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        color: white;
+    }
+    .gradient-teal .stat-icon { background: rgba(255,255,255,0.25); }
+
+    .gradient-purple {
+        background: linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%);
+        color: #4a3d6e;
+    }
+    .gradient-purple .stat-icon { background: rgba(255,255,255,0.4); }
+
+    .gradient-green {
+        background: linear-gradient(135deg, #10b981 0%, #34d399 100%);
+        color: white;
+    }
+    .gradient-green .stat-icon { background: rgba(255,255,255,0.25); }
+
+    .gradient-red {
+        background: linear-gradient(135deg, #ef4444 0%, #f87171 100%);
+        color: white;
+    }
+    .gradient-red .stat-icon { background: rgba(255,255,255,0.25); }
+
+    .gradient-amber {
+        background: linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%);
+        color: white;
+    }
+    .gradient-amber .stat-icon { background: rgba(255,255,255,0.25); }
+
+    /* Dark Mode */
+    [data-theme="dark"] .stat-card {
+        box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    }
+</style>
+{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h4><i class="bi bi-calendar-check"></i> رکوردهای تردد</h4>
@@ -87,33 +245,171 @@
         </div>
     </div>
 </div>
-<!-- آمار کلی -->
+<!-- ============================================ -->
+<!-- 📊 بخش آمار کلی - طراحی جدید                 -->
+<!-- ============================================ -->
+{% if days %}
+
+<!-- 🎯 کارت اصلی پیشرفت + کارت‌های کلیدی -->
 <div class="row g-4 mb-4">
-    <div class="col-md-4">
-        <div class="card bg-primary text-white">
-            <div class="card-body text-center">
-                <h3>{{ total_records }}</h3>
-                <small>کل رکوردها</small>
+
+    <!-- کارت پیشرفت کارکرد -->
+    <div class="col-lg-5">
+        <div class="card progress-hero-card h-100">
+            <div class="card-body d-flex align-items-center gap-4 p-4 position-relative" style="z-index: 2;">
+                <!-- حلقه پیشرفت -->
+                <div class="progress-ring-container">
+                    <svg class="progress-ring" width="150" height="150">
+                        <circle class="progress-ring-bg" cx="75" cy="75" r="62"></circle>
+                        <circle class="progress-ring-bar" cx="75" cy="75" r="62"
+                                stroke-dasharray="389.56"
+                                stroke-dashoffset="{{ 389.56 - (389.56 * progress_percent / 100) }}"></circle>
+                    </svg>
+                    <div class="progress-ring-text">
+                        <span class="progress-ring-percent">{{ progress_percent }}%</span>
+                        <span class="progress-ring-label">پیشرفت</span>
+                    </div>
+                </div>
+
+                <!-- اطلاعات -->
+                <div class="flex-grow-1">
+                    <div class="small opacity-75 mb-1">
+                        <i class="bi bi-clipboard-data"></i> کارکرد / موظفی
+                    </div>
+<h4 class="fw-bold mb-2">
+    <span style="direction: ltr; unicode-bidi: embed; display: inline-block;">{{ total_work_hours_display }}</span>
+    <span class="opacity-50 fs-6 mx-1">از</span>
+    <span style="direction: ltr; unicode-bidi: embed; display: inline-block;">{{ monthly_duty_display }}</span>
+</h4>
+                    <div class="small opacity-85">
+                        <i class="bi bi-calendar-check"></i> {{ month_name }} {{ year }}
+                    </div>
+
+                    <!-- نوار پیشرفت خطی -->
+                    <div class="mt-3" style="height: 6px; background: rgba(255,255,255,0.2); border-radius: 3px; overflow: hidden;">
+                        <div style="height: 100%; width: {{ progress_percent }}%; background: white; border-radius: 3px; transition: width 1s ease;"></div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
-    <div class="col-md-4">
-        <div class="card bg-success text-white">
-            <div class="card-body text-center">
-                <h3>{{ days | length }}</h3>
-                <small>روزهای نمایش داده شده</small>
+
+    <!-- کارت‌های موظفی و ساعت -->
+    <div class="col-lg-7">
+        <div class="row g-3 h-100">
+
+            <!-- موظفی ماهانه -->
+            <div class="col-md-6">
+                <div class="card stat-card gradient-blue h-100">
+                    <div class="card-body d-flex align-items-center gap-3 p-3">
+                        <div class="stat-icon">
+                            <i class="bi bi-briefcase"></i>
+                        </div>
+                        <div>
+                            <div class="stat-value">{{ monthly_duty_display }}</div>
+                            <div class="stat-label">موظفی ماهانه ({{ duty_days_month }} روز)</div>
+                        </div>
+                    </div>
+                </div>
             </div>
-        </div>
-    </div>
-    <div class="col-md-4">
-        <div class="card bg-info text-white">
-            <div class="card-body text-center">
-                <h3>{{ "%.1f" | format(days | sum(attribute='work_hours')) }}</h3>
-                <small>مجموع ساعات</small>
+
+            <!-- موظفی لحظه‌ای -->
+            <div class="col-md-6">
+                <div class="card stat-card gradient-teal h-100">
+                    <div class="card-body d-flex align-items-center gap-3 p-3">
+                        <div class="stat-icon">
+                            <i class="bi bi-hourglass-split"></i>
+                        </div>
+                        <div>
+                            <div class="stat-value">{{ instant_duty_display }}</div>
+                            <div class="stat-label">موظفی تا {{ reference_date_display }}</div>
+                        </div>
+                    </div>
+                </div>
             </div>
+
+            <!-- اضافه/کسر ماهانه -->
+            <div class="col-md-6">
+                <div class="card stat-card {% if monthly_is_overtime %}gradient-green{% else %}gradient-red{% endif %} h-100">
+                    <div class="card-body d-flex align-items-center gap-3 p-3">
+                        <div class="stat-icon">
+                            {% if monthly_is_overtime %}
+                            <i class="bi bi-arrow-up-circle"></i>
+                            {% else %}
+                            <i class="bi bi-arrow-down-circle"></i>
+                            {% endif %}
+                        </div>
+                        <div>
+                            <div class="stat-value">
+                                {% if monthly_is_overtime %}+{% endif %}{{ monthly_balance_display }}
+                            </div>
+                            <div class="stat-label">
+                                {% if monthly_is_overtime %}اضافه کار ماهانه{% else %}کسر کار ماهانه{% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- اضافه/کسر لحظه‌ای -->
+            <div class="col-md-6">
+                <div class="card stat-card {% if instant_is_overtime %}gradient-green{% else %}gradient-red{% endif %} h-100">
+                    <div class="card-body d-flex align-items-center gap-3 p-3">
+                        <div class="stat-icon">
+                            {% if instant_is_overtime %}
+                            <i class="bi bi-lightning-charge"></i>
+                            {% else %}
+                            <i class="bi bi-exclamation-triangle"></i>
+                            {% endif %}
+                        </div>
+                        <div>
+                            <div class="stat-value">
+                                {% if instant_is_overtime %}+{% endif %}{{ instant_balance_display }}
+                            </div>
+                            <div class="stat-label">
+                                {% if instant_is_overtime %}اضافه کار لحظه‌ای{% else %}کسر کار لحظه‌ای{% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
         </div>
     </div>
 </div>
+
+<!-- 📈 نوار تفکیک ساعات (صبح/عصر/شب) - اختیاری -->
+{% set total_h = days | sum(attribute='work_hours') %}
+{% if total_h > 0 %}
+<div class="card border-0 shadow-sm mb-4" style="border-radius: 16px;">
+    <div class="card-body p-4">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+<h6 class="mb-0 fw-bold">
+    <i class="bi bi-clock-history text-primary"></i>
+    مجموع ساعات:
+    <span style="direction: ltr; unicode-bidi: embed;">{{ total_work_hours_display }}</span>
+</h6>
+            <span class="badge bg-primary rounded-pill">{{ days|length }} روز</span>
+        </div>
+
+        <!-- نوار پیشرفت تفکیکی -->
+        <div class="progress" style="height: 12px; border-radius: 6px;">
+            {% set duty_h = monthly_duty_display.split(':')[0]|int + monthly_duty_display.split(':')[1]|int / 60 %}
+            {% if total_h > 0 and duty_h > 0 %}
+            <div class="progress-bar" role="progressbar"
+                 style="width: {{ [100, (total_h / duty_h * 100)|round(0)|int]|min }}%; background: linear-gradient(90deg, #667eea, #764ba2);"
+                 title="کارکرد"></div>
+            {% endif %}
+        </div>
+        <div class="d-flex justify-content-between mt-2 small text-muted">
+            <span>0</span>
+            <span>{{ monthly_duty_display }} (موظفی)</span>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% endif %}
 
 <!-- جدول تردد -->
 <div class="card">
