@@ -121,3 +121,66 @@ def get_leave_balances(db: Session, user_id: str, year: int) -> dict:
             result[b.leave_type] = b.balance
 
     return result
+
+
+# ============================================
+# 🌐 توابع مربوط به پنل وب
+# ============================================
+
+def get_employee_by_chat_id(db: Session, chat_id: str):
+    """دریافت کارمند بر اساس chat_id ربات بله"""
+    from models.bale_user import BaleUser
+    from models.employee import Employee
+
+    bale_user = get_bale_user(db, chat_id)
+    if not bale_user:
+        return None
+
+    employee = db.query(Employee).filter(
+        Employee.user_id == bale_user.user_id
+    ).first()
+    return employee
+
+
+def set_national_code(db: Session, user_id: str, national_code: str) -> bool:
+    """ذخیره کد ملی کاربر"""
+    from models.employee import Employee
+    try:
+        employee = db.query(Employee).filter(
+            Employee.user_id == user_id
+        ).first()
+
+        if not employee:
+            return False
+
+        employee.national_code = national_code
+        db.commit()
+        return True
+    except Exception as e:
+        db.rollback()
+        print(f"خطا در ذخیره کد ملی: {e}")
+        return False
+
+
+def reset_password_to_national_code(db: Session, user_id: str) -> bool:
+    """ریست رمز عبور به کد ملی (مثل پنل وب)"""
+    from models.user import User
+    from models.employee import Employee
+    from web.security import hash_password
+
+    try:
+        user = db.query(User).filter(User.user_id == user_id).first()
+        employee = db.query(Employee).filter(Employee.user_id == user_id).first()
+
+        if not user or not employee or not employee.national_code:
+            return False
+
+        # ریست رمز به کد ملی
+        user.password_hash = hash_password(employee.national_code)
+        user.must_change_password = True
+        db.commit()
+        return True
+    except Exception as e:
+        db.rollback()
+        print(f"خطا در ریست رمز: {e}")
+        return False

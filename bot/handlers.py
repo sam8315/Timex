@@ -8,8 +8,9 @@ from bot import bale_api, db
 from bot.config import KEYWORDS, SessionLocal
 
 
-# 🆕 مدیریت state برای ورودی چندمرحله‌ای (تاریخ روز خاص)
-user_states = {}  # {chat_id: 'waiting_for_date'}
+# 🆕 مدیریت state برای ورودی چندمرحله‌ای
+# مقدارهای ممکن: 'waiting_for_date' یا 'waiting_national_code'
+user_states = {}  # {chat_id: state}
 
 
 def parse_jalali_date(date_str: str):
@@ -186,7 +187,27 @@ def handle_text_message(chat_id, text: str):
     """پردازش پیام‌های متنی"""
     text = text.strip()
 
-    # 🆕 اگر کاربر در حال وارد کردن تاریخ روز خاص است
+    # 🆕 ۱. بررسی دکمه لغو (اولویت بالا)
+    if text == '❌ لغو':
+        if chat_id in user_states:
+            user_states.pop(chat_id, None)
+        bale_api.send_message(
+            chat_id,
+            "✅ عملیات لغو شد.",
+            reply_markup=bale_api.MAIN_MENU_KEYBOARD
+        )
+        return
+
+    # 🆕 ۲. اگر کاربر در حال وارد کردن کد ملی است (اولویت بالا)
+    if user_states.get(chat_id) == 'waiting_national_code':
+        if is_keyword(text, 'start'):
+            user_states.pop(chat_id, None)
+            handle_start(chat_id)
+            return
+        handle_national_code_input(chat_id, text)
+        return
+
+    # ۳. اگر کاربر در حال وارد کردن تاریخ روز خاص است
     if user_states.get(chat_id) == 'waiting_for_date':
         if is_keyword(text, 'start'):
             user_states.pop(chat_id, None)
@@ -216,9 +237,14 @@ def handle_text_message(chat_id, text: str):
         handle_specific_day_request(chat_id)
         return
 
-    # 🆕 balance (مانده مرخصی)
+    # balance (مانده مرخصی)
     if is_keyword(text, 'balance'):
         handle_balance_request(chat_id)
+        return
+
+    # 🆕 ۴. ورود به پنل وب
+    if is_keyword(text, 'web_panel'):
+        handle_web_panel_request(chat_id)
         return
 
     # 🔐 اگر کاربر شماره را تایپ کرد (به جای دکمه)
@@ -242,7 +268,6 @@ def handle_text_message(chat_id, text: str):
         "• «مانده» → مانده مرخصی",
         reply_markup=bale_api.MAIN_MENU_KEYBOARD
     )
-
 
 def handle_message(message: dict):
     """پردازش کلی پیام"""
@@ -381,3 +406,185 @@ def handle_balance_request(chat_id):
         )
     finally:
         db_session.close()
+
+
+# ============================================
+# 🌐 مدیریت ورود به پنل وب
+# ============================================
+
+# آدرس پنل وب
+WEB_PANEL_URL = "http://94.183.23.163:8082"
+
+
+def validate_national_code(code: str) -> bool:
+    """اعتبارسنجی کد ملی ایران"""
+    # حذف فاصله و کاراکترهای اضافی
+    code = code.strip()
+
+    # بررسی طول و عددی بودن
+    if len(code) != 10 or not code.isdigit():
+        return False
+
+    # اعداد تکراری نامعتبر (مثل 1111111111)
+    if len(set(code)) == 1:
+        return False
+
+    # محاسبه رقم کنترل (الگوی استاندارد کد ملی ایران)
+    checksum = sum(int(code[i]) * (10 - i) for i in range(9)) % 11
+    check_digit = int(code[9])
+
+    if checksum < 2:
+        return check_digit == checksum
+    else:
+        return check_digit == 11 - checksum
+
+
+def handle_web_panel_request(chat_id):
+    """مدیریت درخواست ورود به پنل وب"""
+    db_session = SessionLocal()
+    try:
+        bale_user = db.get_bale_user(db_session, chat_id)
+
+        if not bale_user:
+            handle_start(chat_id)
+            return
+
+        employee = db.get_employee_by_chat_id(db_session, chat_id)
+
+        # حالت ۱: کارمند وجود ندارد
+        if not employee:
+            user_states[chat_id] = 'waiting_national_code'
+            bale_api.send_message(
+                chat_id,
+                "👤 اطلاعات شما در سامانه ثبت نشده است.\n"
+                "لطفاً <b>کد ملی ۱۰ رقمی</b> خود را ارسال کنید:",
+                reply_markup=bale_api.CANCEL_KEYBOARD
+            )
+            return
+
+        # حالت ۲: کد ملی ثبت نشده
+        if not employee.national_code:
+            user_states[chat_id] = 'waiting_national_code'
+            bale_api.send_message(
+                chat_id,
+                "🔐 کد ملی شما در سامانه ثبت نشده است.\n"
+                "لطفاً <b>کد ملی ۱۰ رقمی</b> خود را ارسال کنید:",
+                reply_markup=bale_api.CANCEL_KEYBOARD
+            )
+            return
+
+        # حالت ۳: همه چیز آماده است → نمایش لینک
+        _send_web_access_message(chat_id, employee, bale_user)
+
+    finally:
+        db_session.close()
+
+
+def handle_national_code_input(chat_id, text):
+    """مدیریت ورودی کد ملی کاربر"""
+    # بررسی اینکه کاربر در حالت انتظار کد ملی است
+    if user_states.get(chat_id) != 'waiting_national_code':
+        return False  # این پیام مربوط به کد ملی نیست
+
+    db_session = SessionLocal()
+    try:
+        bale_user = db.get_bale_user(db_session, chat_id)
+        if not bale_user:
+            return True
+
+        national_code = text.strip()
+
+        # اعتبارسنجی کد ملی
+        if not validate_national_code(national_code):
+            bale_api.send_message(
+                chat_id,
+                "❌ کد ملی نامعتبر است!\n"
+                "لطفاً یک <b>کد ملی ۱۰ رقمی صحیح</b> وارد کنید.\n"
+                "برای لغو، دکمه زیر را بزنید:",
+                reply_markup=bale_api.CANCEL_KEYBOARD
+            )
+            return True
+
+        # بررسی تکراری نبودن کد ملی
+        from models.employee import Employee
+        existing = db_session.query(Employee).filter(
+            Employee.national_code == national_code
+        ).first()
+
+        if existing and existing.user_id != bale_user.user_id:
+            bale_api.send_message(
+                chat_id,
+                "⚠️ این کد ملی قبلاً برای کاربر دیگری ثبت شده است.\n"
+                "لطفاً با واحد منابع انسانی تماس بگیرید.",
+                reply_markup=bale_api.MAIN_MENU_KEYBOARD
+            )
+            del user_states[chat_id]
+            return True
+
+        # ذخیره کد ملی
+        saved = db.set_national_code(db_session, bale_user.user_id, national_code)
+        if not saved:
+            bale_api.send_message(
+                chat_id,
+                "❌ خطا در ذخیره کد ملی. لطفاً دوباره تلاش کنید.",
+                reply_markup=bale_api.MAIN_MENU_KEYBOARD
+            )
+            del user_states[chat_id]
+            return True
+
+        # ریست رمز به کد ملی
+        reset_ok = db.reset_password_to_national_code(db_session, bale_user.user_id)
+        if not reset_ok:
+            bale_api.send_message(
+                chat_id,
+                "⚠️ کد ملی ذخیره شد، اما ریست رمز با خطا مواجه شد.\n"
+                "لطفاً با واحد منابع انسانی تماس بگیرید.",
+                reply_markup=bale_api.MAIN_MENU_KEYBOARD
+            )
+            del user_states[chat_id]
+            return True
+
+        # پاک کردن وضعیت انتظار
+        del user_states[chat_id]
+
+        # دریافت کارمند برای نمایش اطلاعات
+        employee = db.get_employee_by_chat_id(db_session, chat_id)
+
+        # پیام موفقیت
+        bale_api.send_message(
+            chat_id,
+            "✅ کد ملی شما با موفقیت ثبت شد.\n"
+            "🔑 رمز عبور شما به <b>کد ملی</b> تغییر یافت.\n"
+            "⚠️ پس از اولین ورود، حتماً رمز خود را تغییر دهید."
+        )
+
+        # ارسال لینک و راهنمای ورود
+        _send_web_access_message(chat_id, employee, bale_user)
+
+        return True
+    finally:
+        db_session.close()
+
+
+def _send_web_access_message(chat_id, employee, bale_user):
+    """ارسال پیام دسترسی به پنل وب"""
+    message = (
+        f"🌐 <b>ورود به پنل وب</b>\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"👤 نام: <b>{employee.full_name}</b>\n"
+        f"🆔 کد پرسنلی: <b>{employee.user_id}</b>\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"🔗 آدرس پنل وب:\n"
+        f"<code>{WEB_PANEL_URL}</code>\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"📋 <b>راهنمای ورود:</b>\n"
+        f"▫️ نام کاربری: <b>{employee.user_id}</b>\n"
+        f"▫️ رمز عبور: <b>کد ملی</b> شماست\n"
+        f"▫️ پس از ورود، رمز را تغییر دهید 🔒"
+    )
+
+    bale_api.send_message(
+        chat_id,
+        message,
+        reply_markup=bale_api.MAIN_MENU_KEYBOARD
+    )

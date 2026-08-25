@@ -64,11 +64,19 @@ CONTACT_KEYBOARD = {
 MAIN_MENU_KEYBOARD = {
     "keyboard": [
         [{"text": "📅 تردد امروز"}, {"text": "📆 تردد دیروز"}],
-        [{"text": "🗓️ تردد یک روز خاص"}, {"text": "💰 مانده مرخصی"}]  # 🆕
+        [{"text": "🗓️ تردد یک روز خاص"}, {"text": "💰 مانده مرخصی"}],
+        [{"text": "🌐 ورود به پنل وب"}],
     ],
     "resize_keyboard": True
 }
 
 REMOVE_KEYBOARD = {
     "remove_keyboard": True
+}
+# کیبورد لغو عملیات
+CANCEL_KEYBOARD = {
+    "keyboard": [
+        [{"text": "❌ لغو"}]
+    ],
+    "resize_keyboard": True
 }
