@@ -106,6 +106,26 @@ async def admin_dashboard(
         Employee.is_active == True
     ).count()
 
+    # 🆕 تفکیک کارمندان فعال بر اساس نوع قرارداد
+    DEPT_NAMES = {
+        '1': 'رسمی', '2': 'وظیفه', '3': 'خریدخدمت',
+        '4': 'قراردادی', '5': 'پزشک'
+    }
+    dept_counts_raw = db.query(
+        Employee.department,
+        func.count(Employee.id)
+    ).filter(
+        Employee.is_active == True
+    ).group_by(Employee.department).all()
+
+    employee_breakdown = []
+    for dept_code, count in dept_counts_raw:
+        employee_breakdown.append({
+            'code': dept_code,
+            'name': DEPT_NAMES.get(dept_code, dept_code or 'نامشخص'),
+            'count': count
+        })
+
     # 🆕 ۲. حاضرین امروز (از Attendance زنده)
     present_user_ids = set(u[0] for u in db.query(Attendance.user_id).filter(
         and_(
@@ -116,13 +136,32 @@ async def admin_dashboard(
     ).distinct().all())
     present_today = len(present_user_ids)
 
-    # 🆕 ۳. غایبین دیروز (از DailyStatus)
-    absent_yesterday = db.query(DailyStatus).filter(
+    # 🆕 بدون تردد دیروز (به جای غایبین)
+    # 3-کاربرانی که دیروز تردد داشتند
+    yesterday_attendance_users = set(u[0] for u in db.query(Attendance.user_id).filter(
+        and_(
+            func.date(Attendance.timestamp) == yesterday_g,
+            Attendance.is_deleted == False
+        )
+    ).distinct().all())
+
+    # همه کاربران فعال
+    all_active_user_ids = set(u[0] for u in db.query(Employee.user_id).filter(
+        Employee.is_active == True
+    ).all())
+
+    # کاربرانی که دیروز وضعیت مرخصی/ماموریت/غیبت داشتند
+    yesterday_statuses = db.query(DailyStatus).filter(
         and_(
             DailyStatus.status_date == yesterday_g,
-            DailyStatus.status_code == 'A'
+            DailyStatus.status_code.in_(['AL', 'SL', 'RL', 'UL', 'M', 'A'])
         )
-    ).count()
+    ).all()
+    yesterday_status_users = {ds.user_id for ds in yesterday_statuses}
+
+    # بدون تردد دیروز = فعال‌ها - تردددارها - وضعیت‌دارها
+    no_attendance_user_ids = all_active_user_ids - yesterday_attendance_users - yesterday_status_users
+    no_attendance_yesterday = len(no_attendance_user_ids)
 
     # 🆕 ۴. مرخصی‌های امروز (از LeaveRequest تایید شده)
     on_leave_today = db.query(LeaveRequest).filter(
@@ -171,25 +210,42 @@ async def admin_dashboard(
         LeaveCarryForwardRequest.status == 'P'
     ).count()
 
-    # 🆕 ترددهای ناقص دیروز (ورود بدون خروج)
-    yesterday_enters = set(u[0] for u in db.query(Attendance.user_id).filter(
-        and_(
-            func.date(Attendance.timestamp) == yesterday_g,
-            Attendance.punch == 0,
-            Attendance.is_deleted == False
-        )
-    ).distinct().all())
+    # 🆕 ترددهای ناقص هفته جاری (از شنبه تا دیروز)
+    # محاسبه تاریخ شروع هفته (شنبه)
+    today_weekday = today_g.weekday()  # دوشنبه=0, ..., یکشنبه=6
+    days_since_saturday = (today_weekday + 2) % 7
+    week_start_g = today_g - timedelta(days=days_since_saturday)
 
-    yesterday_exits = set(u[0] for u in db.query(Attendance.user_id).filter(
-        and_(
-            func.date(Attendance.timestamp) == yesterday_g,
-            Attendance.punch == 1,
-            Attendance.is_deleted == False
-        )
-    ).distinct().all())
+    # شمارش کاربران با تردد ناقص در هفته جاری
+    week_incomplete_user_days = {}  # {user_id: [تاریخ‌های ناقص]}
+    current_day = week_start_g
+    while current_day < today_g:  # تا دیروز (امروز هنوز کامل نیست)
+        day_enters = set(u[0] for u in db.query(Attendance.user_id).filter(
+            and_(
+                func.date(Attendance.timestamp) == current_day,
+                Attendance.punch == 0,
+                Attendance.is_deleted == False
+            )
+        ).distinct().all())
 
-    incomplete_user_ids = yesterday_enters - yesterday_exits
-    incomplete_count = len(incomplete_user_ids)
+        day_exits = set(u[0] for u in db.query(Attendance.user_id).filter(
+            and_(
+                func.date(Attendance.timestamp) == current_day,
+                Attendance.punch == 1,
+                Attendance.is_deleted == False
+            )
+        ).distinct().all())
+
+        # ناقص: ورود بدون خروج
+        incomplete = day_enters - day_exits
+        for uid in incomplete:
+            if uid not in week_incomplete_user_days:
+                week_incomplete_user_days[uid] = []
+            week_incomplete_user_days[uid].append(current_day)
+
+        current_day += timedelta(days=1)
+
+    week_incomplete_count = len(week_incomplete_user_days)
 
     # ============================================
     # 📋 لیست حاضرین امروز (از Attendance)
@@ -220,28 +276,17 @@ async def admin_dashboard(
     present_list.sort(key=lambda x: x['full_name'])
 
     # ============================================
-    # 📋 لیست غایبین دیروز
+    # 🆕 ساخت لیست بدون تردها
     # ============================================
-    absent_list = []
-    absent_statuses = db.query(DailyStatus).filter(
-        and_(
-            DailyStatus.status_date == yesterday_g,
-            DailyStatus.status_code == 'A'
-        )
-    ).all()
-
-    for ds in absent_statuses:
-        employee = db.query(Employee).filter(
-            Employee.user_id == ds.user_id
-        ).first()
-
-        absent_list.append({
-            'user_id': ds.user_id,
-            'full_name': employee.full_name if employee else ds.user_id,
+    no_attendance_list = []
+    for uid in no_attendance_user_ids:
+        employee = db.query(Employee).filter(Employee.user_id == uid).first()
+        no_attendance_list.append({
+            'user_id': uid,
+            'full_name': employee.full_name if employee else uid,
             'department': employee.department if employee else '-',
         })
-
-    absent_list.sort(key=lambda x: x['full_name'])
+    no_attendance_list.sort(key=lambda x: x['full_name'])
 
     # ============================================
     # 📋 لیست درخواست‌های در انتظار
@@ -293,43 +338,37 @@ async def admin_dashboard(
         })
 
     # ============================================
-    # 📋 لیست ترددهای ناقص دیروز
+    # 🆕 ساخت لیست ترددهای ناقص هفته
     # ============================================
-    incomplete_list = []
-    for uid in incomplete_user_ids:
-        employee = db.query(Employee).filter(
-            Employee.user_id == uid
-        ).first()
 
-        last_enter = db.query(Attendance).filter(
+    week_incomplete_list = []
+    for uid, dates in week_incomplete_user_days.items():
+        employee = db.query(Employee).filter(Employee.user_id == uid).first()
+        week_incomplete_list.append({
+            'user_id': uid,
+            'full_name': employee.full_name if employee else uid,
+            'days_count': len(dates),
+            'last_incomplete_j': jdatetime.date.fromgregorian(date=max(dates)).strftime('%Y/%m/%d'),
+        })
+    week_incomplete_list.sort(key=lambda x: x['days_count'], reverse=True)
+
+    # ============================================
+    # 🆕 محاسبه درصد حضور دیروز (از Attendance زنده)
+    # ============================================
+    attendance_rate = 0
+    if total_employees > 0:
+        # کاربران حاضر دیروز از Attendance (نه DailyStatus)
+        yesterday_present_users = set(u[0] for u in db.query(Attendance.user_id).filter(
             and_(
-                Attendance.user_id == uid,
                 func.date(Attendance.timestamp) == yesterday_g,
                 Attendance.punch == 0,
                 Attendance.is_deleted == False
             )
-        ).order_by(Attendance.timestamp.desc()).first()
+        ).distinct().all())
 
-        incomplete_list.append({
-            'user_id': uid,
-            'full_name': employee.full_name if employee else uid,
-            'enter_time': last_enter.timestamp.strftime('%H:%M') if last_enter else '-',
-        })
-
-    incomplete_list.sort(key=lambda x: x['full_name'])
-
-    # ============================================
-    # محاسبه درصد حضور دیروز
-    # ============================================
-    attendance_rate = 0
-    if total_employees > 0:
-        present_yesterday_count = db.query(DailyStatus).filter(
-            and_(
-                DailyStatus.status_date == yesterday_g,
-                DailyStatus.status_code == 'P'
-            )
-        ).count()
-        attendance_rate = round((present_yesterday_count / total_employees) * 100, 1)
+        # کسر کاربران مرخصی/ماموریت دیروز از مخرج (اختیاری)
+        # تا درصد دقیق‌تر باشد
+        attendance_rate = round((len(yesterday_present_users) / total_employees) * 100, 1)
 
     return templates.TemplateResponse(request, "admin/dashboard.html", {
         "user": user,
@@ -337,8 +376,9 @@ async def admin_dashboard(
 
         # 📊 KPI
         "total_employees": total_employees,
+        "employee_breakdown": employee_breakdown,  # 🆕
         "present_today": present_today,
-        "absent_yesterday": absent_yesterday,   # 🆕
+        "no_attendance_yesterday": no_attendance_yesterday,  # 🆕 (جایگزین غایبین)
         "on_leave_today": on_leave_today,
         "pending_leave_requests": pending_leave_requests,
         "total_bale_users": total_bale_users,
@@ -349,14 +389,15 @@ async def admin_dashboard(
         "expiring_contracts_count": expiring_contracts_count,
         "negative_balances_count": negative_balances_count,
         "pending_carry_forward_count": pending_carry_forward_count,
-        "incomplete_count": incomplete_count,
+        "week_incomplete_count": week_incomplete_count,  # 🆕 (جایگزین تردد ناقص امروز)
 
         # 📋 لیست‌ها
         "present_list": present_list,
-        "absent_list": absent_list,
+        "no_attendance_list": no_attendance_list,  # 🆕 (جایگزین غایبین)
         "pending_list": pending_list,
         "recent_bale_users": recent_bale_users,
-        "incomplete_list": incomplete_list,
+        "week_incomplete_list": week_incomplete_list,  # 🆕 (جایگزین ترددهای ناقص)
+        "week_start_j": jdatetime.date.fromgregorian(date=week_start_g).strftime('%Y/%m/%d'),  # 🆕
 
         "is_admin": True,
     })

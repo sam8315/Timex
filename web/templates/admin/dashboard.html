@@ -67,18 +67,39 @@
         padding: 8px 10px;
     }
 
-    /* 🎨 Progress حضور */
+    /* 🎨 نوار پیشرفت با کنتراست بالا */
     .attendance-progress {
-        height: 8px;
-        border-radius: 4px;
-        background: #e9ecef;
+        height: 12px;
+        border-radius: 6px;
+        background: rgba(108, 117, 125, 0.35);
+        border: 1px solid rgba(108, 117, 125, 0.2);
         overflow: hidden;
+        position: relative;
+        box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
     }
     .attendance-progress-bar {
         height: 100%;
-        border-radius: 4px;
+        border-radius: 6px;
+        transition: width 0.8s ease;
+        position: relative;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+    /* گرادیان سبز برای درصد بالا */
+    .attendance-progress-bar.progress-high {
         background: linear-gradient(90deg, #10b981, #34d399);
-        transition: width 0.6s ease;
+    }
+    /* گرادیان زرد برای درصد متوسط */
+    .attendance-progress-bar.progress-medium {
+        background: linear-gradient(90deg, #f59e0b, #fbbf24);
+    }
+    /* گرادیان قرمز برای درصد پایین */
+    .attendance-progress-bar.progress-low {
+        background: linear-gradient(90deg, #ef4444, #f87171);
+    }
+    /* حالت تاریک */
+    [data-theme="dark"] .attendance-progress {
+        background: rgba(176, 179, 184, 0.25);
+        border-color: rgba(176, 179, 184, 0.15);
     }
 
     /* 🎨 Badge وضعیت ربات بله */
@@ -93,18 +114,31 @@
 {% block content %}
 
 <!-- Header -->
-<div class="d-flex justify-content-between align-items-center mb-4">
+<!-- Header -->
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
     <div>
         <h4 class="mb-1 fw-bold">
             <i class="bi bi-speedometer2 text-primary"></i> داشبورد مدیریت
         </h4>
         <small class="text-muted">
             <i class="bi bi-calendar3"></i> {{ today_j.strftime('%Y/%m/%d') }}
-            | درصد حضور امروز: <strong>{{ attendance_rate }}%</strong>
         </small>
     </div>
-    <div class="attendance-progress" style="width: 200px;">
-        <div class="attendance-progress-bar" style="width: {{ attendance_rate }}%;"></div>
+
+    <!-- 🆕 متن و نوار پیشرفت کنار هم -->
+    <div class="d-flex align-items-center gap-3">
+        <small class="text-muted">
+            درصد حضور دیروز: <strong class="text-primary">{{ attendance_rate }}%</strong>
+        </small>
+<div class="attendance-progress" style="width: 150px; flex-shrink: 0;">
+    <div class="attendance-progress-bar
+        {% if attendance_rate >= 80 %}progress-high
+        {% elif attendance_rate >= 50 %}progress-medium
+        {% else %}progress-low{% endif %}"
+        style="width: {{ attendance_rate }}%;"
+        title="درصد حضور دیروز: {{ attendance_rate }}%">
+    </div>
+</div>
     </div>
 </div>
 
@@ -112,20 +146,20 @@
 <!-- 📊 کارت‌های KPI -->
 <!-- ============================================ -->
 <div class="row g-3 mb-4">
-    <!-- کارمندان فعال -->
-    <div class="col-lg-2 col-md-4 col-6">
-        <div class="card kpi-card bg-white">
-            <div class="card-body d-flex align-items-center gap-3">
-                <div class="kpi-icon bg-primary bg-opacity-10 text-primary">
-                    <i class="bi bi-people"></i>
-                </div>
-                <div>
-                    <div class="kpi-value">{{ total_employees }}</div>
-                    <div class="kpi-label">کارمندان فعال</div>
-                </div>
+<!-- کارمندان فعال (فشرده) -->
+<div class="col-lg-2 col-md-4 col-6">
+    <div class="card kpi-card bg-white">
+        <div class="card-body d-flex align-items-center gap-3">
+            <div class="kpi-icon bg-primary bg-opacity-10 text-primary">
+                <i class="bi bi-people"></i>
+            </div>
+            <div>
+                <div class="kpi-value">{{ total_employees }}</div>
+                <div class="kpi-label">کارمندان فعال</div>
             </div>
         </div>
     </div>
+</div>
 
     <!-- حاضرین -->
     <div class="col-lg-2 col-md-4 col-6">
@@ -142,20 +176,20 @@
         </div>
     </div>
 
-    <!-- غایبین -->
-    <div class="col-lg-2 col-md-4 col-6">
-        <div class="card kpi-card bg-white">
-            <div class="card-body d-flex align-items-center gap-3">
-                <div class="kpi-icon bg-danger bg-opacity-10 text-danger">
-                    <i class="bi bi-x-circle"></i>
-                </div>
-                <div>
-                    <div class="kpi-value text-danger">{{ absent_today }}</div>
-                    <div class="kpi-label">غایبین امروز</div>
-                </div>
+<!-- بدون تردد دیروز (جایگزین غایبین) -->
+<div class="col-lg-2 col-md-4 col-6">
+    <div class="card kpi-card bg-white">
+        <div class="card-body d-flex align-items-center gap-3">
+            <div class="kpi-icon bg-secondary bg-opacity-10 text-secondary">
+                <i class="bi bi-person-x"></i>
+            </div>
+            <div>
+                <div class="kpi-value text-secondary">{{ no_attendance_yesterday }}</div>
+                <div class="kpi-label">بدون تردد دیروز</div>
             </div>
         </div>
     </div>
+</div>
 
     <!-- مرخصی‌ها -->
     <div class="col-lg-2 col-md-4 col-6">
@@ -202,6 +236,28 @@
         </div>
     </div>
 </div>
+
+<!-- 🆕 تفکیک قراردادها (نوار باریک) -->
+{% if employee_breakdown %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body py-2 px-3">
+                <div class="d-flex flex-wrap gap-2 align-items-center">
+                    <small class="text-muted fw-semibold me-1">
+                        <i class="bi bi-briefcase"></i> تفکیک قرارداد:
+                    </small>
+                    {% for dept in employee_breakdown %}
+                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle" style="font-size: 0.75rem;">
+                        {{ dept.name }}: {{ dept.count }}
+                    </span>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 
 <!-- ============================================ -->
 <!-- ⚠️ هشدارهای فوری -->
@@ -256,21 +312,21 @@
     </div>
     {% endif %}
 
-    {% if incomplete_count > 0 %}
-    <div class="col-md-3 col-6">
-        <div class="card alert-card bg-secondary bg-opacity-10">
-            <div class="card-body d-flex align-items-center gap-3">
-                <div class="alert-icon bg-secondary bg-opacity-25 text-secondary">
-                    <i class="bi bi-exclamation-triangle"></i>
-                </div>
-                <div>
-                    <div class="fw-bold">{{ incomplete_count }}</div>
-                    <small class="text-muted">تردد ناقص امروز</small>
-                </div>
+{% if week_incomplete_count > 0 %}
+<div class="col-md-3 col-6">
+    <div class="card alert-card bg-secondary bg-opacity-10">
+        <div class="card-body d-flex align-items-center gap-3">
+            <div class="alert-icon bg-secondary bg-opacity-25 text-secondary">
+                <i class="bi bi-exclamation-triangle"></i>
+            </div>
+            <div>
+                <div class="fw-bold">{{ week_incomplete_count }}</div>
+                <small class="text-muted">تردد ناقص هفته (از {{ week_start_j }})</small>
             </div>
         </div>
     </div>
-    {% endif %}
+</div>
+{% endif %}
 </div>
 {% endif %}
 
@@ -376,79 +432,86 @@
         </div>
     </div>
 
-    <!-- غایبین امروز -->
-    <div class="col-lg-4">
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-white d-flex justify-content-between align-items-center">
-                <h6 class="mb-0"><i class="bi bi-x-circle text-danger"></i> غایبین امروز</h6>
-                <span class="badge bg-danger">{{ absent_list|length }}</span>
+<!-- بدون تردهای دیروز -->
+<div class="col-lg-4">
+    <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+            <h6 class="mb-0"><i class="bi bi-person-x text-secondary"></i> بدون تردهای دیروز</h6>
+            <span class="badge bg-secondary">{{ no_attendance_list|length }}</span>
+        </div>
+        <div class="card-body p-0">
+            {% if no_attendance_list %}
+            <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
+                <table class="table table-hover mini-table mb-0">
+                    <thead>
+                        <tr>
+                            <th>کارمند</th>
+                            <th>دپارتمان</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for na in no_attendance_list %}
+                        <tr>
+                            <td><strong>{{ na.full_name }}</strong></td>
+                            <td>{{ na.department }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
             </div>
-            <div class="card-body p-0">
-                {% if absent_list %}
-                <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
-                    <table class="table table-hover mini-table mb-0">
-                        <thead>
-                            <tr>
-                                <th>کارمند</th>
-                                <th>دپارتمان</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for a in absent_list %}
-                            <tr>
-                                <td><strong>{{ a.full_name }}</strong></td>
-                                <td>{{ a.department }}</td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-                {% else %}
-                <div class="text-center py-4 text-muted">
-                    <i class="bi bi-emoji-smile display-6"></i>
-                    <p class="mt-2 mb-0">غیبتی ثبت نشده است</p>
-                </div>
-                {% endif %}
+            {% else %}
+            <div class="text-center py-4 text-muted">
+                <i class="bi bi-check-circle display-6"></i>
+                <p class="mt-2 mb-0">همه دیروز تردد داشته‌اند</p>
             </div>
+            {% endif %}
         </div>
     </div>
+</div>
 
-    <!-- ترددهای ناقص -->
-    <div class="col-lg-4">
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-white d-flex justify-content-between align-items-center">
-                <h6 class="mb-0"><i class="bi bi-exclamation-triangle text-warning"></i> ترددهای ناقص امروز</h6>
-                <span class="badge bg-warning text-dark">{{ incomplete_list|length }}</span>
-            </div>
-            <div class="card-body p-0">
-                {% if incomplete_list %}
-                <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
-                    <table class="table table-hover mini-table mb-0">
-                        <thead>
-                            <tr>
-                                <th>کارمند</th>
-                                <th>آخرین ورود</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for inc in incomplete_list %}
-                            <tr>
-                                <td><strong>{{ inc.full_name }}</strong></td>
-                                <td><span class="badge bg-light text-dark border">{{ inc.enter_time }}</span></td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-                {% else %}
-                <div class="text-center py-4 text-muted">
-                    <i class="bi bi-check-circle display-6"></i>
-                    <p class="mt-2 mb-0">تردد ناقصی وجود ندارد</p>
-                </div>
-                {% endif %}
+<!-- ترددهای ناقص هفته جاری -->
+<div class="col-lg-4">
+    <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+            <h6 class="mb-0"><i class="bi bi-exclamation-triangle text-warning"></i> ترددهای ناقص هفته</h6>
+            <div>
+                <small class="text-muted me-2">از {{ week_start_j }}</small>
+                <span class="badge bg-warning text-dark">{{ week_incomplete_list|length }}</span>
             </div>
         </div>
+        <div class="card-body p-0">
+            {% if week_incomplete_list %}
+            <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
+                <table class="table table-hover mini-table mb-0">
+                    <thead>
+                        <tr>
+                            <th>کارمند</th>
+                            <th class="text-center">روزهای ناقص</th>
+                            <th>آخرین ناقص</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for inc in week_incomplete_list %}
+                        <tr>
+                            <td><strong>{{ inc.full_name }}</strong></td>
+                            <td class="text-center">
+                                <span class="badge bg-warning text-dark">{{ inc.days_count }} روز</span>
+                            </td>
+                            <td><small>{{ inc.last_incomplete_j }}</small></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-4 text-muted">
+                <i class="bi bi-check-circle display-6"></i>
+                <p class="mt-2 mb-0">تردد ناقصی در هفته جاری نیست</p>
+            </div>
+            {% endif %}
+        </div>
     </div>
+</div>
 
     <!-- 🤖 آخرین کاربران ربات بله -->
     <div class="col-lg-4">
