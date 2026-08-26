@@ -488,16 +488,32 @@
                             <th>کارمند</th>
                             <th class="text-center">روزهای ناقص</th>
                             <th>آخرین ناقص</th>
+                            <th class="text-center">عملیات</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for inc in week_incomplete_list %}
                         <tr>
-                            <td><strong>{{ inc.full_name }}</strong></td>
+                            <!-- 🆕 نام کاربر به صورت لینک -->
+                            <td>
+                                <a href="/admin/attendance/user/{{ inc.user_id }}"
+                                   class="text-decoration-none fw-semibold"
+                                   title="مشاهده تردد {{ inc.full_name }}">
+                                    {{ inc.full_name }}
+                                </a>
+                            </td>
                             <td class="text-center">
                                 <span class="badge bg-warning text-dark">{{ inc.days_count }} روز</span>
                             </td>
                             <td><small>{{ inc.last_incomplete_j }}</small></td>
+                            <!-- 🆕 ستون عملیات -->
+                            <td class="text-center">
+                                <a href="/admin/attendance/user/{{ inc.user_id }}"
+                                   class="btn btn-outline-primary btn-sm py-0 px-1"
+                                   title="مشاهده تردد ماهانه">
+                                    <i class="bi bi-eye"></i>
+                                </a>
+                            </td>
                         </tr>
                         {% endfor %}
                     </tbody>

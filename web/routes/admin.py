@@ -210,16 +210,15 @@ async def admin_dashboard(
         LeaveCarryForwardRequest.status == 'P'
     ).count()
 
-    # 🆕 ترددهای ناقص هفته جاری (از شنبه تا دیروز)
-    # محاسبه تاریخ شروع هفته (شنبه)
-    today_weekday = today_g.weekday()  # دوشنبه=0, ..., یکشنبه=6
+    # 🆕 ترددهای ناقص هفته جاری (از شنبه تا دیروز) - با شناسایی شیفت شب
+    today_weekday = today_g.weekday()
     days_since_saturday = (today_weekday + 2) % 7
     week_start_g = today_g - timedelta(days=days_since_saturday)
 
-    # شمارش کاربران با تردد ناقص در هفته جاری
     week_incomplete_user_days = {}  # {user_id: [تاریخ‌های ناقص]}
     current_day = week_start_g
-    while current_day < today_g:  # تا دیروز (امروز هنوز کامل نیست)
+    while current_day < today_g:  # تا دیروز
+        # کاربران با ورود در این روز
         day_enters = set(u[0] for u in db.query(Attendance.user_id).filter(
             and_(
                 func.date(Attendance.timestamp) == current_day,
@@ -228,6 +227,7 @@ async def admin_dashboard(
             )
         ).distinct().all())
 
+        # کاربران با خروج در این روز
         day_exits = set(u[0] for u in db.query(Attendance.user_id).filter(
             and_(
                 func.date(Attendance.timestamp) == current_day,
@@ -236,9 +236,45 @@ async def admin_dashboard(
             )
         ).distinct().all())
 
-        # ناقص: ورود بدون خروج
-        incomplete = day_enters - day_exits
-        for uid in incomplete:
+        # 🆕 کاربران با ورود بدون خروج (احتمالاً ناقص یا شیفت شب)
+        potential_incomplete = day_enters - day_exits
+
+        # 🆕 بررسی شیفت شب: آیا اولین رکورد روز بعد خروج است؟
+        next_day = current_day + timedelta(days=1)
+        for uid in list(potential_incomplete):
+            first_next_record = db.query(Attendance).filter(
+                and_(
+                    Attendance.user_id == uid,
+                    func.date(Attendance.timestamp) == next_day,
+                    Attendance.is_deleted == False
+                )
+            ).order_by(Attendance.timestamp.asc()).first()
+
+            # اگر اولین رکورد روز بعد خروج بود → شیفت شب → ناقص نیست
+            if first_next_record and first_next_record.punch == 1:
+                potential_incomplete.discard(uid)
+
+        # 🆕 کاربران با خروج بدون ورود (احتمالاً شیفت شب از روز قبل)
+        potential_missing_enter = day_exits - day_enters
+        prev_day = current_day - timedelta(days=1)
+        for uid in list(potential_missing_enter):
+            last_prev_record = db.query(Attendance).filter(
+                and_(
+                    Attendance.user_id == uid,
+                    func.date(Attendance.timestamp) == prev_day,
+                    Attendance.is_deleted == False
+                )
+            ).order_by(Attendance.timestamp.desc()).first()
+
+            # اگر آخرین رکورد روز قبل ورود بود → شیفت شب → ناقص نیست
+            if last_prev_record and last_prev_record.punch == 0:
+                potential_missing_enter.discard(uid)
+
+        # 🆕 ترکیب ترددهای واقعاً ناقص (ورود بدون خروج + خروج بدون ورود)
+        real_incomplete = potential_incomplete | potential_missing_enter
+
+        # ثبت در دیکشنری
+        for uid in real_incomplete:
             if uid not in week_incomplete_user_days:
                 week_incomplete_user_days[uid] = []
             week_incomplete_user_days[uid].append(current_day)
@@ -246,7 +282,6 @@ async def admin_dashboard(
         current_day += timedelta(days=1)
 
     week_incomplete_count = len(week_incomplete_user_days)
-
     # ============================================
     # 📋 لیست حاضرین امروز (از Attendance)
     # ============================================
