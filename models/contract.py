@@ -23,7 +23,7 @@ CONTRACT_TYPES = {
         'sick_leave': 0,
         'allow_service_deduction': True,
         'editable_leave': False,
-        'carry_forward_max': 0,  # 🆕 وظیفه: بدون ذخیره
+        'carry_forward_max': 35,  # 🆕 وظیفه: بدون ذخیره
     },
     '3': {
         'name': 'خریدخدمت',
