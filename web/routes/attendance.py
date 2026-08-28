@@ -335,7 +335,7 @@ def calculate_work_hours(
     is_night_shift: bool
 ) -> tuple:
     """
-    محاسبه ساعات کاری با محاسبه مجموع بازه‌های ورود و خروج
+    محاسبه ساعات کاری با در نظر گرفتن شیفت شب
     - اگر ورود بدون خروج و شیفت شب → خروج ضمنی 23:59:59
     - اگر خروج بدون ورود و شیفت شب → ورود ضمنی 00:00:00
     - اگر خروج قبل از ورود در همان روز → شیفت شب ادغام‌شده
@@ -344,78 +344,60 @@ def calculate_work_hours(
     import logging
     logger = logging.getLogger(__name__)
 
-    if not day_records:
-        return 0, None, None
+    enters = [r for r in day_records if r.punch == 0]
+    exits = [r for r in day_records if r.punch == 1]
 
-    # مرتب‌سازی رکوردها بر اساس زمان
-    sorted_records = sorted(day_records, key=lambda x: x.timestamp)
-    
-    def clean_tz(dt):
-        if dt.tzinfo is not None:
-            return dt.replace(tzinfo=None)
-        return dt
-
-    enters = [r for r in sorted_records if r.punch == 0]
-    exits = [r for r in sorted_records if r.punch == 1]
-    
     if not enters and not exits:
         return 0, None, None
 
-    # حالت ویژه شیفت شب ادغام‌شده (خروج قبل از ورود در همان روز)
-    if is_night_shift and enters and exits:
-        first_enter = min(enters, key=lambda x: x.timestamp)
-        first_exit = min(exits, key=lambda x: x.timestamp)
-        if clean_tz(first_exit.timestamp) < clean_tz(first_enter.timestamp):
-            day = first_enter.timestamp.date()
-            midnight = datetime(day.year, day.month, day.day, 0, 0, 0)
-            end_of_day = datetime(day.year, day.month, day.day, 23, 59, 59)
-            
-            exit_time = clean_tz(first_exit.timestamp)
-            enter_time = clean_tz(first_enter.timestamp)
-            
-            hours_morning = (exit_time - midnight).total_seconds()
-            hours_night = (end_of_day - enter_time).total_seconds()
-            total_seconds = max(0, hours_morning) + max(0, hours_night)
-            
-            return total_seconds / 3600, enter_time, exit_time
+    effective_enter = None
+    effective_exit = None
 
-    # اضافه کردن رکوردهای ضمنی برای شیفت شب در صورت نیاز
-    if is_night_shift:
-        if enters and not exits:
-            day = max(enters, key=lambda x: x.timestamp).timestamp.date()
-            implicit_exit = datetime(day.year, day.month, day.day, 23, 59, 59)
-            sorted_records.append(type('MockRecord', (), {'timestamp': implicit_exit, 'punch': 1})())
-            sorted_records.sort(key=lambda x: x.timestamp)
-        elif exits and not enters:
-            day = min(exits, key=lambda x: x.timestamp).timestamp.date()
-            implicit_enter = datetime(day.year, day.month, day.day, 0, 0, 0)
-            sorted_records.append(type('MockRecord', (), {'timestamp': implicit_enter, 'punch': 0})())
-            sorted_records.sort(key=lambda x: x.timestamp)
+    if enters:
+        effective_enter = min(enters, key=lambda x: x.timestamp).timestamp
+        # 🆕 حذف timezone برای مقایسه یکسان
+        if effective_enter.tzinfo is not None:
+            effective_enter = effective_enter.replace(tzinfo=None)
 
-    total_seconds = 0.0
-    current_enter = None
-    first_enter_overall = None
-    last_exit_overall = None
+    if exits:
+        effective_exit = max(exits, key=lambda x: x.timestamp).timestamp
+        # 🆕 حذف timezone برای مقایسه یکسان
+        if effective_exit.tzinfo is not None:
+            effective_exit = effective_exit.replace(tzinfo=None)
 
-    # جفت‌سازی ورود و خروج‌ها به ترتیب زمان برای محاسبه دقیق هر بازه
-    for rec in sorted_records:
-        rec_time = clean_tz(rec.timestamp)
-        if rec.punch == 0:  # ورود
-            if current_enter is None:
-                current_enter = rec_time
-                if first_enter_overall is None:
-                    first_enter_overall = rec_time
-        elif rec.punch == 1:  # خروج
-            if current_enter is not None:
-                diff = (rec_time - current_enter).total_seconds()
-                if diff > 0:
-                    total_seconds += diff
-                current_enter = None
-                last_exit_overall = rec_time
-            else:
-                last_exit_overall = rec_time
+    # 🆕 حالت ویژه: خروج قبل از ورود در همان روز (شیفت شب ادغام‌شده)
+    if effective_enter and effective_exit and effective_exit < effective_enter:
+        logger.info(f"🌙 Night shift merged: exit {effective_exit} before enter {effective_enter}")
+        day = effective_enter.date()
+        midnight = datetime(day.year, day.month, day.day, 0, 0, 0)
+        end_of_day = datetime(day.year, day.month, day.day, 23, 59, 59)
+        hours_morning = (effective_exit - midnight).total_seconds() / 3600
+        hours_night = (end_of_day - effective_enter).total_seconds() / 3600
+        total_hours = max(0, hours_morning) + max(0, hours_night)
+        return total_hours, effective_enter, effective_exit
 
-    return total_seconds / 3600, first_enter_overall, last_exit_overall
+    # 🆕 خروج ضمنی 23:59:59
+    if is_night_shift and effective_enter and not effective_exit:
+        day = effective_enter.date()
+        effective_exit = datetime(day.year, day.month, day.day, 23, 59, 59)
+        logger.info(f"🌙 Night shift: Implicit exit set to {effective_exit}")
+
+    # 🆕 ورود ضمنی 00:00:00
+    if is_night_shift and effective_exit and not effective_enter:
+        day = effective_exit.date()
+        effective_enter = datetime(day.year, day.month, day.day, 0, 0, 0)
+        logger.info(f"🌙 Night shift: Implicit enter set to {effective_enter}")
+
+    if effective_enter and effective_exit:
+        try:
+            diff = (effective_exit - effective_enter).total_seconds() / 3600
+            work_hours = max(0, diff)
+            return work_hours, effective_enter, effective_exit
+        except Exception as e:
+            logger.error(f"❌ Error calculating diff: {e}")
+            return 0, effective_enter, effective_exit
+
+    return 0, effective_enter, effective_exit
 
 @router.get("/attendance", response_class=HTMLResponse)
 async def attendance_page(
