@@ -447,7 +447,7 @@
                             <span class="badge bg-danger">{{ day.last_exit.strftime('%H:%M') }}</span>
                             {% else %}<span class="text-muted">-</span>{% endif %}
                         </td>
-                        <td>{{ "%.1f" | format(day.work_hours) }}</td>
+                        <td>{{ day.work_hours_display }}</td>
                         <td>
                             <span class="badge {% if day.records | length > 2 %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
                                 {{ day.records | length }}

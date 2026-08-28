@@ -551,6 +551,7 @@ async def attendance_page(
             'first_enter': first_enter,
             'last_exit': last_exit,
             'work_hours': work_hours,
+            'work_hours_display': format_hours_hhmm(work_hours),  # ✅ این خط اضافه شد
             'is_friday': is_friday,
             'is_holiday': holiday_title is not None,
             'holiday_title': holiday_title,
