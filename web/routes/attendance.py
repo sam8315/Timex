@@ -335,69 +335,91 @@ def calculate_work_hours(
     is_night_shift: bool
 ) -> tuple:
     """
-    محاسبه ساعات کاری با در نظر گرفتن شیفت شب
-    - اگر ورود بدون خروج و شیفت شب → خروج ضمنی 23:59:59
-    - اگر خروج بدون ورود و شیفت شب → ورود ضمنی 00:00:00
-    - اگر خروج قبل از ورود در همان روز → شیفت شب ادغام‌شده
+    🆕 محاسبه دقیق ساعات کاری با جمع زدن بازه‌های ورود و خروج
+    - اگر بیش از ۲ تردد باشد، بازه هر جفت (ورود تا خروج) محاسبه و جمع می‌شود
+    - ترددهای تکراری (دو ورود یا دو خروج پشت سر هم) نادیده گرفته می‌شوند
+    - شیفت شب (ورود/خروج ضمنی) به درستی مدیریت می‌شود
     """
     from datetime import datetime
     import logging
     logger = logging.getLogger(__name__)
 
-    enters = [r for r in day_records if r.punch == 0]
-    exits = [r for r in day_records if r.punch == 1]
-
-    if not enters and not exits:
+    if not day_records:
         return 0, None, None
 
-    effective_enter = None
-    effective_exit = None
+    # تابع کمکی برای حذف timezone و مرتب‌سازی
+    def get_naive_ts(rec):
+        return rec.timestamp.replace(tzinfo=None) if rec.timestamp.tzinfo else rec.timestamp
 
-    if enters:
-        effective_enter = min(enters, key=lambda x: x.timestamp).timestamp
-        # 🆕 حذف timezone برای مقایسه یکسان
-        if effective_enter.tzinfo is not None:
-            effective_enter = effective_enter.replace(tzinfo=None)
+    sorted_records = sorted(day_records, key=get_naive_ts)
+    
+    total_seconds = 0
+    open_enter = None
+    
+    for rec in sorted_records:
+        ts = get_naive_ts(rec)
+        
+        if rec.punch == 0:  # ورود
+            if open_enter is None:
+                open_enter = ts
+            # اگر open_enter از قبل ست شده باشد (دو ورود پشت سر هم)، ورود دوم نادیده گرفته می‌شود
+            
+        elif rec.punch == 1:  # خروج
+            if open_enter is not None:
+                # بستن بازه کاری
+                diff = (ts - open_enter).total_seconds()
+                if diff > 0:
+                    total_seconds += diff
+                open_enter = None
+            else:
+                # خروج بدون ورود قبلی در همین روز
+                if is_night_shift:
+                    # این خروجِ صبحِ شیفت شب است → ورود ضمنی 00:00:00
+                    day = ts.date()
+                    implicit_enter = datetime(day.year, day.month, day.day, 0, 0, 0)
+                    diff = (ts - implicit_enter).total_seconds()
+                    if diff > 0:
+                        total_seconds += diff
+                    # دیگر open_enter ست نمی‌شود تا ورودهای بعدی عادی پردازش شوند
 
-    if exits:
-        effective_exit = max(exits, key=lambda x: x.timestamp).timestamp
-        # 🆕 حذف timezone برای مقایسه یکسان
-        if effective_exit.tzinfo is not None:
-            effective_exit = effective_exit.replace(tzinfo=None)
+    # اگر در پایان روز، ورودی بدون خروج مانده باشد
+    if open_enter is not None:
+        if is_night_shift:
+            # شیفت شب → خروج ضمنی 23:59:59
+            day = open_enter.date()
+            implicit_exit = datetime(day.year, day.month, day.day, 23, 59, 59)
+            diff = (implicit_exit - open_enter).total_seconds()
+            if diff > 0:
+                total_seconds += diff
+        else:
+            # روز عادی و خروج فراموش شده → این بازه ناقص است و محاسبه نمی‌شود
+            logger.debug(f"⚠️ Unpaired enter at {open_enter} ignored for non-night-shift.")
 
-    # 🆕 حالت ویژه: خروج قبل از ورود در همان روز (شیفت شب ادغام‌شده)
-    if effective_enter and effective_exit and effective_exit < effective_enter:
-        logger.info(f"🌙 Night shift merged: exit {effective_exit} before enter {effective_enter}")
-        day = effective_enter.date()
-        midnight = datetime(day.year, day.month, day.day, 0, 0, 0)
-        end_of_day = datetime(day.year, day.month, day.day, 23, 59, 59)
-        hours_morning = (effective_exit - midnight).total_seconds() / 3600
-        hours_night = (end_of_day - effective_enter).total_seconds() / 3600
-        total_hours = max(0, hours_morning) + max(0, hours_night)
-        return total_hours, effective_enter, effective_exit
+    work_hours = total_seconds / 3600.0
+    
+    # تعیین اولین ورود و آخرین خروج برای نمایش در جدول
+    enters = [r for r in day_records if r.punch == 0]
+    exits = [r for r in day_records if r.punch == 1]
+    
+    first_enter = min(enters, key=get_naive_ts).timestamp if enters else None
+    last_exit = max(exits, key=get_naive_ts).timestamp if exits else None
+    
+    if first_enter and first_enter.tzinfo:
+        first_enter = first_enter.replace(tzinfo=None)
+    if last_exit and last_exit.tzinfo:
+        last_exit = last_exit.replace(tzinfo=None)
 
-    # 🆕 خروج ضمنی 23:59:59
-    if is_night_shift and effective_enter and not effective_exit:
-        day = effective_enter.date()
-        effective_exit = datetime(day.year, day.month, day.day, 23, 59, 59)
-        logger.info(f"🌙 Night shift: Implicit exit set to {effective_exit}")
+    # تنظیم زمان‌های ضمنی برای نمایش در شیفت شب
+    if is_night_shift:
+        if first_enter and not last_exit:
+            day = first_enter.date()
+            last_exit = datetime(day.year, day.month, day.day, 23, 59, 59)
+        elif last_exit and not first_enter:
+            day = last_exit.date()
+            first_enter = datetime(day.year, day.month, day.day, 0, 0, 0)
 
-    # 🆕 ورود ضمنی 00:00:00
-    if is_night_shift and effective_exit and not effective_enter:
-        day = effective_exit.date()
-        effective_enter = datetime(day.year, day.month, day.day, 0, 0, 0)
-        logger.info(f"🌙 Night shift: Implicit enter set to {effective_enter}")
+    return work_hours, first_enter, last_exit
 
-    if effective_enter and effective_exit:
-        try:
-            diff = (effective_exit - effective_enter).total_seconds() / 3600
-            work_hours = max(0, diff)
-            return work_hours, effective_enter, effective_exit
-        except Exception as e:
-            logger.error(f"❌ Error calculating diff: {e}")
-            return 0, effective_enter, effective_exit
-
-    return 0, effective_enter, effective_exit
 
 @router.get("/attendance", response_class=HTMLResponse)
 async def attendance_page(
