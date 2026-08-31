@@ -7,6 +7,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from web.routes import auth, dashboard, attendance, leave, admin, contract, profile, holidays, admin_contracts, admin_leave, admin_daily_status, carry_forward, education, phones, reports
 BASE_PATH = Path(__file__).parent
+from web.routes.admin_permissions import router as permissions_router
 
 app = FastAPI(title="Timex - سامانه حضور و غیاب", version="1.0.0")
 
@@ -32,6 +33,8 @@ app.include_router(carry_forward.router)
 app.include_router(education.router)
 app.include_router(phones.router)
 app.include_router(reports.router)
+# 🆕 ماژول مدیریت دسترسی‌ها
+app.include_router(permissions_router)
 
 @app.get("/")
 async def root():

@@ -875,6 +875,12 @@
                 <a href="/admin/users" class="sidebar-link {% if request.url.path == '/admin/users' %}active{% endif %}">
                     <i class="bi bi-people"></i> مدیریت کاربران
                 </a>
+                    <!-- 🆕 اینجا اضافه شود -->
+    {% if user and user.role == 'super_admin' %}
+    <a href="/admin/permissions" class="sidebar-link {% if '/permissions' in request.url.path %}active{% endif %}">
+        <i class="bi bi-shield-lock"></i> مدیریت دسترسی‌ها
+    </a>
+    {% endif %}
                 <a href="/admin/education" class="sidebar-link {% if request.url.path == '/admin/education' %}active{% endif %}">
                     <i class="bi bi-mortarboard"></i> مدارک تحصیلی
                 </a>

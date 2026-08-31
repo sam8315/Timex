@@ -32,6 +32,7 @@ from web.routes.attendance import (
     STATUS_NO_ATTENDANCE
 )
 from models.daily_status import DailyStatus
+from web.permissions import has_permission, get_effective_permissions
 
 def build_redirect_url(referer: str, key: str, value: str) -> str:
     """ساخت URL بازگشت با رعایت query string موجود"""
@@ -105,6 +106,9 @@ async def admin_dashboard(
     db: Session = Depends(get_db)
 ):
     """داشبورد مدیریت"""
+    # 🆕 بررسی دسترسی فردی
+    if not has_permission(db, user, 'view_dashboard'):
+        return RedirectResponse(url="/attendance?error=no_permission", status_code=302)
     today_j = jdatetime.date.today()
     today_g = today_j.togregorian()
     yesterday_g = today_g - timedelta(days=1)  # 🆕 دیروز
