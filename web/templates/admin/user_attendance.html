@@ -3,6 +3,9 @@
 
 {% block extra_css %}
 <style>
+    /* ============================================ */
+    /* 🎨 کارت پیشرفت اصلی                          */
+    /* ============================================ */
     .progress-hero-card {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         border: none;
@@ -81,6 +84,9 @@
     .linear-progress-fill.medium { background: linear-gradient(90deg, #fbbf24, #f59e0b); }
     .linear-progress-fill.low { background: linear-gradient(90deg, #f87171, #ef4444); }
 
+    /* ============================================ */
+    /* 🎨 کارت‌های آمار                             */
+    /* ============================================ */
     .stat-card {
         border: none;
         border-radius: 16px;
@@ -125,26 +131,11 @@
     .gradient-red .stat-icon { background: rgba(255,255,255,0.25); }
     .gradient-purple { background: linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%); color: #4a3d6e; }
     .gradient-purple .stat-icon { background: rgba(255,255,255,0.4); }
+    .gradient-amber { background: linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%); color: white; }
+    .gradient-amber .stat-icon { background: rgba(255,255,255,0.25); }
 
-    .attendance-table th {
-        background: #f8f9fa;
-        font-size: 0.78rem;
-        font-weight: 600;
-        color: #6b7280;
-        white-space: nowrap;
-        padding: 12px 10px;
-    }
-    .attendance-table td {
-        vertical-align: middle;
-        padding: 10px;
-        font-size: 0.88rem;
-    }
-
+    /* Dark Mode */
     [data-theme="dark"] .stat-card { box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
-    [data-theme="dark"] .attendance-table th {
-        background: var(--bg-hover);
-        color: var(--text-secondary);
-    }
 </style>
 {% endblock %}
 
@@ -165,6 +156,25 @@
         </small>
     </div>
 
+    <!-- فرم انتخاب مستقیم سال/ماه -->
+    <form method="get" action="/admin/attendance/user/{{ target_user_id }}" class="d-flex align-items-center gap-2 flex-wrap">
+        <select name="year" class="form-select form-select-sm" style="width: auto;">
+            {% for y in available_years %}
+            <option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>
+            {% endfor %}
+        </select>
+        <select name="month" class="form-select form-select-sm" style="width: auto;">
+            {% for m in months_list %}
+            <option value="{{ m.num }}" {% if m.num == month %}selected{% endif %}>{{ m.name }}</option>
+            {% endfor %}
+        </select>
+        {% if status_filter != 'all' %}
+        <input type="hidden" name="filter" value="{{ status_filter }}">
+        {% endif %}
+        <button type="submit" class="btn btn-primary btn-sm">
+            <i class="bi bi-search"></i> نمایش
+        </button>
+    </form>
 
     <div class="d-flex gap-2 flex-wrap">
         <a href="/admin/attendance/user/{{ target_user_id }}?year={{ prev_year }}&month={{ prev_month }}{% if status_filter != 'all' %}&filter={{ status_filter }}{% endif %}"
@@ -184,26 +194,6 @@
             <i class="bi bi-arrow-right"></i> بازگشت
         </a>
     </div>
-    <!-- 🆕 فرم انتخاب مستقیم سال/ماه (مشابه صفحه کاربر) -->
-    <form method="get" action="/admin/attendance/user/{{ target_user_id }}"
-          class="d-flex align-items-center gap-2 flex-wrap">
-        <select name="year" class="form-select form-select-sm" style="width: auto;">
-            {% for y in available_years %}
-            <option value="{{ y }}" {% if y== year %}selected{% endif %}>{{ y }}</option>
-            {% endfor %}
-        </select>
-        <select name="month" class="form-select form-select-sm" style="width: auto;">
-            {% for m in months_list %}
-            <option value="{{ m.num }}" {% if m.num== month %}selected{% endif %}>{{ m.name }}</option>
-            {% endfor %}
-        </select>
-        {% if status_filter != 'all' %}
-        <input type="hidden" name="filter" value="{{ status_filter }}">
-        {% endif %}
-        <button type="submit" class="btn btn-primary btn-sm">
-            <i class="bi bi-search"></i> نمایش
-        </button>
-    </form>
 </div>
 
 <!-- فیلترها -->
@@ -214,30 +204,26 @@
             <a href="/admin/attendance/user/{{ target_user_id }}?year={{ year }}&month={{ month }}"
                class="btn btn-sm {% if status_filter == 'all' %}btn-primary{% else %}btn-outline-primary{% endif %} rounded-pill">همه</a>
             <a href="/admin/attendance/user/{{ target_user_id }}?year={{ year }}&month={{ month }}&filter=complete"
-               class="btn btn-sm {% if status_filter == 'complete' %}btn-success{% else %}btn-outline-success{% endif %} rounded-pill">✅
-                کامل</a>
+               class="btn btn-sm {% if status_filter == 'complete' %}btn-success{% else %}btn-outline-success{% endif %} rounded-pill">✅ کامل</a>
             <a href="/admin/attendance/user/{{ target_user_id }}?year={{ year }}&month={{ month }}&filter=night_shift"
-               class="btn btn-sm {% if status_filter == 'night_shift' %}btn-info{% else %}btn-outline-info{% endif %} rounded-pill">🌙
-                شیفت شب</a>
+               class="btn btn-sm {% if status_filter == 'night_shift' %}btn-info{% else %}btn-outline-info{% endif %} rounded-pill">🌙 شیفت شب</a>
             <a href="/admin/attendance/user/{{ target_user_id }}?year={{ year }}&month={{ month }}&filter=issues"
-               class="btn btn-sm {% if status_filter == 'issues' %}btn-warning{% else %}btn-outline-warning{% endif %} rounded-pill">⚠️
-                دارای مشکل</a>
+               class="btn btn-sm {% if status_filter == 'issues' %}btn-warning{% else %}btn-outline-warning{% endif %} rounded-pill">⚠️ دارای مشکل</a>
             <a href="/admin/attendance/user/{{ target_user_id }}?year={{ year }}&month={{ month }}&filter=friday_holiday"
-               class="btn btn-sm {% if status_filter == 'friday_holiday' %}btn-secondary{% else %}btn-outline-secondary{% endif %} rounded-pill">🟡
-                جمعه/تعطیل</a>
+               class="btn btn-sm {% if status_filter == 'friday_holiday' %}btn-secondary{% else %}btn-outline-secondary{% endif %} rounded-pill">🟡 جمعه/تعطیل</a>
             <a href="/admin/attendance/user/{{ target_user_id }}?year={{ year }}&month={{ month }}&filter=no_attendance"
-               class="btn btn-sm {% if status_filter == 'no_attendance' %}btn-secondary{% else %}btn-outline-secondary{% endif %} rounded-pill">⚪
-                بدون تردد</a>
+               class="btn btn-sm {% if status_filter == 'no_attendance' %}btn-secondary{% else %}btn-outline-secondary{% endif %} rounded-pill">⚪ بدون تردد</a>
             <a href="/admin/attendance/user/{{ target_user_id }}?year={{ year }}&month={{ month }}&filter=leave"
-               class="btn btn-sm {% if status_filter == 'leave' %}btn-info{% else %}btn-outline-info{% endif %} rounded-pill">🌴
-                مرخصی</a>
+               class="btn btn-sm {% if status_filter == 'leave' %}btn-info{% else %}btn-outline-info{% endif %} rounded-pill">🌴 مرخصی</a>
         </div>
     </div>
 </div>
 
 {% if days %}
 
-<!-- کارت پیشرفت + کارت‌های کلیدی -->
+<!-- ============================================ -->
+<!-- 📊 کارت اصلی پیشرفت + کارت‌های کلیدی         -->
+<!-- ============================================ -->
 {% if progress_percent is defined %}
 <div class="row g-4 mb-4">
     <div class="col-lg-5">
@@ -247,9 +233,9 @@
                     <svg class="progress-ring" width="150" height="150">
                         <circle class="progress-ring-bg" cx="75" cy="75" r="62"></circle>
                         <circle class="progress-ring-bar {% if progress_percent >= 80 %}progress-high{% elif progress_percent >= 50 %}progress-medium{% else %}progress-low{% endif %}"
-                                cx="75" cy="75" r="62"
-                                stroke-dasharray="389.56"
-                                stroke-dashoffset="{{ 389.56 - (389.56 * progress_percent / 100) }}"></circle>
+                            cx="75" cy="75" r="62"
+                            stroke-dasharray="389.56"
+                            stroke-dashoffset="{{ 389.56 - (389.56 * progress_percent / 100) }}"></circle>
                     </svg>
                     <div class="progress-ring-text">
                         <span class="progress-ring-percent">{{ progress_percent }}%</span>
@@ -309,15 +295,13 @@
                 <div class="card stat-card {% if monthly_is_overtime %}gradient-green{% else %}gradient-red{% endif %} h-100">
                     <div class="card-body d-flex align-items-center gap-3 p-3">
                         <div class="stat-icon">
-                            {% if monthly_is_overtime %}<i class="bi bi-arrow-up-circle"></i>{% else %}<i
-                                class="bi bi-arrow-down-circle"></i>{% endif %}
+                            {% if monthly_is_overtime %}<i class="bi bi-arrow-up-circle"></i>
+                            {% else %}<i class="bi bi-arrow-down-circle"></i>{% endif %}
                         </div>
                         <div>
-                            <div class="stat-value">{% if monthly_is_overtime %}+{% endif %}{{ monthly_balance_display
-                                }}
-                            </div>
-                            <div class="stat-label">{% if monthly_is_overtime %}اضافه کار ماهانه{% else %}کسر کار
-                                ماهانه{% endif %}
+                            <div class="stat-value">{% if monthly_is_overtime %}+{% endif %}{{ monthly_balance_display }}</div>
+                            <div class="stat-label">
+                                {% if monthly_is_overtime %}اضافه کار ماهانه{% else %}کسر کار ماهانه{% endif %}
                             </div>
                         </div>
                     </div>
@@ -327,15 +311,13 @@
                 <div class="card stat-card {% if instant_is_overtime %}gradient-green{% else %}gradient-red{% endif %} h-100">
                     <div class="card-body d-flex align-items-center gap-3 p-3">
                         <div class="stat-icon">
-                            {% if instant_is_overtime %}<i class="bi bi-lightning-charge"></i>{% else %}<i
-                                class="bi bi-exclamation-triangle"></i>{% endif %}
+                            {% if instant_is_overtime %}<i class="bi bi-lightning-charge"></i>
+                            {% else %}<i class="bi bi-exclamation-triangle"></i>{% endif %}
                         </div>
                         <div>
-                            <div class="stat-value">{% if instant_is_overtime %}+{% endif %}{{ instant_balance_display
-                                }}
-                            </div>
-                            <div class="stat-label">{% if instant_is_overtime %}اضافه کار لحظه‌ای{% else %}کسر کار
-                                لحظه‌ای{% endif %}
+                            <div class="stat-value">{% if instant_is_overtime %}+{% endif %}{{ instant_balance_display }}</div>
+                            <div class="stat-label">
+                                {% if instant_is_overtime %}اضافه کار لحظه‌ای{% else %}کسر کار لحظه‌ای{% endif %}
                             </div>
                         </div>
                     </div>
@@ -346,31 +328,104 @@
 </div>
 {% endif %}
 
-<!-- کارت‌های هفتگی + میانگین -->
-{% if this_week_hours_display is defined %}
+<!-- ============================================ -->
+<!-- 📈 کارت‌های هفتگی (ماه جاری)                 -->
+<!-- ============================================ -->
+{% if show_this_week_card %}
 <div class="row g-3 mb-4">
-    <div class="col-lg-4 col-md-6">
+    <!-- کارکرد این هفته -->
+    <div class="{% if show_prev_week_card %}col-lg-4{% else %}col-lg-6{% endif %} col-md-6">
         <div class="card stat-card gradient-purple h-100">
             <div class="card-body d-flex align-items-center gap-3 p-3">
                 <div class="stat-icon"><i class="bi bi-calendar-week"></i></div>
                 <div>
-                    <div class="stat-value">{{ this_week_hours_display }}</div>
+                    <div class="stat-value">
+                        <span style="direction: ltr; unicode-bidi: embed; display: inline-block;">{{ this_week_duty_display }}</span>
+                        <span class="opacity-50 fs-6 mx-1">از</span>
+                        <span style="direction: ltr; unicode-bidi: embed; display: inline-block;">{{ this_week_hours_display }}</span>
+                    </div>
                     <div class="stat-label">کارکرد این هفته ({{ this_week_days }} روز)</div>
+                    <div class="mt-1">
+                        <span class="badge {% if this_week_progress >= 80 %}bg-success{% elif this_week_progress >= 50 %}bg-warning text-dark{% else %}bg-danger{% endif %}">
+                            {{ this_week_progress }}% از موظفی
+                        </span>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
+
+    <!-- کارکرد هفته قبل (فقط اگر کل هفته در ماه جاری باشد) -->
+    {% if show_prev_week_card %}
     <div class="col-lg-4 col-md-6">
         <div class="card stat-card gradient-blue h-100">
             <div class="card-body d-flex align-items-center gap-3 p-3">
                 <div class="stat-icon"><i class="bi bi-calendar-minus"></i></div>
                 <div>
-                    <div class="stat-value">{{ prev_week_hours_display }}</div>
+                    <div class="stat-value">
+                        <span style="direction: ltr; unicode-bidi: embed; display: inline-block;">{{ prev_week_hours_display }}</span>
+                        <span class="opacity-50 fs-6 mx-1">از</span>
+                        <span style="direction: ltr; unicode-bidi: embed; display: inline-block;">{{ prev_week_duty_display }}</span>
+                    </div>
                     <div class="stat-label">کارکرد هفته قبل ({{ prev_week_days }} روز)</div>
+                    <div class="mt-1">
+                        <span class="badge {% if prev_week_progress >= 80 %}bg-success{% elif prev_week_progress >= 50 %}bg-warning text-dark{% else %}bg-danger{% endif %}">
+                            {{ prev_week_progress }}% از موظفی
+                        </span>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
+    {% endif %}
+
+    <!-- میانگین کارکرد روزانه -->
+    <div class="{% if show_prev_week_card %}col-lg-4{% else %}col-lg-6{% endif %} col-md-6">
+        <div class="card stat-card gradient-teal h-100">
+            <div class="card-body d-flex align-items-center gap-3 p-3">
+                <div class="stat-icon"><i class="bi bi-graph-up"></i></div>
+                <div>
+                    <div class="stat-value">{{ daily_avg_hours_display }}</div>
+                    <div class="stat-label">میانگین روزانه ({{ daily_avg_days }} روز)</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- ============================================ -->
+<!-- 🆕 کارت‌های اضافه/کسر هفتگی (ماه‌های گذشته)  -->
+<!-- ============================================ -->
+{% if show_weekly_balance_cards %}
+<div class="row g-3 mb-4">
+    <!-- اضافه کار هفتگی -->
+    <div class="col-lg-4 col-md-6">
+        <div class="card stat-card gradient-green h-100">
+            <div class="card-body d-flex align-items-center gap-3 p-3">
+                <div class="stat-icon"><i class="bi bi-arrow-up-circle"></i></div>
+                <div>
+                    <div class="stat-value">+{{ weekly_overtime_total_display }}</div>
+                    <div class="stat-label">مجموع اضافه کار هفتگی</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- کسر کار هفتگی -->
+    <div class="col-lg-4 col-md-6">
+        <div class="card stat-card gradient-red h-100">
+            <div class="card-body d-flex align-items-center gap-3 p-3">
+                <div class="stat-icon"><i class="bi bi-arrow-down-circle"></i></div>
+                <div>
+                    <div class="stat-value">-{{ weekly_deficit_total_display }}</div>
+                    <div class="stat-label">مجموع کسر کار هفتگی</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- میانگین کارکرد روزانه -->
     <div class="col-lg-4 col-md-6">
         <div class="card stat-card gradient-teal h-100">
             <div class="card-body d-flex align-items-center gap-3 p-3">
@@ -385,7 +440,9 @@
 </div>
 {% endif %}
 
-<!-- مجموع ساعات + نوار پیشرفت -->
+<!-- ============================================ -->
+<!-- 📊 مجموع ساعات + نوار پیشرفت خطی            -->
+<!-- ============================================ -->
 {% if total_work_hours_display is defined %}
 <div class="card border-0 shadow-sm mb-4" style="border-radius: 16px;">
     <div class="card-body p-4">
@@ -411,210 +468,199 @@
 </div>
 {% endif %}
 
-<!-- جدول تردد -->
+<!-- ============================================ -->
+<!-- 📋 جدول تردد (فرمت مشابه attendance.html)    -->
+<!-- ============================================ -->
 <div class="card">
     <div class="card-body">
         <div class="table-responsive">
             <table class="table table-hover">
                 <thead>
-                <tr>
-                    <th>تاریخ</th>
-                    <th>روز</th>
-                    <th>اولین ورود</th>
-                    <th>آخرین خروج</th>
-                    <th>ساعات</th>
-                    <th>تردد</th>
-                    <th class="text-center">وضعیت</th>
-                    <th class="text-center">جزئیات</th>
-                </tr>
+                    <tr>
+                        <th>تاریخ</th>
+                        <th>روز</th>
+                        <th>اولین ورود</th>
+                        <th>آخرین خروج</th>
+                        <th>ساعات</th>
+                        <th>تردد</th>
+                        <th class="text-center">وضعیت</th>
+                        <th class="text-center">جزئیات</th>
+                        {% if is_super_admin %}
+                        <th class="text-center">عملیات</th>
+                        {% endif %}
+                    </tr>
                 </thead>
                 <tbody>
-                {% for day in days %}
-                <tr class="{% if day.is_friday %}table-warning{% elif day.is_holiday %}table-danger{% endif %}">
-                    <td>{{ day.jalali_date }}</td>
-                    <td>
-                        {{ day.day_name }}
-                        {% if day.is_friday %}<span class="badge bg-warning text-dark">جمعه</span>{% endif %}
-                        {% if day.is_holiday %}<span class="badge bg-danger">تعطیل</span>{% endif %}
-                    </td>
-                    <td>
-                        {% if day.first_enter %}
-                        <span class="badge bg-success">{{ day.first_enter.strftime('%H:%M') }}</span>
-                        {% else %}<span class="text-muted">-</span>{% endif %}
-                    </td>
-                    <td>
-                        {% if day.last_exit %}
-                        <span class="badge bg-danger">{{ day.last_exit.strftime('%H:%M') }}</span>
-                        {% else %}<span class="text-muted">-</span>{% endif %}
-                    </td>
-                    <td>{{ day.work_hours_display }}</td>
-                    <td>
+                    {% for day in days %}
+                    <tr class="{% if day.is_friday %}table-warning{% elif day.is_holiday %}table-danger{% endif %}">
+                        <td>{{ day.jalali_date }}</td>
+                        <td>
+                            {{ day.day_name }}
+                            {% if day.is_friday %}<span class="badge bg-warning text-dark">جمعه</span>{% endif %}
+                            {% if day.is_holiday %}<span class="badge bg-danger">تعطیل</span>{% endif %}
+                        </td>
+                        <td>
+                            {% if day.first_enter %}
+                            <span class="badge bg-success">{{ day.first_enter.strftime('%H:%M') }}</span>
+                            {% else %}<span class="text-muted">-</span>{% endif %}
+                        </td>
+                        <td>
+                            {% if day.last_exit %}
+                            <span class="badge bg-danger">{{ day.last_exit.strftime('%H:%M') }}</span>
+                            {% else %}<span class="text-muted">-</span>{% endif %}
+                        </td>
+                        <td>{{ day.work_hours_display }}</td>
+                        <td>
                             <span class="badge {% if day.records | length > 2 %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
                                 {{ day.records | length }}
                             </span>
-                    </td>
-                    <td class="text-center">
-                        <span class="badge bg-{{ day.status.main_color }}">{{ day.status.main_label }}</span>
-                        {% for w in day.status.warnings %}
-                        <br><span class="badge bg-{{ w.color }} mt-1">{{ w.label }}</span>
-                        {% endfor %}
-                    </td>
-                    <td class="text-center">
-                        {% if day.records | length > 0 %}
-                        <button class="btn btn-sm btn-outline-primary"
-                                data-bs-toggle="collapse"
-                                data-bs-target="#details-{{ day.date.strftime('%Y%m%d') }}">
-                            <i class="bi bi-eye"></i>
-                            {% if day.status.main_status == 'sequence_error' %}
-                            <span class="badge bg-danger ms-1">!</span>
+                        </td>
+                        <td class="text-center">
+                            <span class="badge bg-{{ day.status.main_color }}">{{ day.status.main_label }}</span>
+                            {% for w in day.status.warnings %}
+                            <br><span class="badge bg-{{ w.color }} mt-1">{{ w.label }}</span>
+                            {% endfor %}
+                        </td>
+                        <td class="text-center">
+                            {% if day.records | length > 0 %}
+                            <button class="btn btn-sm btn-outline-primary"
+                                    data-bs-toggle="collapse"
+                                    data-bs-target="#details-{{ day.date.strftime('%Y%m%d') }}">
+                                <i class="bi bi-eye"></i>
+                                {% if day.status.main_status == 'sequence_error' %}
+                                <span class="badge bg-danger ms-1">!</span>
+                                {% endif %}
+                            </button>
+                            {% else %}
+                            <span class="text-muted">-</span>
                             {% endif %}
-                        </button>
-                        {% else %}
-                        <span class="text-muted">-</span>
+                        </td>
+                        {% if is_super_admin %}
+                        <td class="text-center">
+                            <button class="btn btn-sm btn-outline-warning"
+                                    data-bs-toggle="modal"
+                                    data-bs-target="#editDayModal"
+                                    data-date="{{ day.jalali_date }}"
+                                    title="ویرایش ترددهای {{ day.jalali_date }}">
+                                <i class="bi bi-pencil-square"></i>
+                            </button>
+                        </td>
                         {% endif %}
-                    </td>
-                </tr>
+                    </tr>
 
-                {% if day.records | length > 0 %}
-                <tr>
-                    <td colspan="8" class="p-0">
-                        <div class="collapse" id="details-{{ day.date.strftime('%Y%m%d') }}">
-                            <div class="card card-body bg-light border-0 py-2">
-                                <table class="table table-sm table-bordered mb-0">
-                                    <thead class="table-secondary">
-                                    <tr>
-                                        <th class="text-center">#</th>
-                                        <th class="text-center">ساعت</th>
-                                        <th class="text-center">نوع</th>
-                                        <th class="text-center">منبع</th>
-                                        <th class="text-center">عملیات</th>  <!-- 🆕 -->
-                                    </tr>
-                                    </thead>
-                                    <tbody>
-                                    {% for rec in day.records %}
-                                    <tr>
-                                        <td class="text-center">{{ loop.index }}</td>
-                                        <td class="text-center fw-bold">
-                                            {{ rec.timestamp.strftime('%H:%M:%S') }}
-                                            {% if rec.timestamp.date() > day.date %}
-                                            <span class="badge bg-info">روز بعد</span>
-                                            {% endif %}
-                                        </td>
-                                        <td class="text-center">
-                                            {% if rec.punch == 0 %}
-                                            <span class="badge bg-success">⬅️ ورود</span>
-                                            {% else %}
-                                            <span class="badge bg-danger">➡️ خروج</span>
-                                            {% endif %}
-                                        </td>
-                                        <td class="text-center">
-                                            {% if rec.source == 'D' %}📱 دستگاه
-                                            {% elif rec.source == 'A' %}🌐 ADMS
-                                            {% elif rec.source == 'L' %}✋ دستی
-                                            {% else %}❓{% endif %}
-                                        </td>
-                                        {% if is_super_admin %}
-                                        <!-- 🆕 عملیات -->
-                                        <td class="text-center">
-                                            <div class="btn-group btn-group-sm">
-                                                <!-- تغییر وضعیت -->
-                                                <form method="post" action="/admin/attendance/edit/change-punch"
-                                                      class="d-inline">
-                                                    <input type="hidden" name="record_id" value="{{ rec.id }}">
-                                                    <button type="submit" class="btn btn-outline-warning btn-sm"
-                                                            title="تغییر به {% if rec.punch == 0 %}خروج{% else %}ورود{% endif %}"
-                                                            onclick="return confirm('آیا وضعیت این تردد تغییر کند؟');">
-                                                        <i class="bi bi-arrow-repeat"></i>
-                                                    </button>
-                                                </form>
+                    {% if day.records | length > 0 %}
+                    <tr>
+                        <td colspan="{% if is_super_admin %}9{% else %}8{% endif %}" class="p-0">
+                            <div class="collapse" id="details-{{ day.date.strftime('%Y%m%d') }}">
+                                <div class="card card-body bg-light border-0 py-2">
+                                    <table class="table table-sm table-bordered mb-0">
+                                        <thead class="table-secondary">
+                                            <tr>
+                                                <th class="text-center">#</th>
+                                                <th class="text-center">ساعت</th>
+                                                <th class="text-center">نوع</th>
+                                                <th class="text-center">منبع</th>
+                                                {% if is_super_admin %}
+                                                <th class="text-center">عملیات</th>
+                                                {% endif %}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for rec in day.records %}
+                                            <tr>
+                                                <td class="text-center">{{ loop.index }}</td>
+                                                <td class="text-center fw-bold">
+                                                    {{ rec.timestamp.strftime('%H:%M:%S') }}
+                                                    {% if rec.timestamp.date() > day.date %}
+                                                    <span class="badge bg-info">روز بعد</span>
+                                                    {% endif %}
+                                                </td>
+                                                <td class="text-center">
+                                                    {% if rec.punch == 0 %}
+                                                    <span class="badge bg-success">⬅️ ورود</span>
+                                                    {% else %}
+                                                    <span class="badge bg-danger">➡️ خروج</span>
+                                                    {% endif %}
+                                                </td>
+                                                <td class="text-center">
+                                                    {% if rec.source == 'D' %}📱 دستگاه
+                                                    {% elif rec.source == 'A' %}🌐 ADMS
+                                                    {% elif rec.source == 'L' %}✋ دستی
+                                                    {% else %}❓{% endif %}
+                                                </td>
+                                                {% if is_super_admin %}
+                                                <td class="text-center">
+                                                    <div class="btn-group btn-group-sm" role="group">
+                                                        <form method="post" action="/admin/attendance/edit/change-punch" class="d-inline"
+                                                              onsubmit="return confirm('آیا از تغییر وضعیت مطمئن هستید؟');">
+                                                            <input type="hidden" name="record_id" value="{{ rec.id }}">
+                                                            <button type="submit" class="btn btn-outline-primary btn-sm py-0 px-1"
+                                                                    title="تغییر به {% if rec.punch == 0 %}خروج{% else %}ورود{% endif %}">
+                                                                <i class="bi bi-arrow-repeat"></i>
+                                                            </button>
+                                                        </form>
+                                                        <form method="post" action="/admin/attendance/edit/delete" class="d-inline"
+                                                              onsubmit="return confirm('آیا از حذف این رکورد مطمئن هستید؟');">
+                                                            <input type="hidden" name="record_id" value="{{ rec.id }}">
+                                                            <button type="submit" class="btn btn-outline-danger btn-sm py-0 px-1"
+                                                                    title="حذف رکورد">
+                                                                <i class="bi bi-trash"></i>
+                                                            </button>
+                                                        </form>
+                                                    </div>
+                                                </td>
+                                                {% endif %}
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
 
-                                                <!-- حذف -->
-                                                <form method="post" action="/admin/attendance/edit/delete"
-                                                      class="d-inline">
-                                                    <input type="hidden" name="record_id" value="{{ rec.id }}">
-                                                    <button type="submit" class="btn btn-outline-danger btn-sm"
-                                                            title="حذف"
-                                                            onclick="return confirm('آیا این رکورد حذف شود؟');">
-                                                        <i class="bi bi-trash"></i>
-                                                    </button>
-                                                </form>
-                                            </div>
-                                        </td>
-                                        {% endif %}
-                                    </tr>
-                                    {% endfor %}
                                     {% if is_super_admin %}
-
-                                    <!-- 🆕 فرم افزودن رکورد جدید -->
-                                    <tr class="table-light">
-                                        <td colspan="5">
-                                            <form method="post" action="/admin/attendance/edit/add"
-                                                  class="d-flex gap-2 align-items-center">
-                                                <input type="hidden" name="user_id" value="{{ target_user_id }}">
-                                                <input type="hidden" name="date_str" value="{{ day.jalali_date }}">
-                                                <small class="text-muted">➕ افزودن:</small>
-                                                <input type="time" name="time_str" class="form-control form-control-sm"
-                                                       style="width: 120px;" required>
-                                                <select name="punch" class="form-select form-select-sm"
-                                                        style="width: 100px;">
-                                                    <option value="0">ورود</option>
-                                                    <option value="1">خروج</option>
-                                                </select>
-                                                <button type="submit" class="btn btn-success btn-sm">
-                                                    <i class="bi bi-plus"></i> افزودن
-                                                </button>
-                                            </form>
-                                        </td>
-                                    </tr>
+                                    <div class="mt-2 text-end">
+                                        <button class="btn btn-outline-success btn-sm"
+                                                data-bs-toggle="modal"
+                                                data-bs-target="#addRecordModal"
+                                                data-date="{{ day.jalali_date }}"
+                                                data-user-id="{{ target_user_id }}">
+                                            <i class="bi bi-plus-circle"></i> افزودن تردد به این روز
+                                        </button>
+                                    </div>
                                     {% endif %}
-                                    </tbody>
-                                </table>
+                                </div>
                             </div>
-                        </div>
-                    </td>
-                </tr>
-                {% endif %}
-                {% endfor %}
-
+                        </td>
+                    </tr>
+                    {% endif %}
+                    {% endfor %}
                 </tbody>
             </table>
         </div>
     </div>
 </div>
 
-<!-- ============================================ -->
-<!-- 📖 راهنمای وضعیت‌ها و هشدارها               -->
-<!-- ============================================ -->
+<!-- راهنما -->
 <div class="card border-0 shadow-sm mt-3">
     <div class="card-body py-3">
-        <div class="row">
-            <div class="col-md-6 mb-2">
-                <div class="d-flex flex-wrap gap-2 small text-muted align-items-center">
-                    <strong class="me-1">راهنمای وضعیت‌ها:</strong>
-                    <span class="badge bg-success">✅ کامل</span>
-                    <span class="badge bg-info">🌙 شیفت شب</span>
-                    <span class="badge bg-warning">⬅️ ورود بدون خروج</span>
-                    <span class="badge bg-warning">➡️ خروج بدون ورود</span>
-                    <span class="badge bg-danger">❌ خطای ترتیب</span>
-                    <span class="badge bg-warning">⚠️ عدم تعادل</span>
-                    <span class="badge bg-secondary">⚪ بدون تردد</span>
-                    <span class="badge bg-info">🌴 مرخصی</span>
-                </div>
-            </div>
-            <div class="col-md-6 mb-2">
-                <div class="d-flex flex-wrap gap-2 small text-muted align-items-center">
-                    <strong class="me-1">هشدارها:</strong>
-                    <span class="badge bg-warning">⏱️ فاصله غیرعادی</span>
-                    <span class="badge bg-warning">🔁 تردد تکراری</span>
-                    <span class="badge bg-warning">🕐 ساعت غیرعادی</span>
-                    <span class="badge bg-warning">🔢 تعداد زیاد</span>
-                    <span class="badge bg-info">🟡 جمعه‌کاری</span>
-                    <span class="badge bg-danger">🔴 تعطیل‌کاری</span>
-                </div>
-            </div>
+        <div class="d-flex flex-wrap gap-2 small text-muted align-items-center mb-2">
+            <strong class="me-1">راهنمای وضعیت‌ها:</strong>
+            <span class="badge bg-success">✅ کامل</span>
+            <span class="badge bg-info">🌙 شیفت شب</span>
+            <span class="badge bg-warning">⬅️ ورود بدون خروج</span>
+            <span class="badge bg-warning">➡️ خروج بدون ورود</span>
+            <span class="badge bg-danger">❌ خطای ترتیب</span>
+            <span class="badge bg-warning">⚠️ عدم تعادل</span>
+            <span class="badge bg-secondary">⚪ بدون تردد</span>
+            <span class="badge bg-info">🌴 مرخصی</span>
         </div>
-
-        <!-- 🆕 راهنمای عملیات (فقط مدیر ارشد) -->
+        <div class="d-flex flex-wrap gap-2 small text-muted align-items-center">
+            <strong class="me-1">هشدارها:</strong>
+            <span class="badge bg-warning">⏱️ فاصله غیرعادی</span>
+            <span class="badge bg-warning">🔁 تردد تکراری</span>
+            <span class="badge bg-warning">🕐 ساعت غیرعادی</span>
+            <span class="badge bg-warning">🔢 تعداد زیاد</span>
+            <span class="badge bg-info">🟡 جمعه‌کاری</span>
+            <span class="badge bg-danger">🔴 تعطیل‌کاری</span>
+        </div>
         {% if is_super_admin %}
         <hr class="my-2">
         <div class="d-flex flex-wrap gap-2 small text-muted align-items-center">
@@ -637,47 +683,31 @@
         <div class="modal-content">
             <form method="post" action="/admin/attendance/edit/add">
                 <div class="modal-header bg-success text-white">
-                    <h5 class="modal-title">
-                        <i class="bi bi-plus-circle"></i> افزودن رکورد تردد
-                    </h5>
+                    <h5 class="modal-title"><i class="bi bi-plus-circle"></i> افزودن رکورد تردد</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
                     <input type="hidden" name="user_id" value="{{ target_user_id }}">
-
                     <div class="mb-3">
                         <label class="form-label fw-bold">📅 تاریخ (شمسی)</label>
                         <input type="text" name="date_str" id="addRecordDate"
-                               class="form-control text-center"
-                               style="direction: ltr;"
-                               placeholder="1405/06/10"
-                               required>
+                               class="form-control text-center" style="direction: ltr;"
+                               placeholder="1405/06/10" required>
                         <small class="text-muted">فرمت: 1405/06/10</small>
                     </div>
-
                     <div class="mb-3">
                         <label class="form-label fw-bold">🕐 ساعت</label>
-                        <input type="time" name="time_str"
-                               class="form-control text-center"
-                               style="direction: ltr;"
-                               required>
+                        <input type="time" name="time_str" class="form-control text-center" style="direction: ltr;" required>
                     </div>
-
                     <div class="mb-3">
                         <label class="form-label fw-bold">🔖 نوع تردد</label>
                         <div class="btn-group w-100" role="group">
                             <input type="radio" class="btn-check" name="punch" id="punchEnter" value="0" checked>
-                            <label class="btn btn-outline-success" for="punchEnter">
-                                ⬅️ ورود
-                            </label>
-
+                            <label class="btn btn-outline-success" for="punchEnter">⬅️ ورود</label>
                             <input type="radio" class="btn-check" name="punch" id="punchExit" value="1">
-                            <label class="btn btn-outline-danger" for="punchExit">
-                                ➡️ خروج
-                            </label>
+                            <label class="btn btn-outline-danger" for="punchExit">➡️ خروج</label>
                         </div>
                     </div>
-
                     <div class="alert alert-info small mb-0">
                         <i class="bi bi-info-circle"></i>
                         این رکورد به صورت دستی (✋) ثبت می‌شود و قابل ویرایش/حذف خواهد بود.
@@ -685,23 +715,18 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
-                    <button type="submit" class="btn btn-success">
-                        <i class="bi bi-check-circle"></i> افزودن رکورد
-                    </button>
+                    <button type="submit" class="btn btn-success"><i class="bi bi-check-circle"></i> افزودن رکورد</button>
                 </div>
             </form>
         </div>
     </div>
 </div>
 
-<!-- 🆕 مودال ویرایش روز (فقط مدیر ارشد) -->
 <div class="modal fade" id="editDayModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header bg-warning">
-                <h5 class="modal-title">
-                    <i class="bi bi-pencil-square"></i> ویرایش ترددهای روز
-                </h5>
+                <h5 class="modal-title"><i class="bi bi-pencil-square"></i> ویرایش ترددهای روز</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
@@ -709,18 +734,11 @@
                     <i class="bi bi-info-circle"></i>
                     برای ویرایش ترددهای روز <strong id="editDayDate"></strong>:
                     <ul class="mb-0 mt-2">
-                        <li>برای <strong>حذف</strong> یک رکورد، روی آیکون <i class="bi bi-trash text-danger"></i> در
-                            جدول جزئیات کلیک کنید.
-                        </li>
-                        <li>برای <strong>تغییر وضعیت</strong> ورود به خروج (یا برعکس)، روی آیکون <i
-                                class="bi bi-arrow-repeat text-primary"></i> کلیک کنید.
-                        </li>
+                        <li>برای <strong>حذف</strong> یک رکورد، روی آیکون <i class="bi bi-trash text-danger"></i> کلیک کنید.</li>
+                        <li>برای <strong>تغییر وضعیت</strong>، روی آیکون <i class="bi bi-arrow-repeat text-primary"></i> کلیک کنید.</li>
                         <li>برای <strong>افزودن</strong> رکورد جدید، از دکمه «افزودن تردد به این روز» استفاده کنید.</li>
                     </ul>
                 </div>
-                <p class="text-muted small mb-0">
-                    💡 <strong>نکته:</strong> پس از هر تغییر، صفحه به‌طور خودکار به‌روز می‌شود.
-                </p>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">بستن</button>
@@ -730,62 +748,34 @@
 </div>
 
 <script>
-    // 🆕 پر کردن خودکار تاریخ در مودال افزودن رکورد
-    document.addEventListener('DOMContentLoaded', function() {
-        const addRecordModal = document.getElementById('addRecordModal');
-        if (addRecordModal) {
-            addRecordModal.addEventListener('show.bs.modal', function (event) {
-                const button = event.relatedTarget;
-                if (button) {
-                    const date = button.getAttribute('data-date');
-                    if (date) {
-                        document.getElementById('addRecordDate').value = date;
-                    }
+document.addEventListener('DOMContentLoaded', function() {
+    const addRecordModal = document.getElementById('addRecordModal');
+    if (addRecordModal) {
+        addRecordModal.addEventListener('show.bs.modal', function (event) {
+            const button = event.relatedTarget;
+            if (button) {
+                const date = button.getAttribute('data-date');
+                if (date) {
+                    document.getElementById('addRecordDate').value = date;
                 }
-            });
-        }
-
-        // 🆕 پر کردن تاریخ در مودال ویرایش روز
-        const editDayModal = document.getElementById('editDayModal');
-        if (editDayModal) {
-            editDayModal.addEventListener('show.bs.modal', function (event) {
-                const button = event.relatedTarget;
-                if (button) {
-                    const date = button.getAttribute('data-date');
-                    if (date) {
-                        document.getElementById('editDayDate').textContent = date;
-                    }
+            }
+        });
+    }
+    const editDayModal = document.getElementById('editDayModal');
+    if (editDayModal) {
+        editDayModal.addEventListener('show.bs.modal', function (event) {
+            const button = event.relatedTarget;
+            if (button) {
+                const date = button.getAttribute('data-date');
+                if (date) {
+                    document.getElementById('editDayDate').textContent = date;
                 }
-            });
-        }
-    });
+            }
+        });
+    }
+});
 </script>
 {% endif %}
-
-<!-- راهنما -->
-<div class="card border-0 shadow-sm mt-3">
-    <div class="card-body py-3">
-        <div class="d-flex flex-wrap gap-3 small text-muted align-items-center">
-            <strong>راهنمای وضعیت‌ها:</strong>
-            <span>✅ کامل</span>
-            <span>🌙 شیفت شب</span>
-            <span>⬅️ ورود بدون خروج</span>
-            <span>➡️ خروج بدون ورود</span>
-            <span>❌ خطای ترتیب</span>
-            <span>⚠️ عدم تعادل</span>
-            <span>⚪ بدون تردد</span>
-        </div>
-        <div class="d-flex flex-wrap gap-3 small text-muted align-items-center mt-2">
-            <strong>هشدارها:</strong>
-            <span>⏱️ فاصله غیرعادی</span>
-            <span>🔁 تردد تکراری</span>
-            <span>🕐 ساعت غیرعادی</span>
-            <span>🔢 تعداد زیاد</span>
-            <span>🟡 جمعه‌کاری</span>
-            <span>🔴 تعطیل‌کاری</span>
-        </div>
-    </div>
-</div>
 
 {% else %}
 <div class="alert alert-info">

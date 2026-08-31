@@ -770,7 +770,7 @@ async def admin_user_attendance(
     month_start_g = month_start_j.togregorian()
     month_end_g = month_end_j.togregorian()
 
-    # 🆕 دریافت ترددها با حاشیه 1 روز (برای شیفت شب)
+    # دریافت ترددها با حاشیه 1 روز (برای شیفت شب)
     records = db.query(Attendance).filter(
         and_(
             Attendance.user_id == target_user_id,
@@ -799,7 +799,7 @@ async def admin_user_attendance(
     holidays = holiday_query.all()
     holiday_dates = {h.holiday_date: h.title for h in holidays}
 
-    # 🆕 دریافت مرخصی‌های تایید شده کاربر هدف برای بازه ماه
+    # دریافت مرخصی‌های تایید شده کاربر هدف برای بازه ماه
     approved_leaves = db.query(LeaveRequest).filter(
         and_(
             LeaveRequest.user_id == target_user_id,
@@ -809,7 +809,7 @@ async def admin_user_attendance(
         )
     ).all()
 
-    # 🆕 ساخت دیکشنری مرخصی‌ها بر اساس تاریخ
+    # ساخت دیکشنری مرخصی‌ها بر اساس تاریخ
     LEAVE_TYPE_NAMES_LOCAL = {
         'AL': 'استحقاقی',
         'SL': 'استعلاجی',
@@ -858,7 +858,7 @@ async def admin_user_attendance(
             holiday_title=holiday_title
         )
 
-        # 🆕 بررسی مرخصی تایید شده (فقط در روزهای کاری - تعطیلات اولویت دارند)
+        # بررسی مرخصی تایید شده (فقط در روزهای کاری - تعطیلات اولویت دارند)
         leave_type = leaves_by_date.get(current)
         if leave_type and not is_friday and holiday_title is None:
             type_name = LEAVE_TYPE_NAMES_LOCAL.get(leave_type, '')
@@ -880,7 +880,7 @@ async def admin_user_attendance(
             'first_enter': first_enter,
             'last_exit': last_exit,
             'work_hours': work_hours,
-            'work_hours_display': format_hours_hhmm(work_hours),  # 🆕
+            'work_hours_display': format_hours_hhmm(work_hours),
             'is_friday': is_friday,
             'is_holiday': holiday_title is not None,
             'holiday_title': holiday_title,
@@ -888,10 +888,10 @@ async def admin_user_attendance(
         })
         current += timedelta(days=1)
 
-    # 🆕 محاسبه کارکرد کل ماه قبل از اعمال فیلتر
+    # محاسبه کارکرد کل ماه قبل از اعمال فیلتر
     total_work_hours_month = sum(d['work_hours'] for d in days_list)
 
-    # 🆕 اعمال فیلتر وضعیت
+    # اعمال فیلتر وضعیت
     if status_filter == 'complete':
         days_list = [d for d in days_list if d['status']['main_status'] == STATUS_COMPLETE]
     elif status_filter == 'night_shift':
@@ -931,13 +931,11 @@ async def admin_user_attendance(
     work_days_in_month = 0
     leave_days_in_month = 0
     rest_days_in_month = 0
-
     current_calc = month_start_g
     while current_calc <= month_end_g:
         is_friday = current_calc.weekday() == 4
         is_holiday = current_calc in holiday_dates
         is_day_off = is_friday or is_holiday
-
         if not is_day_off:
             work_days_in_month += 1
             if current_calc in leaves_by_date:
@@ -951,7 +949,6 @@ async def admin_user_attendance(
 
     # ---------- ۲. موظفی لحظه‌ای ----------
     today_g = today_j.togregorian()
-
     if today_g < month_start_g:
         reference_date = month_start_g - timedelta(days=1)
     elif today_g > month_end_g:
@@ -968,16 +965,13 @@ async def admin_user_attendance(
 
     duty_days_until_ref = 0
     work_hours_until_ref = 0.0
-
     for day in days_list:
         if day['date'] <= reference_date:
             is_day_off = day['is_friday'] or day['is_holiday']
             is_leave = day['status']['main_status'] == STATUS_LEAVE
             is_rest = day['date'] in rest_dates
-
             if not is_day_off and not is_leave and not is_rest:
                 duty_days_until_ref += 1
-
             work_hours_until_ref += day['work_hours']
 
     instant_duty_hours = duty_days_until_ref * DAILY_DUTY_HOURS
@@ -994,15 +988,30 @@ async def admin_user_attendance(
     reference_date_display = reference_date_j.strftime('%Y/%m/%d')
 
     # ============================================
-    # 🆕 کارکرد این هفته و هفته قبل (کل هفته، محدود به ماه انتخاب‌شده)
+    # 🆕 تعیین شرایط نمایش کارت‌های هفتگی
     # ============================================
+    is_current_month = (year == today_j.year and month == today_j.month)
+    is_past_month = (year < today_j.year) or (year == today_j.year and month < today_j.month)
+
+    # محاسبه شروع و پایان هفته‌ها (شنبه تا جمعه)
     today_weekday = today_g.weekday()
     days_since_saturday = (today_weekday + 2) % 7
     this_week_start_g = today_g - timedelta(days=days_since_saturday)
-    this_week_end_g = this_week_start_g + timedelta(days=6)  # 🆕 جمعه
-
+    this_week_end_g = this_week_start_g + timedelta(days=6)  # جمعه
     prev_week_start_g = this_week_start_g - timedelta(days=7)
     prev_week_end_g = this_week_start_g - timedelta(days=1)
+
+    # 🆕 شرط ۱: کارت کارکرد این هفته فقط در ماه جاری
+    show_this_week_card = is_current_month
+
+    # 🆕 شرط ۲: کارت کارکرد هفته قبل فقط اگر کل هفته در ماه جاری باشد
+    show_prev_week_card = False
+    if is_current_month:
+        prev_week_fully_in_month = (prev_week_start_g >= month_start_g and prev_week_end_g <= month_end_g)
+        show_prev_week_card = prev_week_fully_in_month
+
+    # 🆕 شرط ۳: کارت‌های اضافه/کسر هفتگی فقط در ماه‌های گذشته
+    show_weekly_balance_cards = is_past_month
 
     # ---------- کارکرد این هفته (کل هفته، فقط روزهای درون ماه انتخاب‌شده) ----------
     this_week_hours = 0.0
@@ -1012,11 +1021,17 @@ async def admin_user_attendance(
     for day in days_list:
         # فقط روزهای این هفته که در ماه انتخاب‌شده هستند
         if this_week_start_g <= day['date'] <= this_week_end_g:
+            # 🆕 کارکرد همه روزها (شامل جمعه و تعطیل)
+            this_week_hours += day['work_hours']
+            if day['work_hours'] > 0:
+                this_week_days += 1  # روزهایی که کارکرد دارند (شامل جمعه‌کاری)
+
+            # روزهای موظفی (فقط روزهای کاری غیر جمعه و غیر تعطیل)
             if not day['is_friday'] and not day['is_holiday']:
-                this_week_work_days += 1  # روز کاری هفته
-                this_week_hours += day['work_hours']  # کارکرد (روزهای آینده = 0)
-                if day['work_hours'] > 0:
-                    this_week_days += 1  # روزهایی که کارکرد دارند
+                is_leave = day['status']['main_status'] == STATUS_LEAVE
+                is_rest = day['date'] in rest_dates
+                if not is_leave and not is_rest:
+                    this_week_work_days += 1
 
     this_week_duty_hours = this_week_work_days * DAILY_DUTY_HOURS
     this_week_progress = min(100, round((this_week_hours / this_week_duty_hours) * 100,
@@ -1030,20 +1045,72 @@ async def admin_user_attendance(
     for day in days_list:
         # فقط روزهای هفته قبل که در ماه انتخاب‌شده هستند
         if prev_week_start_g <= day['date'] <= prev_week_end_g:
+            # 🆕 کارکرد همه روزها (شامل جمعه و تعطیل)
+            prev_week_hours += day['work_hours']
+            if day['work_hours'] > 0:
+                prev_week_days += 1  # روزهایی که کارکرد دارند (شامل جمعه‌کاری)
+
+            # روزهای موظفی (فصل روزهای کاری غیر جمعه و غیر تعطیل)
             if not day['is_friday'] and not day['is_holiday']:
-                prev_week_work_days += 1
-                prev_week_hours += day['work_hours']
-                if day['work_hours'] > 0:
-                    prev_week_days += 1
+                is_leave = day['status']['main_status'] == STATUS_LEAVE
+                is_rest = day['date'] in rest_dates
+                if not is_leave and not is_rest:
+                    prev_week_work_days += 1
 
     prev_week_duty_hours = prev_week_work_days * DAILY_DUTY_HOURS
     prev_week_progress = min(100, round((prev_week_hours / prev_week_duty_hours) * 100,
                                         1)) if prev_week_duty_hours > 0 else 0
+
     # ---------- میانگین کارکرد روزانه ----------
-    days_with_work = [d for d in days_list if d['work_hours'] > 0 and not d['is_friday'] and not d['is_holiday']]
+    # 🆕 همه روزهایی که کارکرد دارند (شامل جمعه‌کاری و تعطیل‌کاری)
+    days_with_work = [d for d in days_list if d['work_hours'] > 0]
     daily_avg_hours = total_work_hours_month / len(days_with_work) if days_with_work else 0
     daily_avg_days = len(days_with_work)
+    # ============================================
+    # 🆕 محاسبه اضافه/کسر کار هفتگی (برای ماه‌های گذشته)
+    # ============================================
+    weekly_overtime_total = 0.0
+    weekly_deficit_total = 0.0
+    weeks_count = 0
 
+    if show_weekly_balance_cards:
+        # پیدا کردن اولین شنبه ماه
+        first_day = month_start_g
+        first_day_weekday = first_day.weekday()
+        days_since_first_saturday = (first_day_weekday + 2) % 7
+        first_saturday = first_day - timedelta(days=days_since_first_saturday)
+
+        current_week_start = first_saturday
+        while current_week_start <= month_end_g:
+            current_week_end = current_week_start + timedelta(days=6)  # جمعه
+
+            # محاسبه کارکرد و موظفی این هفته (فقط روزهای درون ماه)
+            week_hours = 0.0
+            week_duty_days = 0
+
+            for day in days_list:
+                if current_week_start <= day['date'] <= current_week_end:
+                    # 🆕 کارکرد همه روزها (شامل جمعه و تعطیل)
+                    week_hours += day['work_hours']
+
+                    # روزهای موظفی (فقط روزهای کاری غیر جمعه و غیر تعطیل)
+                    if not day['is_friday'] and not day['is_holiday']:
+                        is_leave = day['status']['main_status'] == STATUS_LEAVE
+                        is_rest = day['date'] in rest_dates
+                        if not is_leave and not is_rest:
+                            week_duty_days += 1
+
+            week_duty_hours = week_duty_days * DAILY_DUTY_HOURS
+            week_balance = week_hours - week_duty_hours
+
+            if week_duty_days > 0:  # فقط هفته‌هایی که روز کاری دارند
+                weeks_count += 1
+                if week_balance >= 0:
+                    weekly_overtime_total += week_balance
+                else:
+                    weekly_deficit_total += abs(week_balance)
+
+            current_week_start += timedelta(days=7)
     # ============================================
     # 🆕 ناوبری بین ماه‌ها
     # ============================================
@@ -1066,7 +1133,6 @@ async def admin_user_attendance(
         {'num': 9, 'name': 'آذر'}, {'num': 10, 'name': 'دی'},
         {'num': 11, 'name': 'بهمن'}, {'num': 12, 'name': 'اسفند'},
     ]
-    is_current_month = (year == today_j.year and month == today_j.month)
 
     return templates.TemplateResponse(request, "admin/user_attendance.html", {
         "user": user,
@@ -1079,7 +1145,7 @@ async def admin_user_attendance(
         "days": days_list,
         "total_records": total_records,
         "is_admin": True,
-        "is_super_admin": user.is_super_admin,  # 🆕 برای دسترسی افزودن/ویرایش
+        "is_super_admin": user.is_super_admin,
         "status_filter": status_filter or 'all',
 
         # ناوبری
@@ -1091,7 +1157,7 @@ async def admin_user_attendance(
         "months_list": months_list,
         "is_current_month": is_current_month,
 
-        # 🆕 موظفی و اضافه/کسر کار
+        # موظفی و اضافه/کسر کار
         "monthly_duty_display": format_hours_hhmm(monthly_duty_hours),
         "duty_days_month": duty_days_month,
         "instant_duty_display": format_hours_hhmm(instant_duty_hours),
@@ -1107,12 +1173,14 @@ async def admin_user_attendance(
         "total_work_hours_display": format_hours_hhmm(total_work_hours_month),
         "progress_percent": progress_percent,
 
-        # 🆕 کارکرد هفتگی
+        # 🆕 کارکرد هفتگی (با شرط‌های نمایش)
+        "show_this_week_card": show_this_week_card,
+        "show_prev_week_card": show_prev_week_card,
+        "show_weekly_balance_cards": show_weekly_balance_cards,
         "this_week_hours_display": format_hours_hhmm(this_week_hours),
         "this_week_days": this_week_days,
         "this_week_duty_display": format_hours_hhmm(this_week_duty_hours),
         "this_week_progress": this_week_progress,
-
         "prev_week_hours_display": format_hours_hhmm(prev_week_hours),
         "prev_week_days": prev_week_days,
         "prev_week_duty_display": format_hours_hhmm(prev_week_duty_hours),
@@ -1121,6 +1189,11 @@ async def admin_user_attendance(
         # 🆕 میانگین کارکرد روزانه
         "daily_avg_hours_display": format_hours_hhmm(daily_avg_hours),
         "daily_avg_days": daily_avg_days,
+
+        # 🆕 اضافه/کسر هفتگی (برای ماه‌های گذشته)
+        "weekly_overtime_total_display": format_hours_hhmm(weekly_overtime_total),
+        "weekly_deficit_total_display": format_hours_hhmm(weekly_deficit_total),
+        "weeks_count": weeks_count,
     })
 
 from datetime import timedelta, date as date_type
