@@ -1,307 +1,523 @@
 {% extends "base.html" %}
 {% block title %}تردد {{ target_employee.full_name if target_employee else target_user_id }} | پنل مدیریت{% endblock %}
+
+{% block extra_css %}
+<style>
+    .progress-hero-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border: none;
+        border-radius: 20px;
+        color: white;
+        box-shadow: 0 10px 30px rgba(102, 126, 234, 0.35);
+        overflow: hidden;
+        position: relative;
+    }
+    .progress-hero-card::before {
+        content: '';
+        position: absolute;
+        top: -50px;
+        right: -50px;
+        width: 150px;
+        height: 150px;
+        background: rgba(255,255,255,0.1);
+        border-radius: 50%;
+    }
+
+    .progress-ring-container {
+        position: relative;
+        width: 150px;
+        height: 150px;
+        flex-shrink: 0;
+    }
+    .progress-ring { transform: rotate(-90deg); }
+    .progress-ring-bg {
+        fill: none;
+        stroke: rgba(255,255,255,0.2);
+        stroke-width: 10;
+    }
+    .progress-ring-bar {
+        fill: none;
+        stroke: white;
+        stroke-width: 10;
+        stroke-linecap: round;
+        transition: stroke-dashoffset 1s ease;
+    }
+    .progress-ring-bar.progress-high { stroke: #34d399; }
+    .progress-ring-bar.progress-medium { stroke: #fbbf24; }
+    .progress-ring-bar.progress-low { stroke: #f87171; }
+    .progress-ring-text {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        text-align: center;
+    }
+    .progress-ring-percent {
+        font-size: 2rem;
+        font-weight: 800;
+        line-height: 1;
+        display: block;
+    }
+    .progress-ring-label {
+        font-size: 0.7rem;
+        opacity: 0.85;
+        margin-top: 4px;
+        display: block;
+    }
+
+    .linear-progress-track {
+        height: 8px;
+        background: rgba(255,255,255,0.25);
+        border-radius: 4px;
+        overflow: hidden;
+    }
+    .linear-progress-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #34d399, #10b981);
+        border-radius: 4px;
+        transition: width 1s ease;
+        min-width: 2px;
+    }
+    .linear-progress-fill.medium { background: linear-gradient(90deg, #fbbf24, #f59e0b); }
+    .linear-progress-fill.low { background: linear-gradient(90deg, #f87171, #ef4444); }
+
+    .stat-card {
+        border: none;
+        border-radius: 16px;
+        transition: all 0.25s ease;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        overflow: hidden;
+    }
+    .stat-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+    }
+    .stat-card .stat-icon {
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.2rem;
+        flex-shrink: 0;
+    }
+    .stat-card .stat-value {
+        font-size: 1.4rem;
+        font-weight: 700;
+        line-height: 1.1;
+        direction: ltr;
+        unicode-bidi: embed;
+    }
+    .stat-card .stat-label {
+        font-size: 0.75rem;
+        opacity: 0.75;
+        margin-top: 2px;
+    }
+
+    .gradient-blue { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; }
+    .gradient-blue .stat-icon { background: rgba(255,255,255,0.25); }
+    .gradient-teal { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; }
+    .gradient-teal .stat-icon { background: rgba(255,255,255,0.25); }
+    .gradient-green { background: linear-gradient(135deg, #10b981 0%, #34d399 100%); color: white; }
+    .gradient-green .stat-icon { background: rgba(255,255,255,0.25); }
+    .gradient-red { background: linear-gradient(135deg, #ef4444 0%, #f87171 100%); color: white; }
+    .gradient-red .stat-icon { background: rgba(255,255,255,0.25); }
+    .gradient-purple { background: linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%); color: #4a3d6e; }
+    .gradient-purple .stat-icon { background: rgba(255,255,255,0.4); }
+
+    .attendance-table th {
+        background: #f8f9fa;
+        font-size: 0.78rem;
+        font-weight: 600;
+        color: #6b7280;
+        white-space: nowrap;
+        padding: 12px 10px;
+    }
+    .attendance-table td {
+        vertical-align: middle;
+        padding: 10px;
+        font-size: 0.88rem;
+    }
+
+    [data-theme="dark"] .stat-card { box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+    [data-theme="dark"] .attendance-table th {
+        background: var(--bg-hover);
+        color: var(--text-secondary);
+    }
+</style>
+{% endblock %}
+
+{% block topbar_title %}تردد {{ target_employee.full_name if target_employee else target_user_id }}{% endblock %}
+
 {% block content %}
 
-<!-- 🆕 نمایش پیام‌های موفقیت/خطا -->
-{% if request.query_params.get('success') %}
-<div class="alert alert-success alert-dismissible fade show" role="alert">
-    <i class="bi bi-check-circle"></i>
-    {{ request.query_params.get('success') }}
-    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-</div>
-{% endif %}
-
-{% if request.query_params.get('error') %}
-<div class="alert alert-danger alert-dismissible fade show" role="alert">
-    <i class="bi bi-exclamation-triangle"></i>
-    {{ request.query_params.get('error') }}
-    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-</div>
-{% endif %}
-
-<!-- بقیه محتوای صفحه -->
-<!-- هدر کاربر هدف -->
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h4>
-        <i class="bi bi-person-badge"></i>
-        تردد: {{ target_employee.full_name if target_employee else target_user.name }}
-        <small class="text-muted">({{ target_user_id }})</small>
-        {% if target_employee and target_employee.department %}
-        <span class="badge bg-secondary fs-6">
-            {% if target_employee.department == '1' %}رسمی
-            {% elif target_employee.department == '2' %}وظیفه
-            {% elif target_employee.department == '3' %}خریدخدمت
-            {% elif target_employee.department == '4' %}قراردادی
-            {% elif target_employee.department == '5' %}پزشک
-            {% endif %}
-        </span>
+<!-- Header -->
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
+    <div>
+        <h4 class="mb-1 fw-bold">
+            <i class="bi bi-clock-history text-primary"></i>
+            تردد {{ target_employee.full_name if target_employee else target_user_id }}
+        </h4>
+        <small class="text-muted">
+            {{ month_name }} {{ year }}
+            {% if target_employee %} | {{ target_employee.user_id }}{% endif %}
+        </small>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+        <a href="/admin/attendance/user/{{ target_user_id }}?year={{ prev_year }}&month={{ prev_month }}{% if status_filter != 'all' %}&filter={{ status_filter }}{% endif %}"
+           class="btn btn-outline-secondary btn-sm rounded-pill">
+            <i class="bi bi-chevron-right"></i> ماه قبل
+        </a>
+        <a href="/admin/attendance/user/{{ target_user_id }}?year={{ next_year }}&month={{ next_month }}{% if status_filter != 'all' %}&filter={{ status_filter }}{% endif %}"
+           class="btn btn-outline-secondary btn-sm rounded-pill">
+            ماه بعد <i class="bi bi-chevron-left"></i>
+        </a>
+        {% if not is_current_month %}
+        <a href="/admin/attendance/user/{{ target_user_id }}" class="btn btn-primary btn-sm rounded-pill">
+            <i class="bi bi-calendar-check"></i> ماه جاری
+        </a>
         {% endif %}
-    </h4>
-    <a href="/admin/attendance" class="btn btn-outline-primary btn-sm">
-        <i class="bi bi-arrow-right"></i> بازگشت به لیست
-    </a>
+        <a href="/admin/attendance" class="btn btn-outline-primary btn-sm rounded-pill">
+            <i class="bi bi-arrow-right"></i> بازگشت
+        </a>
+    </div>
 </div>
 
-<!-- 🆕 نوار ناوبری ماه/سال -->
-<div class="card mb-4">
+<!-- فیلترها -->
+<div class="card border-0 shadow-sm mb-4">
     <div class="card-body py-3">
-        <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
-            <!-- دکمه‌های ناوبری -->
-            <div class="d-flex align-items-center gap-2">
-                <a href="/admin/attendance/user/{{ target_user_id }}?year={{ prev_year }}&month={{ prev_month }}{% if status_filter != 'all' %}&filter={{ status_filter }}{% endif %}"
-                   class="btn btn-outline-primary btn-sm">
-                    <i class="bi bi-chevron-right"></i> ماه قبل
-                </a>
-                <a href="/admin/attendance/user/{{ target_user_id }}?year={{ next_year }}&month={{ next_month }}{% if status_filter != 'all' %}&filter={{ status_filter }}{% endif %}"
-                   class="btn btn-outline-primary btn-sm">
-                    ماه بعد <i class="bi bi-chevron-left"></i>
-                </a>
-                {% if not is_current_month %}
-                <a href="/admin/attendance/user/{{ target_user_id }}" class="btn btn-success btn-sm">
-                    <i class="bi bi-calendar-today"></i> ماه جاری
-                </a>
-                {% endif %}
-            </div>
-
-            <!-- فرم انتخاب مستقیم -->
-            <form method="get" action="/admin/attendance/user/{{ target_user_id }}" class="d-flex align-items-center gap-2">
-                <select name="year" class="form-select form-select-sm" style="width: auto;">
-                    {% for y in available_years %}
-                    <option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>
-                    {% endfor %}
-                </select>
-                <select name="month" class="form-select form-select-sm" style="width: auto;">
-                    {% for m in months_list %}
-                    <option value="{{ m.num }}" {% if m.num == month %}selected{% endif %}>{{ m.name }}</option>
-                    {% endfor %}
-                </select>
-                {% if status_filter != 'all' %}
-                <input type="hidden" name="filter" value="{{ status_filter }}">
-                {% endif %}
-                <button type="submit" class="btn btn-primary btn-sm">
-                    <i class="bi bi-search"></i> نمایش
-                </button>
-            </form>
-        </div>
-    </div>
-</div>
-
-<!-- فیلتر وضعیت -->
-<div class="card mb-4">
-    <div class="card-body py-2">
-        <div class="d-flex flex-wrap align-items-center gap-2">
-            <span class="text-muted"><i class="bi bi-funnel"></i> فیلتر:</span>
+        <div class="d-flex flex-wrap gap-2 align-items-center">
+            <span class="text-muted small fw-semibold">فیلتر:</span>
             <a href="/admin/attendance/user/{{ target_user_id }}?year={{ year }}&month={{ month }}"
-               class="btn btn-sm {% if status_filter == 'all' %}btn-primary{% else %}btn-outline-primary{% endif %}">
-                همه
-            </a>
+               class="btn btn-sm {% if status_filter == 'all' %}btn-primary{% else %}btn-outline-primary{% endif %} rounded-pill">همه</a>
             <a href="/admin/attendance/user/{{ target_user_id }}?year={{ year }}&month={{ month }}&filter=complete"
-               class="btn btn-sm {% if status_filter == 'complete' %}btn-success{% else %}btn-outline-success{% endif %}">
-                ✅ کامل
-            </a>
+               class="btn btn-sm {% if status_filter == 'complete' %}btn-success{% else %}btn-outline-success{% endif %} rounded-pill">✅ کامل</a>
             <a href="/admin/attendance/user/{{ target_user_id }}?year={{ year }}&month={{ month }}&filter=night_shift"
-               class="btn btn-sm {% if status_filter == 'night_shift' %}btn-info{% else %}btn-outline-info{% endif %}">
-                🌙 شیفت شب
-            </a>
+               class="btn btn-sm {% if status_filter == 'night_shift' %}btn-info{% else %}btn-outline-info{% endif %} rounded-pill">🌙 شیفت شب</a>
             <a href="/admin/attendance/user/{{ target_user_id }}?year={{ year }}&month={{ month }}&filter=issues"
-               class="btn btn-sm {% if status_filter == 'issues' %}btn-danger{% else %}btn-outline-danger{% endif %}">
-                ⚠️ دارای مشکل
-            </a>
+               class="btn btn-sm {% if status_filter == 'issues' %}btn-warning{% else %}btn-outline-warning{% endif %} rounded-pill">⚠️ دارای مشکل</a>
             <a href="/admin/attendance/user/{{ target_user_id }}?year={{ year }}&month={{ month }}&filter=friday_holiday"
-               class="btn btn-sm {% if status_filter == 'friday_holiday' %}btn-warning{% else %}btn-outline-warning{% endif %}">
-                🟡 جمعه/تعطیل
-            </a>
+               class="btn btn-sm {% if status_filter == 'friday_holiday' %}btn-secondary{% else %}btn-outline-secondary{% endif %} rounded-pill">🟡 جمعه/تعطیل</a>
             <a href="/admin/attendance/user/{{ target_user_id }}?year={{ year }}&month={{ month }}&filter=no_attendance"
-               class="btn btn-sm {% if status_filter == 'no_attendance' %}btn-secondary{% else %}btn-outline-secondary{% endif %}">
-                ⚪ بدون تردد
-            </a>
-            <!-- 🆕 فیلتر مرخصی -->
-<a href="/admin/attendance/user/{{ target_user_id }}?year={{ year }}&month={{ month }}&filter=leave"
-   class="btn btn-sm {% if status_filter == 'leave' %}btn-info{% else %}btn-outline-info{% endif %}">
-    🌴 مرخصی
-</a>
+               class="btn btn-sm {% if status_filter == 'no_attendance' %}btn-secondary{% else %}btn-outline-secondary{% endif %} rounded-pill">⚪ بدون تردد</a>
+            <a href="/admin/attendance/user/{{ target_user_id }}?year={{ year }}&month={{ month }}&filter=leave"
+               class="btn btn-sm {% if status_filter == 'leave' %}btn-info{% else %}btn-outline-info{% endif %} rounded-pill">🌴 مرخصی</a>
         </div>
     </div>
 </div>
 
-<!-- آمار کلی -->
+{% if days %}
+
+<!-- کارت پیشرفت + کارت‌های کلیدی -->
+{% if progress_percent is defined %}
 <div class="row g-4 mb-4">
-    <div class="col-md-4">
-        <div class="card bg-primary text-white">
-            <div class="card-body text-center">
-                <h3>{{ total_records }}</h3>
-                <small>کل رکوردها - {{ month_name }} {{ year }}</small>
+    <div class="col-lg-5">
+        <div class="card progress-hero-card h-100">
+            <div class="card-body d-flex align-items-center gap-4 p-4 position-relative" style="z-index: 2;">
+                <div class="progress-ring-container">
+                    <svg class="progress-ring" width="150" height="150">
+                        <circle class="progress-ring-bg" cx="75" cy="75" r="62"></circle>
+                        <circle class="progress-ring-bar {% if progress_percent >= 80 %}progress-high{% elif progress_percent >= 50 %}progress-medium{% else %}progress-low{% endif %}"
+                            cx="75" cy="75" r="62"
+                            stroke-dasharray="389.56"
+                            stroke-dashoffset="{{ 389.56 - (389.56 * progress_percent / 100) }}"></circle>
+                    </svg>
+                    <div class="progress-ring-text">
+                        <span class="progress-ring-percent">{{ progress_percent }}%</span>
+                        <span class="progress-ring-label">پیشرفت</span>
+                    </div>
+                </div>
+                <div class="flex-grow-1">
+                    <div class="small opacity-75 mb-1">
+                        <i class="bi bi-clipboard-data"></i> کارکرد / موظفی
+                    </div>
+                    <h4 class="fw-bold mb-2">
+                        <span style="direction: ltr; unicode-bidi: embed; display: inline-block;">{{ total_work_hours_display }}</span>
+                        <span class="opacity-50 fs-6 mx-1">از</span>
+                        <span style="direction: ltr; unicode-bidi: embed; display: inline-block;">{{ monthly_duty_display }}</span>
+                    </h4>
+                    <div class="small opacity-85">
+                        <i class="bi bi-calendar-check"></i> {{ month_name }} {{ year }}
+                    </div>
+                    <div class="mt-3 linear-progress-track">
+                        <div class="linear-progress-fill {% if progress_percent >= 80 %}{% elif progress_percent >= 50 %}medium{% else %}low{% endif %}"
+                             style="width: {{ progress_percent }}%;"></div>
+                    </div>
+                    <div class="d-flex justify-content-between mt-1" style="font-size: 0.7rem; opacity: 0.7;">
+                        <span style="direction: ltr;">0:00</span>
+                        <span style="direction: ltr;">{{ monthly_duty_display }}</span>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
-    <div class="col-md-4">
-        <div class="card bg-success text-white">
-            <div class="card-body text-center">
-                <h3>{{ days | selectattr('records') | list | length }}</h3>
-                <small>روزهای دارای تردد</small>
+
+    <div class="col-lg-7">
+        <div class="row g-3 h-100">
+            <div class="col-md-6">
+                <div class="card stat-card gradient-blue h-100">
+                    <div class="card-body d-flex align-items-center gap-3 p-3">
+                        <div class="stat-icon"><i class="bi bi-briefcase"></i></div>
+                        <div>
+                            <div class="stat-value">{{ monthly_duty_display }}</div>
+                            <div class="stat-label">موظفی ماهانه ({{ duty_days_month }} روز)</div>
+                        </div>
+                    </div>
+                </div>
             </div>
-        </div>
-    </div>
-    <div class="col-md-4">
-        <div class="card bg-info text-white">
-            <div class="card-body text-center">
-                <h3>{{ "%.1f" | format(days | sum(attribute='work_hours')) }}</h3>
-                <small>مجموع ساعات</small>
+            <div class="col-md-6">
+                <div class="card stat-card gradient-teal h-100">
+                    <div class="card-body d-flex align-items-center gap-3 p-3">
+                        <div class="stat-icon"><i class="bi bi-hourglass-split"></i></div>
+                        <div>
+                            <div class="stat-value">{{ instant_duty_display }}</div>
+                            <div class="stat-label">موظفی تا {{ reference_date_display }}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card stat-card {% if monthly_is_overtime %}gradient-green{% else %}gradient-red{% endif %} h-100">
+                    <div class="card-body d-flex align-items-center gap-3 p-3">
+                        <div class="stat-icon">
+                            {% if monthly_is_overtime %}<i class="bi bi-arrow-up-circle"></i>{% else %}<i class="bi bi-arrow-down-circle"></i>{% endif %}
+                        </div>
+                        <div>
+                            <div class="stat-value">{% if monthly_is_overtime %}+{% endif %}{{ monthly_balance_display }}</div>
+                            <div class="stat-label">{% if monthly_is_overtime %}اضافه کار ماهانه{% else %}کسر کار ماهانه{% endif %}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card stat-card {% if instant_is_overtime %}gradient-green{% else %}gradient-red{% endif %} h-100">
+                    <div class="card-body d-flex align-items-center gap-3 p-3">
+                        <div class="stat-icon">
+                            {% if instant_is_overtime %}<i class="bi bi-lightning-charge"></i>{% else %}<i class="bi bi-exclamation-triangle"></i>{% endif %}
+                        </div>
+                        <div>
+                            <div class="stat-value">{% if instant_is_overtime %}+{% endif %}{{ instant_balance_display }}</div>
+                            <div class="stat-label">{% if instant_is_overtime %}اضافه کار لحظه‌ای{% else %}کسر کار لحظه‌ای{% endif %}</div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 </div>
+{% endif %}
 
-<!-- جدول تردد -->
-<div class="card">
-    <div class="card-body">
+<!-- کارت‌های هفتگی + میانگین -->
+{% if this_week_hours_display is defined %}
+<div class="row g-3 mb-4">
+    <div class="col-lg-4 col-md-6">
+        <div class="card stat-card gradient-purple h-100">
+            <div class="card-body d-flex align-items-center gap-3 p-3">
+                <div class="stat-icon"><i class="bi bi-calendar-week"></i></div>
+                <div>
+                    <div class="stat-value">{{ this_week_hours_display }}</div>
+                    <div class="stat-label">کارکرد این هفته ({{ this_week_days }} روز)</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4 col-md-6">
+        <div class="card stat-card gradient-blue h-100">
+            <div class="card-body d-flex align-items-center gap-3 p-3">
+                <div class="stat-icon"><i class="bi bi-calendar-minus"></i></div>
+                <div>
+                    <div class="stat-value">{{ prev_week_hours_display }}</div>
+                    <div class="stat-label">کارکرد هفته قبل ({{ prev_week_days }} روز)</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4 col-md-6">
+        <div class="card stat-card gradient-teal h-100">
+            <div class="card-body d-flex align-items-center gap-3 p-3">
+                <div class="stat-icon"><i class="bi bi-graph-up"></i></div>
+                <div>
+                    <div class="stat-value">{{ daily_avg_hours_display }}</div>
+                    <div class="stat-label">میانگین روزانه ({{ daily_avg_days }} روز)</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- مجموع ساعات + نوار پیشرفت -->
+{% if total_work_hours_display is defined %}
+<div class="card border-0 shadow-sm mb-4" style="border-radius: 16px;">
+    <div class="card-body p-4">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h6 class="mb-0 fw-bold">
+                <i class="bi bi-clock-history text-primary"></i>
+                مجموع ساعات:
+                <span style="direction: ltr; unicode-bidi: embed;">{{ total_work_hours_display }}</span>
+            </h6>
+            <span class="badge bg-primary rounded-pill">{{ days|length }} روز</span>
+        </div>
+        {% if progress_percent is defined %}
+        <div class="progress" style="height: 12px; border-radius: 6px; background: #e9ecef;">
+            <div class="progress-bar {% if progress_percent >= 80 %}bg-success{% elif progress_percent >= 50 %}bg-warning{% else %}bg-danger{% endif %}"
+                 style="width: {{ progress_percent }}%; transition: width 1s ease;"></div>
+        </div>
+        <div class="d-flex justify-content-between mt-2 small text-muted">
+            <span style="direction: ltr;">0:00</span>
+            <span style="direction: ltr;">{{ monthly_duty_display }} (موظفی)</span>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<!-- جدول روزها -->
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
+        <h6 class="mb-0 fw-bold">
+            <i class="bi bi-table text-primary"></i> جزئیات روزهای {{ month_name }} {{ year }}
+        </h6>
+        <div class="d-flex gap-2 align-items-center">
+            <span class="badge bg-primary rounded-pill">{{ days|length }} روز</span>
+            {% if is_super_admin %}
+            <button class="btn btn-success btn-sm rounded-pill" data-bs-toggle="modal" data-bs-target="#addRecordModal">
+                <i class="bi bi-plus-circle"></i> افزودن رکورد
+            </button>
+            {% endif %}
+        </div>
+    </div>
+    <div class="card-body p-0">
         <div class="table-responsive">
-            <table class="table table-hover">
+            <table class="table table-hover attendance-table mb-0">
                 <thead>
-                    <tr>
+                    <tr class="text-center">
                         <th>تاریخ</th>
                         <th>روز</th>
                         <th>اولین ورود</th>
                         <th>آخرین خروج</th>
                         <th>ساعات</th>
                         <th>تردد</th>
-                        <th class="text-center">وضعیت</th>
-                        <th class="text-center">جزئیات</th>
+                        <th>وضعیت</th>
+                        <th>جزئیات</th>
+                        {% if is_super_admin %}
+                        <th>عملیات</th>
+                        {% endif %}
                     </tr>
                 </thead>
                 <tbody>
                     {% for day in days %}
-                    <tr class="{% if day.is_friday %}table-warning{% elif day.is_holiday %}table-danger{% endif %}">
-                        <td>{{ day.jalali_date }}</td>
-                        <td>
+                    <tr>
+                        <td class="text-center"><strong>{{ day.jalali_date }}</strong></td>
+                        <td class="text-center">
                             {{ day.day_name }}
                             {% if day.is_friday %}<span class="badge bg-warning text-dark">جمعه</span>{% endif %}
                             {% if day.is_holiday %}<span class="badge bg-danger">تعطیل</span>{% endif %}
                         </td>
-                        <td>
+                        <td class="text-center">
                             {% if day.first_enter %}
-                            <span class="badge bg-success">{{ day.first_enter.strftime('%H:%M') }}</span>
-                            {% else %}<span class="text-muted">-</span>{% endif %}
+                            <span class="badge bg-light text-dark border">{{ day.first_enter.strftime('%H:%M') }}</span>
+                            {% else %}
+                            <span class="text-muted">-</span>
+                            {% endif %}
                         </td>
-                        <td>
+                        <td class="text-center">
                             {% if day.last_exit %}
-                            <span class="badge bg-danger">{{ day.last_exit.strftime('%H:%M') }}</span>
-                            {% else %}<span class="text-muted">-</span>{% endif %}
+                            <span class="badge bg-light text-dark border">{{ day.last_exit.strftime('%H:%M') }}</span>
+                            {% else %}
+                            <span class="text-muted">-</span>
+                            {% endif %}
                         </td>
-                        <td>{{ "%.1f" | format(day.work_hours) }}</td>
-                        <td>
-                            <span class="badge {% if day.records | length > 2 %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
-                                {{ day.records | length }}
-                            </span>
+                        <td class="text-center">
+                            <strong style="direction: ltr; unicode-bidi: embed;">{{ "%.1f"|format(day.work_hours) }}</strong>
+                        </td>
+                        <td class="text-center">
+                            <span class="badge bg-secondary">{{ day.records | length }}</span>
                         </td>
                         <td class="text-center">
                             <span class="badge bg-{{ day.status.main_color }}">{{ day.status.main_label }}</span>
                             {% for w in day.status.warnings %}
-                            <br><span class="badge bg-{{ w.color }} mt-1">{{ w.label }}</span>
+                            <span class="badge bg-{{ w.color }}">{{ w.label }}</span>
                             {% endfor %}
                         </td>
                         <td class="text-center">
-                            {% if day.records | length >= 0 %}
-                            <button class="btn btn-sm btn-outline-primary"
+                            {% if day.records | length > 0 %}
+                            <button class="btn btn-outline-primary btn-sm py-0 px-1"
                                     data-bs-toggle="collapse"
-                                    data-bs-target="#details-{{ day.date.strftime('%Y%m%d') }}">
+                                    data-bs-target="#detail-{{ loop.index }}">
                                 <i class="bi bi-eye"></i>
-                                {% if day.status.main_status == 'sequence_error' %}
-                                <span class="badge bg-danger ms-1">!</span>
-                                {% endif %}
                             </button>
                             {% else %}
                             <span class="text-muted">-</span>
                             {% endif %}
                         </td>
+                        {% if is_super_admin %}
+                        <td class="text-center">
+                            <button class="btn btn-outline-warning btn-sm py-0 px-1"
+                                    data-bs-toggle="modal"
+                                    data-bs-target="#editDayModal"
+                                    data-date="{{ day.jalali_date }}"
+                                    title="ویرایش ترددهای {{ day.jalali_date }}">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                        </td>
+                        {% endif %}
                     </tr>
-
-                    {% if day.records | length >= 0 %}
-                    <tr>
-                        <td colspan="8" class="p-0">
-                            <div class="collapse" id="details-{{ day.date.strftime('%Y%m%d') }}">
-                                <div class="card card-body bg-light border-0 py-2">
-                                    <table class="table table-sm table-bordered mb-0">
-                                        <thead class="table-secondary">
-                                            <tr>
-                                                <th class="text-center">#</th>
-                                                <th class="text-center">ساعت</th>
-                                                <th class="text-center">نوع</th>
-                                                <th class="text-center">منبع</th>
-                                                <th class="text-center">عملیات</th>  <!-- 🆕 -->
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {% for rec in day.records %}
-                                            <tr>
-                                                <td class="text-center">{{ loop.index }}</td>
-                                                <td class="text-center fw-bold">
-                                                    {{ rec.timestamp.strftime('%H:%M:%S') }}
-                                                    {% if rec.timestamp.date() > day.date %}
-                                                    <span class="badge bg-info">روز بعد</span>
-                                                    {% endif %}
-                                                </td>
-                                                <td class="text-center">
-                                                    {% if rec.punch == 0 %}
-                                                    <span class="badge bg-success">⬅️ ورود</span>
-                                                    {% else %}
-                                                    <span class="badge bg-danger">➡️ خروج</span>
-                                                    {% endif %}
-                                                </td>
-                                                <td class="text-center">
-                                                    {% if rec.source == 'D' %}📱 دستگاه
-                                                    {% elif rec.source == 'A' %}🌐 ADMS
-                                                    {% elif rec.source == 'L' %}✋ دستی
-                                                    {% else %}❓{% endif %}
-                                                </td>
-                                                <!-- 🆕 عملیات -->
-                                                <td class="text-center">
-                                                    <div class="btn-group btn-group-sm">
-                                                        <!-- تغییر وضعیت -->
-                                                        <form method="post" action="/admin/attendance/edit/change-punch" class="d-inline">
-                                                            <input type="hidden" name="record_id" value="{{ rec.id }}">
-                                                            <button type="submit" class="btn btn-outline-warning btn-sm"
-                                                                    title="تغییر به {% if rec.punch == 0 %}خروج{% else %}ورود{% endif %}"
-                                                                    onclick="return confirm('آیا وضعیت این تردد تغییر کند؟');">
-                                                                <i class="bi bi-arrow-repeat"></i>
-                                                            </button>
-                                                        </form>
-
-                                                        <!-- حذف -->
-                                                        <form method="post" action="/admin/attendance/edit/delete" class="d-inline">
-                                                            <input type="hidden" name="record_id" value="{{ rec.id }}">
-                                                            <button type="submit" class="btn btn-outline-danger btn-sm"
-                                                                    title="حذف"
-                                                                    onclick="return confirm('آیا این رکورد حذف شود؟');">
-                                                                <i class="bi bi-trash"></i>
-                                                            </button>
-                                                        </form>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                            {% endfor %}
-
-                                            <!-- 🆕 فرم افزودن رکورد جدید -->
-                                            <tr class="table-light">
-                                                <td colspan="5">
-                                                    <form method="post" action="/admin/attendance/edit/add" class="d-flex gap-2 align-items-center">
-                                                        <input type="hidden" name="user_id" value="{{ target_user_id }}">
-                                                        <input type="hidden" name="date_str" value="{{ day.jalali_date }}">
-                                                        <small class="text-muted">➕ افزودن:</small>
-                                                        <input type="time" name="time_str" class="form-control form-control-sm" style="width: 120px;" required>
-                                                        <select name="punch" class="form-select form-select-sm" style="width: 100px;">
-                                                            <option value="0">ورود</option>
-                                                            <option value="1">خروج</option>
-                                                        </select>
-                                                        <button type="submit" class="btn btn-success btn-sm">
-                                                            <i class="bi bi-plus"></i> افزودن
-                                                        </button>
-                                                    </form>
-                                                </td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
-                                </div>
+                    {% if day.records | length > 0 %}
+                    <tr class="collapse" id="detail-{{ loop.index }}">
+                        <td colspan="{% if is_super_admin %}9{% else %}8{% endif %}" class="bg-light p-0">
+                            <div class="p-3">
+                                <table class="table table-sm table-bordered mb-0">
+                                    <thead>
+                                        <tr class="text-center">
+                                            <th style="width: 50px;">#</th>
+                                            <th>ساعت</th>
+                                            <th>نوع</th>
+                                            <th>منبع</th>
+                                            {% if is_super_admin %}
+                                            <th style="width: 100px;">عملیات</th>
+                                            {% endif %}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for rec in day.records %}
+                                        <tr class="text-center">
+                                            <td>{{ loop.index }}</td>
+                                            <td>
+                                                {{ rec.timestamp.strftime('%H:%M:%S') }}
+                                                {% if rec.timestamp.date() > day.date %}
+                                                <span class="badge bg-info">روز بعد</span>
+                                                {% endif %}
+                                            </td>
+                                            <td>
+                                                {% if rec.punch == 0 %}
+                                                <span class="badge bg-success">⬅️ ورود</span>
+                                                {% else %}
+                                                <span class="badge bg-danger">➡️ خروج</span>
+                                                {% endif %}
+                                            </td>
+                                            <td>
+                                                {% if rec.source == 'D' %}📱 دستگاه
+                                                {% elif rec.source == 'A' %}🌐 ADMS
+                                                {% elif rec.source == 'L' %}✋ دستی
+                                                {% else %}❓{% endif %}
+                                            </td>
+                                            {% if is_super_admin %}
+                                            <td>
+                                                <form method="post" action="/admin/attendance/edit/delete" class="d-inline"
+                                                      onsubmit="return confirm('آیا از حذف این رکورد مطمئن هستید؟');">
+                                                    <input type="hidden" name="record_id" value="{{ rec.id }}">
+                                                    <button type="submit" class="btn btn-outline-danger btn-sm py-0 px-1">
+                                                        <i class="bi bi-trash"></i>
+                                                    </button>
+                                                </form>
+                                            </td>
+                                            {% endif %}
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
                             </div>
                         </td>
                     </tr>
@@ -314,16 +530,34 @@
 </div>
 
 <!-- راهنما -->
-<div class="card mt-3">
-    <div class="card-body py-2">
-        <small class="text-muted">
+<div class="card border-0 shadow-sm mt-3">
+    <div class="card-body py-3">
+        <div class="d-flex flex-wrap gap-3 small text-muted align-items-center">
             <strong>راهنمای وضعیت‌ها:</strong>
-            ✅ کامل | 🌙 شیفت شب | ⬅️ ورود بدون خروج | ➡️ خروج بدون ورود |
-            ❌ خطای ترتیب | ⚠️ عدم تعادل | ⚪ بدون تردد
-            <br>
+            <span>✅ کامل</span>
+            <span>🌙 شیفت شب</span>
+            <span>⬅️ ورود بدون خروج</span>
+            <span>➡️ خروج بدون ورود</span>
+            <span>❌ خطای ترتیب</span>
+            <span>⚠️ عدم تعادل</span>
+            <span>⚪ بدون تردد</span>
+        </div>
+        <div class="d-flex flex-wrap gap-3 small text-muted align-items-center mt-2">
             <strong>هشدارها:</strong>
-            ⏱️ فاصله غیرعادی | 🔁 تردد تکراری | 🕐 ساعت غیرعادی | 🔢 تعداد زیاد | 🟡 جمعه‌کاری | 🔴 تعطیل‌کاری
-        </small>
+            <span>⏱️ فاصله غیرعادی</span>
+            <span>🔁 تردد تکراری</span>
+            <span>🕐 ساعت غیرعادی</span>
+            <span>🔢 تعداد زیاد</span>
+            <span>🟡 جمعه‌کاری</span>
+            <span>🔴 تعطیل‌کاری</span>
+        </div>
     </div>
 </div>
+
+{% else %}
+<div class="alert alert-info">
+    <i class="bi bi-info-circle"></i> رکوردی برای نمایش وجود ندارد.
+</div>
+{% endif %}
+
 {% endblock %}

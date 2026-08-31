@@ -20,6 +20,18 @@ from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from sqlalchemy import and_, or_, func, nulls_last
 from datetime import timedelta  # اگر نیست
 from models.employee_phone import EmployeePhone
+from web.routes.attendance import (
+    format_hours_hhmm, DAILY_DUTY_HOURS, STATUS_LEAVE
+)
+from web.routes.attendance import (
+    analyze_day_status,
+    calculate_work_hours,
+    format_hours_hhmm, DAILY_DUTY_HOURS, STATUS_LEAVE,
+    STATUS_COMPLETE, STATUS_NIGHT_SHIFT, STATUS_MISSING_EXIT,
+    STATUS_MISSING_ENTER, STATUS_SEQUENCE_ERROR, STATUS_IMBALANCE,
+    STATUS_NO_ATTENDANCE
+)
+from models.daily_status import DailyStatus
 
 def build_redirect_url(referer: str, key: str, value: str) -> str:
     """ساخت URL بازگشت با رعایت query string موجود"""
@@ -746,7 +758,6 @@ async def admin_user_attendance(
     # اطلاعات کاربر هدف
     target_employee = db.query(Employee).filter(Employee.user_id == target_user_id).first()
     target_user = db.query(User).filter(User.user_id == target_user_id).first()
-
     if not target_user:
         return RedirectResponse(url="/admin/attendance", status_code=302)
 
@@ -756,7 +767,6 @@ async def admin_user_attendance(
         month_end_j = jdatetime.date(year, 12, 29)
     else:
         month_end_j = jdatetime.date(year, month + 1, 1) - timedelta(days=1)
-
     month_start_g = month_start_j.togregorian()
     month_end_g = month_end_j.togregorian()
 
@@ -770,10 +780,10 @@ async def admin_user_attendance(
         )
     ).order_by(Attendance.timestamp).all()
 
-    # 🆕 دریافت گروه کاربر (بر اساس دپارتمان)
-    user_group = Employee.department if Employee else None
+    # دریافت گروه کاربر (بر اساس دپارتمان)
+    user_group = target_employee.department if target_employee else None
 
-    # 🆕 دریافت تعطیلات: ملی + گروه کاربر
+    # دریافت تعطیلات: ملی + گروه کاربر
     holiday_query = db.query(Holiday).filter(
         and_(
             Holiday.holiday_date >= month_start_g,
@@ -781,14 +791,11 @@ async def admin_user_attendance(
         )
     )
     if user_group:
-        # ملی یا گروه کاربر
         holiday_query = holiday_query.filter(
             or_(Holiday.group_id == None, Holiday.group_id == user_group)
         )
     else:
-        # فقط ملی
         holiday_query = holiday_query.filter(Holiday.group_id == None)
-
     holidays = holiday_query.all()
     holiday_dates = {h.holiday_date: h.title for h in holidays}
 
@@ -838,11 +845,10 @@ async def admin_user_attendance(
         day_records = days_dict.get(current, [])
         prev_day_records = days_dict.get(current - timedelta(days=1), [])
         next_day_records = days_dict.get(current + timedelta(days=1), [])
-
         is_friday = current.weekday() == 4
         holiday_title = holiday_dates.get(current)
 
-        # 🆕 تحلیل وضعیت با تابع مشترک
+        # تحلیل وضعیت با تابع مشترک
         status_info = analyze_day_status(
             day=current,
             day_records=day_records,
@@ -851,16 +857,16 @@ async def admin_user_attendance(
             is_friday=is_friday,
             holiday_title=holiday_title
         )
-        from web.routes.attendance import STATUS_LEAVE
-        # 🆕 بررسی مرخصی تایید شده (فقط در روزهای کاری)
+
+        # 🆕 بررسی مرخصی تایید شده (فقط در روزهای کاری - تعطیلات اولویت دارند)
         leave_type = leaves_by_date.get(current)
-        if leave_type and not is_friday and not holiday_title:  # ✅ تعطیلات اولویت دارند
+        if leave_type and not is_friday and holiday_title is None:
             type_name = LEAVE_TYPE_NAMES_LOCAL.get(leave_type, '')
             status_info['main_status'] = STATUS_LEAVE
             status_info['main_label'] = f'🌴 مرخصی {type_name}'
             status_info['main_color'] = 'info'
 
-        # 🆕 محاسبه کارکرد با در نظر گرفتن شیفت شب
+        # محاسبه کارکرد با در نظر گرفتن شیفت شب
         work_hours, first_enter, last_exit = calculate_work_hours(
             day_records,
             is_night_shift=status_info['main_status'] == STATUS_NIGHT_SHIFT
@@ -874,12 +880,16 @@ async def admin_user_attendance(
             'first_enter': first_enter,
             'last_exit': last_exit,
             'work_hours': work_hours,
+            'work_hours_display': format_hours_hhmm(work_hours),  # 🆕
             'is_friday': is_friday,
             'is_holiday': holiday_title is not None,
             'holiday_title': holiday_title,
             'status': status_info,
         })
         current += timedelta(days=1)
+
+    # 🆕 محاسبه کارکرد کل ماه قبل از اعمال فیلتر
+    total_work_hours_month = sum(d['work_hours'] for d in days_list)
 
     # 🆕 اعمال فیلتر وضعیت
     if status_filter == 'complete':
@@ -893,7 +903,7 @@ async def admin_user_attendance(
         days_list = [d for d in days_list if d['status']['is_friday'] or d['status']['is_holiday']]
     elif status_filter == 'no_attendance':
         days_list = [d for d in days_list if d['status']['main_status'] == STATUS_NO_ATTENDANCE]
-    elif status_filter == 'leave':  # 🆕
+    elif status_filter == 'leave':
         days_list = [d for d in days_list if d['status']['main_status'] == STATUS_LEAVE]
 
     MONTH_NAMES = {
@@ -901,9 +911,142 @@ async def admin_user_attendance(
         5: 'مرداد', 6: 'شهریور', 7: 'مهر', 8: 'آبان',
         9: 'آذر', 10: 'دی', 11: 'بهمن', 12: 'اسفند'
     }
-
     total_records = sum(len(d['records']) for d in days_list)
+
+    # ============================================
+    # 🆕 محاسبات موظفی و اضافه/کسر کار
+    # ============================================
+    # دریافت روزهای استراحت از DailyStatus
+    daily_statuses = db.query(DailyStatus).filter(
+        and_(
+            DailyStatus.user_id == target_user_id,
+            DailyStatus.status_date >= month_start_g,
+            DailyStatus.status_date <= month_end_g,
+            DailyStatus.status_code == 'R'
+        )
+    ).all()
+    rest_dates = {ds.status_date for ds in daily_statuses}
+
+    # ---------- ۱. موظفی ماهانه ----------
+    work_days_in_month = 0
+    leave_days_in_month = 0
+    rest_days_in_month = 0
+
+    current_calc = month_start_g
+    while current_calc <= month_end_g:
+        is_friday = current_calc.weekday() == 4
+        is_holiday = current_calc in holiday_dates
+        is_day_off = is_friday or is_holiday
+
+        if not is_day_off:
+            work_days_in_month += 1
+            if current_calc in leaves_by_date:
+                leave_days_in_month += 1
+            elif current_calc in rest_dates:
+                rest_days_in_month += 1
+        current_calc += timedelta(days=1)
+
+    duty_days_month = work_days_in_month - leave_days_in_month - rest_days_in_month
+    monthly_duty_hours = duty_days_month * DAILY_DUTY_HOURS
+
+    # ---------- ۲. موظفی لحظه‌ای ----------
+    today_g = today_j.togregorian()
+
+    if today_g < month_start_g:
+        reference_date = month_start_g - timedelta(days=1)
+    elif today_g > month_end_g:
+        reference_date = month_end_g
+    else:
+        is_today_complete = False
+        for day in days_list:
+            if day['date'] == today_g:
+                main_status = day['status']['main_status']
+                if main_status in [STATUS_COMPLETE, STATUS_LEAVE] or day['is_holiday'] or day['is_friday']:
+                    is_today_complete = True
+                break
+        reference_date = today_g if is_today_complete else today_g - timedelta(days=1)
+
+    duty_days_until_ref = 0
+    work_hours_until_ref = 0.0
+
+    for day in days_list:
+        if day['date'] <= reference_date:
+            is_day_off = day['is_friday'] or day['is_holiday']
+            is_leave = day['status']['main_status'] == STATUS_LEAVE
+            is_rest = day['date'] in rest_dates
+
+            if not is_day_off and not is_leave and not is_rest:
+                duty_days_until_ref += 1
+
+            work_hours_until_ref += day['work_hours']
+
+    instant_duty_hours = duty_days_until_ref * DAILY_DUTY_HOURS
+
+    # ---------- ۳ و ۴. اضافه/کسر کار ----------
+    progress_percent = 0
+    if monthly_duty_hours > 0:
+        progress_percent = min(100, round((total_work_hours_month / monthly_duty_hours) * 100, 1))
+
+    monthly_balance = total_work_hours_month - monthly_duty_hours
+    instant_balance = work_hours_until_ref - instant_duty_hours
+
+    reference_date_j = jdatetime.date.fromgregorian(date=reference_date)
+    reference_date_display = reference_date_j.strftime('%Y/%m/%d')
+
+    # ============================================
+    # 🆕 کارکرد این هفته و هفته قبل (کل هفته، محدود به ماه انتخاب‌شده)
+    # ============================================
+    today_weekday = today_g.weekday()
+    days_since_saturday = (today_weekday + 2) % 7
+    this_week_start_g = today_g - timedelta(days=days_since_saturday)
+    this_week_end_g = this_week_start_g + timedelta(days=6)  # 🆕 جمعه
+
+    prev_week_start_g = this_week_start_g - timedelta(days=7)
+    prev_week_end_g = this_week_start_g - timedelta(days=1)
+
+    # ---------- کارکرد این هفته (کل هفته، فقط روزهای درون ماه انتخاب‌شده) ----------
+    this_week_hours = 0.0
+    this_week_days = 0
+    this_week_work_days = 0
+
+    for day in days_list:
+        # فقط روزهای این هفته که در ماه انتخاب‌شده هستند
+        if this_week_start_g <= day['date'] <= this_week_end_g:
+            if not day['is_friday'] and not day['is_holiday']:
+                this_week_work_days += 1  # روز کاری هفته
+                this_week_hours += day['work_hours']  # کارکرد (روزهای آینده = 0)
+                if day['work_hours'] > 0:
+                    this_week_days += 1  # روزهایی که کارکرد دارند
+
+    this_week_duty_hours = this_week_work_days * DAILY_DUTY_HOURS
+    this_week_progress = min(100, round((this_week_hours / this_week_duty_hours) * 100,
+                                        1)) if this_week_duty_hours > 0 else 0
+
+    # ---------- کارکرد هفته قبل (کل هفته، فقط روزهای درون ماه انتخاب‌شده) ----------
+    prev_week_hours = 0.0
+    prev_week_days = 0
+    prev_week_work_days = 0
+
+    for day in days_list:
+        # فقط روزهای هفته قبل که در ماه انتخاب‌شده هستند
+        if prev_week_start_g <= day['date'] <= prev_week_end_g:
+            if not day['is_friday'] and not day['is_holiday']:
+                prev_week_work_days += 1
+                prev_week_hours += day['work_hours']
+                if day['work_hours'] > 0:
+                    prev_week_days += 1
+
+    prev_week_duty_hours = prev_week_work_days * DAILY_DUTY_HOURS
+    prev_week_progress = min(100, round((prev_week_hours / prev_week_duty_hours) * 100,
+                                        1)) if prev_week_duty_hours > 0 else 0
+    # ---------- میانگین کارکرد روزانه ----------
+    days_with_work = [d for d in days_list if d['work_hours'] > 0 and not d['is_friday'] and not d['is_holiday']]
+    daily_avg_hours = total_work_hours_month / len(days_with_work) if days_with_work else 0
+    daily_avg_days = len(days_with_work)
+
+    # ============================================
     # 🆕 ناوبری بین ماه‌ها
+    # ============================================
     if month == 1:
         prev_year, prev_month = year - 1, 12
     else:
@@ -914,7 +1057,6 @@ async def admin_user_attendance(
     else:
         next_year, next_month = year, month + 1
 
-    # 🆕 لیست سال‌ها و ماه‌ها
     available_years = list(range(today_j.year, today_j.year - 6, -1))
     months_list = [
         {'num': 1, 'name': 'فروردین'}, {'num': 2, 'name': 'اردیبهشت'},
@@ -925,7 +1067,6 @@ async def admin_user_attendance(
         {'num': 11, 'name': 'بهمن'}, {'num': 12, 'name': 'اسفند'},
     ]
     is_current_month = (year == today_j.year and month == today_j.month)
-
 
     return templates.TemplateResponse(request, "admin/user_attendance.html", {
         "user": user,
@@ -938,8 +1079,10 @@ async def admin_user_attendance(
         "days": days_list,
         "total_records": total_records,
         "is_admin": True,
+        "is_super_admin": user.is_super_admin,  # 🆕 برای دسترسی افزودن/ویرایش
         "status_filter": status_filter or 'all',
-        # 🆕 متغیرهای ناوبری
+
+        # ناوبری
         "prev_year": prev_year,
         "prev_month": prev_month,
         "next_year": next_year,
@@ -947,8 +1090,38 @@ async def admin_user_attendance(
         "available_years": available_years,
         "months_list": months_list,
         "is_current_month": is_current_month,
-    })
 
+        # 🆕 موظفی و اضافه/کسر کار
+        "monthly_duty_display": format_hours_hhmm(monthly_duty_hours),
+        "duty_days_month": duty_days_month,
+        "instant_duty_display": format_hours_hhmm(instant_duty_hours),
+        "duty_days_until_ref": duty_days_until_ref,
+        "reference_date_display": reference_date_display,
+        "monthly_balance": monthly_balance,
+        "monthly_balance_display": format_hours_hhmm(monthly_balance),
+        "monthly_is_overtime": monthly_balance >= 0,
+        "instant_balance": instant_balance,
+        "instant_balance_display": format_hours_hhmm(instant_balance),
+        "instant_is_overtime": instant_balance >= 0,
+        "total_work_hours_month": total_work_hours_month,
+        "total_work_hours_display": format_hours_hhmm(total_work_hours_month),
+        "progress_percent": progress_percent,
+
+        # 🆕 کارکرد هفتگی
+        "this_week_hours_display": format_hours_hhmm(this_week_hours),
+        "this_week_days": this_week_days,
+        "this_week_duty_display": format_hours_hhmm(this_week_duty_hours),
+        "this_week_progress": this_week_progress,
+
+        "prev_week_hours_display": format_hours_hhmm(prev_week_hours),
+        "prev_week_days": prev_week_days,
+        "prev_week_duty_display": format_hours_hhmm(prev_week_duty_hours),
+        "prev_week_progress": prev_week_progress,
+
+        # 🆕 میانگین کارکرد روزانه
+        "daily_avg_hours_display": format_hours_hhmm(daily_avg_hours),
+        "daily_avg_days": daily_avg_days,
+    })
 
 from datetime import timedelta, date as date_type
 from sqlalchemy import and_, func
@@ -1337,7 +1510,6 @@ async def admin_change_punch(
         return RedirectResponse(url="/admin/attendance?error=رکورد یافت نشد", status_code=302)
 
     record.punch = 1 if record.punch == 0 else 0
-    record.source = 'L'
     db.commit()
 
     referer = request.headers.get("referer", "/admin/attendance")
