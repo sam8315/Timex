@@ -46,9 +46,9 @@
         <i class="bi bi-exclamation-triangle"></i>
         شما
         {% for leave_type, days in unused_leave.items() %}
-            <strong>{{ days }} روز</strong> مرخصی
-            {{ 'استحقاقی' if leave_type == 'AL' else 'استعلاجی' }}
-            {% if not loop.last %} و {% endif %}
+        <strong>{{ days }} روز</strong> مرخصی
+        {{ 'استحقاقی' if leave_type == 'AL' else 'استعلاجی' }}
+        {% if not loop.last %} و {% endif %}
         {% endfor %}
         استفاده نشده از سال <strong>{{ carry_forward_year }}</strong> دارید.
     </div>
@@ -89,16 +89,21 @@
                 </div>
                 <div>
                     <div class="text-muted small fw-semibold mb-1">مانده مرخصی</div>
-                    <div class="fs-3 fw-bold text-dark" style="line-height: 1.2;">
-                        {{ balances.get('AL', 0) }} <span class="fs-6 fw-normal text-muted">روز استحقاقی</span>
-                    </div>
-                    {% if balances.get('CW', 0) > 0 %}
-                    <div class="fs-5 fw-bold text-info" style="line-height: 1.2;">
-                        {{ balances.get('CW', 0) }} <span class="fs-6 fw-normal text-muted">روز انتقالی</span>
-                    </div>
-                    {% else %}
-                    <div class="text-muted small mt-1">انتقالی: ۰ روز</div>
-                    {% endif %}
+<!-- 🆕 نمایش یکپارچه مرخصی -->
+{% if total_al_available > 0 %}
+<span class="badge bg-success fs-6 me-2">
+    {{ total_al_available }} روز مرخصی قابل استفاده
+</span>
+{% if cw_days > 0 %}
+<small class="text-muted d-block mt-1">
+    شامل {{ cw_days }} روز انتقالی از سال قبل
+</small>
+{% endif %}
+{% else %}
+<span class="badge bg-secondary">
+    مرخصی قابل استفاده: ۰ روز
+</span>
+{% endif %}
                 </div>
             </div>
         </div>
@@ -114,7 +119,8 @@
                 </div>
                 <div>
                     <div class="text-muted small fw-semibold mb-1">درخواست‌های در انتظار</div>
-                    <div class="fs-2 fw-bold {% if pending_count > 0 %}text-warning{% else %}text-success{% endif %}" style="line-height: 1;">
+                    <div class="fs-2 fw-bold {% if pending_count > 0 %}text-warning{% else %}text-success{% endif %}"
+                         style="line-height: 1;">
                         {{ pending_count }}
                     </div>
                     <div class="text-muted small mt-1">
@@ -138,7 +144,8 @@
                 <div>
                     <div class="text-muted small fw-semibold mb-1">مانده قرارداد</div>
                     {% if contract_info.days_remaining is not none %}
-                    <div class="fs-2 fw-bold {% if contract_info.is_expiring_soon %}text-warning{% elif contract_info.is_expired %}text-danger{% else %}text-dark{% endif %}" style="line-height: 1;">
+                    <div class="fs-2 fw-bold {% if contract_info.is_expiring_soon %}text-warning{% elif contract_info.is_expired %}text-danger{% else %}text-dark{% endif %}"
+                         style="line-height: 1;">
                         {{ contract_info.days_remaining }} <span class="fs-6 fw-normal text-muted">روز</span>
                     </div>
                     {% if contract_info.is_expiring_soon %}
@@ -162,7 +169,8 @@
         </div>
         {% else %}
         <!-- بدون قرارداد -->
-        <div class="card border-0 shadow-sm h-100" style="border-radius: 16px; overflow: hidden; border-right: 4px solid #ef4444 !important;">
+        <div class="card border-0 shadow-sm h-100"
+             style="border-radius: 16px; overflow: hidden; border-right: 4px solid #ef4444 !important;">
             <div class="card-body p-4 d-flex align-items-center gap-3">
                 <div class="rounded-4 d-flex align-items-center justify-content-center flex-shrink-0"
                      style="width: 56px; height: 56px; background: linear-gradient(135deg, #ef4444, #f87171); color: white; font-size: 1.5rem;">
@@ -188,20 +196,25 @@
             <div class="card-body">
                 {% if today_attendance %}
                 <table class="table table-sm">
-                    <thead><tr><th>ساعت</th><th>نوع</th></tr></thead>
+                    <thead>
+                    <tr>
+                        <th>ساعت</th>
+                        <th>نوع</th>
+                    </tr>
+                    </thead>
                     <tbody>
-                        {% for record in today_attendance %}
-                        <tr>
-                            <td>{{ record.timestamp.strftime('%H:%M') }}</td>
-                            <td>
-                                {% if record.punch == 0 %}
-                                <span class="badge bg-success">ورود</span>
-                                {% else %}
-                                <span class="badge bg-danger">خروج</span>
-                                {% endif %}
-                            </td>
-                        </tr>
-                        {% endfor %}
+                    {% for record in today_attendance %}
+                    <tr>
+                        <td>{{ record.timestamp.strftime('%H:%M') }}</td>
+                        <td>
+                            {% if record.punch == 0 %}
+                            <span class="badge bg-success">ورود</span>
+                            {% else %}
+                            <span class="badge bg-danger">خروج</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
                     </tbody>
                 </table>
                 {% else %}
@@ -218,20 +231,27 @@
             <div class="card-body">
                 {% if recent_requests %}
                 <table class="table table-sm">
-                    <thead><tr><th>نوع</th><th>از</th><th>تا</th><th>وضعیت</th></tr></thead>
+                    <thead>
+                    <tr>
+                        <th>نوع</th>
+                        <th>از</th>
+                        <th>تا</th>
+                        <th>وضعیت</th>
+                    </tr>
+                    </thead>
                     <tbody>
-                        {% for req in recent_requests %}
-                        <tr>
-                            <td>{{ req.leave_type_name }}</td>
-                            <td>{{ req.from_date_j }}</td>
-                            <td>{{ req.to_date_j }}</td>
-                            <td>
-                                {% if req.status == 'P' %}<span class="badge bg-warning">{{ req.status_name }}</span>
-                                {% elif req.status == 'A' %}<span class="badge bg-success">{{ req.status_name }}</span>
-                                {% else %}<span class="badge bg-danger">{{ req.status_name }}</span>{% endif %}
-                            </td>
-                        </tr>
-                        {% endfor %}
+                    {% for req in recent_requests %}
+                    <tr>
+                        <td>{{ req.leave_type_name }}</td>
+                        <td>{{ req.from_date_j }}</td>
+                        <td>{{ req.to_date_j }}</td>
+                        <td>
+                            {% if req.status == 'P' %}<span class="badge bg-warning">{{ req.status_name }}</span>
+                            {% elif req.status == 'A' %}<span class="badge bg-success">{{ req.status_name }}</span>
+                            {% else %}<span class="badge bg-danger">{{ req.status_name }}</span>{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
                     </tbody>
                 </table>
                 {% else %}
@@ -239,7 +259,8 @@
                 {% endif %}
             </div>
         </div>
-    </div></div>
+    </div>
+</div>
 <!-- 🆕 جزئیات قرارداد -->
 {% if contract_info %}
 <div class="row mt-4">
@@ -323,86 +344,194 @@
     </div>
 </div>
 {% endif %}
-<!-- 🆕 مودال مرخصی استفاده نشده -->
+<!-- ============================================ -->
+<!-- 🏖️ مودال انتقال مرخصی سال قبل (ساده‌شده)   -->
+<!-- ============================================ -->
 {% if show_carry_forward_modal %}
-<div class="modal fade" id="carryForwardModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header bg-warning">
-                <h5 class="modal-title">
-                    <i class="bi bi-calendar-check"></i> مرخصی استفاده نشده
-                </h5>
+<div class="modal fade rtl-text" id="carryForwardModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1"
+     aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content shadow-lg border-0" style="border-radius: 16px; overflow: hidden;">
+
+            <!-- هدر ساده -->
+            <div class="modal-header text-white py-3"
+                 style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                <h6 class="modal-title fw-bold mb-0">
+                    <i class="bi bi-hourglass-split me-2"></i>
+                    تعیین تکلیف مرخصی سال {{ carry_forward_year }}
+                </h6>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body">
-                <div class="alert alert-info">
-                    <i class="bi bi-info-circle"></i>
-                    شما <strong>
-                        {% if unused_leave.AL %}{{ unused_leave.AL }} روز مرخصی استحقاقی{% endif %}
-                        {% if unused_leave.AL and unused_leave.SL %} و {% endif %}
-                        {% if unused_leave.SL %}{{ unused_leave.SL }} روز مرخصی استعلاجی{% endif %}
-                    </strong> استفاده نشده از سال <strong>{{ carry_forward_year }}</strong> دارید.
+
+            <div class="modal-body p-4">
+
+                <!-- ۱. خلاصه مانده مرخصی (یک خط) -->
+                <div class="alert alert-light border mb-3 py-2 d-flex align-items-center justify-content-between">
+                    <span class="small fw-semibold text-muted">
+                        <i class="bi bi-wallet2 text-primary me-1"></i>
+                        مانده مرخصی:
+                    </span>
+                    <div>
+                        {% if unused_leave.AL %}
+                        <span class="badge bg-primary">{{ unused_leave.AL }} روز استحقاقی</span>
+                        {% endif %}
+                        {% if unused_leave.SL %}
+                        <span class="badge bg-info">{{ unused_leave.SL }} روز استعلاجی</span>
+                        {% endif %}
+                    </div>
                 </div>
 
-                <!-- 🆕 نمایش سقف انتقال -->
-                {% if carry_forward_limit is defined %}
-                <div class="alert alert-secondary">
-                    <i class="bi bi-speedometer2"></i>
-                    <strong>سقف ذخیره/بازخرید شما:</strong>
-                    {% if carry_forward_limit.max_days > 0 %}
-                        {{ carry_forward_limit.max_days }} روز
-                        {% if not carry_forward_limit.full_year %}
-                        <small class="text-muted">
-                            (به نسبت {{ carry_forward_limit.worked_days }} روز کارکرد از {{ carry_forward_limit.year_days }} روز)
-                        </small>
+                <!-- ۲. خلاصه وضعیت قرارداد (یک خط) -->
+                {% if contract_analysis %}
+                <div class="alert alert-light border mb-3 py-2 d-flex align-items-center justify-content-between">
+                    <span class="small fw-semibold text-muted">
+                        <i class="bi bi-file-earmark-text text-primary me-1"></i>
+                        وضعیت سال {{ carry_forward_year }}:
+                    </span>
+                    <div>
+                        {% if contract_analysis.assumed_full_year is defined and contract_analysis.assumed_full_year %}
+                        <span class="badge bg-info">کل سال (بدون قرارداد)</span>
+                        {% elif contract_analysis.contracts_count > 0 %}
+                        <span class="badge bg-secondary">{{ contract_analysis.contracts_count }} قرارداد</span>
+                        <span class="badge bg-light text-dark border">{{ contract_analysis.total_days }} روز کارکرد</span>
+                        {% else %}
+                        <span class="badge bg-danger">بدون سابقه کارکرد</span>
                         {% endif %}
-                    {% else %}
-                        ۰ روز (نوع قرارداد اجازه نمی‌دهد)
-                    {% endif %}
+                    </div>
                 </div>
                 {% endif %}
 
-                <p>
-                    آیا قصد <strong>بازخرید</strong> آن را دارید یا می‌خواهید در سال جدید <strong>استفاده</strong> کنید؟
-                </p>
-                <small class="text-muted">
-                    <i class="bi bi-exclamation-triangle"></i>
-                    در صورت درخواست بازخرید، مدیر باید آن را تایید کند. مازاد بر سقف ذخیره، سوخت می‌شود.
-                </small>
-            </div>
-            <div class="modal-footer">
-                {% for leave_type in unused_leave.keys() %}
-                <form method="post" action="/carry-forward/choose" class="d-inline">
-                    <input type="hidden" name="choice" value="USE">
-                    <input type="hidden" name="leave_type" value="{{ leave_type }}">
-                    <button type="submit" class="btn btn-success">
-                        🏖️ قصد استفاده دارم
-                    </button>
-                </form>
-                <form method="post" action="/carry-forward/choose" class="d-inline">
-                    <input type="hidden" name="choice" value="CASH">
-                    <input type="hidden" name="leave_type" value="{{ leave_type }}">
-                    <button type="submit" class="btn btn-primary">
-                        💰 درخواست بازخرید
-                    </button>
-                </form>
-                {% endfor %}
+                <!-- ۳. سقف مجاز (یک خط) -->
+                {% if carry_forward_limit and carry_forward_limit.max_days > 0 %}
+                <div class="alert alert-light border mb-3 py-2 d-flex align-items-center justify-content-between">
+                    <span class="small fw-semibold text-muted">
+                        <i class="bi bi-shield-check text-success me-1"></i>
+                        سقف مجاز:
+                    </span>
+                    <span class="badge bg-success fs-6">{{ carry_forward_limit.max_days }} روز</span>
+                </div>
+                {% elif carry_forward_limit %}
+                <div class="alert alert-warning py-2 mb-3 small">
+                    <i class="bi bi-exclamation-triangle me-1"></i>
+                    نوع قرارداد شما اجازه ذخیره/بازخرید مرخصی را نمی‌دهد.
+                </div>
+                {% endif %}
 
-                <!-- دکمه بعداً -->
-                <form method="post" action="/carry-forward/postpone" class="d-inline">
-                    <button type="submit" class="btn btn-outline-secondary">
-                        ⏰ بعداً تصمیم می‌گیرم
-                    </button>
-                </form>
+                <!-- ۴. قوانین (ساده و کوتاه) -->
+                <div class="card border-0 bg-light mb-3">
+                    <div class="card-body py-3">
+                        <div class="d-flex flex-column gap-2 small">
+                            <div class="d-flex align-items-start gap-2">
+                                <i class="bi bi-check-circle-fill text-success mt-1"></i>
+                                <span>
+                                    <strong>قصد استفاده:</strong>
+                                    مرخصی به سال {{ carry_forward_year + 1 }} منتقل می‌شود.
+                                </span>
+                            </div>
+                            <div class="d-flex align-items-start gap-2">
+                                <i class="bi bi-cash-coin text-warning mt-1"></i>
+                                <span>
+                                    <strong>درخواست بازخرید:</strong>
+                                    درخواست به مدیر ارسال می‌شود و پس از تایید، معادل ریالی پرداخت می‌شود.
+                                </span>
+                            </div>
+                            <!-- 🆕 توضیح رد بازخرید -->
+                            <div class="d-flex align-items-start gap-2">
+                                <i class="bi bi-arrow-return-left text-info mt-1"></i>
+                                <span>
+                                    <strong class="text-info">در صورت رد بازخرید توسط مدیر،</strong>
+                                    مرخصی به‌صورت خودکار به سال بعد منتقل می‌شود.
+                                </span>
+                            </div>
+                            <div class="d-flex align-items-start gap-2">
+                                <i class="bi bi-exclamation-circle text-danger mt-1"></i>
+                                <span>
+                                    مازاد بر سقف مجاز <strong>سوخت می‌شود</strong>.
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ============================================ -->
+                <!-- 🎯 دکمه‌های انتخاب - طراحی یکدست و زیبا    -->
+                <!-- ============================================ -->
+                <div class="mt-4">
+                    <h6 class="text-muted mb-3 fw-bold">
+                        <i class="bi bi-hand-index-thumb me-1"></i>
+                        انتخاب کنید:
+                    </h6>
+
+                    {% for leave_type in unused_leave.keys() %}
+                    <div class="row g-2 mb-2">
+                        <!-- دکمه قصد استفاده -->
+                        <div class="col-6">
+                            <form method="post" action="/carry-forward/choose" class="d-grid h-100">
+                                <input type="hidden" name="choice" value="USE">
+                                <input type="hidden" name="leave_type" value="{{ leave_type }}">
+                                <button type="submit"
+                                        class="btn btn-success w-100 h-100 py-3 d-flex flex-column align-items-center justify-content-center gap-1 shadow-sm"
+                                        style="border-radius: 12px; transition: all 0.2s;"
+                                        onmouseover="this.style.transform='translateY(-2px)'"
+                                        onmouseout="this.style.transform='translateY(0)'">
+                                    <i class="bi bi-calendar-check fs-4"></i>
+                                    <span class="fw-bold">قصد استفاده</span>
+                                    <span class="badge bg-light text-success small">
+                        {{ unused_leave[leave_type] }} روز
+                        {% if leave_type == 'AL' %}استحقاقی{% else %}استعلاجی{% endif %}
+                    </span>
+                                </button>
+                            </form>
+                        </div>
+
+                        <!-- دکمه درخواست بازخرید -->
+                        <div class="col-6">
+                            <form method="post" action="/carry-forward/choose" class="d-grid h-100">
+                                <input type="hidden" name="choice" value="CASH">
+                                <input type="hidden" name="leave_type" value="{{ leave_type }}">
+                                <button type="submit"
+                                        class="btn btn-warning w-100 h-100 py-3 d-flex flex-column align-items-center justify-content-center gap-1 shadow-sm"
+                                        style="border-radius: 12px; transition: all 0.2s;"
+                                        onmouseover="this.style.transform='translateY(-2px)'"
+                                        onmouseout="this.style.transform='translateY(0)'">
+                                    <i class="bi bi-cash-coin fs-4"></i>
+                                    <span class="fw-bold">درخواست بازخرید</span>
+                                    <span class="badge bg-light text-warning small">
+                        {{ unused_leave[leave_type] }} روز
+                        {% if leave_type == 'AL' %}استحقاقی{% else %}استعلاجی{% endif %}
+                    </span>
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                    {% endfor %}
+
+                    <!-- دکمه یادآوری (لینک کوچک و کم‌رنگ) -->
+                    <div class="text-center mt-3 pt-2 border-top">
+                        <form method="post" action="/carry-forward/postpone">
+                            <button type="submit"
+                                    class="btn btn-link text-muted text-decoration-none small">
+                                <i class="bi bi-clock-history me-1"></i>
+                                بعداً تصمیم می‌گیرم (یادآوری ۷ روز دیگر)
+                            </button>
+                        </form>
+                    </div>
+                </div>
             </div>
+
         </div>
     </div>
 </div>
 
+<!-- نمایش خودکار مودال -->
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    var modal = new bootstrap.Modal(document.getElementById('carryForwardModal'));
-    modal.show();
-});
+    document.addEventListener('DOMContentLoaded', function() {
+        var carryForwardModal = new bootstrap.Modal(
+            document.getElementById('carryForwardModal'),
+            { backdrop: 'static', keyboard: false }
+        );
+        carryForwardModal.show();
+    });
 </script>
 {% endif %}
 {% endblock %}

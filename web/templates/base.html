@@ -343,8 +343,23 @@
         body {
             background: var(--bg-body);
             color: var(--text-primary);
+            direction: rtl;
+            text-align: right;
             transition: background 0.3s ease, color 0.3s ease;
             min-height: 100vh;
+        }
+
+        /* Keep mixed Persian text, numbers, and punctuation in the correct order. */
+        .rtl-text {
+            direction: rtl;
+            unicode-bidi: plaintext;
+            text-align: right;
+        }
+
+        .ltr-text {
+            direction: ltr;
+            unicode-bidi: isolate;
+            text-align: left;
         }
 
         /* ============================================ */

@@ -321,3 +321,166 @@ def remove_leave_for_contract(db: Session, contract: Contract) -> dict:
 
     db.commit()
     return removed
+
+
+# ============================================
+# 🆕 منطق مصرف مرخصی - استاندارد صنعتی (FIFO معکوس)
+# ============================================
+
+LEAVE_TYPE_NAMES = {
+    'AL': 'استحقاقی',
+    'SL': 'استعلاجی',
+    'RL': 'تشویقی',
+    'UL': 'بدون حقوق',
+    'CW': 'ذخیره سال قبل'
+}
+
+
+def get_available_leave(db: Session, user_id: str, year: int, leave_type: str = 'AL') -> dict:
+    """
+    🆕 محاسبه مرخصی قابل استفاده (نمایش یکپارچه)
+    برای نوع استحقاقی: AL + CW (انتقالی)
+    برای سایر انواع: فقط خود نوع
+
+    Returns:
+        dict: {'total': مقدار کل, 'breakdown': {نوع: مقدار}}
+    """
+    result = {'total': 0, 'breakdown': {}}
+
+    # مرخصی اصلی
+    main_balance = db.query(LeaveBalance).filter(
+        and_(
+            LeaveBalance.user_id == user_id,
+            LeaveBalance.year == year,
+            LeaveBalance.leave_type == leave_type
+        )
+    ).first()
+
+    if main_balance and main_balance.balance > 0:
+        result['breakdown'][leave_type] = main_balance.balance
+        result['total'] += main_balance.balance
+
+    # 🆕 برای استحقاقی، انتقالی را هم اضافه کن
+    if leave_type == 'AL':
+        cw_balance = db.query(LeaveBalance).filter(
+            and_(
+                LeaveBalance.user_id == user_id,
+                LeaveBalance.year == year,
+                LeaveBalance.leave_type == 'CW'
+            )
+        ).first()
+
+        if cw_balance and cw_balance.balance > 0:
+            result['breakdown']['CW'] = cw_balance.balance
+            result['total'] += cw_balance.balance
+
+    return result
+
+
+def consume_leave(
+        db: Session,
+        user_id: str,
+        year: int,
+        days_needed: float,
+        leave_type: str = 'AL'
+) -> dict:
+    """
+    🆕 مصرف مرخصی با منطق استاندارد صنعتی:
+
+    اولویت مصرف:
+    1. اول از CW (انتقالی) - چون زودتر منقضی می‌شود
+    2. سپس از AL (استحقاقی)
+
+    ⚠️ فقط برای نوع استحقاقی (AL) از انتقالی کم می‌شود.
+    برای سایر انواع (استعلاجی، تشویقی و...) مستقیماً از خودش کم می‌شود.
+
+    Args:
+        db: Session دیتابیس
+        user_id: کد کاربر
+        year: سال شمسی
+        days_needed: تعداد روز مورد نیاز
+        leave_type: نوع مرخصی (پیش‌فرض: استحقاقی)
+
+    Returns:
+        dict: {
+            'success': bool,
+            'consumed': float,
+            'remaining': float,
+            'consumed_from': dict  # {'CW': مقدار, 'AL': مقدار}
+        }
+    """
+    remaining = days_needed
+    consumed_from = {}
+
+    # ============================================
+    # مرحله ۱: مصرف از انتقالی (فقط برای مرخصی استحقاقی)
+    # ============================================
+    if leave_type == 'AL':
+        cw = db.query(LeaveBalance).filter(
+            and_(
+                LeaveBalance.user_id == user_id,
+                LeaveBalance.year == year,
+                LeaveBalance.leave_type == 'CW'
+            )
+        ).first()
+
+        if cw and cw.balance > 0:
+            use_from_cw = min(remaining, cw.balance)
+            cw.balance -= use_from_cw
+            remaining -= use_from_cw
+            consumed_from['CW'] = use_from_cw
+
+            tx = LeaveTransaction(
+                user_id=user_id,
+                year=year,
+                leave_type='CW',
+                amount=use_from_cw,
+                transaction_type='USE',
+                description=f"مصرف مرخصی انتقالی از سال قبل (اولویت اول)"
+            )
+            db.add(tx)
+            logger.info(
+                f"📤 Consumed {use_from_cw} days from CW for user {user_id}, "
+                f"year {year}. Remaining CW: {cw.balance}"
+            )
+
+    # ============================================
+    # مرحله ۲: مصرف از مرخصی اصلی
+    # ============================================
+    if remaining > 0:
+        main = db.query(LeaveBalance).filter(
+            and_(
+                LeaveBalance.user_id == user_id,
+                LeaveBalance.year == year,
+                LeaveBalance.leave_type == leave_type
+            )
+        ).first()
+
+        if main and main.balance > 0:
+            use_from_main = min(remaining, main.balance)
+            main.balance -= use_from_main
+            remaining -= use_from_main
+            consumed_from[leave_type] = use_from_main
+
+            tx = LeaveTransaction(
+                user_id=user_id,
+                year=year,
+                leave_type=leave_type,
+                amount=use_from_main,
+                transaction_type='USE',
+                description=f"مصرف مرخصی {LEAVE_TYPE_NAMES.get(leave_type, leave_type)}"
+            )
+            db.add(tx)
+            logger.info(
+                f"📤 Consumed {use_from_main} days from {leave_type} for user {user_id}, "
+                f"year {year}. Remaining {leave_type}: {main.balance}"
+            )
+
+    db.commit()
+
+    return {
+        'success': remaining <= 0,
+        'consumed': days_needed - remaining,
+        'remaining': max(0, remaining),
+        'consumed_from': consumed_from,
+    }

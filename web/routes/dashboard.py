@@ -7,7 +7,6 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, func
 import jdatetime
-
 from web.dependencies import get_db, check_password_change
 from models.user import User
 from models.employee import Employee
@@ -17,10 +16,12 @@ from models.attendance import Attendance
 from models.daily_status import DailyStatus
 from models.contract import Contract
 
-# 🆕 سرویس و مدل انتقال مرخصی
+# 🆕 همه imports مربوط به انتقال مرخصی در یک جا
 from web.services.carry_forward_service import (
     get_unused_leave_from_previous_year,
-    has_carry_forward_request
+    has_carry_forward_request,
+    calculate_carry_forward_limit,
+    analyze_yearly_contracts,
 )
 from models.leave_carry_forward_request import LeaveCarryForwardRequest
 
@@ -35,7 +36,6 @@ LEAVE_TYPE_NAMES = {
     'UL': 'بدون حقوق',
     'CW': 'ذخیره سال قبل'
 }
-
 STATUS_NAMES = {
     'P': 'در انتظار',
     'A': 'تایید شده',
@@ -74,6 +74,12 @@ async def dashboard(
         and_(LeaveBalance.user_id == user.user_id, LeaveBalance.year == today_j.year)
     ).all()
     balances_dict = {lb.leave_type: lb.balance for lb in leave_balances}
+
+    # 🆕 محاسبه مرخصی قابل استفاده (نمایش یکپارچه: استحقاقی + انتقالی)
+    from web.services.leave_service import get_available_leave
+    al_available = get_available_leave(db, user.user_id, today_j.year, 'AL')
+    total_al_available = al_available['total']
+    cw_days = al_available['breakdown'].get('CW', 0)
 
     # ============================================
     # 🆕 کارت یکپارچه درخواست‌های در انتظار
@@ -128,16 +134,6 @@ async def dashboard(
             'status_name': 'در انتظار تایید',
             'detail_url': f"/carry-forward/requests/{cf.id}",
         })
-
-    # 🆕 آینده: درخواست‌های مساعده
-    # pending_advance_requests = db.query(AdvanceRequest).filter(...).all()
-    # for adv in pending_advance_requests:
-    #     pending_items.append({
-    #         'type': 'advance',
-    #         'type_name': 'مساعده',
-    #         'icon': '💵',
-    #         ...
-    #     })
 
     # مرتب‌سازی بر اساس تاریخ ثبت (جدیدترین اول)
     pending_items.sort(key=lambda x: x['created_at'] or datetime.min, reverse=True)
@@ -208,7 +204,7 @@ async def dashboard(
 
         contract_info = {
             'id': active_contract.id,
-            'contract_type': active_contract.contract_type_name,
+            'contract_type': active_contract.contract_type_name if hasattr(active_contract, 'contract_type_name') else '-',
             'start_date_j': j_start.strftime('%Y/%m/%d'),
             'end_date_j': j_end.strftime('%Y/%m/%d') if j_end else 'نامحدود',
             'days_remaining': days_remaining,
@@ -232,51 +228,30 @@ async def dashboard(
     else:
         last_login_display = "اولین ورود شما"
 
-    # 🆕 بررسی مرخصی استفاده نشده از سال قبل
+    # ============================================
+    # 🆕 منطق یکپارچه انتقال مرخصی (بدون کد تکراری)
+    # ============================================
     unused_leave = get_unused_leave_from_previous_year(db, user.user_id)
+    carry_forward_year = today_j.year - 1  # همیشه سال قبل
     show_carry_forward_modal = False
-    carry_forward_year = None
-    has_pending_carry_forward = False  # 🆕 متغیر جدید
-
-    if unused_leave:
-        current_year_j = jdatetime.date.today().year
-        carry_forward_year = current_year_j - 1
-
-        # بررسی وجود درخواست قبلی (جلوگیری از نمایش مجدد مودال)
-        if not has_carry_forward_request(db, user.user_id, carry_forward_year):
-            # 🆕 مرخصی دارد و هنوز تعیین تکلیف نشده
-            has_pending_carry_forward = True
-
-            # بررسی اینکه کاربر "بعداً" را نزده باشد
-            postponed_until = request.session.get('carry_forward_postponed_until')
-            should_show = True
-
-            if postponed_until:
-                try:
-                    postponed_date = datetime.fromisoformat(postponed_until)
-                    if datetime.now() < postponed_date:
-                        # هنوز در دوره تعویق است
-                        should_show = False
-                except Exception:
-                    should_show = True
-
-            if should_show:
-                show_carry_forward_modal = True
-    # 🆕 محاسبه سقف انتقال برای نمایش در مودال
+    has_pending_carry_forward = False
     carry_forward_limit = None
-    if unused_leave:
-        current_year_j = jdatetime.date.today().year
-        carry_forward_year = current_year_j - 1
+    contract_analysis = None  # 🆕 تحلیل قراردادهای سال قبل
 
-        # 🆕 محاسبه سقف
-        from web.services.carry_forward_service import calculate_carry_forward_limit
+    if unused_leave:
+        # بررسی وجود درخواست قبلی (جلوگیری از نمایش مجدد مودال)
+        has_pending_carry_forward = not has_carry_forward_request(db, user.user_id, carry_forward_year)
+
+        # 🆕 محاسبه سقف بر اساس قراردادهای سال قبل (نه سال جاری)
         carry_forward_limit = calculate_carry_forward_limit(db, user.user_id, carry_forward_year)
 
-        if not has_carry_forward_request(db, user.user_id, carry_forward_year):
-            # بررسی دوره تعویق
+        # 🆕 تحلیل قراردادهای سال قبل برای نمایش در مودال
+        contract_analysis = analyze_yearly_contracts(db, user.user_id, carry_forward_year)
+
+        # بررسی نمایش مودال
+        if has_pending_carry_forward:
             postponed_until = request.session.get('carry_forward_postponed_until')
             should_show = True
-
             if postponed_until:
                 try:
                     postponed_date = datetime.fromisoformat(postponed_until)
@@ -287,7 +262,6 @@ async def dashboard(
 
             if should_show:
                 show_carry_forward_modal = True
-
 
     return templates.TemplateResponse(request, "dashboard.html", {
         "user": user,
@@ -304,12 +278,13 @@ async def dashboard(
         "contract_info": contract_info,
         "is_admin": user.is_admin,
         "last_login_display": last_login_display,
+        # 🆕 متغیرهای انتقال مرخصی
         "unused_leave": unused_leave,
-        "show_carry_forward_modal": show_carry_forward_modal,
         "carry_forward_year": carry_forward_year,
-        "has_pending_carry_forward": has_pending_carry_forward,  # 🆕=
-        "unused_leave": unused_leave,
         "show_carry_forward_modal": show_carry_forward_modal,
-        "carry_forward_year": carry_forward_year,
-        "carry_forward_limit": carry_forward_limit,  # 🆕
+        "has_pending_carry_forward": has_pending_carry_forward,
+        "carry_forward_limit": carry_forward_limit,
+        "contract_analysis": contract_analysis,  # 🆕 برای نمایش در مودال
+        "total_al_available": total_al_available,
+        "cw_days": cw_days,
     })
