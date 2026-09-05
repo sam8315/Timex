@@ -8,7 +8,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_
 import jdatetime
-from typing import Optional
+from typing import List, Optional
 
 from web.dependencies import get_db, require_admin, require_super_admin
 from web.permissions import enforce_permission

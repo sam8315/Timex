@@ -826,6 +826,9 @@
             <a href="/education" class="sidebar-link {% if request.url.path == '/education' %}active{% endif %}">
                 <i class="bi bi-mortarboard"></i> تحصیلات
             </a>
+            <a href="/military" class="sidebar-link {% if request.url.path == '/military' %}active{% endif %}">
+                <i class="bi bi-shield-check"></i> نظام وظیفه
+            </a>
         </div>
 
         {% if is_admin %}
@@ -903,6 +906,9 @@
     {% endif %}
                 <a href="/admin/education" class="sidebar-link {% if request.url.path == '/admin/education' %}active{% endif %}">
                     <i class="bi bi-mortarboard"></i> مدارک تحصیلی
+                </a>
+                <a href="/admin/military" class="sidebar-link {% if request.url.path == '/admin/military' %}active{% endif %}">
+                    <i class="bi bi-shield-check"></i> مدیریت نظام وظیفه
                 </a>
                 {% if user and user.role == 'super_admin' %}
                 <a href="/admin/policies" class="sidebar-link {% if '/admin/policies' in request.url.path %}active{% endif %}">

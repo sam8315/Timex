@@ -1,0 +1,301 @@
+{% extends "base.html" %}
+{% block title %}نظام وظیفه من{% endblock %}
+
+{% block topbar_title %}نظام وظیفه من{% endblock %}
+
+{% block extra_css %}
+<style>
+    .stat-card {
+        border: none;
+        border-radius: 12px;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        overflow: hidden;
+        position: relative;
+    }
+    .stat-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+    }
+
+    .military-hero {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border: none;
+        border-radius: 16px;
+        color: white;
+        box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+        position: relative;
+        overflow: hidden;
+    }
+    .military-hero::before {
+        content: '🎖️';
+        position: absolute;
+        top: -20px;
+        left: -20px;
+        font-size: 120px;
+        opacity: 0.1;
+        transform: rotate(-15deg);
+    }
+    .military-hero .info-label {
+        color: rgba(255,255,255,0.85);
+        font-size: 0.85rem;
+        margin-bottom: 0.25rem;
+    }
+    .military-hero .info-value {
+        color: white;
+        font-size: 1.1rem;
+        font-weight: 600;
+    }
+
+    .progress-bar-container {
+        width: 100%;
+        background: rgba(255,255,255,0.2);
+        border-radius: 10px;
+        height: 8px;
+        margin-top: 8px;
+    }
+    .progress-bar-fill {
+        height: 100%;
+        border-radius: 10px;
+        transition: width 0.6s ease;
+    }
+
+    .days-remaining-card {
+        background: rgba(255,255,255,0.15);
+        border-radius: 12px;
+        padding: 15px;
+        text-align: center;
+    }
+    .days-remaining-number {
+        font-size: 2.5rem;
+        font-weight: 700;
+        line-height: 1;
+    }
+    .days-remaining-label {
+        font-size: 0.85rem;
+        opacity: 0.85;
+        margin-top: 4px;
+    }
+
+    .deduction-card {
+        background: rgba(255,255,255,0.1);
+        border-radius: 12px;
+        padding: 15px;
+    }
+    .deduction-bar {
+        height: 12px;
+        background: rgba(255,255,255,0.2);
+        border-radius: 6px;
+        overflow: hidden;
+        margin-top: 8px;
+    }
+    .deduction-bar-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #ff6b6b, #ee5a24);
+        border-radius: 6px;
+        transition: width 0.6s ease;
+    }
+
+    .no-record-card {
+        border: none;
+        border-radius: 16px;
+        overflow: hidden;
+    }
+    .no-record-card .card-body {
+        text-align: center;
+        padding: 60px 20px;
+    }
+    .no-record-card .icon {
+        font-size: 4rem;
+        opacity: 0.3;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{% if not record_data %}
+<!-- بدون سابقه -->
+<div class="card no-record-card">
+    <div class="card-body">
+        <div class="icon">🎖️</div>
+        <h4 class="mt-3">سابقه نظام وظیفه ثبت نشده</h4>
+        <p class="text-muted mt-2">
+            در صورتی که خدمت نظام وظیفه را گذرانده‌اید، از طریق پنل مدیریت سابقه شما ثبت خواهد شد.
+        </p>
+    </div>
+</div>
+
+{% else %}
+{% set r = record_data %}
+
+<!-- کارت وضعیت -->
+<div class="military-hero card mb-4">
+    <div class="card-body">
+        <div class="row align-items-center">
+            <div class="col-md-4">
+                <div class="info-label">وضعیت</div>
+                <div class="info-value" style="font-size: 1.5rem;">
+                    {{ r.record.status_icon }} {{ r.record.status_name }}
+                </div>
+                {% if r.record.service_type %}
+                <div class="info-label mt-2">
+                    <span class="badge bg-light text-dark me-1">🏗️ {{ r.record.service_type_name }}</span>
+                </div>
+                {% if r.record.service_duration_months %}
+                <div class="info-value mt-1" style="font-size: 0.9rem; opacity: 0.8;">
+                    مدت خدمت: {{ r.record.service_duration_months }} ماه
+                </div>
+                {% endif %}
+                {% endif %}
+                {% if r.record.exemption_type %}
+                <div class="info-label mt-2">
+                    <span class="badge bg-light text-dark me-1">🛡️ {{ r.record.exemption_type_name }}</span>
+                </div>
+                {% if r.record.exemption_reason %}
+                <div class="info-value mt-1" style="font-size: 0.9rem; opacity: 0.8;">
+                    {{ r.record.exemption_reason }}
+                </div>
+                {% endif %}
+                {% endif %}
+            </div>
+
+            {% if r.days_remaining is not none and r.record.status == 'in_progress' %}
+            <div class="col-md-4 text-center">
+                <div class="days-remaining-card">
+                    <div class="days-remaining-number">{{ r.days_remaining }}</div>
+                    <div class="days-remaining-label">روز باقیمانده</div>
+                </div>
+            </div>
+            {% endif %}
+
+            {% if r.progress_percent is not none and r.record.status == 'in_progress' %}
+            <div class="col-md-4 text-center">
+                <div style="position: relative; width: 100px; height: 100px; margin: 0 auto;">
+                    <svg width="100" height="100" style="transform: rotate(-90deg);">
+                        <circle cx="50" cy="50" r="42" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="8"/>
+                        <circle cx="50" cy="50" r="42" fill="none" stroke="white" stroke-width="8"
+                                stroke-dasharray="264"
+                                stroke-dashoffset="{{ 264 - (264 * r.progress_percent / 100) }}"
+                                stroke-linecap="round"/>
+                    </svg>
+                    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center;">
+                        <span style="font-size: 1.3rem; font-weight: 700;">{{ r.progress_percent }}%</span>
+                    </div>
+                </div>
+                <div style="font-size: 0.8rem; opacity: 0.8; margin-top: 4px;">پیشرفت خدمت</div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- اطلاعات زمانی -->
+<div class="row mb-4">
+    {% if r.start_j %}
+    <div class="col-md-4 mb-3">
+        <div class="card stat-card">
+            <div class="card-body">
+                <div class="info-label text-muted">📅 شروع خدمت</div>
+                <div class="info-value fs-5">{{ r.start_j }}</div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if r.expected_end_j %}
+    <div class="col-md-4 mb-3">
+        <div class="card stat-card">
+            <div class="card-body">
+                <div class="info-label text-muted">📅 پایان مورد انتظار</div>
+                <div class="info-value fs-5">{{ r.expected_end_j }}</div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if r.actual_end_j %}
+    <div class="col-md-4 mb-3">
+        <div class="card stat-card">
+            <div class="card-body">
+                <div class="info-label text-muted">📅 پایان واقعی</div>
+                <div class="info-value fs-5">{{ r.actual_end_j }}</div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if r.record.service_number %}
+    <div class="col-md-4 mb-3">
+        <div class="card stat-card">
+            <div class="card-body">
+                <div class="info-label text-muted">🔢 شماره خدمت</div>
+                <div class="info-value fs-5">{{ r.record.service_number }}</div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if r.record.service_type and r.record.service_duration_months %}
+    <div class="col-md-4 mb-3">
+        <div class="card stat-card">
+            <div class="card-body">
+                <div class="info-label text-muted">🏗️ نوع خدمت</div>
+                <div class="info-value fs-5">{{ r.record.service_type_name }}</div>
+                <div class="info-value mt-1" style="font-size: 0.9rem; color: #ffc107;">
+                    {{ r.record.service_duration_months }} ماه
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- کسر خدمت -->
+{% if r.record.total_deduction_days > 0 or r.record.remaining_deduction_days > 0 %}
+<div class="card mb-4">
+    <div class="card-header bg-white">
+        <h6 class="mb-0"><i class="bi bi-clock-history"></i> کسر خدمت</h6>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-4 text-center">
+                <div class="fs-4 fw-bold">{{ r.record.total_deduction_days }}</div>
+                <div class="text-muted small">کل روزها</div>
+            </div>
+            <div class="col-md-4 text-center">
+                <div class="fs-4 fw-bold text-warning">{{ r.record.used_deduction_days }}</div>
+                <div class="text-muted small">استفاده شده</div>
+            </div>
+            <div class="col-md-4 text-center">
+                <div class="fs-4 fw-bold {% if r.remaining_deduction_days > 0 %}text-success{% else %}text-danger{% endif %}">
+                    {{ r.remaining_deduction_days }}
+                </div>
+                <div class="text-muted small">باقیمانده</div>
+            </div>
+        </div>
+        {% if r.deduction_percent is not none %}
+        <div class="mt-3">
+            <div class="progress" style="height: 10px;">
+                <div class="progress-bar bg-warning" style="width: {{ r.deduction_percent }}%;" role="progressbar"></div>
+            </div>
+            <div class="text-muted small mt-1 text-center">
+                {{ r.deduction_percent }}% استفاده شده
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+{% if r.record.notes %}
+<div class="card">
+    <div class="card-body">
+        <h6><i class="bi bi-journal-text"></i> یادداشت</h6>
+        <p class="mb-0">{{ r.record.notes }}</p>
+    </div>
+</div>
+{% endif %}
+
+{% endif %}
+
+{% endblock %}

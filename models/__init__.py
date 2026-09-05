@@ -19,6 +19,7 @@ from models.bale_user import BaleUser
 from models.region import Region
 from models.policy import Policy, PolicyValue, PolicyAuditLog
 from models.employee_region import EmployeeRegion
+from models.military_service import MilitaryService
 
 __all__ = [
     'Base', 'User', 'Attendance',
@@ -26,5 +27,5 @@ __all__ = [
     'LeaveRequest', 'LeaveCarryForwardRequest', 'Holiday', 'DailyStatus',
     'EmployeePhone', 'Education', 'UserPermission', 'UserPermissionHistory', 'BaleUser',
     'Employee', 'Region', 'Policy', 'PolicyValue', 'PolicyAuditLog',
-    'EmployeeRegion'
+    'EmployeeRegion', 'MilitaryService',
 ]

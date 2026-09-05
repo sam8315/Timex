@@ -1,0 +1,457 @@
+{% extends "base.html" %}
+{% block title %}مدیریت نظام وظیفه | پنل مدیریت{% endblock %}
+
+{% block topbar_title %}مدیریت نظام وظیفه{% endblock %}
+
+{% block content %}
+
+<!-- پیام‌ها -->
+{% if request.query_params.get('success') %}
+<div class="alert alert-success alert-dismissible fade show">
+    <i class="bi bi-check-circle"></i> {{ request.query_params.get('success') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+{% if request.query_params.get('error') %}
+<div class="alert alert-danger alert-dismissible fade show">
+    <i class="bi bi-exclamation-triangle"></i> {{ request.query_params.get('error') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4><i class="bi bi-shield-check"></i> مدیریت نظام وظیفه</h4>
+    <a href="/admin/" class="btn btn-outline-primary btn-sm">
+        <i class="bi bi-arrow-right"></i> بازگشت به پنل مدیریت
+    </a>
+</div>
+
+<!-- فرم ثبت سابقه جدید -->
+<div class="card mb-4">
+    <div class="card-header bg-white">
+        <h6><i class="bi bi-plus-circle"></i> ثبت سابقه نظام وظیفه جدید</h6>
+    </div>
+    <div class="card-body">
+        <form method="post" action="/admin/military/add" class="row g-3 align-items-end">
+            <div class="col-md-2">
+                <label class="form-label">👤 کد پرسنلی <span class="text-danger">*</span></label>
+                <input type="text" name="user_id" class="form-control" placeholder="NN-1234" required>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">🎖️ وضعیت <span class="text-danger">*</span></label>
+                <select name="status" class="form-select" id="add_status" onchange="toggleExemptionFields()">
+                    {% for code, config in military_statuses.items() %}
+                    <option value="{{ code }}">{{ config.icon }} {{ config.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">🏗️ نوع خدمت</label>
+                <select name="service_type" class="form-select" id="add_service_type" onchange="autoCalcEndDate()">
+                    <option value="">انتخاب...</option>
+                    {% for code, config in service_types.items() %}
+                    <option value="{{ code }}" data-months="{{ config.months }}">{{ config.name }} ({{ config.months }} ماه)</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2 exemption-field" style="display:none;">
+                <label class="form-label">🛡️ نوع معافیت</label>
+                <select name="exemption_type" class="form-select" id="add_exemption_type">
+                    {% for code, config in exemption_types.items() %}
+                    <option value="{{ code }}">{{ config.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">📅 شروع خدمت</label>
+                <input type="text" name="start_date_str" class="form-control" id="add_start_date" placeholder="1405/01/01" onchange="autoCalcEndDate()">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">📅 پایان مورد انتظار</label>
+                <input type="text" name="expected_end_date_str" class="form-control" id="add_expected_end" placeholder="محاسبه خودکار">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">📅 پایان واقعی</label>
+                <input type="text" name="actual_end_date_str" class="form-control" placeholder="1406/01/01">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">📊 کل روزهای کسر</label>
+                <input type="number" name="total_deduction_days" class="form-control" id="add_deduction" value="0" min="0" onchange="autoCalcEndDate()">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">📊 روزهای استفاده شده</label>
+                <input type="number" name="used_deduction_days" class="form-control" value="0" min="0">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">🔢 شماره خدمت</label>
+                <input type="text" name="service_number" class="form-control" placeholder="شماره خدمت">
+            </div>
+            <div class="col-md-3 exemption-field" style="display:none;">
+                <label class="form-label">📝 توضیحات معافیت</label>
+                <input type="text" name="exemption_reason" class="form-control" placeholder="دلیل معافیت">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">📝 یادداشت</label>
+                <input type="text" name="notes" class="form-control" placeholder="یادداشت">
+            </div>
+            <div class="col-md-1">
+                <button type="submit" class="btn btn-success w-100">
+                    <i class="bi bi-plus"></i> ثبت
+                </button>
+            </div>
+        </form>
+        <small class="text-muted d-block mt-2">
+            <i class="bi bi-info-circle"></i>
+            هر کاربر فقط یک سابقه نظام وظیفه می‌تواند داشته باشد |
+            <i class="bi bi-lightning-charge"></i>
+            پایان مورد انتظار با انتخاب نوع خدمت و شروع، خودکار محاسبه می‌شود
+        </small>
+    </div>
+</div>
+
+<!-- فیلترها -->
+<div class="card mb-4">
+    <div class="card-body py-2">
+        <form method="get" action="/admin/military" class="d-flex flex-wrap align-items-center gap-2">
+            <input type="text" name="search" class="form-control form-control-sm" style="width: 200px;"
+                   value="{{ search }}" placeholder="🔍 جستجو: نام یا کد پرسنلی">
+            <select name="status_filter" class="form-select form-select-sm" style="width: auto;">
+                <option value="">همه وضعیت‌ها</option>
+                {% for code, config in military_statuses.items() %}
+                <option value="{{ code }}" {% if status_filter == code %}selected{% endif %}>{{ config.icon }} {{ config.name }}</option>
+                {% endfor %}
+            </select>
+            <select name="service_type_filter" class="form-select form-select-sm" style="width: auto;">
+                <option value="">همه انواع خدمت</option>
+                {% for code, config in service_types.items() %}
+                <option value="{{ code }}" {% if service_type_filter == code %}selected{% endif %}>{{ config.name }}</option>
+                {% endfor %}
+            </select>
+            <select name="exemption_filter" class="form-select form-select-sm" style="width: auto;">
+                <option value="">همه معافیت‌ها</option>
+                {% for code, config in exemption_types.items() %}
+                <option value="{{ code }}" {% if exemption_filter == code %}selected{% endif %}>{{ config.name }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit" class="btn btn-primary btn-sm">
+                <i class="bi bi-search"></i> اعمال
+            </button>
+            <a href="/admin/military?show_all=1" class="btn btn-success btn-sm {% if show_all %}disabled{% endif %}">
+                <i class="bi bi-list"></i> نمایش همه
+            </a>
+            {% if has_filter %}
+            <a href="/admin/military" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-x-circle"></i> پاک کردن
+            </a>
+            {% endif %}
+        </form>
+    </div>
+</div>
+
+<!-- جدول -->
+{% if not has_filter %}
+<div class="card">
+    <div class="card-body text-center py-5">
+        <i class="bi bi-shield-check display-4 text-muted"></i>
+        <h5 class="mt-3 text-muted">برای مشاهده سوابق، جستجو یا فیلتر اعمال کنید</h5>
+        <a href="/admin/military?show_all=1" class="btn btn-success mt-2">
+            <i class="bi bi-list"></i> نمایش همه سوابق
+        </a>
+    </div>
+</div>
+
+{% elif total_count == 0 %}
+<div class="card">
+    <div class="card-body text-center py-5">
+        <i class="bi bi-emoji-frown display-4 text-muted"></i>
+        <h5 class="mt-3 text-muted">هیچ سابقه‌ای یافت نشد</h5>
+    </div>
+</div>
+
+{% else %}
+<div class="card">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h6 class="mb-0"><i class="bi bi-list-ul"></i> سوابق نظام وظیفه</h6>
+        <span class="badge bg-primary fs-6">{{ total_count }} مورد</span>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>ردیف</th>
+                        <th>کد پرسنلی</th>
+                        <th>نام</th>
+                        <th class="text-center">وضعیت</th>
+                        <th class="text-center">نوع خدمت</th>
+                        <th class="text-center">نوع معافیت</th>
+                        <th>شروع</th>
+                        <th>پایان مورد انتظار</th>
+                        <th>پایان واقعی</th>
+                        <th class="text-center">کسر خدمت (کل)</th>
+                        <th class="text-center">کسر خدمت (استفاده)</th>
+                        <th class="text-center">باقیمانده</th>
+                        <th class="text-center">شماره خدمت</th>
+                        <th class="text-center">عملیات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in records %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td>{{ item.record.user_id }}</td>
+                        <td>{{ item.full_name }}</td>
+                        <td class="text-center">
+                            <span class="badge bg-{{ item.record.status_color }}">
+                                {{ item.record.status_icon }} {{ item.record.status_name }}
+                            </span>
+                        </td>
+                        <td class="text-center">
+                            {% if item.record.service_type %}
+                            <span class="badge bg-primary">{{ item.record.service_type_name }}</span>
+                            {% else %}
+                            <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            {% if item.record.exemption_type %}
+                            <span class="badge bg-info">{{ item.record.exemption_type_name }}</span>
+                            {% else %}
+                            <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ item.start_j }}</td>
+                        <td>{{ item.expected_end_j }}</td>
+                        <td>{{ item.actual_end_j }}</td>
+                        <td class="text-center">
+                            <span class="badge bg-secondary">{{ item.record.total_deduction_days }} روز</span>
+                        </td>
+                        <td class="text-center">
+                            <span class="badge bg-warning text-dark">{{ item.record.used_deduction_days }} روز</span>
+                        </td>
+                        <td class="text-center">
+                            {% set remaining = item.record.total_deduction_days - item.record.used_deduction_days %}
+                            {% if remaining > 0 %}
+                            <span class="badge bg-success">{{ remaining }} روز</span>
+                            {% else %}
+                            <span class="badge bg-danger">۰ روز</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            {{ item.record.service_number or '-' }}
+                        </td>
+                        <td class="text-center">
+                            <div class="btn-group btn-group-sm">
+                                <button type="button" class="btn btn-outline-warning"
+                                        data-bs-toggle="modal" data-bs-target="#editModal{{ item.record.id }}">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <form method="post" action="/admin/military/{{ item.record.id }}/delete"
+                                      class="d-inline"
+                                      onsubmit="return confirm('آیا مطمئن هستید؟');">
+                                    <button type="submit" class="btn btn-outline-danger">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+
+                    <!-- Modal ویرایش -->
+                    <div class="modal fade" id="editModal{{ item.record.id }}" tabindex="-1">
+                        <div class="modal-dialog modal-lg">
+                            <div class="modal-content">
+                                <form method="post" action="/admin/military/{{ item.record.id }}/edit">
+                                    <div class="modal-header">
+                                        <h5 class="modal-title">✏️ ویرایش سابقه نظام وظیفه - {{ item.full_name }}</h5>
+                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <div class="row g-3">
+                                            <div class="col-md-4">
+                                                <label class="form-label">🎖️ وضعیت</label>
+                                                <select name="status" class="form-select edit-status-select">
+                                                    {% for code, config in military_statuses.items() %}
+                                                    <option value="{{ code }}" {% if item.record.status == code %}selected{% endif %}>
+                                                        {{ config.icon }} {{ config.name }}
+                                                    </option>
+                                                    {% endfor %}
+                                                </select>
+                                            </div>
+                                            <div class="col-md-4">
+                                                <label class="form-label">🏗️ نوع خدمت</label>
+                                                <select name="service_type" class="form-select edit-service-type-select">
+                                                    <option value="">بدون نوع خدمت</option>
+                                                    {% for code, config in service_types.items() %}
+                                                    <option value="{{ code }}" {% if item.record.service_type == code %}selected{% endif %}>
+                                                        {{ config.name }} ({{ config.months }} ماه)
+                                                    </option>
+                                                    {% endfor %}
+                                                </select>
+                                            </div>
+                                            <div class="col-md-4 exemption-edit" style="display: {% if item.record.status == 'exempted' %}block{% else %}none{% endif %};">
+                                                <label class="form-label">🛡️ نوع معافیت</label>
+                                                <select name="exemption_type" class="form-select">
+                                                    <option value="">بدون معافیت</option>
+                                                    {% for code, config in exemption_types.items() %}
+                                                    <option value="{{ code }}" {% if item.record.exemption_type == code %}selected{% endif %}>
+                                                        {{ config.name }}
+                                                    </option>
+                                                    {% endfor %}
+                                                </select>
+                                            </div>
+                                            <div class="col-md-4">
+                                                <label class="form-label">🔢 شماره خدمت</label>
+                                                <input type="text" name="service_number" class="form-control"
+                                                       value="{{ item.record.service_number or '' }}">
+                                            </div>
+                                            <div class="col-md-4">
+                                                <label class="form-label">📅 شروع خدمت</label>
+                                                <input type="text" name="start_date_str" class="form-control edit-calc-trigger"
+                                                       value="{{ item.start_j if item.start_j != '-' else '' }}"
+                                                       placeholder="1405/01/01">
+                                            </div>
+                                            <div class="col-md-4">
+                                                <label class="form-label">📅 پایان مورد انتظار</label>
+                                                <input type="text" name="expected_end_date_str" class="form-control edit-calc-trigger"
+                                                       value="{{ item.expected_end_j if item.expected_end_j != '-' else '' }}"
+                                                       placeholder="1406/01/01">
+                                            </div>
+                                            <div class="col-md-4">
+                                                <label class="form-label">📅 پایان واقعی</label>
+                                                <input type="text" name="actual_end_date_str" class="form-control"
+                                                       value="{{ item.actual_end_j if item.actual_end_j != '-' else '' }}"
+                                                       placeholder="1406/01/01">
+                                            </div>
+                                            <div class="col-md-4">
+                                                <label class="form-label">📊 کل روزهای کسر</label>
+                                                <input type="number" name="total_deduction_days" class="form-control edit-calc-trigger"
+                                                       value="{{ item.record.total_deduction_days }}" min="0">
+                                            </div>
+                                            <div class="col-md-4">
+                                                <label class="form-label">📊 روزهای استفاده شده</label>
+                                                <input type="number" name="used_deduction_days" class="form-control"
+                                                       value="{{ item.record.used_deduction_days }}" min="0">
+                                            </div>
+                                            <div class="col-md-4 exemption-reason" style="display: {% if item.record.status == 'exempted' %}block{% else %}none{% endif %};">
+                                                <label class="form-label">📝 توضیحات معافیت</label>
+                                                <input type="text" name="exemption_reason" class="form-control"
+                                                       value="{{ item.record.exemption_reason or '' }}">
+                                            </div>
+                                            <div class="col-md-12">
+                                                <label class="form-label">📝 یادداشت</label>
+                                                <input type="text" name="notes" class="form-control"
+                                                       value="{{ item.record.notes or '' }}">
+                                            </div>
+                                        </div>
+                                        <div class="alert alert-info mt-3 mb-0">
+                                            <i class="bi bi-info-circle"></i>
+                                            روزهای کسر خدمت در قراردادهای نوع وظیفه استفاده می‌شود |
+                                            <i class="bi bi-lightning-charge"></i>
+                                            با تغییر نوع خدمت یا کسر خدمت، تاریخ پایان خودکار محاسبه می‌شود
+                                        </div>
+                                    </div>
+                                    <div class="modal-footer">
+                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
+                                        <button type="submit" class="btn btn-primary">ذخیره تغییرات</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// نمایش/مخفی کردن فیلدهای معافیت بر اساس وضعیت
+function toggleExemptionFields() {
+    const statusSelect = document.getElementById('add_status');
+    const selectedStatus = statusSelect ? statusSelect.value : '';
+
+    document.querySelectorAll('.exemption-field').forEach(el => {
+        el.style.display = selectedStatus === 'exempted' ? 'block' : 'none';
+    });
+}
+
+// محاسبه خودکار تاریخ پایان از روی نوع خدمت
+function autoCalcEndDate() {
+    const startDate = document.getElementById('add_start_date').value.trim();
+    const serviceType = document.getElementById('add_service_type').value;
+    const deduction = document.getElementById('add_deduction').value;
+    const expectedEnd = document.getElementById('add_expected_end');
+
+    if (!startDate || !serviceType) return;
+
+    fetch(`/admin/calculate_end_date?start_date_str=${encodeURIComponent(startDate)}&service_type=${serviceType}&deduction_days=${deduction}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.end_date) {
+                expectedEnd.value = data.end_date;
+                expectedEnd.style.backgroundColor = '#d4edda';
+                setTimeout(() => { expectedEnd.style.backgroundColor = ''; }, 1500);
+            }
+        })
+        .catch(() => {});
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    toggleExemptionFields();
+
+    // Watch status changes in edit modals
+    document.querySelectorAll('.edit-status-select').forEach(select => {
+        select.addEventListener('change', function() {
+            const modal = this.closest('.modal-content');
+            const isExempted = this.value === 'exempted';
+            modal.querySelectorAll('.exemption-edit, .exemption-reason').forEach(el => {
+                el.style.display = isExempted ? 'block' : 'none';
+            });
+        });
+    });
+
+    // Watch service type changes in edit modals — auto calculate end date
+    document.querySelectorAll('.edit-service-type-select').forEach(select => {
+        select.addEventListener('change', function() { calcModalEndDate(this); });
+    });
+
+    // Watch start date and deduction changes in edit modals
+    document.querySelectorAll('.edit-calc-trigger').forEach(el => {
+        el.addEventListener('change', function() { calcModalEndDate(this); });
+    });
+});
+
+function calcModalEndDate(el) {
+    const modal = el.closest('.modal-content');
+    if (!modal) return;
+
+    const serviceTypeSelect = modal.querySelector('.edit-service-type-select');
+    const startDateInput = modal.querySelector('[name="start_date_str"]');
+    const deductionInput = modal.querySelector('[name="total_deduction_days"]');
+    const expectedEndInput = modal.querySelector('[name="expected_end_date_str"]');
+
+    const serviceType = serviceTypeSelect ? serviceTypeSelect.value : '';
+    const startDate = startDateInput ? startDateInput.value.trim() : '';
+    const deduction = deductionInput ? deductionInput.value : 0;
+
+    if (!startDate || !serviceType) return;
+
+    fetch(`/admin/calculate_end_date?start_date_str=${encodeURIComponent(startDate)}&service_type=${serviceType}&deduction_days=${deduction}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.end_date && expectedEndInput) {
+                expectedEndInput.value = data.end_date;
+                expectedEndInput.style.backgroundColor = '#d4edda';
+                setTimeout(() => { if (expectedEndInput) expectedEndInput.style.backgroundColor = ''; }, 1500);
+            }
+        })
+        .catch(() => {});
+}
+</script>
+{% endblock %}
