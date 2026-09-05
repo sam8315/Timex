@@ -73,6 +73,43 @@ def test_admin_dashboard_banner_renders_last_run(client, make_user):
             TEST_STATUS_PATH.write_text(backup, encoding="utf-8")
 
 
+def test_admin_dashboard_banner_shows_error_details(client, make_user):
+    """The banner must render the captured error text when present."""
+    backup = None
+    if TEST_STATUS_PATH.exists():
+        backup = TEST_STATUS_PATH.read_text(encoding="utf-8")
+    try:
+        TEST_STATUS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        TEST_STATUS_PATH.write_text(
+            json.dumps({
+                "ran_at": "2026-01-01T10:00:00",
+                "ran_at_j": "1404/10/11 10:00",
+                "duration_s": 3.3,
+                "total": 5,
+                "passed": 4,
+                "failed": 0,
+                "errors": 1,
+                "skipped": 0,
+                "success": False,
+                "failed_tests": ["tests/test_x.py::test_y"],
+                "error_details": ["E   RuntimeError: marker-boom"],
+                "args": ["tests"],
+            }, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        creds = make_user(role="super_admin")
+        login_as(client, creds["national_code"])
+        resp = client.get("/admin")
+        assert resp.status_code == 200
+        assert "marker-boom" in resp.text
+    finally:
+        if backup is None:
+            if TEST_STATUS_PATH.exists():
+                TEST_STATUS_PATH.unlink()
+        else:
+            TEST_STATUS_PATH.write_text(backup, encoding="utf-8")
+
+
 def test_admin_dashboard_banner_empty_state(client, make_user):
     """Without any prior run the banner must say tests never ran."""
     backup = None

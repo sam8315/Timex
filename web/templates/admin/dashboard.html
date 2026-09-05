@@ -192,6 +192,11 @@
         {% endif %}
     </ul>
     {% endif %}
+    {% if test_status.error_details %}
+    <hr class="my-2">
+    <small class="fw-bold">متن خطا:</small>
+    <pre class="mb-0 small bg-white p-2 rounded border" dir="ltr" style="text-align: left; white-space: pre-wrap;">{{ test_status.error_details[0] }}</pre>
+    {% endif %}
 </div>
 {% endif %}
 {% else %}

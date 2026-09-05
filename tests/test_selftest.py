@@ -106,3 +106,55 @@ def test_read_test_status_never_raises():
     # assert it never raises and returns dict-or-None.
     result = admin_routes.read_test_status()
     assert result is None or isinstance(result, dict)
+
+
+class _FakeReport:
+    def __init__(self, nodeid, text):
+        self.nodeid = nodeid
+        self.longreprtext = text
+
+
+class _FakeReporter:
+    def __init__(self, stats):
+        self.stats = stats
+
+
+def test_hook_writes_error_details(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from tests import conftest as cf
+
+    target = tmp_path / "status.json"
+    monkeypatch.setenv("TIMEX_TEST_STATUS_PATH", str(target))
+    monkeypatch.setenv("TIMEX_TEST_RUNNING_MARKER",
+                       str(tmp_path / "running"))
+    reporter = _FakeReporter({
+        "error": [_FakeReport("tests/test_x.py::test_y",
+                              "E   RuntimeError: boom\nline2")],
+        "passed": [],
+    })
+    cf.pytest_terminal_summary(reporter, 1, SimpleNamespace(args=["tests"]))
+    payload = json.loads(target.read_text(encoding="utf-8"))
+    assert payload["errors"] == 1
+    assert payload["success"] is False
+    assert payload["failed_tests"] == ["tests/test_x.py::test_y"]
+    assert len(payload["error_details"]) == 1
+    assert "boom" in payload["error_details"][0]
+
+
+def test_hook_success_without_errors(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from tests import conftest as cf
+
+    target = tmp_path / "status.json"
+    monkeypatch.setenv("TIMEX_TEST_STATUS_PATH", str(target))
+    monkeypatch.setenv("TIMEX_TEST_RUNNING_MARKER",
+                       str(tmp_path / "running"))
+    reporter = _FakeReporter({
+        "passed": [_FakeReport("tests/test_x.py::test_ok", "")],
+    })
+    cf.pytest_terminal_summary(reporter, 0, SimpleNamespace(args=["tests"]))
+    payload = json.loads(target.read_text(encoding="utf-8"))
+    assert payload["success"] is True
+    assert payload["error_details"] == []

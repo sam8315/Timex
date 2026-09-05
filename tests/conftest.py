@@ -41,6 +41,16 @@ LOG_DIR = ROOT / "log"
 TEST_STATUS_PATH = LOG_DIR / "test_status.json"
 TEST_RUNNING_MARKER = LOG_DIR / "test_status.running"
 
+
+def _status_path() -> Path:
+    override = os.getenv("TIMEX_TEST_STATUS_PATH")
+    return Path(override) if override else TEST_STATUS_PATH
+
+
+def _running_marker() -> Path:
+    override = os.getenv("TIMEX_TEST_RUNNING_MARKER")
+    return Path(override) if override else TEST_RUNNING_MARKER
+
 USER_PASSWORD = "TestPass123"
 
 
@@ -136,6 +146,16 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
         skipped = len(stats.get("skipped", []))
         failed_tests = [r.nodeid for r in stats.get("failed", [])]
         failed_tests += [r.nodeid for r in stats.get("error", [])]
+        # متن خطاها (مخصوصاً خطاهای setup) برای عیب‌یابی روی سرور ریموت
+        error_details = []
+        for r in stats.get("error", [])[:3]:
+            try:
+                text = str(getattr(r, "longreprtext",
+                                   getattr(r, "longrepr", "")))
+            except Exception:
+                text = ""
+            text = text.strip().splitlines()
+            error_details.append("\n".join(text[-12:])[:1500])
         total = passed + failed + errors + skipped
         duration = (
             round(time.monotonic() - _session_start, 2)
@@ -161,16 +181,18 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
             "success": bool(total > 0 and failed == 0 and errors == 0
                             and exitstatus == 0),
             "failed_tests": failed_tests[:20],
+            "error_details": error_details,
             "args": [str(a) for a in (config.args or [])],
         }
-        LOG_DIR.mkdir(parents=True, exist_ok=True)
-        tmp_path = TEST_STATUS_PATH.with_suffix(".tmp")
+        status_path = _status_path()
+        status_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = status_path.with_suffix(".tmp")
         tmp_path.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
         )
-        tmp_path.replace(TEST_STATUS_PATH)
+        tmp_path.replace(status_path)
         try:
-            TEST_RUNNING_MARKER.unlink(missing_ok=True)
+            _running_marker().unlink(missing_ok=True)
         except OSError:
             pass
     except Exception:
