@@ -143,6 +143,89 @@
 </div>
 
 <!-- ============================================ -->
+<!-- 🧪 وضعیت تست‌های خودکار پنل وب -->
+<!-- ============================================ -->
+{% if test_status %}
+{% if test_status.success %}
+<div class="alert alert-success d-flex align-items-center gap-3 shadow-sm" role="alert">
+    <i class="bi bi-check-circle-fill fs-4"></i>
+    <div class="flex-grow-1">
+        <strong>وضعیت تست‌ها: همه موفق</strong>
+        <span class="text-muted small">
+            ({{ test_status.passed }} موفق از {{ test_status.total }} تست
+            — آخرین اجرا: {{ test_status.ran_at_j }})
+        </span>
+    </div>
+    {% if user and user.is_super_admin %}
+    <form method="post" action="/admin/tests/run" class="d-inline m-0">
+        <button type="submit" class="btn btn-outline-success btn-sm">
+            <i class="bi bi-arrow-repeat"></i> اجرای مجدد
+        </button>
+    </form>
+    {% endif %}
+</div>
+{% else %}
+<div class="alert alert-danger shadow-sm" role="alert">
+    <div class="d-flex align-items-center gap-3">
+        <i class="bi bi-x-circle-fill fs-4"></i>
+        <div class="flex-grow-1">
+            <strong>وضعیت تست‌ها: {{ test_status.failed + test_status.errors }} ناموفق از {{ test_status.total }}</strong>
+            <span class="text-muted small">(آخرین اجرا: {{ test_status.ran_at_j }})</span>
+        </div>
+        {% if user and user.is_super_admin %}
+        <form method="post" action="/admin/tests/run" class="d-inline m-0">
+            <button type="submit" class="btn btn-outline-danger btn-sm">
+                <i class="bi bi-arrow-repeat"></i> اجرای مجدد
+            </button>
+        </form>
+        {% endif %}
+    </div>
+    {% if test_status.failed_tests %}
+    <hr class="my-2">
+    <small class="fw-bold">تست‌های ناموفق:</small>
+    <ul class="mb-0 small">
+        {% for t in test_status.failed_tests[:5] %}
+        <li><code>{{ t }}</code></li>
+        {% endfor %}
+        {% if test_status.failed_tests|length > 5 %}
+        <li class="text-muted">و {{ test_status.failed_tests|length - 5 }} مورد دیگر…</li>
+        {% endif %}
+    </ul>
+    {% endif %}
+</div>
+{% endif %}
+{% else %}
+<div class="alert alert-secondary d-flex align-items-center gap-3 shadow-sm" role="alert">
+    <i class="bi bi-question-circle fs-4"></i>
+    <div class="flex-grow-1">
+        <strong>وضعیت تست‌ها:</strong>
+        <span class="text-muted small">تست‌های خودکار هنوز اجرا نشده‌اند.</span>
+    </div>
+    {% if user and user.is_super_admin %}
+    <form method="post" action="/admin/tests/run" class="d-inline m-0">
+        <button type="submit" class="btn btn-outline-primary btn-sm">
+            <i class="bi bi-play-fill"></i> اجرای تست‌ها
+        </button>
+    </form>
+    {% endif %}
+</div>
+{% endif %}
+{% if request.query_params.get('success') == 'tests-started' %}
+<div class="alert alert-info alert-dismissible fade show shadow-sm" role="alert">
+    <i class="bi bi-hourglass-split"></i>
+    اجرای تست‌ها در پس‌زمینه شروع شد؛ نتیجه در همین‌جا نمایش داده می‌شود.
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+{% if request.query_params.get('error') == 'tests-running' %}
+<div class="alert alert-warning alert-dismissible fade show shadow-sm" role="alert">
+    <i class="bi bi-exclamation-triangle"></i>
+    یک اجرای تست در حال انجام است؛ لطفاً چند دقیقه بعد تلاش کنید.
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<!-- ============================================ -->
 <!-- 📊 کارت‌های KPI -->
 <!-- ============================================ -->
 <div class="row g-3 mb-4">
@@ -262,7 +345,7 @@
 <!-- ============================================ -->
 <!-- ⚠️ هشدارهای فوری -->
 <!-- ============================================ -->
-{% if expiring_contracts_count > 0 or negative_balances_count > 0 or pending_carry_forward_count > 0 or incomplete_count > 0 %}
+{% if expiring_contracts_count > 0 or negative_balances_count > 0 or pending_carry_forward_count > 0 or week_incomplete_count > 0 %}
 <div class="row g-3 mb-4">
     {% if expiring_contracts_count > 0 %}
     <div class="col-md-3 col-6">

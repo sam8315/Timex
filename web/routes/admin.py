@@ -4,12 +4,16 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
 from sqlalchemy.orm import Session
-from web.dependencies import get_db, require_admin
+from web.dependencies import get_db, require_admin, require_super_admin
 from models.user import User
 from models.leave_request import LeaveRequest
 from datetime import timedelta, date, date as date_type
 from sqlalchemy import and_, func
 import time
+import json
+import subprocess
+import sys
+import threading
 from typing import Optional
 from fastapi import Query
 from fastapi import UploadFile, File
@@ -33,6 +37,8 @@ from web.routes.attendance import (
 )
 from models.daily_status import DailyStatus
 from web.permissions import has_permission, get_effective_permissions
+from models.employee_region import EmployeeRegion
+from models.policy import PolicyAuditLog
 
 def build_redirect_url(referer: str, key: str, value: str) -> str:
     """ساخت URL بازگشت با رعایت query string موجود"""
@@ -45,6 +51,25 @@ def add_query_param(url: str, key: str, value: str) -> str:
     query_params[key] = [value]
     new_query = urlencode(query_params, doseq=True)
     return urlunparse((parsed.scheme, parsed.netloc, parsed.path, '', new_query, ''))
+
+
+def day_bounds(day) -> tuple:
+    """بازه [نیمه‌شب, نیمه‌شب بعد) برای یک روز — معادل date(timestamp) == day
+    ولی با استفاده از ایندکس (پرهیز از full scan)."""
+    start = datetime(day.year, day.month, day.day)
+    return start, start + timedelta(days=1)
+
+
+def read_test_status() -> Optional[dict]:
+    """خواندن نتیجه آخرین اجرای تست‌های خودکار (برای بنر داشبورد)"""
+    try:
+        path = Path(__file__).resolve().parent.parent.parent / "log" / "test_status.json"
+        if not path.exists():
+            return None
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else None
+    except Exception:
+        return None
 
 # 🆕 import تابع تحلیل وضعیت از صفحه کاربر عادی
 from web.routes.attendance import (
@@ -143,9 +168,11 @@ async def admin_dashboard(
         })
 
     # 🆕 ۲. حاضرین امروز (از Attendance زنده)
+    today_start, today_end = day_bounds(today_g)
     present_user_ids = set(u[0] for u in db.query(Attendance.user_id).filter(
         and_(
-            func.date(Attendance.timestamp) == today_g,
+            Attendance.timestamp >= today_start,
+            Attendance.timestamp < today_end,
             Attendance.punch == 0,
             Attendance.is_deleted == False
         )
@@ -154,9 +181,11 @@ async def admin_dashboard(
 
     # 🆕 بدون تردد دیروز (به جای غایبین)
     # 3-کاربرانی که دیروز تردد داشتند
+    yesterday_start, yesterday_end = day_bounds(yesterday_g)
     yesterday_attendance_users = set(u[0] for u in db.query(Attendance.user_id).filter(
         and_(
-            func.date(Attendance.timestamp) == yesterday_g,
+            Attendance.timestamp >= yesterday_start,
+            Attendance.timestamp < yesterday_end,
             Attendance.is_deleted == False
         )
     ).distinct().all())
@@ -235,9 +264,11 @@ async def admin_dashboard(
     current_day = week_start_g
     while current_day < today_g:  # تا دیروز
         # کاربران با ورود در این روز
+        day_start, day_end = day_bounds(current_day)
         day_enters = set(u[0] for u in db.query(Attendance.user_id).filter(
             and_(
-                func.date(Attendance.timestamp) == current_day,
+                Attendance.timestamp >= day_start,
+                Attendance.timestamp < day_end,
                 Attendance.punch == 0,
                 Attendance.is_deleted == False
             )
@@ -246,7 +277,8 @@ async def admin_dashboard(
         # کاربران با خروج در این روز
         day_exits = set(u[0] for u in db.query(Attendance.user_id).filter(
             and_(
-                func.date(Attendance.timestamp) == current_day,
+                Attendance.timestamp >= day_start,
+                Attendance.timestamp < day_end,
                 Attendance.punch == 1,
                 Attendance.is_deleted == False
             )
@@ -258,10 +290,12 @@ async def admin_dashboard(
         # 🆕 بررسی شیفت شب: آیا اولین رکورد روز بعد خروج است؟
         next_day = current_day + timedelta(days=1)
         for uid in list(potential_incomplete):
+            next_start, next_end = day_bounds(next_day)
             first_next_record = db.query(Attendance).filter(
                 and_(
                     Attendance.user_id == uid,
-                    func.date(Attendance.timestamp) == next_day,
+                    Attendance.timestamp >= next_start,
+                    Attendance.timestamp < next_end,
                     Attendance.is_deleted == False
                 )
             ).order_by(Attendance.timestamp.asc()).first()
@@ -274,10 +308,12 @@ async def admin_dashboard(
         potential_missing_enter = day_exits - day_enters
         prev_day = current_day - timedelta(days=1)
         for uid in list(potential_missing_enter):
+            prev_start, prev_end = day_bounds(prev_day)
             last_prev_record = db.query(Attendance).filter(
                 and_(
                     Attendance.user_id == uid,
-                    func.date(Attendance.timestamp) == prev_day,
+                    Attendance.timestamp >= prev_start,
+                    Attendance.timestamp < prev_end,
                     Attendance.is_deleted == False
                 )
             ).order_by(Attendance.timestamp.desc()).first()
@@ -311,7 +347,8 @@ async def admin_dashboard(
         first_enter = db.query(Attendance).filter(
             and_(
                 Attendance.user_id == uid,
-                func.date(Attendance.timestamp) == today_g,
+                Attendance.timestamp >= today_start,
+                Attendance.timestamp < today_end,
                 Attendance.punch == 0,
                 Attendance.is_deleted == False
             )
@@ -411,7 +448,8 @@ async def admin_dashboard(
         # کاربران حاضر دیروز از Attendance (نه DailyStatus)
         yesterday_present_users = set(u[0] for u in db.query(Attendance.user_id).filter(
             and_(
-                func.date(Attendance.timestamp) == yesterday_g,
+                Attendance.timestamp >= yesterday_start,
+                Attendance.timestamp < yesterday_end,
                 Attendance.punch == 0,
                 Attendance.is_deleted == False
             )
@@ -451,7 +489,86 @@ async def admin_dashboard(
         "week_start_j": jdatetime.date.fromgregorian(date=week_start_g).strftime('%Y/%m/%d'),  # 🆕
 
         "is_admin": True,
+        "test_status": read_test_status(),  # 🆕 وضعیت تست‌های خودکار
     })
+
+
+@router.post("/admin/tests/run")
+async def admin_run_tests(
+    request: Request,
+    user: User = Depends(require_super_admin),
+    db: Session = Depends(get_db)
+):
+    """اجرای تست‌های خودکار پنل وب در پس‌زمینه (فقط مدیر ارشد)"""
+    if not has_permission(db, user, 'manage_users'):
+        return RedirectResponse(url="/admin/", status_code=302)
+
+    root = Path(__file__).resolve().parent.parent.parent
+    marker = root / "log" / "test_status.running"
+
+    # جلوگیری از اجرای همزمان
+    if marker.exists():
+        try:
+            age = time.time() - marker.stat().st_mtime
+        except OSError:
+            age = 0
+        if age < 900:
+            referer = request.headers.get("referer", "/admin")
+            return RedirectResponse(
+                url=build_redirect_url(referer, "error", "tests-running"),
+                status_code=302
+            )
+    try:
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text("running", encoding="utf-8")
+    except OSError:
+        pass
+
+    def _run():
+        try:
+            subprocess.run(
+                [sys.executable, "-m", "pytest", "tests", "-q",
+                 "-p", "no:cacheprovider"],
+                cwd=str(root),
+                timeout=600,
+                capture_output=True,
+            )
+        except Exception as e:
+            try:
+                status_path = root / "log" / "test_status.json"
+                status_path.write_text(
+                    json.dumps({
+                        "ran_at": "", "ran_at_j": "-",
+                        "duration_s": 0, "total": 0, "passed": 0,
+                        "failed": 0, "errors": 1, "skipped": 0,
+                        "success": False,
+                        "failed_tests": [f"test-runner: {e}"],
+                        "args": ["tests"],
+                    }, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+            except OSError:
+                pass
+        finally:
+            # هوک pytest در پایان اجرا مارکر را پاک می‌کند؛
+            # این fallback برای حالتی است که pytest اصلاً اجرا نشود
+            try:
+                if marker.exists():
+                    try:
+                        age = time.time() - marker.stat().st_mtime
+                    except OSError:
+                        age = 0
+                    if age >= 900:
+                        marker.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    threading.Thread(target=_run, daemon=True).start()
+    referer = request.headers.get("referer", "/admin")
+    return RedirectResponse(
+        url=build_redirect_url(referer, "success", "tests-started"),
+        status_code=302
+    )
 
 
 from sqlalchemy import or_
@@ -1343,6 +1460,7 @@ async def admin_edit_profile_submit(
     is_active: str = Form(""),
     termination_date_str: str = Form(""),
     termination_reason: str = Form(""),
+    region_code: str = Form("NORMAL"),
     user: User = Depends(require_super_admin),
     db: Session = Depends(get_db)
 ):
@@ -1376,6 +1494,31 @@ async def admin_edit_profile_submit(
 
         # وضعیت فعال/غیرفعال
         employee.is_active = (is_active == "on")
+
+        # 🆕 ذخیره منطقه و ثبت در تاریخچه
+        old_region = employee.region_code
+        employee.region_code = region_code
+        
+        if old_region != region_code:
+            region_history = EmployeeRegion(
+                user_id=target_user_id,
+                region_code=region_code,
+                effective_from=date.today(),
+                approved_by=user.user_id,
+                reason=f"تغییر منطقه از {old_region} توسط مدیر ارشد"
+            )
+            db.add(region_history)
+            
+            audit_log = PolicyAuditLog(
+                entity_type='employee_region',
+                entity_id=target_user_id,
+                action='CHANGE',
+                old_value=old_region,
+                new_value=region_code,
+                changed_by=user.user_id,
+                reason="تغییر منطقه توسط مدیر ارشد"
+            )
+            db.add(audit_log)
 
         if employee.is_active:
             # اگر فعال شد، اطلاعات ترک کار پاک شود

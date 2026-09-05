@@ -1,9 +1,59 @@
 """
 مدیریت ساخت و مقداردهی اولیه جداول دیتابیس
 """
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text, types as sa_types
 from database.engine import engine
 from models import Base
+
+
+def _column_ddl(column) -> str:
+    """Convert a SQLAlchemy column definition to a PostgreSQL DDL type string."""
+    col_type = column.type
+    if isinstance(col_type, sa_types.Integer):
+        dtype = "INTEGER"
+    elif isinstance(col_type, sa_types.BigInteger):
+        dtype = "BIGINT"
+    elif isinstance(col_type, sa_types.Boolean):
+        dtype = "BOOLEAN"
+    elif isinstance(col_type, sa_types.Float):
+        dtype = "FLOAT"
+    elif isinstance(col_type, sa_types.String):
+        length = col_type.length or 255
+        dtype = f"VARCHAR({length})"
+    elif isinstance(col_type, sa_types.Text):
+        dtype = "TEXT"
+    elif isinstance(col_type, sa_types.DateTime):
+        dtype = "TIMESTAMP WITH TIME ZONE"
+    elif isinstance(col_type, sa_types.Date):
+        dtype = "DATE"
+    elif isinstance(col_type, sa_types.Numeric):
+        dtype = "NUMERIC"
+    else:
+        dtype = "TEXT"
+
+    # Add new columns as NULL to avoid integrity errors on existing rows.
+    return f"{dtype} NULL"
+
+
+def migrate_missing_columns() -> None:
+    """
+    مقایسه ستون‌های مدل‌ها با جداول موجود در دیتابیس
+    و اضافه کردن ستون‌های جدید بدون آسیب به داده‌های قبلی.
+    """
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+
+    for table_name, table_obj in Base.metadata.tables.items():
+        if table_name not in existing_tables:
+            continue
+        db_columns = {row["name"] for row in inspector.get_columns(table_name)}
+        for column in table_obj.columns:
+            if column.name not in db_columns:
+                ddl = _column_ddl(column)
+                with engine.connect() as conn:
+                    conn.execute(text(f'ALTER TABLE "{table_name}" ADD COLUMN "{column.name}" {ddl}'))
+                    conn.commit()
+                print(f"  + column {table_name}.{column.name} added")
 
 
 def create_tables() -> None:
@@ -12,6 +62,7 @@ def create_tables() -> None:
     اگر جدول از قبل وجود داشته باشد، تغییری ایجاد نمی‌کند
     """
     try:
+        migrate_missing_columns()
         Base.metadata.create_all(bind=engine)
         print("✅ جداول دیتابیس با موفقیت ساخته/بررسی شدند")
     except Exception as e:

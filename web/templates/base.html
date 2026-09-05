@@ -285,6 +285,11 @@
     /* ============================================ */
     /* 📱 واکنش‌گرایی تقویم                          */
     /* ============================================ */
+    /* تقویم باید بالای مودال‌های بوت‌استرپ باز شود */
+    .datepicker-plot-area {
+        z-index: 9999 !important;
+    }
+
     @media (max-width: 576px) {
         .datepicker-plot-area {
             min-width: 280px !important;
@@ -899,6 +904,11 @@
                 <a href="/admin/education" class="sidebar-link {% if request.url.path == '/admin/education' %}active{% endif %}">
                     <i class="bi bi-mortarboard"></i> مدارک تحصیلی
                 </a>
+                {% if user and user.role == 'super_admin' %}
+                <a href="/admin/policies" class="sidebar-link {% if '/admin/policies' in request.url.path %}active{% endif %}">
+                    <i class="bi bi-gear-wide-connected"></i> سیاست کلی
+                </a>
+                {% endif %}
             </div>
 
             <!-- گزارشات -->
@@ -1048,38 +1058,72 @@
 
     // ============================================
     // 📅 Helper برای تقویم شمسی (در دسترس همه صفحات)
+    // هر input با کلاس jalali-date به‌صورت خودکار تقویم می‌گیرد
     // ============================================
-    window.initPersianDatePicker = function(inputId, options = {}) {
-        // تلاش مجدد برای لود شدن کتابخانه
+    window.initPersianDatePicker = function(selector, onChangeCallback) {
         function tryInit(attempts = 0) {
-            if (typeof mds === 'undefined' || !mds.MdsPersianDateTimePicker) {
-                if (attempts < 20) {
-                    setTimeout(() => tryInit(attempts + 1), 200);
+            if (typeof $ === 'undefined' || !$.fn.pDatepicker) {
+                if (attempts < 25) {
+                    setTimeout(function() { tryInit(attempts + 1); }, 200);
                     return;
                 }
-                console.warn('⚠️ کتابخانه تقویم لود نشد برای:', inputId);
+                console.warn('⚠️ کتابخانه تقویم لود نشد برای:', selector);
                 return;
             }
 
-            const element = document.getElementById(inputId);
-            if (!element) return;
-
-            return new mds.MdsPersianDateTimePicker(element, {
-                targetTextSelector: '#' + inputId,
-                selectedDateToShow: options.selectedDate || new Date(),
-                enableTimePicker: options.enableTimePicker || false,
-                monthButtons: true,
-                yearButtons: true,
-                isGregorian: false,
-                persianNumber: false,
-                dateFormat: 'yyyy/MM/dd',
-                textFormat: 'yyyy/MM/dd',
-                onSelected: options.onSelected || function() {}
+            $(selector).each(function() {
+                var $el = $(this);
+                if ($el.data('jalali-init')) return;  // جلوگیری از مقداردهی تکراری
+                $el.data('jalali-init', true);
+                $el.pDatepicker({
+                    format: 'YYYY/MM/DD',
+                    initialValue: false,
+                    persianDigit: false,
+                    autoClose: true,
+                    calendar: {
+                        persian: {
+                            locale: 'fa',
+                            showHint: true,
+                            leapYearMode: 'astronomical'
+                        }
+                    },
+                    navigator: {
+                        enabled: true,
+                        scroll: { enabled: true },
+                        text: {
+                            btnNextText: '❮',
+                            btnPrevText: '❯'
+                        }
+                    },
+                    toolbox: {
+                        calendarSwitch: { enabled: true },
+                        todayButton: {
+                            enabled: true,
+                            text: { fa: 'امروز' }
+                        }
+                    },
+                    onSelect: function(unix) {
+                        if (onChangeCallback) {
+                            setTimeout(onChangeCallback, 100);
+                        }
+                    }
+                });
             });
         }
 
         tryInit();
     };
+
+    // مقداردهی خودکار فیلدهای تاریخ بیرون مودال‌ها؛
+    // فیلدهای داخل مودال هنگام باز شدن مودال مقداردهی می‌شوند تا لود اولیه صفحه سبک بماند
+    $(document).ready(function() {
+        window.initPersianDatePicker(
+            $('input.jalali-date').not('.modal input.jalali-date')
+        );
+    });
+    document.addEventListener('show.bs.modal', function(e) {
+        window.initPersianDatePicker($(e.target).find('input.jalali-date'));
+    });
 </script>
 
 {% block extra_js %}{% endblock %}

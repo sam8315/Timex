@@ -52,8 +52,8 @@
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">تاریخ تولد (شمسی)</label>
-                            <input type="text" name="birth_date_str" class="form-control"
-                                   value="{{ birth_j_value }}" placeholder="1370/05/15">
+                            <input type="text" name="birth_date_str" class="form-control jalali-date"
+                                   value="{{ birth_j_value }}" placeholder="1370/05/15" autocomplete="off">
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">جنسیت</label>
@@ -91,8 +91,8 @@
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">تاریخ استخدام (شمسی)</label>
-                            <input type="text" name="hire_date_str" class="form-control"
-                                   value="{{ hire_j_value }}" placeholder="1400/01/01">
+                            <input type="text" name="hire_date_str" class="form-control jalali-date"
+                                   value="{{ hire_j_value }}" placeholder="1400/01/01" autocomplete="off">
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">دپارتمان</label>
@@ -109,6 +109,15 @@
                             <label class="form-label">سمت</label>
                             <input type="text" name="position" class="form-control"
                                    value="{{ employee.position or '' }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">🌍 منطقه خدمتی</label>
+                            <select name="region_code" class="form-select">
+                                <option value="NORMAL" {% if employee.region_code == 'NORMAL' %}selected{% endif %}>عادی</option>
+                                <option value="GRADE_1" {% if employee.region_code == 'GRADE_1' %}selected{% endif %}>درجه یک</option>
+                                <option value="GRADE_2" {% if employee.region_code == 'GRADE_2' %}selected{% endif %}>درجه دو</option>
+                                <option value="GRADE_3" {% if employee.region_code == 'GRADE_3' %}selected{% endif %}>درجه سه</option>
+                            </select>
                         </div>
                         <div class="col-12">
                             <label class="form-label">یادداشت</label>
@@ -139,8 +148,8 @@
                         </div>
                         <div class="col-md-4" id="termination_date_field" {% if employee.is_active %}style="display:none;"{% endif %}>
                             <label class="form-label">تاریخ ترک کار (شمسی)</label>
-                            <input type="text" name="termination_date_str" class="form-control"
-                                   value="{{ term_j_value }}" placeholder="1405/05/15">
+                            <input type="text" name="termination_date_str" class="form-control jalali-date"
+                                   value="{{ term_j_value }}" placeholder="1405/05/15" autocomplete="off">
                         </div>
                         <div class="col-md-5" id="termination_reason_field" {% if employee.is_active %}style="display:none;"{% endif %}>
                             <label class="form-label">دلیل ترک کار</label>

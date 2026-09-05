@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}سیاست کلی | مدیریت{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4>
+        <i class="bi bi-gear-wide-connected text-primary"></i>
+        ⚙️ سیاست کلی
+    </h4>
+</div>
+
+<div class="row g-4">
+    <!-- مرخصی -->
+    <div class="col-md-6 col-lg-3">
+        <div class="card shadow-sm h-100">
+            <div class="card-body text-center p-4">
+                <div class="mb-3">
+                    <i class="bi bi-sun" style="font-size: 3rem; color: #ffc107;"></i>
+                </div>
+                <h5 class="card-title mb-2">🏖️ مرخصی</h5>
+                <p class="card-text text-muted small">مدیریت مرخصی‌ها</p>
+                <a href="/admin/policies/leave" class="btn btn-primary btn-sm">
+                    <i class="bi bi-eye"></i> مشاهده
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- مناطق -->
+    <div class="col-md-6 col-lg-3">
+        <div class="card shadow-sm h-100">
+            <div class="card-body text-center p-4">
+                <div class="mb-3">
+                    <i class="bi bi-geo-alt" style="font-size: 3rem; color: #17a2b8;"></i>
+                </div>
+                <h5 class="card-title mb-2">🌍 مناطق</h5>
+                <p class="card-text text-muted small">مدیریت مناطق خدمتی</p>
+                <a href="/admin/policies/regions" class="btn btn-primary btn-sm">
+                    <i class="bi bi-eye"></i> مشاهده
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- حضور و غیاب -->
+    <div class="col-md-6 col-lg-3">
+        <div class="card shadow-sm h-100">
+            <div class="card-body text-center p-4">
+                <div class="mb-3">
+                    <i class="bi bi-clock" style="font-size: 3rem; color: #6c757d;"></i>
+                </div>
+                <h5 class="card-title mb-2">⏱️ حضور و غیاب</h5>
+                <p class="card-text text-muted small">به‌زودی</p>
+                <button class="btn btn-secondary btn-sm" disabled>
+                    <i class="bi bi-lock"></i> به‌زودی
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- اضافه‌کاری -->
+    <div class="col-md-6 col-lg-3">
+        <div class="card shadow-sm h-100">
+            <div class="card-body text-center p-4">
+                <div class="mb-3">
+                    <i class="bi bi-cash-coin" style="font-size: 3rem; color: #28a745;"></i>
+                </div>
+                <h5 class="card-title mb-2">💰 اضافه‌کاری</h5>
+                <p class="card-text text-muted small">به‌زودی</p>
+                <button class="btn btn-secondary btn-sm" disabled>
+                    <i class="bi bi-lock"></i> به‌زودی
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

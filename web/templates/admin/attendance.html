@@ -31,8 +31,8 @@
 
             <!-- فرم انتخاب مستقیم -->
             <form method="get" action="/admin/attendance" class="d-flex align-items-center gap-2">
-                <input type="text" name="date_str" class="form-control"
-                       value="{{ date_str_input }}" placeholder="1405/05/19" style="width: 130px;">
+                <input type="text" name="date_str" class="form-control jalali-date"
+                       value="{{ date_str_input }}" placeholder="1405/05/19" style="width: 130px;" autocomplete="off">
 
                 {% if department %}
                 <input type="hidden" name="department" value="{{ department }}">

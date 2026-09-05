@@ -515,6 +515,43 @@ async def leave_requests_page(
         for emp in employees
     ]
 
+    # 🆕 جزئیات درخواست نیازمند تاییدیه مانده منفی (فقط مدیر ارشد)
+    confirm_negative_request = None
+    confirm_id = request.query_params.get("confirm_negative")
+    if confirm_id and user.is_super_admin:
+        try:
+            target = db.query(LeaveRequest).filter(
+                LeaveRequest.id == int(confirm_id),
+                LeaveRequest.status == 'P'
+            ).first()
+        except (TypeError, ValueError):
+            target = None
+        if target:
+            target_year_j = jdatetime.date.fromgregorian(
+                date=target.from_date).year
+            target_balance = db.query(LeaveBalance).filter(
+                and_(
+                    LeaveBalance.user_id == target.user_id,
+                    LeaveBalance.year == target_year_j,
+                    LeaveBalance.leave_type == target.leave_type
+                )
+            ).first()
+            target_current = target_balance.balance if target_balance else 0
+            if target_current < target.days_count:
+                confirm_negative_request = {
+                    'id': target.id,
+                    'full_name': get_employee_name(db, target.user_id),
+                    'leave_type_name': LEAVE_TYPES.get(
+                        target.leave_type, target.leave_type),
+                    'from_j': jdatetime.date.fromgregorian(
+                        date=target.from_date).strftime('%Y/%m/%d'),
+                    'to_j': jdatetime.date.fromgregorian(
+                        date=target.to_date).strftime('%Y/%m/%d'),
+                    'days_count': target.days_count,
+                    'current_balance': target_current,
+                    'resulting_balance': target_current - target.days_count,
+                }
+
     return templates.TemplateResponse(request, "admin/leave_requests.html", {
         "user": user,
         "requests": requests_data,
@@ -529,6 +566,7 @@ async def leave_requests_page(
         "leave_types": LEAVE_TYPES,
         "is_admin": True,
         "employees": employees_list,  # لیست کارمندان
+        "confirm_negative_request": confirm_negative_request,  # 🆕 باکس تایید مانده منفی
     })
 
 # ============================================
@@ -538,6 +576,7 @@ async def leave_requests_page(
 async def approve_leave_request(
         request: Request,
         request_id: int,
+        allow_negative: str = Form("off"),
         user: User = Depends(require_admin),
         db: Session = Depends(get_db)
 ):
@@ -563,15 +602,30 @@ async def approve_leave_request(
     ).first()
 
     current_balance = balance.balance if balance else 0
+    forced_negative = False
     if current_balance < leave_req.days_count:
-        referer = request.headers.get("referer", "/admin/leave-requests")
-        return RedirectResponse(
-            url=build_redirect_url(
+        # مدیر ارشد می‌تواند با مانده منفی تایید کند (با تاییدیه جداگانه)
+        if user.is_super_admin and allow_negative in ("on", "true", "1"):
+            forced_negative = True
+        elif user.is_super_admin:
+            referer = request.headers.get("referer", "/admin/leave-requests")
+            url = build_redirect_url(
                 referer, "error",
                 f"مانده کافی نیست! مانده: {current_balance} روز، درخواست: {leave_req.days_count} روز"
-            ),
-            status_code=302
-        )
+            )
+            return RedirectResponse(
+                url=f"{url}&confirm_negative={request_id}",
+                status_code=302
+            )
+        else:
+            referer = request.headers.get("referer", "/admin/leave-requests")
+            return RedirectResponse(
+                url=build_redirect_url(
+                    referer, "error",
+                    f"مانده کافی نیست! مانده: {current_balance} روز، درخواست: {leave_req.days_count} روز"
+                ),
+                status_code=302
+            )
 
     try:
         # ۱. تایید درخواست
@@ -592,13 +646,16 @@ async def approve_leave_request(
             db.add(balance)
 
         # ۳. ثبت تراکنش
+        tx_description = f"استفاده از مرخصی {LEAVE_TYPES.get(leave_req.leave_type, '')} - درخواست #{request_id}"
+        if forced_negative:
+            tx_description += " | تایید با مانده منفی توسط مدیر ارشد"
         tx = LeaveTransaction(
             user_id=leave_req.user_id,
             year=year_j,
             leave_type=leave_req.leave_type,
             amount=leave_req.days_count,
             transaction_type='USE',
-            description=f"استفاده از مرخصی {LEAVE_TYPES.get(leave_req.leave_type, '')} - درخواست #{request_id}",
+            description=tx_description,
             reference_id=leave_req.id
         )
         db.add(tx)
@@ -623,12 +680,15 @@ async def approve_leave_request(
 
         type_name = LEAVE_TYPES.get(leave_req.leave_type, '')
         referer = request.headers.get("referer", "/admin/leave-requests")
+        success_msg = (
+            f"درخواست تایید شد | {leave_req.days_count} روز مرخصی {type_name} کسر شد"
+        )
+        if forced_negative:
+            resulting = current_balance - leave_req.days_count
+            success_msg += f" | ⚠️ مانده منفی شد: {resulting} روز"
+        success_msg += (" | پیامک ارسال شد 📱" if phones else "")
         return RedirectResponse(
-            url=build_redirect_url(
-                referer, "success",
-                f"درخواست تایید شد | {leave_req.days_count} روز مرخصی {type_name} کسر شد"
-                + (" | پیامک ارسال شد 📱" if phones else "")
-            ),
+            url=build_redirect_url(referer, "success", success_msg),
             status_code=302
         )
     except Exception as e:

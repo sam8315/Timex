@@ -11,10 +11,20 @@ from models.leave_request import LeaveRequest
 from models.holiday import Holiday
 from models.daily_status import DailyStatus
 from models.employee import Employee  # 🆕
+from models.employee_phone import EmployeePhone
+from models.education import Education
+from models.leave_carry_forward_request import LeaveCarryForwardRequest
+from models.user_permission import UserPermission
+from models.bale_user import BaleUser
+from models.region import Region
+from models.policy import Policy, PolicyValue, PolicyAuditLog
+from models.employee_region import EmployeeRegion
 
 __all__ = [
     'Base', 'User', 'Attendance',
     'Contract', 'LeaveBalance', 'LeaveTransaction',
-    'LeaveRequest', 'Holiday', 'DailyStatus',
-    'Employee'  # 🆕
+    'LeaveRequest', 'LeaveCarryForwardRequest', 'Holiday', 'DailyStatus',
+    'EmployeePhone', 'Education', 'UserPermission', 'BaleUser',
+    'Employee', 'Region', 'Policy', 'PolicyValue', 'PolicyAuditLog',
+    'EmployeeRegion'
 ]

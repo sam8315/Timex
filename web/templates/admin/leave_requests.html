@@ -171,6 +171,42 @@
 </div>
 {% endif %}
 
+<!-- ===== باکس هشدار تایید با مانده منفی (فقط مدیر ارشد) ===== -->
+{% if confirm_negative_request and user and user.is_super_admin %}
+<div class="alert alert-warning shadow-sm" role="alert">
+    <div class="d-flex align-items-start gap-3">
+        <i class="bi bi-exclamation-triangle-fill fs-3"></i>
+        <div class="flex-grow-1">
+            <h6 class="alert-heading fw-bold">⚠️ هشدار: مانده استحقاقی کافی نیست</h6>
+            <p class="mb-2">
+                درخواست <strong>#{{ confirm_negative_request.id }}</strong>
+                ({{ confirm_negative_request.full_name }} —
+                مرخصی {{ confirm_negative_request.leave_type_name }}،
+                {{ confirm_negative_request.from_j }} تا {{ confirm_negative_request.to_j }})
+                به <strong>{{ confirm_negative_request.days_count }} روز</strong> مرخصی نیاز دارد،
+                ولی مانده فعلی <strong>{{ confirm_negative_request.current_balance }} روز</strong> است.
+            </p>
+            <p class="mb-3">
+                در صورت تایید، مانده به
+                <strong class="text-danger">{{ confirm_negative_request.resulting_balance }} روز (منفی)</strong>
+                می‌رسد. آیا مطمئن هستید؟
+            </p>
+            <div class="d-flex gap-2">
+                <form method="post" action="/admin/leave-requests/{{ confirm_negative_request.id }}/approve" class="d-inline">
+                    <input type="hidden" name="allow_negative" value="on">
+                    <button type="submit" class="btn btn-danger">
+                        <i class="bi bi-check-lg"></i> تایید با مانده منفی
+                    </button>
+                </form>
+                <a href="/admin/leave-requests" class="btn btn-outline-secondary">
+                    انصراف
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <!-- ===== هدر صفحه ===== -->
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>

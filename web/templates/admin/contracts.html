@@ -44,11 +44,11 @@
             </div>
             <div class="col-md-2">
                 <label class="form-label">📅 شروع (شمسی) <span class="text-danger">*</span></label>
-                <input type="text" name="start_date_str" class="form-control" placeholder="1405/01/01" required>
+                <input type="text" name="start_date_str" class="form-control jalali-date" placeholder="1405/01/01" autocomplete="off" required>
             </div>
             <div class="col-md-2">
                 <label class="form-label">📅 پایان (شمسی)</label>
-                <input type="text" name="end_date_str" class="form-control" placeholder="خالی = دائمی">
+                <input type="text" name="end_date_str" class="form-control jalali-date" placeholder="خالی = دائمی" autocomplete="off">
             </div>
             <div class="col-md-1 leave-editable" style="display:none;">
                 <label class="form-label">🏖️ استحقاقی</label>
@@ -231,14 +231,14 @@
                                             </div>
                                             <div class="col-md-4">
                                                 <label class="form-label">📅 شروع (شمسی)</label>
-                                                <input type="text" name="start_date_str" class="form-control"
-                                                       value="{{ item.start_j }}" required>
+                                                <input type="text" name="start_date_str" class="form-control jalali-date"
+                                                       value="{{ item.start_j }}" autocomplete="off" required>
                                             </div>
                                             <div class="col-md-4">
                                                 <label class="form-label">📅 پایان (شمسی)</label>
-                                                <input type="text" name="end_date_str" class="form-control"
+                                                <input type="text" name="end_date_str" class="form-control jalali-date"
                                                        value="{{ item.end_j if item.end_j != 'دائمی' else '' }}"
-                                                       placeholder="خالی = دائمی">
+                                                       placeholder="خالی = دائمی" autocomplete="off">
                                             </div>
                                             <div class="col-md-3">
                                                 <label class="form-label">🏖️ استحقاقی (روز)</label>

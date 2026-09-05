@@ -39,6 +39,12 @@ class Employee(TimestampMixin, Base):
     hire_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True, index=True)
     department: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
     position: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    # Service region used by future annual-leave policy calculations.
+    region_code: Mapped[Optional[str]] = mapped_column(
+        String(20),
+        default='NORMAL',
+        comment="Service region: NORMAL, GRADE_1, GRADE_2, GRADE_3"
+    )
 
     # ✅ فیلدهای جدید: وضعیت فعال و ترک کار
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
@@ -95,6 +101,7 @@ class Employee(TimestampMixin, Base):
             'hire_date': self.hire_date,
             'department': self.department,
             'position': self.position,
+            'region_code': self.region_code,
             'is_active': self.is_active,
             'status_name': self.status_name,
             'termination_date': self.termination_date,
