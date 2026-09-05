@@ -56,6 +56,26 @@ def migrate_missing_columns() -> None:
                 print(f"  + column {table_name}.{column.name} added")
 
 
+def migrate_data_fixes(bind_engine=None) -> None:
+    """
+    پاک‌سازی داده‌های قدیمی بدون آسیب به رکوردها.
+    - حذف فاصله‌های اضافی کد وضعیت روزانه (مثل 'R ' که باعث خالی
+      ماندن ستون وضعیت و نمایش داده نشدن در گزارش می‌شد).
+    """
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
+    if "daily_statuses" not in inspector.get_table_names():
+        return
+    with target.connect() as conn:
+        result = conn.execute(text(
+            "UPDATE daily_statuses SET status_code = TRIM(status_code) "
+            "WHERE status_code <> TRIM(status_code)"
+        ))
+        conn.commit()
+        if result.rowcount:
+            print(f"  + trimmed status_code on {result.rowcount} daily_statuses row(s)")
+
+
 def create_tables() -> None:
     """
     ساخت تمام جداول تعریف شده در مدل‌ها
@@ -64,6 +84,7 @@ def create_tables() -> None:
     try:
         migrate_missing_columns()
         Base.metadata.create_all(bind=engine)
+        migrate_data_fixes()
         print("✅ جداول دیتابیس با موفقیت ساخته/بررسی شدند")
     except Exception as e:
         print(f"❌ خطا در ساخت جداول: {e}")

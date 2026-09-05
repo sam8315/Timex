@@ -4,7 +4,7 @@
 from datetime import date
 from typing import Optional
 from sqlalchemy import Integer, String, Date, ForeignKey, Text, UniqueConstraint
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 from models.base import Base, TimestampMixin
 
 
@@ -45,6 +45,13 @@ class DailyStatus(TimestampMixin, Base):
 
     # Relationships
     user = relationship("User", backref="daily_statuses")
+
+    @validates("status_code")
+    def _strip_status_code(self, key, value):
+        """حذف فاصله‌های اضافی کد وضعیت در همه مسیرهای ثبت"""
+        if isinstance(value, str):
+            return value.strip()
+        return value
 
     def __repr__(self) -> str:
         return f"<DailyStatus(user_id='{self.user_id}', date={self.status_date}, status='{self.status_code}')>"

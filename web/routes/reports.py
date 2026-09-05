@@ -340,6 +340,8 @@ def get_day_code(
 
     # اولویت ۵: وضعیت دستی (DailyStatus)
     status_code = daily_status_map.get(day_date)
+    if isinstance(status_code, str):
+        status_code = status_code.strip()
     if status_code:
         if status_code == 'A':
             return 'غ'

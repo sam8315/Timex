@@ -51,23 +51,27 @@ async def daily_status_page(
     statuses_data = []
 
     if has_filter:
-        # محاسبه بازه ماه
-        month_start_j = jdatetime.date(year, month, 1)
-        if month == 12:
-            month_end_j = jdatetime.date(year, 12, 29)
+        if show_all:
+            # نمایش همه: بدون محدودیت بازه ماه
+            query = db.query(DailyStatus)
         else:
-            month_end_j = jdatetime.date(year, month + 1, 1) - jdatetime.timedelta(days=1)
+            # محاسبه بازه ماه
+            month_start_j = jdatetime.date(year, month, 1)
+            if month == 12:
+                month_end_j = jdatetime.date(year, 12, 29)
+            else:
+                month_end_j = jdatetime.date(year, month + 1, 1) - jdatetime.timedelta(days=1)
 
-        month_start_g = month_start_j.togregorian()
-        month_end_g = month_end_j.togregorian()
+            month_start_g = month_start_j.togregorian()
+            month_end_g = month_end_j.togregorian()
 
-        query = db.query(DailyStatus).filter(
-            DailyStatus.status_date >= month_start_g,
-            DailyStatus.status_date <= month_end_g
-        )
+            query = db.query(DailyStatus).filter(
+                DailyStatus.status_date >= month_start_g,
+                DailyStatus.status_date <= month_end_g
+            )
 
         if status_filter:
-            query = query.filter(DailyStatus.status_code == status_filter)
+            query = query.filter(DailyStatus.status_code == status_filter.strip())
 
         if search and search.strip():
             term = search.strip()
@@ -79,7 +83,7 @@ async def daily_status_page(
                 )
             )
 
-        statuses = query.order_by(DailyStatus.status_date.desc()).all()
+        statuses = query.order_by(DailyStatus.status_date.desc()).limit(500).all()
 
         for s in statuses:
             date_j = jdatetime.date.fromgregorian(date=s.status_date)
@@ -125,7 +129,8 @@ async def add_daily_status(
 ):
     """ثبت مأموریت یا استراحت"""
     try:
-        # بررسی کد وضعیت
+        # بررسی کد وضعیت (با حذف فاصله‌های اضافی)
+        status_code = status_code.strip()
         if status_code not in STATUS_CODES:
             raise ValueError(f"کد وضعیت نامعتبر: {status_code}")
 

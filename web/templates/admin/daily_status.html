@@ -137,10 +137,12 @@
                         <td>{{ item.status.user_id }}</td>
                         <td>{{ item.full_name }}</td>
                         <td class="text-center">
-                            {% if item.status.status_code == 'M' %}
+                            {% if item.status.status_code.strip() == 'M' %}
                             <span class="badge bg-primary">🚗 مأموریت</span>
-                            {% elif item.status.status_code == 'R' %}
+                            {% elif item.status.status_code.strip() == 'R' %}
                             <span class="badge bg-info">😴 استراحت</span>
+                            {% else %}
+                            <span class="badge bg-secondary">{{ item.status.status_code }}</span>
                             {% endif %}
                         </td>
                         <td><small>{{ item.status.description or '-' }}</small></td>
