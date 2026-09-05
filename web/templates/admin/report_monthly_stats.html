@@ -73,6 +73,16 @@
     [data-theme="dark"] .stats-table td.code-moarefa { background: #0a3d42 !important; }
     [data-theme="dark"] .stats-table td.code-tasvieh { background: #2a1a4a !important; }
 
+    /* 🆕 ستون چاپ (فقط صفحه، در چاپ مخفی) */
+    .stats-table th.no-print,
+    .stats-table td.no-print {
+        width: 45px;
+        white-space: nowrap;
+    }
+    /* 🆕 ردیف حذف‌شده از چاپ: روی صفحه کم‌رنگ، در چاپ مخفی */
+    .stats-table tr.exclude-print td:not(.no-print) {
+        opacity: 0.45;
+    }
     /* 🆕 بک‌گراند قرمز برای جمعه/تعطیل در هدر */
     .stats-table th.day-holiday {
         background: #f8d7da !important;
@@ -181,6 +191,11 @@
 
     /* حذف دکمه‌ها */
     .btn, button, .no-print {
+        display: none !important;
+    }
+
+    /* 🆕 ردیف‌های حذف‌شده از چاپ */
+    .stats-table tr.exclude-print {
         display: none !important;
     }
 
@@ -294,16 +309,30 @@
 <!-- 🆕 عنوان چاپ -->
 <div class="print-title">
     <h3>گزارش آمار ماهیانه</h3>
-    <small>{{ report.month_name }} {{ report.year }} | {{ report.total_employees }} کارمند</small>
+    <small id="print-title-count">{{ report.month_name }} {{ report.year }} | {{ report.total_employees }} کارمند</small>
 </div>
 {% endif %}
 
 <!-- جدول گزارش -->
 {% if report %}
+<!-- 🆕 نوار انتخاب چاپ -->
+<div class="card border-0 shadow-sm mb-2 no-print">
+    <div class="card-body py-2 d-flex flex-wrap align-items-center gap-2">
+        <strong class="small">🖨️ انتخاب چاپ:</strong>
+        <button type="button" class="btn btn-outline-success btn-sm" id="btn-select-all-print">
+            <i class="bi bi-check-all"></i> انتخاب همه
+        </button>
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-deselect-all-print">
+            <i class="bi bi-x-square"></i> حذف همه
+        </button>
+        <span class="small text-muted" id="print-count-label"></span>
+        <span class="small text-muted">— تیک هر ردیف را بردارید تا در چاپ نیاید (پیش‌فرض: همه چاپ می‌شوند).</span>
+    </div>
+</div>
 <div class="card border-0 shadow-sm">
     <div class="card-body p-0">
         <div class="table-responsive" style="max-height: 70vh; overflow: auto;">
-            <table class="table stats-table mb-0">
+            <table class="table stats-table mb-0" id="monthly-stats-table">
                 <thead>
                     <tr>
                         <th>ردیف</th>
@@ -313,12 +342,16 @@
                         {% for d in range(1, report.days_count + 1) %}
                         <th class="{% if d in friday_or_holiday_days %}day-holiday{% endif %}">{{ d }}</th>
                         {% endfor %}
+                        <th class="no-print" title="انتخاب برای چاپ">
+                            <input type="checkbox" id="toggle-all-print" checked>
+                            <div class="small fw-normal">چاپ</div>
+                        </th>
                     </tr>
                 </thead>
                 <tbody>
 {% for row in report.rows %}
 <tr>
-    <td>{{ row.row_num }}</td>
+    <td class="row-num" data-orig="{{ row.row_num }}">{{ row.row_num }}</td>
     <td>{{ row.first_name }}</td>
     <td>{{ row.last_name }}</td>
     <td>{{ row.department }}</td>
@@ -340,7 +373,9 @@
         {{ code }}
     </td>
     {% endfor %}
-    <!-- 🆕 ستون وضعیت حذف شد -->
+    <td class="no-print">
+        <input type="checkbox" class="print-toggle" checked aria-label="چاپ این ردیف">
+    </td>
 </tr>
 {% endfor %}
                 </tbody>
@@ -363,7 +398,7 @@
             <span class="code-gheyb">غ = غایب</span>
             <span class="code-rest">اس = استراحت</span>
             <span class="code-mission">م = مأموریت</span>
-            <span>خالی = جمعه/تعطیل</span>
+            <span>خالی = جمعه/تعطیل بدون تردد (تردد در تعطیل = ✓)</span>
             <span class="code-moarefa">معرفی = شروع قرارداد (یا روز عضویت بدون قرارداد)</span>
             <span class="code-tasvieh">تسویه = پایان قرارداد (یا ترک کار بدون قرارداد)</span>
         </div>
@@ -371,4 +406,83 @@
 </div>
 {% endif %}
 
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    function updatePrintVisibility() {
+        var table = document.getElementById('monthly-stats-table');
+        if (!table) return;
+        var toggles = table.querySelectorAll('tbody .print-toggle');
+        var selected = 0;
+        toggles.forEach(function (cb) {
+            var tr = cb.closest('tr');
+            if (!tr) return;
+            if (cb.checked) {
+                tr.classList.remove('exclude-print');
+                selected += 1;
+            } else {
+                tr.classList.add('exclude-print');
+            }
+        });
+        // 🆕 بروزرسانی ستون ردیف: فقط ردیف‌های انتخاب‌شده شماره ترتیبی می‌گیرند
+        var counter = 1;
+        table.querySelectorAll('tbody tr').forEach(function (tr) {
+            var cb = tr.querySelector('.print-toggle');
+            var numCell = tr.querySelector('.row-num');
+            if (!numCell) return;
+            if (cb && cb.checked) {
+                numCell.textContent = counter;
+                counter += 1;
+            } else {
+                numCell.textContent = '—';
+            }
+        });
+        var label = document.getElementById('print-count-label');
+        if (label) {
+            label.textContent = selected + ' از ' + toggles.length + ' نفر برای چاپ انتخاب شده';
+        }
+        var printTitle = document.getElementById('print-title-count');
+        if (printTitle) {
+            var base = printTitle.textContent.split('|')[0].trim();
+            printTitle.textContent = base + ' | ' + selected + ' کارمند';
+        }
+        var toggleAll = document.getElementById('toggle-all-print');
+        if (toggleAll) {
+            toggleAll.checked = toggles.length > 0 && selected === toggles.length;
+        }
+    }
+
+    function setAllPrint(checked) {
+        var table = document.getElementById('monthly-stats-table');
+        if (!table) return;
+        table.querySelectorAll('tbody .print-toggle').forEach(function (cb) {
+            cb.checked = checked;
+        });
+        updatePrintVisibility();
+    }
+
+    document.addEventListener('change', function (e) {
+        if (e.target && e.target.classList && e.target.classList.contains('print-toggle')) {
+            updatePrintVisibility();
+        }
+        if (e.target && e.target.id === 'toggle-all-print') {
+            setAllPrint(e.target.checked);
+        }
+    });
+
+    document.addEventListener('click', function (e) {
+        if (e.target && e.target.closest && e.target.closest('#btn-select-all-print')) {
+            setAllPrint(true);
+        }
+        if (e.target && e.target.closest && e.target.closest('#btn-deselect-all-print')) {
+            setAllPrint(false);
+        }
+    });
+
+    document.addEventListener('DOMContentLoaded', updatePrintVisibility);
+    window.addEventListener('beforeprint', updatePrintVisibility);
+})();
+</script>
 {% endblock %}

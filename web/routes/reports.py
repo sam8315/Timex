@@ -46,7 +46,7 @@ async def reports_page(
     """صفحه اصلی گزارشات"""
     # سال‌های موجود برای انتخاب
     current_year_j = jdatetime.date.today().year
-    available_years = list(range(current_year_j - 3, current_year_j + 1))
+    available_years = list(range(current_year_j, current_year_j - 6, -1))
 
     return templates.TemplateResponse(request, "admin/reports.html", {
         "user": user,
@@ -80,7 +80,7 @@ async def monthly_detailed_report_form(
 
     # سال‌های موجود
     current_year_j = jdatetime.date.today().year
-    available_years = list(range(current_year_j - 3, current_year_j + 1))
+    available_years = list(range(current_year_j, current_year_j - 6, -1))
 
     return templates.TemplateResponse(request, "admin/report_monthly_detailed.html", {
         "user": user,
@@ -134,7 +134,7 @@ async def monthly_detailed_report_generate(
         ]
 
         current_year_j = jdatetime.date.today().year
-        available_years = list(range(current_year_j - 3, current_year_j + 1))
+        available_years = list(range(current_year_j, current_year_j - 6, -1))
 
         return templates.TemplateResponse(request, "admin/report_monthly_detailed.html", {
             "user": user,
@@ -198,7 +198,7 @@ async def monthly_full_report_form(
     ]
 
     current_year_j = jdatetime.date.today().year
-    available_years = list(range(current_year_j - 3, current_year_j + 1))
+    available_years = list(range(current_year_j, current_year_j - 6, -1))
 
     return templates.TemplateResponse(request, "admin/report_monthly_full.html", {
         "user": user,
@@ -249,7 +249,7 @@ async def monthly_full_report_generate(
         ]
 
         current_year_j = jdatetime.date.today().year
-        available_years = list(range(current_year_j - 3, current_year_j + 1))
+        available_years = list(range(current_year_j, current_year_j - 6, -1))
 
         return templates.TemplateResponse(request, "admin/report_monthly_full.html", {
             "user": user,
@@ -291,13 +291,23 @@ DEPT_NAMES_REPORT = {
 
 
 def get_month_days_count(year: int, month: int) -> int:
-    """تعداد روزهای ماه شمسی"""
+    """تعداد روزهای ماه شمسی (اسفند در سال کبیسه ۳۰ روز)"""
     if month <= 6:
         return 31
     elif month <= 11:
         return 30
     else:
-        return 29  # اسفند (بدون کبیسه)
+        try:
+            return 30 if jdatetime.date(year, 1, 1).isleap() else 29
+        except Exception:
+            return 29
+
+
+def get_month_end_jalali(year: int, month: int):
+    """آخرین روز ماه شمسی (با لحاظ کبیسه برای اسفند)"""
+    if month == 12:
+        return jdatetime.date(year, 12, get_month_days_count(year, 12))
+    return jdatetime.date(year, month + 1, 1) - timedelta(days=1)
 
 
 def get_day_code(
@@ -320,8 +330,10 @@ def get_day_code(
     if contract_end_date and day_date == contract_end_date:
         return 'تسویه'
 
-    # اولویت ۳: جمعه یا تعطیل رسمی → خالی
+    # اولویت ۳: جمعه یا تعطیل رسمی → اگر تردد دارد حاضر، وگرنه خالی
     if is_friday or day_date in holiday_dates:
+        if has_attendance:
+            return '✓'
         return ''
 
     # اولویت ۴: مرخصی تأیید شده (فقط در روزهای کاری)
@@ -428,12 +440,9 @@ async def monthly_stats_report_generate(
         if month < 1 or month > 12:
             raise ValueError("ماه نامعتبر است")
 
-        # بازه ماه شمسی → میلادی
+        # بازه ماه شمسی → میلادی (با لحاظ کبیسه اسفند)
         month_start_j = jdatetime.date(year, month, 1)
-        if month == 12:
-            month_end_j = jdatetime.date(year, 12, 29)
-        else:
-            month_end_j = jdatetime.date(year, month + 1, 1) - timedelta(days=1)
+        month_end_j = get_month_end_jalali(year, month)
         month_start_g = month_start_j.togregorian()
         month_end_g = month_end_j.togregorian()
         days_count = get_month_days_count(year, month)
@@ -626,13 +635,10 @@ async def monthly_stats_report_excel(
         from fastapi.responses import StreamingResponse
 
         # ============================================
-        # 📅 محاسبه بازه ماه
+        # 📅 محاسبه بازه ماه (با لحاظ کبیسه اسفند)
         # ============================================
         month_start_j = jdatetime.date(year, month, 1)
-        if month == 12:
-            month_end_j = jdatetime.date(year, 12, 29)
-        else:
-            month_end_j = jdatetime.date(year, month + 1, 1) - timedelta(days=1)
+        month_end_j = get_month_end_jalali(year, month)
         month_start_g = month_start_j.togregorian()
         month_end_g = month_end_j.togregorian()
         days_count = get_month_days_count(year, month)
