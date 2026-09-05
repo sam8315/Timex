@@ -42,6 +42,28 @@
         </div>
     </div>
 
+    <!-- پیامک -->
+    <div class="col-md-6 col-lg-3">
+        <div class="card shadow-sm h-100">
+            <div class="card-body text-center p-4">
+                <div class="mb-3">
+                    <i class="bi bi-chat-dots" style="font-size: 3rem; color: #0dcaf0;"></i>
+                </div>
+                <h5 class="card-title mb-2">📱 پیامک</h5>
+                <p class="card-text small">
+                    {% if sms_enabled %}
+                    <span class="badge bg-success">فعال</span>
+                    {% else %}
+                    <span class="badge bg-secondary">غیرفعال</span>
+                    {% endif %}
+                </p>
+                <a href="/admin/policies/sms" class="btn btn-primary btn-sm">
+                    <i class="bi bi-eye"></i> مشاهده
+                </a>
+            </div>
+        </div>
+    </div>
+
     <!-- حضور و غیاب -->
     <div class="col-md-6 col-lg-3">
         <div class="card shadow-sm h-100">

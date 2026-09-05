@@ -22,6 +22,7 @@ from sqlalchemy import func
 from datetime import datetime, timedelta  # 🆕 timedelta
 from models.employee_phone import EmployeePhone  # 🆕
 from core.sms_service import SmsService          # 🆕
+from web.services.notification_service import is_sms_enabled  # 🆕 سوییچ پیامک
 import threading                                  # 🆕 برای ارسال async
 
 router = APIRouter(tags=["Admin Leave"])
@@ -661,9 +662,10 @@ async def approve_leave_request(
         db.add(tx)
         db.commit()
 
-        # 🆕 ۴. ارسال پیامک تایید (async - بدون کندی)
+        # 🆕 ۴. ارسال پیامک تایید (async - بدون کندی، فقط اگر فعال باشد)
         phones = _get_user_phones(db, leave_req.user_id)
-        if phones:
+        sms_sent = False
+        if phones and is_sms_enabled(db):
             type_name = LEAVE_TYPES.get(leave_req.leave_type, '')
             j_from = jdatetime.date.fromgregorian(date=leave_req.from_date)
             j_to = jdatetime.date.fromgregorian(date=leave_req.to_date)
@@ -677,6 +679,7 @@ async def approve_leave_request(
             )
 
             _send_sms_async(phones, sms_message, leave_req.user_id)
+            sms_sent = True
 
         type_name = LEAVE_TYPES.get(leave_req.leave_type, '')
         referer = request.headers.get("referer", "/admin/leave-requests")
@@ -686,7 +689,7 @@ async def approve_leave_request(
         if forced_negative:
             resulting = current_balance - leave_req.days_count
             success_msg += f" | ⚠️ مانده منفی شد: {resulting} روز"
-        success_msg += (" | پیامک ارسال شد 📱" if phones else "")
+        success_msg += (" | پیامک ارسال شد 📱" if sms_sent else "")
         return RedirectResponse(
             url=build_redirect_url(referer, "success", success_msg),
             status_code=302
@@ -730,9 +733,10 @@ async def reject_leave_request(
         leave_req.rejection_reason = rejection_reason.strip() or None
         db.commit()
 
-        # 🆕 ارسال پیامک رد (async)
+        # 🆕 ارسال پیامک رد (async - فقط اگر فعال باشد)
         phones = _get_user_phones(db, leave_req.user_id)
-        if phones:
+        sms_sent = False
+        if phones and is_sms_enabled(db):
             type_name = LEAVE_TYPES.get(leave_req.leave_type, '')
             j_from = jdatetime.date.fromgregorian(date=leave_req.from_date)
             j_to = jdatetime.date.fromgregorian(date=leave_req.to_date)
@@ -747,12 +751,13 @@ async def reject_leave_request(
             sms_message += "سامانه حضور و غیاب"
 
             _send_sms_async(phones, sms_message, leave_req.user_id)
+            sms_sent = True
 
         referer = request.headers.get("referer", "/admin/leave-requests")
         return RedirectResponse(
             url=build_redirect_url(
                 referer, "success",
-                "درخواست رد شد" + (" | پیامک ارسال شد 📱" if phones else "")
+                "درخواست رد شد" + (" | پیامک ارسال شد 📱" if sms_sent else "")
             ),
             status_code=302
         )

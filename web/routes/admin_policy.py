@@ -11,6 +11,7 @@ from typing import Optional
 import re
 from web.dependencies import get_db, require_super_admin
 from web.permissions import has_permission
+from web.services.notification_service import is_sms_enabled, set_sms_enabled
 from models.user import User
 from models.region import Region
 from models.policy import Policy, PolicyValue, PolicyAuditLog
@@ -127,7 +128,46 @@ async def admin_policies(
         "user": user,
         "is_admin": True,
         "is_super_admin": True,
+        "sms_enabled": is_sms_enabled(db),
     })
+
+
+@router.get("/admin/policies/sms", response_class=HTMLResponse)
+async def admin_policies_sms(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_super_admin)
+):
+    """SMS notification settings page"""
+    if not has_permission(db, user, 'manage_users'):
+        return RedirectResponse(url="/admin/", status_code=302)
+
+    return templates.TemplateResponse(request, "admin/policy_sms.html", {
+        "user": user,
+        "is_admin": True,
+        "is_super_admin": True,
+        "sms_enabled": is_sms_enabled(db),
+    })
+
+
+@router.post("/admin/policies/sms/save")
+async def admin_policies_sms_save(
+    request: Request,
+    enabled: str = Form("true"),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_super_admin)
+):
+    """Enable/disable leave SMS notifications"""
+    if not has_permission(db, user, 'manage_users'):
+        return RedirectResponse(url="/admin/", status_code=302)
+
+    set_sms_enabled(db, enabled == "true", changed_by=user.user_id)
+
+    referer = request.headers.get("referer", "/admin/policies/sms")
+    return RedirectResponse(
+        url=build_redirect_url(referer, "success", "saved"),
+        status_code=302
+    )
 
 
 @router.get("/admin/policies/leave", response_class=HTMLResponse)

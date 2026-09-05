@@ -5,12 +5,94 @@
 - مدیریت خطا بدون تأثیر بر فرآیند اصلی
 """
 import logging
+from typing import Optional
 from sqlalchemy.orm import Session
 from models.employee_phone import EmployeePhone
 from models.leave_request import LeaveRequest
+from models.policy import Policy, PolicyValue, PolicyAuditLog
 from core.sms_service import SmsService
 
 logger = logging.getLogger(__name__)
+
+# تنظیم سراسری ارسال پیامک اطلاع‌رسانی مرخصی (تایید/رد)
+SMS_POLICY_CATEGORY = "notification"
+SMS_ENABLED_KEY = "sms_enabled"
+
+
+def _get_notification_policy(db: Session) -> Policy:
+    """دریافت یا ایجاد سیاست پیامک"""
+    policy = db.query(Policy).filter(
+        Policy.category == SMS_POLICY_CATEGORY).first()
+    if not policy:
+        policy = Policy(
+            category=SMS_POLICY_CATEGORY,
+            name="سیاست پیامک",
+            description="تنظیمات ارسال پیامک اطلاع‌رسانی (تایید/رد مرخصی)",
+            is_active=True,
+        )
+        db.add(policy)
+        db.commit()
+        db.refresh(policy)
+    return policy
+
+
+def is_sms_enabled(db: Session) -> bool:
+    """آیا ارسال پیامک اطلاع‌رسانی فعال است؟ پیش‌فرض: فعال."""
+    policy = db.query(Policy).filter(
+        Policy.category == SMS_POLICY_CATEGORY).first()
+    if not policy:
+        return True
+    value = db.query(PolicyValue).filter(
+        PolicyValue.policy_id == policy.id,
+        PolicyValue.parameter_key == SMS_ENABLED_KEY,
+    ).first()
+    if not value:
+        return True
+    return value.parameter_value != "false"
+
+
+def set_sms_enabled(db: Session, enabled: bool,
+                    changed_by: Optional[str] = None) -> bool:
+    """فعال/غیرفعال کردن ارسال پیامک اطلاع‌رسانی + ثبت لاگ."""
+    policy = _get_notification_policy(db)
+    new_value = "true" if enabled else "false"
+    value = db.query(PolicyValue).filter(
+        PolicyValue.policy_id == policy.id,
+        PolicyValue.parameter_key == SMS_ENABLED_KEY,
+    ).first()
+    if value:
+        if value.parameter_value != new_value:
+            old_value = value.parameter_value
+            value.parameter_value = new_value
+            db.add(PolicyAuditLog(
+                entity_type="policy_value",
+                entity_id=f"{SMS_ENABLED_KEY}",
+                action="UPDATE",
+                old_value=old_value,
+                new_value=new_value,
+                changed_by=changed_by,
+                reason="تغییر وضعیت ارسال پیامک از پنل تنظیمات",
+            ))
+    else:
+        db.add(PolicyValue(
+            policy_id=policy.id,
+            region_code=None,
+            parameter_key=SMS_ENABLED_KEY,
+            parameter_value=new_value,
+            is_editable=True,
+            notes="ارسال پیامک تایید/رد مرخصی",
+        ))
+        db.add(PolicyAuditLog(
+            entity_type="policy_value",
+            entity_id=f"{SMS_ENABLED_KEY}",
+            action="CREATE",
+            old_value=None,
+            new_value=new_value,
+            changed_by=changed_by,
+            reason="تعیین وضعیت ارسال پیامک از پنل تنظیمات",
+        ))
+    db.commit()
+    return enabled
 
 
 def send_leave_sms_notification(

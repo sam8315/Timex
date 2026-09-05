@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}تنظیمات پیامک | سیاست کلی{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4>
+        <i class="bi bi-chat-dots text-info"></i>
+        📱 تنظیمات پیامک
+    </h4>
+    <div>
+        <a href="/admin/policies" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-arrow-right"></i> بازگشت
+        </a>
+    </div>
+</div>
+
+{% if request.query_params.get('success') == 'saved' %}
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+    <i class="bi bi-check-circle"></i>
+    تنظیمات پیامک با موفقیت ذخیره شد.
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<div class="row g-4">
+    <div class="col-md-6">
+        <div class="card shadow-sm">
+            <div class="card-header bg-white">
+                <h6 class="mb-0"><i class="bi bi-toggle-on text-primary"></i> وضعیت ارسال پیامک</h6>
+            </div>
+            <div class="card-body">
+                <p class="text-muted small mb-3">
+                    <i class="bi bi-info-circle"></i>
+                    در صورت غیرفعال بودن، هیچ پیامکی برای تایید یا رد مرخصی ارسال نمی‌شود
+                    (ثبت درخواست و تایید/رد بدون تغییر انجام می‌شود).
+                </p>
+                <form method="post" action="/admin/policies/sms/save">
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="radio" name="enabled"
+                               value="true" id="smsOn" {% if sms_enabled %}checked{% endif %}>
+                        <label class="form-check-label fw-bold" for="smsOn">
+                            ✅ فعال
+                            <small class="text-muted d-block">پیامک تایید/رد مرخصی ارسال شود</small>
+                        </label>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="radio" name="enabled"
+                               value="false" id="smsOff" {% if not sms_enabled %}checked{% endif %}>
+                        <label class="form-check-label fw-bold" for="smsOff">
+                            ⛔ غیرفعال
+                            <small class="text-muted d-block">هیچ پیامکی ارسال نشود</small>
+                        </label>
+                    </div>
+                    <div class="text-end">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-save"></i> ذخیره
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card shadow-sm">
+            <div class="card-header bg-white">
+                <h6 class="mb-0"><i class="bi bi-info-circle text-info"></i> راهنما</h6>
+            </div>
+            <div class="card-body">
+                <ul class="mb-0 small">
+                    <li class="mb-2">
+                        وضعیت فعلی:
+                        {% if sms_enabled %}
+                        <span class="badge bg-success">فعال</span>
+                        {% else %}
+                        <span class="badge bg-secondary">غیرفعال</span>
+                        {% endif %}
+                    </li>
+                    <li class="mb-2">این تنظیم فقط پیامک‌های <strong>تایید و رد مرخصی</strong> را کنترل می‌کند.</li>
+                    <li class="mb-2">پیامک <strong>کد تایید شماره موبایل</strong> (OTP) همیشه ارسال می‌شود و تابع این تنظیم نیست.</li>
+                    <li>تغییرات در <strong>گزارش حسابرسی سیاست‌ها</strong> ثبت می‌شود.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
