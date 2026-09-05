@@ -71,6 +71,53 @@ def read_test_status() -> Optional[dict]:
     except Exception:
         return None
 
+
+def _write_test_error(root: Path, message: str) -> None:
+    """ثبت خطای اجرای تست‌ها به‌صورت قابل نمایش در بنر داشبورد"""
+    try:
+        status_path = root / "log" / "test_status.json"
+        status_path.parent.mkdir(parents=True, exist_ok=True)
+        status_path.write_text(
+            json.dumps({
+                "ran_at": "", "ran_at_j": "-",
+                "duration_s": 0, "total": 0, "passed": 0,
+                "failed": 0, "errors": 1, "skipped": 0,
+                "success": False,
+                "failed_tests": [message[:500]],
+                "args": ["tests"],
+            }, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    except OSError:
+        pass
+
+
+def _finalize_test_run(root: Path, proc) -> None:
+    """پس از پایان ساب‌پروسس pytest: اگر هوک نتیجه را ثبت نکرده بود، خطا ثبت کن.
+
+    هوک tests/conftest.py در پایان هر اجرای موفق، test_status.json را
+    می‌نویسد و مارکر را پاک می‌کند؛ باقی ماندن مارکر یعنی اجرا ناقص مانده
+    (مثلاً pytest نصب نیست یا دیتابیس تست در دسترس نیست).
+    """
+    marker = root / "log" / "test_status.running"
+    try:
+        still_running = marker.exists()
+    except OSError:
+        still_running = False
+    if not still_running:
+        return  # هوک نتیجه واقعی را ثبت کرده است
+    detail = ""
+    if proc is not None:
+        output = (getattr(proc, "stderr", "") or getattr(proc, "stdout", "")
+                  or "").strip().splitlines()
+        detail = output[-1].strip() if output else ""
+        detail = f"pytest exit={getattr(proc, 'returncode', '?')}: {detail}"
+    _write_test_error(root, detail or "pytest did not complete")
+    try:
+        marker.unlink(missing_ok=True)
+    except OSError:
+        pass
+
 # 🆕 import تابع تحلیل وضعیت از صفحه کاربر عادی
 from web.routes.attendance import (
     analyze_day_status,
@@ -525,43 +572,24 @@ async def admin_run_tests(
         pass
 
     def _run():
+        proc = None
         try:
-            subprocess.run(
+            proc = subprocess.run(
                 [sys.executable, "-m", "pytest", "tests", "-q",
                  "-p", "no:cacheprovider"],
                 cwd=str(root),
                 timeout=600,
                 capture_output=True,
+                text=True,
             )
         except Exception as e:
+            _write_test_error(root, f"test-runner: {e}")
             try:
-                status_path = root / "log" / "test_status.json"
-                status_path.write_text(
-                    json.dumps({
-                        "ran_at": "", "ran_at_j": "-",
-                        "duration_s": 0, "total": 0, "passed": 0,
-                        "failed": 0, "errors": 1, "skipped": 0,
-                        "success": False,
-                        "failed_tests": [f"test-runner: {e}"],
-                        "args": ["tests"],
-                    }, ensure_ascii=False),
-                    encoding="utf-8",
-                )
+                marker.unlink(missing_ok=True)
             except OSError:
                 pass
         finally:
-            # هوک pytest در پایان اجرا مارکر را پاک می‌کند؛
-            # این fallback برای حالتی است که pytest اصلاً اجرا نشود
-            try:
-                if marker.exists():
-                    try:
-                        age = time.time() - marker.stat().st_mtime
-                    except OSError:
-                        age = 0
-                    if age >= 900:
-                        marker.unlink(missing_ok=True)
-            except OSError:
-                pass
+            _finalize_test_run(root, proc)
 
     threading.Thread(target=_run, daemon=True).start()
     referer = request.headers.get("referer", "/admin")
