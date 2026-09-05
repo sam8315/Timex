@@ -354,6 +354,41 @@ def get_day_code(
     else:
         return '-'
 
+
+def resolve_intro_settle_dates(user_contracts, hire_date, termination_date,
+                               month_start_g, month_end_g):
+    """تعیین تاریخ معرفی و تسویه یک کارمند برای بازه ماه.
+
+    - اگر قرارداد مرتبط با ماه پیدا شود: معرفی = شروع قرارداد (در ماه)،
+      تسویه = پایان قرارداد (در ماه) مگر اینکه قرارداد جدیدی بلافاصله بعد
+      شروع شده باشد.
+    - اگر قراردادی پیدا نشود: معرفی = تاریخ استخدام، تسویه = تاریخ ترک کار.
+    """
+    if user_contracts:
+        starts_in_month = [
+            c.start_date for c in user_contracts
+            if month_start_g <= c.start_date <= month_end_g
+        ]
+        intro_date = min(starts_in_month) if starts_in_month else None
+
+        ends_in_month = [
+            c.end_date for c in user_contracts
+            if c.end_date and month_start_g <= c.end_date <= month_end_g
+        ]
+        settle_date = None
+        for end_date in sorted(ends_in_month):
+            next_day = end_date + timedelta(days=1)
+            continued = any(
+                c.start_date <= next_day
+                and (c.end_date is None or c.end_date >= next_day)
+                for c in user_contracts
+            )
+            if not continued:
+                settle_date = end_date
+        return intro_date, settle_date
+
+    return hire_date, termination_date
+
 @router.get("/reports/monthly-stats", response_class=HTMLResponse)
 async def monthly_stats_report_form(
     request: Request,
@@ -474,32 +509,18 @@ async def monthly_stats_report_generate(
         ).all()
         holiday_dates = {h.holiday_date for h in holidays}
 
-        # دریافت قراردادها برای تعیین تاریخ پایان
-        contracts = db.query(Contract).filter(
+        # دریافت قراردادهای مرتبط با ماه (یک کوئری برای همه کاربران؛
+        # تا فردای پایان ماه تا قرارداد بعدیِ بلافاصله بعد هم دیده شود)
+        month_contracts = db.query(Contract).filter(
             and_(
-                Contract.end_date != None,
-                Contract.end_date >= month_start_g,
-                Contract.end_date <= month_end_g
+                Contract.start_date <= month_end_g + timedelta(days=1),
+                or_(Contract.end_date == None,
+                    Contract.end_date >= month_start_g)
             )
         ).all()
-        contract_end_map = {c.user_id: c.end_date for c in contracts}
-
-        # 🆕 بررسی قراردادهای جدید برای کاربرانی که قراردادشان تمام شده
-        # اگر قرارداد جدیدی بلافاصله بعد شروع شده، «تسویه» نمایش داده نشود
-        users_with_new_contract = set()
-        for uid, end_date in contract_end_map.items():
-            next_day = end_date + timedelta(days=1)
-            # بررسی قرارداد جدید که از فردای پایان قرارداد قبلی شروع شده
-            new_contract = db.query(Contract).filter(
-                and_(
-                    Contract.user_id == uid,
-                    Contract.start_date <= next_day,
-                    or_(Contract.end_date == None, Contract.end_date >= next_day)
-                )
-            ).first()
-
-            if new_contract:
-                users_with_new_contract.add(uid)
+        contracts_by_user = {}
+        for c in month_contracts:
+            contracts_by_user.setdefault(c.user_id, []).append(c)
 
         # ساخت داده‌های گزارش
         report_rows = []
@@ -509,9 +530,13 @@ async def monthly_stats_report_generate(
             user_statuses = status_map.get(uid, {})
             user_att = att_map.get(uid, set())
 
-            # 🆕 تاریخ عضویت و پایان قرارداد این کاربر
-            emp_hire_date = emp.hire_date if emp.hire_date else None
-            emp_contract_end = contract_end_map.get(uid, None)
+            # 🆕 تاریخ معرفی و تسویه: از قرارداد، وگرنه از استخدام/ترک کار
+            emp_hire_date, emp_contract_end = resolve_intro_settle_dates(
+                contracts_by_user.get(uid, []),
+                emp.hire_date if emp.hire_date else None,
+                emp.termination_date if emp.termination_date else None,
+                month_start_g, month_end_g
+            )
 
             # ستون‌های روزها
             day_codes = []
@@ -686,15 +711,17 @@ async def monthly_stats_report_excel(
         ).all()
         holiday_dates = {h.holiday_date for h in holidays}
 
-        # قراردادها
-        contracts = db.query(Contract).filter(
+        # قراردادهای مرتبط با ماه (یک کوئری برای همه کاربران)
+        month_contracts = db.query(Contract).filter(
             and_(
-                Contract.end_date != None,
-                Contract.end_date >= month_start_g,
-                Contract.end_date <= month_end_g
+                Contract.start_date <= month_end_g + timedelta(days=1),
+                or_(Contract.end_date == None,
+                    Contract.end_date >= month_start_g)
             )
         ).all()
-        contract_end_map = {c.user_id: c.end_date for c in contracts}
+        contracts_by_user = {}
+        for c in month_contracts:
+            contracts_by_user.setdefault(c.user_id, []).append(c)
 
         # ============================================
         # 🎨 تعریف استایل‌های رنگی
@@ -816,8 +843,13 @@ async def monthly_stats_report_excel(
             user_statuses = status_map.get(uid, {})
             user_att = att_map.get(uid, set())
 
-            emp_hire_date = emp.hire_date if emp.hire_date else None
-            emp_contract_end = contract_end_map.get(uid, None)
+            # 🆕 تاریخ معرفی و تسویه: از قرارداد، وگرنه از استخدام/ترک کار
+            emp_hire_date, emp_contract_end = resolve_intro_settle_dates(
+                contracts_by_user.get(uid, []),
+                emp.hire_date if emp.hire_date else None,
+                emp.termination_date if emp.termination_date else None,
+                month_start_g, month_end_g
+            )
 
             row_num = idx + 2  # شروع از ردیف 3
             is_even_row = (idx % 2 == 0)
@@ -926,7 +958,7 @@ async def monthly_stats_report_excel(
         guide_cell.value = (
             "راهنما: ✓=حاضر | -=بدون تردد | ص=استحقاقی | ج=استعلاجی | "
             "ت=تشویقی | غ=غایب | اس=استراحت | م=مأموریت | "
-            "معرفی=روز عضویت | تسویه=پایان قرارداد | خالی=جمعه/تعطیل"
+            "معرفی=شروع قرارداد (یا عضویت) | تسویه=پایان قرارداد (یا ترک کار) | خالی=جمعه/تعطیل"
         )
         guide_cell.font = Font(size=9, name=FONT_NAME, italic=True, color='666666')
         guide_cell.alignment = Alignment(horizontal='right', vertical='center')
