@@ -1,10 +1,11 @@
 """
 🔐 سیستم کنترل دسترسی (RBAC + Per-User Override)
 """
-from functools import lru_cache
+from datetime import datetime
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from models.user import User
-from models.user_permission import UserPermission
+from models.user_permission import UserPermission, UserPermissionHistory
 
 
 # ============================================
@@ -27,7 +28,7 @@ ALL_PERMISSIONS = {
     'edit_profile':         {'label': 'ویرایش پروفایل کارمند',     'admin': False, 'super_admin': True},
     'view_reports':         {'label': 'مشاهده گزارشات',            'admin': True,  'super_admin': True},
     'view_incomplete':      {'label': 'مشاهده ترددهای ناقص',       'admin': True,  'super_admin': True},
-    'view_contracts':       {'label': 'مشاهده قراردادها',          'admin': False, 'super_admin': True},
+    'view_contracts':       {'label': 'مشاهده قراردادها',          'admin': True,  'super_admin': True},
     'view_leave_balances':  {'label': 'مشاهده مانده مرخصی',        'admin': True,  'super_admin': True},
 }
 
@@ -63,8 +64,63 @@ def get_effective_permissions(db: Session, user: User) -> set:
 
 def has_permission(db: Session, user: User, permission: str) -> bool:
     """بررسی اینکه آیا کاربر دسترسی مشخصی دارد یا خیر"""
+    if permission not in ALL_PERMISSIONS:
+        return False
     effective = get_effective_permissions(db, user)
     return permission in effective
+
+
+def enforce_permission(db: Session, user: User, permission: str) -> None:
+    """اعمال دسترسی؛ در صورت نداشتن، خطای 403 می‌دهد.
+
+    برای صفحات HTML ادمین که قبلاً با require_admin گیت شده‌اند،
+    این تابع لایه دوم (override فردی) را اعمال می‌کند.
+    """
+    if not has_permission(db, user, permission):
+        raise HTTPException(status_code=403, detail="دسترسی غیرمجاز")
+
+
+def get_permission_history(db: Session, user_id: str, limit: int = 50) -> list:
+    """تاریخچه الحاقی تغییرات (جدیدترین اول)"""
+    try:
+        return (
+            db.query(UserPermissionHistory)
+            .filter(UserPermissionHistory.user_id == user_id)
+            .order_by(UserPermissionHistory.created_at.desc(), UserPermissionHistory.id.desc())
+            .limit(limit)
+            .all()
+        )
+    except Exception:
+        # اگر جدول history هنوز migrate نشده، fallback به جدول فعلی
+        return (
+            db.query(UserPermission)
+            .filter(UserPermission.user_id == user_id)
+            .order_by(UserPermission.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+
+
+def _log_history(
+    db: Session,
+    user_id: str,
+    permission: str,
+    action: str,
+    granted,
+    reason: str = "",
+    created_by: str = "",
+) -> None:
+    try:
+        db.add(UserPermissionHistory(
+            user_id=user_id,
+            permission=permission,
+            action=action,
+            granted=granted,
+            reason=reason,
+            created_by=created_by,
+        ))
+    except Exception:
+        pass
 
 
 def set_user_permission(
@@ -88,6 +144,10 @@ def set_user_permission(
         existing.granted = granted
         existing.reason = reason
         existing.created_by = created_by
+        try:
+            existing.updated_at = datetime.now()
+        except Exception:
+            pass
     else:
         new_perm = UserPermission(
             user_id=user_id,
@@ -98,12 +158,20 @@ def set_user_permission(
         )
         db.add(new_perm)
 
+    _log_history(db, user_id, permission, 'grant' if granted else 'revoke',
+                 granted, reason, created_by)
     db.commit()
     return True
 
 
-def remove_user_permission(db: Session, user_id: str, permission: str) -> bool:
-    """حذف override دسترسی (بازگشت به پیش‌فرض نقش)"""
+def remove_user_permission(
+    db: Session,
+    user_id: str,
+    permission: str,
+    reason: str = "",
+    created_by: str = "",
+) -> bool:
+    """حذف override دسترسی (بازگشت به پیش‌فرض نقش) + ثبت در تاریخچه"""
     existing = db.query(UserPermission).filter(
         UserPermission.user_id == user_id,
         UserPermission.permission == permission
@@ -111,6 +179,13 @@ def remove_user_permission(db: Session, user_id: str, permission: str) -> bool:
 
     if existing:
         db.delete(existing)
+        _log_history(db, user_id, permission, 'reset', None, reason, created_by)
         db.commit()
         return True
+    # حتی اگر override فعالی نبود، reset را لاگ کن تا نیت مدیر ثبت شود
+    _log_history(db, user_id, permission, 'reset', None, reason, created_by)
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
     return False

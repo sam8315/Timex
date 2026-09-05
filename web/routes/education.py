@@ -12,6 +12,7 @@ from datetime import date
 import time
 
 from web.dependencies import get_db, get_current_user, require_admin
+from web.permissions import enforce_permission
 from models.user import User
 from models.employee import Employee
 from models.education import Education, EDUCATION_GROUPS, DEGREE_LEVELS, DEGREE_PRIORITY
@@ -367,6 +368,7 @@ async def admin_education_list(
         db: Session = Depends(get_db)
 ):
     """لیست مدارک تحصیلی همه کاربران (پنل ادمین)"""
+    enforce_permission(db, user, 'view_dashboard')
     query = db.query(Education).outerjoin(Employee, Education.user_id == Employee.user_id)
 
     if verified_filter == 'pending':
@@ -425,6 +427,7 @@ async def admin_verify_education(
         db: Session = Depends(get_db)
 ):
     """تایید مدرک تحصیلی"""
+    enforce_permission(db, user, 'view_dashboard')
     try:
         edu = db.query(Education).filter(Education.id == edu_id).first()
 
@@ -450,6 +453,7 @@ async def admin_reject_education(
         db: Session = Depends(get_db)
 ):
     """رد مدرک تحصیلی (حذف)"""
+    enforce_permission(db, user, 'view_dashboard')
     try:
         edu = db.query(Education).filter(Education.id == edu_id).first()
 
@@ -483,6 +487,7 @@ async def admin_education_edit_form(
         db: Session = Depends(get_db)
 ):
     """فرم ویرایش مدرک توسط ادمین (حتی تایید شده)"""
+    enforce_permission(db, user, 'view_dashboard')
     edu = db.query(Education).filter(Education.id == edu_id).first()
 
     if not edu:
@@ -521,6 +526,7 @@ async def admin_education_update(
         db: Session = Depends(get_db)
 ):
     """ویرایش مدرک توسط ادمین (حتی تایید شده)"""
+    enforce_permission(db, user, 'view_dashboard')
     try:
         edu = db.query(Education).filter(Education.id == edu_id).first()
 
@@ -622,6 +628,7 @@ async def admin_education_delete(
         db: Session = Depends(get_db)
 ):
     """حذف مدرک توسط ادمین (حتی تایید شده)"""
+    enforce_permission(db, user, 'view_dashboard')
     try:
         edu = db.query(Education).filter(Education.id == edu_id).first()
 

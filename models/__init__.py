@@ -14,7 +14,7 @@ from models.employee import Employee  # 🆕
 from models.employee_phone import EmployeePhone
 from models.education import Education
 from models.leave_carry_forward_request import LeaveCarryForwardRequest
-from models.user_permission import UserPermission
+from models.user_permission import UserPermission, UserPermissionHistory
 from models.bale_user import BaleUser
 from models.region import Region
 from models.policy import Policy, PolicyValue, PolicyAuditLog
@@ -24,7 +24,7 @@ __all__ = [
     'Base', 'User', 'Attendance',
     'Contract', 'LeaveBalance', 'LeaveTransaction',
     'LeaveRequest', 'LeaveCarryForwardRequest', 'Holiday', 'DailyStatus',
-    'EmployeePhone', 'Education', 'UserPermission', 'BaleUser',
+    'EmployeePhone', 'Education', 'UserPermission', 'UserPermissionHistory', 'BaleUser',
     'Employee', 'Region', 'Policy', 'PolicyValue', 'PolicyAuditLog',
     'EmployeeRegion'
 ]

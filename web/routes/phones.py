@@ -6,10 +6,10 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 import re
 
-from web.dependencies import get_db, get_current_user
+from web.dependencies import get_db, get_current_user, require_admin
 from models.user import User
 from models.employee_phone import EmployeePhone
-from web.dependencies import get_db, get_current_user, require_admin  # 🆕 require_admin
+from web.permissions import enforce_permission
 
 router = APIRouter(tags=["Phones"])
 
@@ -172,6 +172,7 @@ async def admin_add_phone(
         db: Session = Depends(get_db)
 ):
     """افزودن شماره تلفن برای کاربر (توسط ادمین)"""
+    enforce_permission(db, user, 'edit_profile')
     try:
         # بررسی وجود کاربر
         from models.employee import Employee
@@ -235,6 +236,7 @@ async def admin_delete_phone(
         db: Session = Depends(get_db)
 ):
     """حذف شماره تلفن کاربر (توسط ادمین)"""
+    enforce_permission(db, user, 'edit_profile')
     try:
         phone = db.query(EmployeePhone).filter(
             EmployeePhone.id == phone_id,
@@ -277,6 +279,7 @@ async def admin_set_default_phone(
         db: Session = Depends(get_db)
 ):
     """تنظیم شماره پیش‌فرض کاربر (توسط ادمین)"""
+    enforce_permission(db, user, 'edit_profile')
     try:
         phone = db.query(EmployeePhone).filter(
             EmployeePhone.id == phone_id,

@@ -24,6 +24,10 @@
 
 <!-- لیست کاربران -->
 <div class="card border-0 shadow-sm">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <small class="text-muted">مجموع: <strong>{{ total }}</strong> کاربر</small>
+        <small class="text-muted">صفحه {{ page }} از {{ total_pages }}</small>
+    </div>
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-hover mb-0">
@@ -73,5 +77,16 @@
             </table>
         </div>
     </div>
+    {% if total_pages > 1 %}
+    <div class="card-footer bg-white d-flex justify-content-center gap-2 py-3">
+        {% if page > 1 %}
+        <a href="/admin/permissions?search={{ search }}&page={{ page - 1 }}&per_page={{ per_page }}" class="btn btn-outline-primary btn-sm">قبلی</a>
+        {% endif %}
+        <span class="align-self-center small text-muted">صفحه {{ page }} از {{ total_pages }}</span>
+        {% if page < total_pages %}
+        <a href="/admin/permissions?search={{ search }}&page={{ page + 1 }}&per_page={{ per_page }}" class="btn btn-outline-primary btn-sm">بعدی</a>
+        {% endif %}
+    </div>
+    {% endif %}
 </div>
 {% endblock %}

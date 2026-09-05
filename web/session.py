@@ -38,3 +38,26 @@ def get_session_from_request(request: Request) -> Optional[Dict]:
     if not token:
         return None
     return verify_session_token(token)
+
+
+# ---------------------------------------------------------------------------
+# CSRF — توکن امضاشده برای فرمهای POST حساس
+# (SameSite=Lax روی کوکی، لایه اول دفاع است؛ این توکن لایه دوم است)
+# ---------------------------------------------------------------------------
+_CSRF_SALT = "timex-csrf"
+
+
+def make_csrf_token(user_id: str) -> str:
+    """توکن CSRF امضاشده برای یک کاربر (پایدار در طول نشست)."""
+    return serializer.dumps({"csrf": "1", "uid": user_id}, salt=_CSRF_SALT)
+
+
+def check_csrf_token(token: str, user_id: str) -> bool:
+    """اعتبارسنجی توکن CSRF؛ امضا و تطابق با کاربر جاری را چک میکند."""
+    if not token:
+        return False
+    try:
+        data = serializer.loads(token, salt=_CSRF_SALT, max_age=WebConfig.CSRF_MAX_AGE)
+    except (SignatureExpired, BadSignature):
+        return False
+    return data.get("csrf") == "1" and data.get("uid") == user_id

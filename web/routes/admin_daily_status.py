@@ -11,6 +11,7 @@ import jdatetime
 from typing import Optional
 
 from web.dependencies import get_db, require_admin
+from web.permissions import enforce_permission
 from models.user import User
 from models.employee import Employee
 from models.daily_status import DailyStatus, STATUS_CODES
@@ -41,6 +42,7 @@ async def daily_status_page(
         db: Session = Depends(get_db)
 ):
     """لیست مأموریت‌ها و استراحت‌ها"""
+    enforce_permission(db, user, 'view_all_attendance')
     today_j = jdatetime.date.today()
     if not year:
         year = today_j.year
@@ -128,6 +130,7 @@ async def add_daily_status(
         db: Session = Depends(get_db)
 ):
     """ثبت مأموریت یا استراحت"""
+    enforce_permission(db, user, 'view_all_attendance')
     try:
         # بررسی کد وضعیت (با حذف فاصله‌های اضافی)
         status_code = status_code.strip()
@@ -183,6 +186,7 @@ async def delete_daily_status(
         db: Session = Depends(get_db)
 ):
     """حذف مأموریت یا استراحت"""
+    enforce_permission(db, user, 'view_all_attendance')
     status = db.query(DailyStatus).filter(DailyStatus.id == status_id).first()
     if not status:
         referer = request.headers.get("referer", "/admin/daily-status")

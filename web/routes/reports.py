@@ -10,6 +10,7 @@ from typing import Optional
 import jdatetime
 
 from web.dependencies import get_db, require_admin
+from web.permissions import enforce_permission
 from models.user import User
 from models.employee import Employee
 from fastapi.responses import FileResponse
@@ -44,6 +45,7 @@ async def reports_page(
         db: Session = Depends(get_db)
 ):
     """صفحه اصلی گزارشات"""
+    enforce_permission(db, user, 'view_reports')
     # سال‌های موجود برای انتخاب
     current_year_j = jdatetime.date.today().year
     available_years = list(range(current_year_j, current_year_j - 6, -1))
@@ -64,6 +66,7 @@ async def monthly_detailed_report_form(
         db: Session = Depends(get_db)
 ):
     """فرم انتخاب کاربر و ماه برای گزارش تفصیلی"""
+    enforce_permission(db, user, 'view_reports')
     # دریافت لیست کارمندان فعال
     employees = db.query(Employee).filter(
         Employee.is_active == True
@@ -104,6 +107,7 @@ async def monthly_detailed_report_generate(
         db: Session = Depends(get_db)
 ):
     """تولید گزارش تفصیلی ماهانه"""
+    enforce_permission(db, user, 'view_reports')
     try:
         # اعتبارسنجی ماه
         if month < 1 or month > 12:
@@ -184,6 +188,7 @@ async def monthly_full_report_form(
         db: Session = Depends(get_db)
 ):
     """فرم گزارش کامل ماهانه (شبیه PDF)"""
+    enforce_permission(db, user, 'view_reports')
     employees = db.query(Employee).filter(
         Employee.is_active == True
     ).order_by(Employee.first_name, Employee.last_name).all()
@@ -222,6 +227,7 @@ async def monthly_full_report_generate(
         db: Session = Depends(get_db)
 ):
     """تولید گزارش کامل ماهانه (شبیه PDF)"""
+    enforce_permission(db, user, 'view_reports')
     try:
         if month < 1 or month > 12:
             raise ValueError("ماه نامعتبر است")
@@ -410,6 +416,7 @@ async def monthly_stats_report_form(
     db: Session = Depends(get_db)
 ):
     """فرم گزارش آمار ماهیانه"""
+    enforce_permission(db, user, 'view_reports')
     current_year_j = jdatetime.date.today().year
     available_years = list(range(current_year_j, current_year_j - 6, -1))
 
@@ -436,6 +443,7 @@ async def monthly_stats_report_generate(
     db: Session = Depends(get_db)
 ):
     """تولید گزارش آمار ماهیانه"""
+    enforce_permission(db, user, 'view_reports')
     try:
         if month < 1 or month > 12:
             raise ValueError("ماه نامعتبر است")
@@ -627,6 +635,7 @@ async def monthly_stats_report_excel(
     db: Session = Depends(get_db)
 ):
     """خروجی اکسل گزارش آمار ماهیانه - با رنگ‌بندی کامل"""
+    enforce_permission(db, user, 'view_reports')
     try:
         import openpyxl
         from openpyxl.styles import (

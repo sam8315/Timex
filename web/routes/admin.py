@@ -36,7 +36,7 @@ from web.routes.attendance import (
     STATUS_NO_ATTENDANCE
 )
 from models.daily_status import DailyStatus
-from web.permissions import has_permission, get_effective_permissions
+from web.permissions import has_permission, get_effective_permissions, enforce_permission
 from models.employee_region import EmployeeRegion
 from models.policy import PolicyAuditLog
 
@@ -615,6 +615,7 @@ async def admin_users(
     db: Session = Depends(get_db)
 ):
     """مدیریت کاربران با فیلتر و جستجو"""
+    enforce_permission(db, user, 'view_dashboard')
     has_filter = any([search, department, role, status, web_status, show_all])
 
     user_details = []
@@ -707,6 +708,7 @@ async def admin_attendance(
     db: Session = Depends(get_db)
 ):
     """نمای روزانه تردد همه کارمندان"""
+    enforce_permission(db, user, 'view_all_attendance')
     # تاریخ هدف
     if date_str:
         try:
@@ -898,6 +900,7 @@ async def admin_user_attendance(
     db: Session = Depends(get_db)
 ):
     """نمای ماهانه تردد یک کاربر خاص (برای مدیر) - مشابه صفحه کاربر عادی"""
+    enforce_permission(db, user, 'view_user_attendance')
     today_j = jdatetime.date.today()
     if not year:
         year = today_j.year
@@ -1366,6 +1369,7 @@ async def admin_view_profile(
     db: Session = Depends(get_db)
 ):
     """مشاهده پروفایل یک کاربر توسط مدیر"""
+    enforce_permission(db, user, 'view_user_attendance')
     target_user = db.query(User).filter(User.user_id == target_user_id).first()
     if not target_user:
         return RedirectResponse(url="/admin/", status_code=302)
@@ -1437,10 +1441,11 @@ async def admin_view_profile(
 async def admin_edit_profile_page(
     request: Request,
     target_user_id: str,
-    user: User = Depends(require_super_admin),
+    user: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
-    """صفحه ویرایش پروفایل (فقط مدیر ارشد)"""
+    """صفحه ویرایش پروفایل (مدیر ارشد یا مدیر دارای دسترسی edit_profile)"""
+    enforce_permission(db, user, 'edit_profile')
     employee = db.query(Employee).filter(Employee.user_id == target_user_id).first()
     if not employee:
         return RedirectResponse(url=f"/admin/profile/{target_user_id}", status_code=302)
@@ -1489,10 +1494,11 @@ async def admin_edit_profile_submit(
     termination_date_str: str = Form(""),
     termination_reason: str = Form(""),
     region_code: str = Form("NORMAL"),
-    user: User = Depends(require_super_admin),
+    user: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
     """ذخیره ویرایش پروفایل"""
+    enforce_permission(db, user, 'edit_profile')
     employee = db.query(Employee).filter(Employee.user_id == target_user_id).first()
     if not employee:
         return RedirectResponse(url="/admin/users", status_code=302)
@@ -1568,10 +1574,11 @@ async def admin_edit_profile_submit(
 @router.post("/admin/users/{target_user_id}/reset-password")
 async def admin_reset_password(
         target_user_id: str,
-        user: User = Depends(require_super_admin),
+        user: User = Depends(require_admin),
         db: Session = Depends(get_db)
 ):
-    """ریست رمز عبور به کد ملی (فقط مدیر ارشد)"""
+    """ریست رمز عبور به کد ملی (نیازمند دسترسی reset_password)"""
+    enforce_permission(db, user, 'reset_password')
     target_user = db.query(User).filter(User.user_id == target_user_id).first()
     if not target_user:
         return RedirectResponse(url="/admin/users", status_code=302)
@@ -1603,10 +1610,11 @@ async def admin_reset_password(
 async def admin_change_role(
     target_user_id: str,
     new_role: str = Form(...),
-    user: User = Depends(require_super_admin),
+    user: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
-    """تغییر نقش کاربر (فقط مدیر ارشد)"""
+    """تغییر نقش کاربر (نیازمند دسترسی change_role)"""
+    enforce_permission(db, user, 'change_role')
     if new_role not in ('user', 'admin', 'super_admin'):
         return RedirectResponse(url="/admin/users?error=invalid-role", status_code=302)
 
@@ -1627,10 +1635,11 @@ async def admin_change_role(
 @router.post("/admin/users/{target_user_id}/toggle-web")
 async def admin_toggle_web(
     target_user_id: str,
-    user: User = Depends(require_super_admin),
+    user: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
-    """فعال/غیرفعال کردن دسترسی وب (فقط مدیر ارشد)"""
+    """فعال/غیرفعال کردن دسترسی وب (نیازمند دسترسی toggle_web)"""
+    enforce_permission(db, user, 'toggle_web')
     target_user = db.query(User).filter(User.user_id == target_user_id).first()
     if not target_user:
         return RedirectResponse(url="/admin/users", status_code=302)
@@ -1659,6 +1668,7 @@ async def admin_upload_photo(
     db: Session = Depends(get_db)
 ):
     """آپلود عکس پروفایل کاربر (توسط مدیر)"""
+    enforce_permission(db, user, 'upload_photo')
     # اعتبارسنجی نوع فایل
     ext = Path(file.filename).suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
@@ -1719,6 +1729,7 @@ async def admin_delete_photo(
     db: Session = Depends(get_db)
 ):
     """حذف عکس پروفایل کاربر"""
+    enforce_permission(db, user, 'upload_photo')
     employee = db.query(Employee).filter(Employee.user_id == target_user_id).first()
     if not employee:
         return RedirectResponse(url="/admin/users", status_code=302)
@@ -1753,6 +1764,7 @@ async def admin_change_punch(
     db: Session = Depends(get_db)
 ):
     """تغییر وضعیت ورود/خروج"""
+    enforce_permission(db, user, 'change_punch')
     record = db.query(Attendance).filter(Attendance.id == record_id).first()
     if not record:
         return RedirectResponse(url="/admin/attendance?error=رکورد یافت نشد", status_code=302)
@@ -1772,6 +1784,7 @@ async def admin_delete_record(
     db: Session = Depends(get_db)
 ):
     """حذف رکورد تردد"""
+    enforce_permission(db, user, 'delete_attendance')
     record = db.query(Attendance).filter(Attendance.id == record_id).first()
     if not record:
         return RedirectResponse(url="/admin/attendance?error=رکورد یافت نشد", status_code=302)
@@ -1797,6 +1810,7 @@ async def admin_add_record(
     db: Session = Depends(get_db)
 ):
     """افزودن رکورد تردد"""
+    enforce_permission(db, user, 'add_attendance')
     try:
         # تبدیل تاریخ شمسی
         j_date = jdatetime.datetime.strptime(date_str, "%Y/%m/%d").date()
@@ -1839,6 +1853,7 @@ async def admin_incomplete_attendance(
     db: Session = Depends(get_db)
 ):
     """نمایش ترددهای ناقص با فیلترهای پیشرفته"""
+    enforce_permission(db, user, 'view_incomplete')
     from core.attendance_analyzer import AttendanceAnalyzer
     from models.employee import Employee
     from models.attendance import Attendance

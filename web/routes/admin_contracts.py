@@ -12,6 +12,7 @@ import jdatetime
 from typing import Optional
 
 from web.dependencies import get_db, require_admin
+from web.permissions import enforce_permission
 from models.user import User
 from models.employee import Employee
 from models.contract import Contract, CONTRACT_TYPES
@@ -80,6 +81,7 @@ async def contracts_page(
     db: Session = Depends(get_db)
 ):
     """لیست قراردادها"""
+    enforce_permission(db, user, 'view_contracts')
     has_filter = any([search, type_filter, status_filter, show_all])
     contracts_data = []
 
@@ -157,6 +159,7 @@ async def add_contract(
     db: Session = Depends(get_db)
 ):
     """ثبت قرارداد جدید + شارژ مرخصی"""
+    enforce_permission(db, user, 'view_contracts')
     try:
         # اعتبارسنجی نوع قرارداد
         if contract_type_code not in CONTRACT_TYPES:
@@ -243,6 +246,7 @@ async def edit_contract(
     db: Session = Depends(get_db)
 ):
     """ویرایش قرارداد + بروزرسانی مرخصی"""
+    enforce_permission(db, user, 'view_contracts')
     contract = db.query(Contract).filter(Contract.id == contract_id).first()
     if not contract:
         referer = request.headers.get("referer", "/admin/contracts")
@@ -326,6 +330,7 @@ async def delete_contract(
     db: Session = Depends(get_db)
 ):
     """حذف قرارداد + حذف مرخصی"""
+    enforce_permission(db, user, 'view_contracts')
     contract = db.query(Contract).filter(Contract.id == contract_id).first()
     if not contract:
         referer = request.headers.get("referer", "/admin/contracts")

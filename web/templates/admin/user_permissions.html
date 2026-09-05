@@ -82,8 +82,12 @@
                                 <td class="text-center">
                                     <form method="post"
                                           action="/admin/permissions/{{ target_user.user_id }}/toggle"
-                                          class="d-inline">
+                                          class="d-flex gap-1 justify-content-center align-items-center">
                                         <input type="hidden" name="permission" value="{{ perm.code }}">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                        <input type="text" name="reason" class="form-control form-control-sm"
+                                               placeholder="دلیل (اختیاری)" style="max-width: 130px;"
+                                               value="{{ perm.override.reason if perm.override and perm.override.reason else '' }}">
 
                                         {% if perm.source == 'role' %}
                                             <!-- پیش‌فرض نقش: فقط امکان سلب یا اعطای اضافی -->
@@ -134,7 +138,9 @@
                             <div>
                                 <strong>{{ h.permission_label }}</strong>
                                 <br>
-                                {% if h.granted %}
+                                {% if h.action == 'reset' %}
+                                <span class="badge bg-warning text-dark">بازنشانی</span>
+                                {% elif h.granted %}
                                 <span class="badge bg-success">اعطا</span>
                                 {% else %}
                                 <span class="badge bg-danger">سلب</span>

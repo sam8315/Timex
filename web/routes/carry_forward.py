@@ -12,6 +12,7 @@ from datetime import datetime
 import jdatetime
 
 from web.dependencies import get_db, require_admin, get_current_user
+from web.permissions import enforce_permission
 from models.user import User
 from models.employee import Employee
 from models.leave_carry_forward_request import LeaveCarryForwardRequest, REQUEST_STATUS
@@ -71,6 +72,7 @@ async def carry_forward_requests_page(
     db: Session = Depends(get_db)
 ):
     """لیست درخواست‌های انتقال/بازخرید مرخصی"""
+    enforce_permission(db, user, 'view_leave_balances')
     has_filter = any([status_filter, show_all])
     requests_data = []
 
@@ -115,6 +117,7 @@ async def approve_cash_out(
     db: Session = Depends(get_db)
 ):
     """تایید درخواست بازخرید"""
+    enforce_permission(db, user, 'approve_leave')
     result = admin_approve_cash_out(db, request_id, user.user_id)
     referer = request.headers.get("referer", "/admin/carry-forward-requests")
     if result['success']:
@@ -138,6 +141,7 @@ async def reject_cash_out(
     db: Session = Depends(get_db)
 ):
     """رد درخواست بازخرید → انتقال به سال جدید"""
+    enforce_permission(db, user, 'approve_leave')
     result = admin_reject_cash_out(db, request_id, user.user_id, admin_note)
     referer = request.headers.get("referer", "/admin/carry-forward-requests")
     if result['success']:

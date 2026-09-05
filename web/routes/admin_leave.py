@@ -11,6 +11,7 @@ import jdatetime
 from typing import Optional
 
 from web.dependencies import get_db, require_admin, require_super_admin
+from web.permissions import enforce_permission
 from models.user import User
 from models.employee import Employee
 from models.leave_balance import LeaveBalance
@@ -87,6 +88,7 @@ async def leave_balances_page(
         db: Session = Depends(get_db)
 ):
     """لیست مانده مرخصی کاربران - همه سال‌ها"""
+    enforce_permission(db, user, 'view_leave_balances')
     today_j = jdatetime.date.today()
 
     # تبدیل year به int اگر خالی نباشد
@@ -259,6 +261,7 @@ async def leave_transactions_page(
     db: Session = Depends(get_db)
 ):
     """لیست تراکنش‌های مرخصی - همه سال‌ها"""
+    enforce_permission(db, user, 'view_leave_balances')
     today_j = jdatetime.date.today()
 
     # 🆕 تبدیل year به int اگر خالی نباشد
@@ -359,6 +362,7 @@ async def adjust_balance(
     db: Session = Depends(get_db)
 ):
     """تنظیم دستی مانده مرخصی + ثبت تراکنش"""
+    enforce_permission(db, user, 'view_leave_balances')
     if amount == 0:
         referer = request.headers.get("referer", "/admin/leave-balances")
         return RedirectResponse(
@@ -432,6 +436,7 @@ async def leave_requests_page(
 ):
     """لیست درخواست‌های مرخصی"""
 
+    enforce_permission(db, user, 'approve_leave')
     search_term = (search or "").strip()
 
     has_filter = any([status_filter, leave_type, search_term, show_all])
@@ -582,6 +587,7 @@ async def approve_leave_request(
         db: Session = Depends(get_db)
 ):
     """تایید درخواست مرخصی + کسر از مانده + ارسال پیامک"""
+    enforce_permission(db, user, 'approve_leave')
     leave_req = db.query(LeaveRequest).filter(LeaveRequest.id == request_id).first()
     if not leave_req:
         return RedirectResponse(url="/admin/leave-requests?error=درخواست یافت نشد", status_code=302)
@@ -714,6 +720,7 @@ async def reject_leave_request(
         db: Session = Depends(get_db)
 ):
     """رد درخواست مرخصی (بدون کسر از مانده) + ارسال پیامک"""
+    enforce_permission(db, user, 'approve_leave')
     leave_req = db.query(LeaveRequest).filter(LeaveRequest.id == request_id).first()
     if not leave_req:
         return RedirectResponse(url="/admin/leave-requests?error=درخواست یافت نشد", status_code=302)
@@ -780,6 +787,7 @@ async def delete_leave_request(
     db: Session = Depends(get_db)
 ):
     """حذف مرخصی تایید شده + برگرداندن روزها به مانده"""
+    enforce_permission(db, user, 'approve_leave')
     leave_req = db.query(LeaveRequest).filter(LeaveRequest.id == request_id).first()
     if not leave_req:
         referer = request.headers.get("referer", "/admin/leave-requests")
@@ -862,6 +870,7 @@ async def import_previous_leave_page(
     db: Session = Depends(get_db)
 ):
     """صفحه وارد کردن مرخصی ذخیره سال قبل"""
+    enforce_permission(db, user, 'view_leave_balances')
     return templates.TemplateResponse(request, "admin/import_previous_leave.html", {
         "user": user,
         "is_admin": True,
@@ -878,6 +887,7 @@ async def import_previous_leave(
     db: Session = Depends(get_db)
 ):
     """پردازش وارد کردن مرخصی ذخیره"""
+    enforce_permission(db, user, 'view_leave_balances')
     results = []
     lines = data.strip().split('\n')
 
@@ -1013,6 +1023,7 @@ async def import_previous_leave_results(
     db: Session = Depends(get_db)
 ):
     """نمایش نتایج وارد کردن"""
+    enforce_permission(db, user, 'view_leave_balances')
     results = request.session.get('import_results', [])
     summary = request.session.get('import_summary', {})
 
@@ -1065,6 +1076,7 @@ async def register_leave_form(
         db: Session = Depends(get_db)
 ):
     """فرم ثبت مرخصی برای سایر کاربران"""
+    enforce_permission(db, user, 'approve_leave')
     from models.employee import Employee
 
     # دریافت لیست کارمندان فعال برای انتخاب
@@ -1101,6 +1113,7 @@ async def register_leave_for_user(
         db: Session = Depends(get_db)
 ):
     """ثبت مرخصی برای یک کاربر (توسط مدیر) - در حالت در انتظار بررسی"""
+    enforce_permission(db, user, 'approve_leave')
     from models.employee import Employee
     from models.leave_request import LeaveRequest
 
@@ -1191,6 +1204,7 @@ async def edit_leave_request_form(
         db: Session = Depends(get_db)
 ):
     """فرم ویرایش درخواست مرخصی (همه وضعیت‌ها)"""
+    enforce_permission(db, user, 'approve_leave')
     leave_request = db.query(LeaveRequest).filter(LeaveRequest.id == request_id).first()
 
     if not leave_request:
@@ -1252,6 +1266,7 @@ async def edit_leave_request_submit(
         db: Session = Depends(get_db)
 ):
     """ثبت تغییرات درخواست مرخصی (همه وضعیت‌ها)"""
+    enforce_permission(db, user, 'approve_leave')
     try:
         leave_request = db.query(LeaveRequest).filter(LeaveRequest.id == request_id).first()
 
