@@ -12,781 +12,782 @@
     <!-- Vazirmatn Font -->
     <link href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" rel="stylesheet">
 
-<!-- 📅 Persian DatePicker CSS -->
-<link href="https://cdn.jsdelivr.net/npm/persian-datepicker@1.2.0/dist/css/persian-datepicker.min.css" rel="stylesheet">
+    <!-- 📅 Persian DatePicker CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/persian-datepicker@1.2.0/dist/css/persian-datepicker.min.css"
+          rel="stylesheet">
 
     <style>
-    /* ============================================ */
-    /* 📅 استایل تقویم شمسی - مدرن و زیبا            */
-    /* ============================================ */
+        /* ============================================ */
+        /* 📅 استایل تقویم شمسی - مدرن و زیبا            */
+        /* ============================================ */
 
-    /* کانتینر اصلی تقویم */
-    .datepicker-plot-area {
-        font-family: 'Vazirmatn', 'Tahoma', sans-serif !important;
-        direction: rtl;
-        border-radius: 16px !important;
-        box-shadow: 0 12px 40px rgba(0,0,0,0.15) !important;
-        border: 1px solid #e9ecef !important;
-        overflow: hidden;
-        min-width: 320px !important;
-        padding: 0 !important;
-    }
-
-    /* هدر تقویم */
-    .datepicker-plot-area .datepicker-header {
-        background: linear-gradient(135deg, #0d6efd 0%, #6610f2 100%) !important;
-        padding: 16px 12px !important;
-        border-bottom: none !important;
-    }
-
-    .datepicker-plot-area .datepicker-header .btn-next,
-    .datepicker-plot-area .datepicker-header .btn-prev {
-        color: white !important;
-        font-size: 1.1rem !important;
-        width: 36px !important;
-        height: 36px !important;
-        border-radius: 10px !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        transition: background 0.2s ease !important;
-    }
-
-    .datepicker-plot-area .datepicker-header .btn-next:hover,
-    .datepicker-plot-area .datepicker-header .btn-prev:hover {
-        background: rgba(255,255,255,0.2) !important;
-    }
-
-    .datepicker-plot-area .datepicker-header .btn-switch {
-        color: white !important;
-        font-weight: 700 !important;
-        font-size: 1rem !important;
-        border-radius: 8px !important;
-        padding: 4px 16px !important;
-        transition: background 0.2s ease !important;
-    }
-
-    .datepicker-plot-area .datepicker-header .btn-switch:hover {
-        background: rgba(255,255,255,0.2) !important;
-    }
-
-    /* بدنه تقویم */
-    .datepicker-plot-area .datepicker-body-view {
-        padding: 12px !important;
-    }
-
-    /* نام روزهای هفته */
-    .datepicker-plot-area .datepicker-day-view .table-days th {
-        font-size: 0.75rem !important;
-        font-weight: 600 !important;
-        color: #6c757d !important;
-        padding: 8px 0 !important;
-        border: none !important;
-    }
-
-    /* سلول‌های روز */
-    .datepicker-plot-area .datepicker-day-view .table-days td {
-        padding: 4px !important;
-        border: none !important;
-    }
-
-    .datepicker-plot-area .datepicker-day-view .table-days td span {
-        width: 38px !important;
-        height: 38px !important;
-        line-height: 38px !important;
-        border-radius: 12px !important;
-        font-size: 0.9rem !important;
-        font-weight: 500 !important;
-        color: #212529 !important;
-        transition: all 0.15s ease !important;
-        display: inline-flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-    }
-
-    .datepicker-plot-area .datepicker-day-view .table-days td span:hover {
-        background: #e7f3ff !important;
-        color: #0d6efd !important;
-        transform: scale(1.1);
-    }
-
-    /* روز انتخاب شده */
-    .datepicker-plot-area .datepicker-day-view .table-days td.selected span {
-        background: linear-gradient(135deg, #0d6efd 0%, #6610f2 100%) !important;
-        color: white !important;
-        font-weight: 700 !important;
-        box-shadow: 0 4px 12px rgba(13, 110, 253, 0.3) !important;
-    }
-
-    /* روز جاری (امروز) */
-    .datepicker-plot-area .datepicker-day-view .table-days td.today span {
-        border: 2px solid #0d6efd !important;
-        color: #0d6efd !important;
-        font-weight: 700 !important;
-    }
-
-    .datepicker-plot-area .datepicker-day-view .table-days td.today.selected span {
-        background: linear-gradient(135deg, #0d6efd 0%, #6610f2 100%) !important;
-        color: white !important;
-        border-color: transparent !important;
-    }
-
-    /* روزهای غیرفعال */
-    .datepicker-plot-area .datepicker-day-view .table-days td.disabled span {
-        color: #ced4da !important;
-        cursor: not-allowed !important;
-    }
-
-    .datepicker-plot-area .datepicker-day-view .table-days td.disabled span:hover {
-        background: transparent !important;
-        transform: none;
-    }
-
-    /* روزهای تعطیل */
-    .datepicker-plot-area .datepicker-day-view .table-days td.holiday span {
-        color: #dc3545 !important;
-    }
-
-    /* نوار ابزار پایین */
-    .datepicker-plot-area .datepicker-toolbox {
-        padding: 10px 12px !important;
-        border-top: 1px solid #e9ecef !important;
-        background: #f8f9fa !important;
-        display: flex !important;
-        justify-content: center !important;
-        gap: 8px !important;
-    }
-
-    .datepicker-plot-area .datepicker-toolbox .btn-today {
-        background: white !important;
-        border: 1px solid #dee2e6 !important;
-        color: #0d6efd !important;
-        border-radius: 8px !important;
-        padding: 6px 20px !important;
-        font-size: 0.85rem !important;
-        font-weight: 600 !important;
-        font-family: 'Vazirmatn', sans-serif !important;
-        transition: all 0.2s ease !important;
-    }
-
-    .datepicker-plot-area .datepicker-toolbox .btn-today:hover {
-        background: #0d6efd !important;
-        color: white !important;
-        border-color: #0d6efd !important;
-    }
-
-    /* نمای ماه و سال */
-    .datepicker-plot-area .datepicker-month-view .month-item,
-    .datepicker-plot-area .datepicker-year-view .year-item {
-        border-radius: 10px !important;
-        padding: 10px !important;
-        margin: 4px !important;
-        font-size: 0.9rem !important;
-        font-weight: 500 !important;
-        transition: all 0.15s ease !important;
-    }
-
-    .datepicker-plot-area .datepicker-month-view .month-item:hover,
-    .datepicker-plot-area .datepicker-year-view .year-item:hover {
-        background: #e7f3ff !important;
-        color: #0d6efd !important;
-    }
-
-    .datepicker-plot-area .datepicker-month-view .month-item.selected,
-    .datepicker-plot-area .datepicker-year-view .year-item.selected {
-        background: linear-gradient(135deg, #0d6efd 0%, #6610f2 100%) !important;
-        color: white !important;
-    }
-
-    /* ============================================ */
-    /* 🌙 Dark Mode تقویم                           */
-    /* ============================================ */
-    [data-theme="dark"] .datepicker-plot-area {
-        background: #242526 !important;
-        border-color: #3a3b3c !important;
-        box-shadow: 0 12px 40px rgba(0,0,0,0.4) !important;
-    }
-
-    [data-theme="dark"] .datepicker-plot-area .datepicker-header {
-        background: linear-gradient(135deg, #1a3a5c 0%, #2d1b69 100%) !important;
-    }
-
-    [data-theme="dark"] .datepicker-plot-area .datepicker-day-view .table-days th {
-        color: #8a8d91 !important;
-    }
-
-    [data-theme="dark"] .datepicker-plot-area .datepicker-day-view .table-days td span {
-        color: #e4e6eb !important;
-    }
-
-    [data-theme="dark"] .datepicker-plot-area .datepicker-day-view .table-days td span:hover {
-        background: #3a3b3c !important;
-        color: #4dabf7 !important;
-    }
-
-    [data-theme="dark"] .datepicker-plot-area .datepicker-day-view .table-days td.selected span {
-        background: linear-gradient(135deg, #1a73e8 0%, #6c5ce7 100%) !important;
-        color: white !important;
-        box-shadow: 0 4px 12px rgba(26, 115, 232, 0.4) !important;
-    }
-
-    [data-theme="dark"] .datepicker-plot-area .datepicker-day-view .table-days td.today span {
-        border-color: #4dabf7 !important;
-        color: #4dabf7 !important;
-    }
-
-    [data-theme="dark"] .datepicker-plot-area .datepicker-day-view .table-days td.today.selected span {
-        background: linear-gradient(135deg, #1a73e8 0%, #6c5ce7 100%) !important;
-        border-color: transparent !important;
-    }
-
-    [data-theme="dark"] .datepicker-plot-area .datepicker-day-view .table-days td.disabled span {
-        color: #4a4b4d !important;
-    }
-
-    [data-theme="dark"] .datepicker-plot-area .datepicker-day-view .table-days td.holiday span {
-        color: #f87171 !important;
-    }
-
-    [data-theme="dark"] .datepicker-plot-area .datepicker-toolbox {
-        background: #1e1f20 !important;
-        border-color: #3a3b3c !important;
-    }
-
-    [data-theme="dark"] .datepicker-plot-area .datepicker-toolbox .btn-today {
-        background: #3a3b3c !important;
-        border-color: #4a4b4d !important;
-        color: #4dabf7 !important;
-    }
-
-    [data-theme="dark"] .datepicker-plot-area .datepicker-toolbox .btn-today:hover {
-        background: #1a73e8 !important;
-        color: white !important;
-        border-color: #1a73e8 !important;
-    }
-
-    [data-theme="dark"] .datepicker-plot-area .datepicker-month-view .month-item,
-    [data-theme="dark"] .datepicker-plot-area .datepicker-year-view .year-item {
-        color: #e4e6eb !important;
-    }
-
-    [data-theme="dark"] .datepicker-plot-area .datepicker-month-view .month-item:hover,
-    [data-theme="dark"] .datepicker-plot-area .datepicker-year-view .year-item:hover {
-        background: #3a3b3c !important;
-        color: #4dabf7 !important;
-    }
-
-    [data-theme="dark"] .datepicker-plot-area .datepicker-month-view .month-item.selected,
-    [data-theme="dark"] .datepicker-plot-area .datepicker-year-view .year-item.selected {
-        background: linear-gradient(135deg, #1a73e8 0%, #6c5ce7 100%) !important;
-        color: white !important;
-    }
-
-    /* ============================================ */
-    /* 📱 واکنش‌گرایی تقویم                          */
-    /* ============================================ */
-    /* تقویم باید بالای مودال‌های بوت‌استرپ باز شود */
-    .datepicker-plot-area {
-        z-index: 9999 !important;
-    }
-
-    @media (max-width: 576px) {
+        /* کانتینر اصلی تقویم */
         .datepicker-plot-area {
-            min-width: 280px !important;
+            font-family: 'Vazirmatn', 'Tahoma', sans-serif !important;
+            direction: rtl;
+            border-radius: 16px !important;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.15) !important;
+            border: 1px solid #e9ecef !important;
+            overflow: hidden;
+            min-width: 320px !important;
+            padding: 0 !important;
         }
+
+        /* هدر تقویم */
+        .datepicker-plot-area .datepicker-header {
+            background: linear-gradient(135deg, #0d6efd 0%, #6610f2 100%) !important;
+            padding: 16px 12px !important;
+            border-bottom: none !important;
+        }
+
+        .datepicker-plot-area .datepicker-header .btn-next,
+        .datepicker-plot-area .datepicker-header .btn-prev {
+            color: white !important;
+            font-size: 1.1rem !important;
+            width: 36px !important;
+            height: 36px !important;
+            border-radius: 10px !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            transition: background 0.2s ease !important;
+        }
+
+        .datepicker-plot-area .datepicker-header .btn-next:hover,
+        .datepicker-plot-area .datepicker-header .btn-prev:hover {
+            background: rgba(255,255,255,0.2) !important;
+        }
+
+        .datepicker-plot-area .datepicker-header .btn-switch {
+            color: white !important;
+            font-weight: 700 !important;
+            font-size: 1rem !important;
+            border-radius: 8px !important;
+            padding: 4px 16px !important;
+            transition: background 0.2s ease !important;
+        }
+
+        .datepicker-plot-area .datepicker-header .btn-switch:hover {
+            background: rgba(255,255,255,0.2) !important;
+        }
+
+        /* بدنه تقویم */
+        .datepicker-plot-area .datepicker-body-view {
+            padding: 12px !important;
+        }
+
+        /* نام روزهای هفته */
+        .datepicker-plot-area .datepicker-day-view .table-days th {
+            font-size: 0.75rem !important;
+            font-weight: 600 !important;
+            color: #6c757d !important;
+            padding: 8px 0 !important;
+            border: none !important;
+        }
+
+        /* سلول‌های روز */
+        .datepicker-plot-area .datepicker-day-view .table-days td {
+            padding: 4px !important;
+            border: none !important;
+        }
+
         .datepicker-plot-area .datepicker-day-view .table-days td span {
-            width: 32px !important;
-            height: 32px !important;
-            line-height: 32px !important;
-            font-size: 0.82rem !important;
-        }
-    }
-        /* ============================================ */
-        /* 🎨 متغیرهای رنگی (Light / Dark)              */
-        /* ============================================ */
-        :root {
-            --bg-body: #f0f2f5;
-            --bg-card: #ffffff;
-            --bg-sidebar: #ffffff;
-            --bg-topbar: #ffffff;
-            --bg-hover: #f0f2f5;
-            --bg-active: #e7f3ff;
-            --text-primary: #212529;
-            --text-secondary: #6c757d;
-            --text-muted: #adb5bd;
-            --border-color: #e9ecef;
-            --primary: #0d6efd;
-            --primary-soft: #e7f3ff;
-            --shadow-sm: 0 1px 3px rgba(0,0,0,0.05);
-            --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+            width: 38px !important;
+            height: 38px !important;
+            line-height: 38px !important;
+            border-radius: 12px !important;
+            font-size: 0.9rem !important;
+            font-weight: 500 !important;
+            color: #212529 !important;
+            transition: all 0.15s ease !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
         }
 
-        [data-theme="dark"] {
-            --bg-body: #18191a;
-            --bg-card: #242526;
-            --bg-sidebar: #242526;
-            --bg-topbar: #242526;
-            --bg-hover: #3a3b3c;
-            --bg-active: #263c5c;
-            --text-primary: #e4e6eb;
-            --text-secondary: #b0b3b8;
-            --text-muted: #8a8d91;
-            --border-color: #3a3b3c;
-            --primary: #4dabf7;
-            --primary-soft: #263c5c;
-            --shadow-sm: 0 1px 3px rgba(0,0,0,0.3);
-            --shadow-md: 0 4px 12px rgba(0,0,0,0.4);
+        .datepicker-plot-area .datepicker-day-view .table-days td span:hover {
+            background: #e7f3ff !important;
+            color: #0d6efd !important;
+            transform: scale(1.1);
         }
 
-        /* ============================================ */
-        /* 🎨 استایل کلی                                */
-        /* ============================================ */
-        * {
-            font-family: 'Vazirmatn', 'Tahoma', sans-serif;
+        /* روز انتخاب شده */
+        .datepicker-plot-area .datepicker-day-view .table-days td.selected span {
+            background: linear-gradient(135deg, #0d6efd 0%, #6610f2 100%) !important;
+            color: white !important;
+            font-weight: 700 !important;
+            box-shadow: 0 4px 12px rgba(13, 110, 253, 0.3) !important;
         }
 
-        body {
-            background: var(--bg-body);
-            color: var(--text-primary);
-            direction: rtl;
-            text-align: right;
-            transition: background 0.3s ease, color 0.3s ease;
-            min-height: 100vh;
+        /* روز جاری (امروز) */
+        .datepicker-plot-area .datepicker-day-view .table-days td.today span {
+            border: 2px solid #0d6efd !important;
+            color: #0d6efd !important;
+            font-weight: 700 !important;
         }
 
-        /* Keep mixed Persian text, numbers, and punctuation in the correct order. */
-        .rtl-text {
-            direction: rtl;
-            unicode-bidi: plaintext;
-            text-align: right;
+        .datepicker-plot-area .datepicker-day-view .table-days td.today.selected span {
+            background: linear-gradient(135deg, #0d6efd 0%, #6610f2 100%) !important;
+            color: white !important;
+            border-color: transparent !important;
         }
 
-        .ltr-text {
-            direction: ltr;
-            unicode-bidi: isolate;
-            text-align: left;
+        /* روزهای غیرفعال */
+        .datepicker-plot-area .datepicker-day-view .table-days td.disabled span {
+            color: #ced4da !important;
+            cursor: not-allowed !important;
         }
 
-        /* ============================================ */
-        /* 🎨 Sidebar (سمت راست)                        */
-        /* ============================================ */
-        .app-sidebar {
-            position: fixed;
-            top: 0;
-            right: 0;
-            width: 260px;
-            height: 100vh;
-            background: var(--bg-sidebar);
-            border-left: 1px solid var(--border-color);
-            box-shadow: var(--shadow-sm);
-            z-index: 1040;
-            display: flex;
-            flex-direction: column;
-            transition: transform 0.3s ease, background 0.3s ease;
-            overflow-y: auto;
+        .datepicker-plot-area .datepicker-day-view .table-days td.disabled span:hover {
+            background: transparent !important;
+            transform: none;
         }
 
-        .sidebar-logo {
-            padding: 20px;
-            border-bottom: 1px solid var(--border-color);
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            text-decoration: none;
-            color: var(--text-primary);
+        /* روزهای تعطیل */
+        .datepicker-plot-area .datepicker-day-view .table-days td.holiday span {
+            color: #dc3545 !important;
         }
 
-        .sidebar-logo:hover {
-            color: var(--text-primary);
+        /* نوار ابزار پایین */
+        .datepicker-plot-area .datepicker-toolbox {
+            padding: 10px 12px !important;
+            border-top: 1px solid #e9ecef !important;
+            background: #f8f9fa !important;
+            display: flex !important;
+            justify-content: center !important;
+            gap: 8px !important;
         }
 
-        .sidebar-logo .logo-icon {
-            width: 42px;
-            height: 42px;
-            background: linear-gradient(135deg, #0d6efd, #6610f2);
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-size: 1.3rem;
-            flex-shrink: 0;
+        .datepicker-plot-area .datepicker-toolbox .btn-today {
+            background: white !important;
+            border: 1px solid #dee2e6 !important;
+            color: #0d6efd !important;
+            border-radius: 8px !important;
+            padding: 6px 20px !important;
+            font-size: 0.85rem !important;
+            font-weight: 600 !important;
+            font-family: 'Vazirmatn', sans-serif !important;
+            transition: all 0.2s ease !important;
         }
 
-        .sidebar-logo .logo-text {
-            font-weight: 700;
-            font-size: 1.05rem;
-            line-height: 1.2;
+        .datepicker-plot-area .datepicker-toolbox .btn-today:hover {
+            background: #0d6efd !important;
+            color: white !important;
+            border-color: #0d6efd !important;
         }
 
-        .sidebar-logo .logo-sub {
-            font-size: 0.72rem;
-            color: var(--text-secondary);
-            font-weight: 400;
+        /* نمای ماه و سال */
+        .datepicker-plot-area .datepicker-month-view .month-item,
+        .datepicker-plot-area .datepicker-year-view .year-item {
+            border-radius: 10px !important;
+            padding: 10px !important;
+            margin: 4px !important;
+            font-size: 0.9rem !important;
+            font-weight: 500 !important;
+            transition: all 0.15s ease !important;
         }
 
-        .sidebar-section {
-            padding: 16px 12px 8px;
+        .datepicker-plot-area .datepicker-month-view .month-item:hover,
+        .datepicker-plot-area .datepicker-year-view .year-item:hover {
+            background: #e7f3ff !important;
+            color: #0d6efd !important;
         }
 
-        .sidebar-section-title {
-            font-size: 0.68rem;
-            font-weight: 700;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            padding: 0 12px 8px;
-        }
-
-        .sidebar-link {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 10px 12px;
-            color: var(--text-secondary);
-            text-decoration: none;
-            border-radius: 10px;
-            font-size: 0.9rem;
-            font-weight: 500;
-            transition: all 0.15s ease;
-            margin-bottom: 2px;
-            cursor: pointer;
-        }
-
-        .sidebar-link:hover {
-            background: var(--bg-hover);
-            color: var(--text-primary);
-        }
-
-        .sidebar-link.active {
-            background: var(--primary-soft);
-            color: var(--primary);
-            font-weight: 600;
-        }
-
-        .sidebar-link i {
-            font-size: 1.1rem;
-            width: 22px;
-            text-align: center;
-        }
-
-        .sidebar-link .badge-count {
-            margin-right: auto;
-            background: #dc3545;
-            color: white;
-            font-size: 0.68rem;
-            padding: 2px 7px;
-            border-radius: 10px;
-            font-weight: 600;
-        }
-
-        /* 🎨 زیرمنوها (Collapse) */
-        .sidebar-submenu {
-            padding-right: 20px;
-        }
-
-        .sidebar-submenu .sidebar-link {
-            font-size: 0.85rem;
-            padding: 7px 12px;
-        }
-
-        .sidebar-toggle-icon {
-            margin-right: auto;
-            transition: transform 0.2s ease;
-            font-size: 0.8rem;
-        }
-
-        .sidebar-link[aria-expanded="true"] .sidebar-toggle-icon {
-            transform: rotate(180deg);
+        .datepicker-plot-area .datepicker-month-view .month-item.selected,
+        .datepicker-plot-area .datepicker-year-view .year-item.selected {
+            background: linear-gradient(135deg, #0d6efd 0%, #6610f2 100%) !important;
+            color: white !important;
         }
 
         /* ============================================ */
-        /* 🎨 Topbar                                    */
+        /* 🌙 Dark Mode تقویم                           */
         /* ============================================ */
-        .app-topbar {
-            position: fixed;
-            top: 0;
-            right: 260px;
-            left: 0;
-            height: 64px;
-            background: var(--bg-topbar);
-            border-bottom: 1px solid var(--border-color);
-            box-shadow: var(--shadow-sm);
-            z-index: 1030;
-            display: flex;
-            align-items: center;
-            padding: 0 24px;
-            gap: 16px;
-            transition: background 0.3s ease, right 0.3s ease;
+        [data-theme="dark"] .datepicker-plot-area {
+            background: #242526 !important;
+            border-color: #3a3b3c !important;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.4) !important;
         }
 
-        .topbar-toggle-btn {
-            display: none;
-            border: none;
-            background: transparent;
-            color: var(--text-primary);
-            font-size: 1.4rem;
-            padding: 4px;
-            cursor: pointer;
+        [data-theme="dark"] .datepicker-plot-area .datepicker-header {
+            background: linear-gradient(135deg, #1a3a5c 0%, #2d1b69 100%) !important;
         }
 
-        .topbar-title {
-            font-weight: 600;
-            font-size: 1rem;
-            color: var(--text-primary);
+        [data-theme="dark"] .datepicker-plot-area .datepicker-day-view .table-days th {
+            color: #8a8d91 !important;
         }
 
-        .topbar-actions {
-            margin-right: auto;
-            display: flex;
-            align-items: center;
-            gap: 10px;
+        [data-theme="dark"] .datepicker-plot-area .datepicker-day-view .table-days td span {
+            color: #e4e6eb !important;
         }
 
-        .theme-toggle-btn {
-            width: 40px;
-            height: 40px;
-            border-radius: 12px;
-            border: 1px solid var(--border-color);
-            background: var(--bg-hover);
-            color: var(--text-primary);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.1rem;
-            transition: all 0.2s ease;
-            cursor: pointer;
+        [data-theme="dark"] .datepicker-plot-area .datepicker-day-view .table-days td span:hover {
+            background: #3a3b3c !important;
+            color: #4dabf7 !important;
         }
 
-        .theme-toggle-btn:hover {
-            background: var(--primary-soft);
-            color: var(--primary);
+        [data-theme="dark"] .datepicker-plot-area .datepicker-day-view .table-days td.selected span {
+            background: linear-gradient(135deg, #1a73e8 0%, #6c5ce7 100%) !important;
+            color: white !important;
+            box-shadow: 0 4px 12px rgba(26, 115, 232, 0.4) !important;
         }
 
-        .user-dropdown-btn {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 6px 12px;
-            border-radius: 12px;
-            border: 1px solid var(--border-color);
-            background: var(--bg-hover);
-            color: var(--text-primary);
-            text-decoration: none;
-            font-size: 0.9rem;
-            font-weight: 500;
-            cursor: pointer;
+        [data-theme="dark"] .datepicker-plot-area .datepicker-day-view .table-days td.today span {
+            border-color: #4dabf7 !important;
+            color: #4dabf7 !important;
         }
 
-        .user-dropdown-btn:hover {
-            background: var(--primary-soft);
-            color: var(--text-primary);
+        [data-theme="dark"] .datepicker-plot-area .datepicker-day-view .table-days td.today.selected span {
+            background: linear-gradient(135deg, #1a73e8 0%, #6c5ce7 100%) !important;
+            border-color: transparent !important;
         }
 
-        .user-avatar {
-            width: 32px;
-            height: 32px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, #0d6efd, #6610f2);
-            color: white;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 0.9rem;
+        [data-theme="dark"] .datepicker-plot-area .datepicker-day-view .table-days td.disabled span {
+            color: #4a4b4d !important;
+        }
+
+        [data-theme="dark"] .datepicker-plot-area .datepicker-day-view .table-days td.holiday span {
+            color: #f87171 !important;
+        }
+
+        [data-theme="dark"] .datepicker-plot-area .datepicker-toolbox {
+            background: #1e1f20 !important;
+            border-color: #3a3b3c !important;
+        }
+
+        [data-theme="dark"] .datepicker-plot-area .datepicker-toolbox .btn-today {
+            background: #3a3b3c !important;
+            border-color: #4a4b4d !important;
+            color: #4dabf7 !important;
+        }
+
+        [data-theme="dark"] .datepicker-plot-area .datepicker-toolbox .btn-today:hover {
+            background: #1a73e8 !important;
+            color: white !important;
+            border-color: #1a73e8 !important;
+        }
+
+        [data-theme="dark"] .datepicker-plot-area .datepicker-month-view .month-item,
+        [data-theme="dark"] .datepicker-plot-area .datepicker-year-view .year-item {
+            color: #e4e6eb !important;
+        }
+
+        [data-theme="dark"] .datepicker-plot-area .datepicker-month-view .month-item:hover,
+        [data-theme="dark"] .datepicker-plot-area .datepicker-year-view .year-item:hover {
+            background: #3a3b3c !important;
+            color: #4dabf7 !important;
+        }
+
+        [data-theme="dark"] .datepicker-plot-area .datepicker-month-view .month-item.selected,
+        [data-theme="dark"] .datepicker-plot-area .datepicker-year-view .year-item.selected {
+            background: linear-gradient(135deg, #1a73e8 0%, #6c5ce7 100%) !important;
+            color: white !important;
         }
 
         /* ============================================ */
-        /* 🎨 Content Area                              */
+        /* 📱 واکنش‌گرایی تقویم                          */
         /* ============================================ */
-        .app-content {
-            margin-right: 260px;
-            padding: 84px 24px 24px;
-            min-height: 100vh;
-            transition: margin 0.3s ease;
+        /* تقویم باید بالای مودال‌های بوت‌استرپ باز شود */
+        .datepicker-plot-area {
+            z-index: 9999 !important;
         }
 
-        /* 🎨 کارت‌ها و المان‌ها در dark mode */
-        [data-theme="dark"] .card {
-            background: var(--bg-card);
-            border-color: var(--border-color);
-            color: var(--text-primary);
+        @media (max-width: 576px) {
+            .datepicker-plot-area {
+                min-width: 280px !important;
+            }
+            .datepicker-plot-area .datepicker-day-view .table-days td span {
+                width: 32px !important;
+                height: 32px !important;
+                line-height: 32px !important;
+                font-size: 0.82rem !important;
+            }
         }
+            /* ============================================ */
+            /* 🎨 متغیرهای رنگی (Light / Dark)              */
+            /* ============================================ */
+            :root {
+                --bg-body: #f0f2f5;
+                --bg-card: #ffffff;
+                --bg-sidebar: #ffffff;
+                --bg-topbar: #ffffff;
+                --bg-hover: #f0f2f5;
+                --bg-active: #e7f3ff;
+                --text-primary: #212529;
+                --text-secondary: #6c757d;
+                --text-muted: #adb5bd;
+                --border-color: #e9ecef;
+                --primary: #0d6efd;
+                --primary-soft: #e7f3ff;
+                --shadow-sm: 0 1px 3px rgba(0,0,0,0.05);
+                --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+            }
 
-        [data-theme="dark"] .card-header {
-            background: var(--bg-card);
-            border-color: var(--border-color);
-        }
+            [data-theme="dark"] {
+                --bg-body: #18191a;
+                --bg-card: #242526;
+                --bg-sidebar: #242526;
+                --bg-topbar: #242526;
+                --bg-hover: #3a3b3c;
+                --bg-active: #263c5c;
+                --text-primary: #e4e6eb;
+                --text-secondary: #b0b3b8;
+                --text-muted: #8a8d91;
+                --border-color: #3a3b3c;
+                --primary: #4dabf7;
+                --primary-soft: #263c5c;
+                --shadow-sm: 0 1px 3px rgba(0,0,0,0.3);
+                --shadow-md: 0 4px 12px rgba(0,0,0,0.4);
+            }
 
-        [data-theme="dark"] .table {
-            color: var(--text-primary);
-            border-color: var(--border-color);
-        }
+            /* ============================================ */
+            /* 🎨 استایل کلی                                */
+            /* ============================================ */
+            * {
+                font-family: 'Vazirmatn', 'Tahoma', sans-serif;
+            }
 
-        [data-theme="dark"] .table-light,
-        [data-theme="dark"] .table thead th {
-            background: var(--bg-hover) !important;
-            color: var(--text-primary);
-            border-color: var(--border-color);
-        }
+            body {
+                background: var(--bg-body);
+                color: var(--text-primary);
+                direction: rtl;
+                text-align: right;
+                transition: background 0.3s ease, color 0.3s ease;
+                min-height: 100vh;
+            }
 
-        [data-theme="dark"] .table-hover tbody tr:hover {
-            background: var(--bg-hover);
-            color: var(--text-primary);
-        }
+            /* Keep mixed Persian text, numbers, and punctuation in the correct order. */
+            .rtl-text {
+                direction: rtl;
+                unicode-bidi: plaintext;
+                text-align: right;
+            }
 
-        [data-theme="dark"] .form-control,
-        [data-theme="dark"] .form-select {
-            background: var(--bg-hover);
-            border-color: var(--border-color);
-            color: var(--text-primary);
-        }
+            .ltr-text {
+                direction: ltr;
+                unicode-bidi: isolate;
+                text-align: left;
+            }
 
-        [data-theme="dark"] .form-control:focus,
-        [data-theme="dark"] .form-select:focus {
-            background: var(--bg-hover);
-            color: var(--text-primary);
-        }
-
-        [data-theme="dark"] .input-group-text {
-            background: var(--bg-hover);
-            border-color: var(--border-color);
-            color: var(--text-secondary);
-        }
-
-        [data-theme="dark"] .modal-content {
-            background: var(--bg-card);
-            color: var(--text-primary);
-        }
-
-        [data-theme="dark"] .dropdown-menu {
-            background: var(--bg-card);
-            border-color: var(--border-color);
-        }
-
-        [data-theme="dark"] .dropdown-item {
-            color: var(--text-primary);
-        }
-
-        [data-theme="dark"] .dropdown-item:hover {
-            background: var(--bg-hover);
-        }
-
-        [data-theme="dark"] .alert-info {
-            background: #1a3a5c;
-            border-color: #263c5c;
-            color: #b3d4fc;
-        }
-
-        [data-theme="dark"] .alert-warning {
-            background: #3d3521;
-            border-color: #4a4229;
-            color: #ffdb85;
-        }
-
-        [data-theme="dark"] .alert-success {
-            background: #1e3a2f;
-            border-color: #2a4d3e;
-            color: #a3e6c1;
-        }
-
-        [data-theme="dark"] .alert-danger {
-            background: #3d2121;
-            border-color: #4d2a2a;
-            color: #f5a3a3;
-        }
-
-        [data-theme="dark"] .text-muted {
-            color: var(--text-muted) !important;
-        }
-
-        [data-theme="dark"] .border {
-            border-color: var(--border-color) !important;
-        }
-
-        [data-theme="dark"] .bg-light {
-            background: var(--bg-hover) !important;
-            color: var(--text-primary);
-        }
-
-        [data-theme="dark"] .bg-white {
-            background: var(--bg-card) !important;
-            color: var(--text-primary);
-        }
-
-        [data-theme="dark"] .btn-outline-secondary {
-            color: var(--text-secondary);
-            border-color: var(--border-color);
-        }
-
-        [data-theme="dark"] .btn-outline-secondary:hover {
-            background: var(--bg-hover);
-            color: var(--text-primary);
-        }
-
-        [data-theme="dark"] .list-group-item {
-            background: var(--bg-card);
-            border-color: var(--border-color);
-            color: var(--text-primary);
-        }
-
-        /* ============================================ */
-        /* 📱 Responsive                                */
-        /* ============================================ */
-        @media (max-width: 992px) {
+            /* ============================================ */
+            /* 🎨 Sidebar (سمت راست)                        */
+            /* ============================================ */
             .app-sidebar {
-                transform: translateX(100%);
-            }
-            .app-sidebar.show {
-                transform: translateX(0);
-            }
-            .app-topbar {
+                position: fixed;
+                top: 0;
                 right: 0;
+                width: 260px;
+                height: 100vh;
+                background: var(--bg-sidebar);
+                border-left: 1px solid var(--border-color);
+                box-shadow: var(--shadow-sm);
+                z-index: 1040;
+                display: flex;
+                flex-direction: column;
+                transition: transform 0.3s ease, background 0.3s ease;
+                overflow-y: auto;
             }
-            .app-content {
-                margin-right: 0;
-                padding: 84px 16px 16px;
+
+            .sidebar-logo {
+                padding: 20px;
+                border-bottom: 1px solid var(--border-color);
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                text-decoration: none;
+                color: var(--text-primary);
             }
+
+            .sidebar-logo:hover {
+                color: var(--text-primary);
+            }
+
+            .sidebar-logo .logo-icon {
+                width: 42px;
+                height: 42px;
+                background: linear-gradient(135deg, #0d6efd, #6610f2);
+                border-radius: 12px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: white;
+                font-size: 1.3rem;
+                flex-shrink: 0;
+            }
+
+            .sidebar-logo .logo-text {
+                font-weight: 700;
+                font-size: 1.05rem;
+                line-height: 1.2;
+            }
+
+            .sidebar-logo .logo-sub {
+                font-size: 0.72rem;
+                color: var(--text-secondary);
+                font-weight: 400;
+            }
+
+            .sidebar-section {
+                padding: 16px 12px 8px;
+            }
+
+            .sidebar-section-title {
+                font-size: 0.68rem;
+                font-weight: 700;
+                color: var(--text-muted);
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                padding: 0 12px 8px;
+            }
+
+            .sidebar-link {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                padding: 10px 12px;
+                color: var(--text-secondary);
+                text-decoration: none;
+                border-radius: 10px;
+                font-size: 0.9rem;
+                font-weight: 500;
+                transition: all 0.15s ease;
+                margin-bottom: 2px;
+                cursor: pointer;
+            }
+
+            .sidebar-link:hover {
+                background: var(--bg-hover);
+                color: var(--text-primary);
+            }
+
+            .sidebar-link.active {
+                background: var(--primary-soft);
+                color: var(--primary);
+                font-weight: 600;
+            }
+
+            .sidebar-link i {
+                font-size: 1.1rem;
+                width: 22px;
+                text-align: center;
+            }
+
+            .sidebar-link .badge-count {
+                margin-right: auto;
+                background: #dc3545;
+                color: white;
+                font-size: 0.68rem;
+                padding: 2px 7px;
+                border-radius: 10px;
+                font-weight: 600;
+            }
+
+            /* 🎨 زیرمنوها (Collapse) */
+            .sidebar-submenu {
+                padding-right: 20px;
+            }
+
+            .sidebar-submenu .sidebar-link {
+                font-size: 0.85rem;
+                padding: 7px 12px;
+            }
+
+            .sidebar-toggle-icon {
+                margin-right: auto;
+                transition: transform 0.2s ease;
+                font-size: 0.8rem;
+            }
+
+            .sidebar-link[aria-expanded="true"] .sidebar-toggle-icon {
+                transform: rotate(180deg);
+            }
+
+            /* ============================================ */
+            /* 🎨 Topbar                                    */
+            /* ============================================ */
+            .app-topbar {
+                position: fixed;
+                top: 0;
+                right: 260px;
+                left: 0;
+                height: 64px;
+                background: var(--bg-topbar);
+                border-bottom: 1px solid var(--border-color);
+                box-shadow: var(--shadow-sm);
+                z-index: 1030;
+                display: flex;
+                align-items: center;
+                padding: 0 24px;
+                gap: 16px;
+                transition: background 0.3s ease, right 0.3s ease;
+            }
+
             .topbar-toggle-btn {
+                display: none;
+                border: none;
+                background: transparent;
+                color: var(--text-primary);
+                font-size: 1.4rem;
+                padding: 4px;
+                cursor: pointer;
+            }
+
+            .topbar-title {
+                font-weight: 600;
+                font-size: 1rem;
+                color: var(--text-primary);
+            }
+
+            .topbar-actions {
+                margin-right: auto;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+
+            .theme-toggle-btn {
+                width: 40px;
+                height: 40px;
+                border-radius: 12px;
+                border: 1px solid var(--border-color);
+                background: var(--bg-hover);
+                color: var(--text-primary);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 1.1rem;
+                transition: all 0.2s ease;
+                cursor: pointer;
+            }
+
+            .theme-toggle-btn:hover {
+                background: var(--primary-soft);
+                color: var(--primary);
+            }
+
+            .user-dropdown-btn {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                padding: 6px 12px;
+                border-radius: 12px;
+                border: 1px solid var(--border-color);
+                background: var(--bg-hover);
+                color: var(--text-primary);
+                text-decoration: none;
+                font-size: 0.9rem;
+                font-weight: 500;
+                cursor: pointer;
+            }
+
+            .user-dropdown-btn:hover {
+                background: var(--primary-soft);
+                color: var(--text-primary);
+            }
+
+            .user-avatar {
+                width: 32px;
+                height: 32px;
+                border-radius: 50%;
+                background: linear-gradient(135deg, #0d6efd, #6610f2);
+                color: white;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 0.9rem;
+            }
+
+            /* ============================================ */
+            /* 🎨 Content Area                              */
+            /* ============================================ */
+            .app-content {
+                margin-right: 260px;
+                padding: 84px 24px 24px;
+                min-height: 100vh;
+                transition: margin 0.3s ease;
+            }
+
+            /* 🎨 کارت‌ها و المان‌ها در dark mode */
+            [data-theme="dark"] .card {
+                background: var(--bg-card);
+                border-color: var(--border-color);
+                color: var(--text-primary);
+            }
+
+            [data-theme="dark"] .card-header {
+                background: var(--bg-card);
+                border-color: var(--border-color);
+            }
+
+            [data-theme="dark"] .table {
+                color: var(--text-primary);
+                border-color: var(--border-color);
+            }
+
+            [data-theme="dark"] .table-light,
+            [data-theme="dark"] .table thead th {
+                background: var(--bg-hover) !important;
+                color: var(--text-primary);
+                border-color: var(--border-color);
+            }
+
+            [data-theme="dark"] .table-hover tbody tr:hover {
+                background: var(--bg-hover);
+                color: var(--text-primary);
+            }
+
+            [data-theme="dark"] .form-control,
+            [data-theme="dark"] .form-select {
+                background: var(--bg-hover);
+                border-color: var(--border-color);
+                color: var(--text-primary);
+            }
+
+            [data-theme="dark"] .form-control:focus,
+            [data-theme="dark"] .form-select:focus {
+                background: var(--bg-hover);
+                color: var(--text-primary);
+            }
+
+            [data-theme="dark"] .input-group-text {
+                background: var(--bg-hover);
+                border-color: var(--border-color);
+                color: var(--text-secondary);
+            }
+
+            [data-theme="dark"] .modal-content {
+                background: var(--bg-card);
+                color: var(--text-primary);
+            }
+
+            [data-theme="dark"] .dropdown-menu {
+                background: var(--bg-card);
+                border-color: var(--border-color);
+            }
+
+            [data-theme="dark"] .dropdown-item {
+                color: var(--text-primary);
+            }
+
+            [data-theme="dark"] .dropdown-item:hover {
+                background: var(--bg-hover);
+            }
+
+            [data-theme="dark"] .alert-info {
+                background: #1a3a5c;
+                border-color: #263c5c;
+                color: #b3d4fc;
+            }
+
+            [data-theme="dark"] .alert-warning {
+                background: #3d3521;
+                border-color: #4a4229;
+                color: #ffdb85;
+            }
+
+            [data-theme="dark"] .alert-success {
+                background: #1e3a2f;
+                border-color: #2a4d3e;
+                color: #a3e6c1;
+            }
+
+            [data-theme="dark"] .alert-danger {
+                background: #3d2121;
+                border-color: #4d2a2a;
+                color: #f5a3a3;
+            }
+
+            [data-theme="dark"] .text-muted {
+                color: var(--text-muted) !important;
+            }
+
+            [data-theme="dark"] .border {
+                border-color: var(--border-color) !important;
+            }
+
+            [data-theme="dark"] .bg-light {
+                background: var(--bg-hover) !important;
+                color: var(--text-primary);
+            }
+
+            [data-theme="dark"] .bg-white {
+                background: var(--bg-card) !important;
+                color: var(--text-primary);
+            }
+
+            [data-theme="dark"] .btn-outline-secondary {
+                color: var(--text-secondary);
+                border-color: var(--border-color);
+            }
+
+            [data-theme="dark"] .btn-outline-secondary:hover {
+                background: var(--bg-hover);
+                color: var(--text-primary);
+            }
+
+            [data-theme="dark"] .list-group-item {
+                background: var(--bg-card);
+                border-color: var(--border-color);
+                color: var(--text-primary);
+            }
+
+            /* ============================================ */
+            /* 📱 Responsive                                */
+            /* ============================================ */
+            @media (max-width: 992px) {
+                .app-sidebar {
+                    transform: translateX(100%);
+                }
+                .app-sidebar.show {
+                    transform: translateX(0);
+                }
+                .app-topbar {
+                    right: 0;
+                }
+                .app-content {
+                    margin-right: 0;
+                    padding: 84px 16px 16px;
+                }
+                .topbar-toggle-btn {
+                    display: block;
+                }
+            }
+
+            /* 🎨 Overlay برای موبایل */
+            .sidebar-overlay {
+                display: none;
+                position: fixed;
+                inset: 0;
+                background: rgba(0,0,0,0.5);
+                z-index: 1035;
+            }
+
+            .sidebar-overlay.show {
                 display: block;
             }
-        }
 
-        /* 🎨 Overlay برای موبایل */
-        .sidebar-overlay {
-            display: none;
-            position: fixed;
-            inset: 0;
-            background: rgba(0,0,0,0.5);
-            z-index: 1035;
-        }
+            /* 🎨 Scrollbar سفارشی */
+            .app-sidebar::-webkit-scrollbar {
+                width: 6px;
+            }
+            .app-sidebar::-webkit-scrollbar-thumb {
+                background: var(--border-color);
+                border-radius: 3px;
+            }
+            .app-sidebar::-webkit-scrollbar-track {
+                background: transparent;
+            }
 
-        .sidebar-overlay.show {
-            display: block;
-        }
+            /* ============================================ */
+            /* 🎨 انیمیشن‌ها                                 */
+            /* ============================================ */
+            @keyframes fadeIn {
+                from { opacity: 0; transform: translateY(10px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
 
-        /* 🎨 Scrollbar سفارشی */
-        .app-sidebar::-webkit-scrollbar {
-            width: 6px;
-        }
-        .app-sidebar::-webkit-scrollbar-thumb {
-            background: var(--border-color);
-            border-radius: 3px;
-        }
-        .app-sidebar::-webkit-scrollbar-track {
-            background: transparent;
-        }
-
-        /* ============================================ */
-        /* 🎨 انیمیشن‌ها                                 */
-        /* ============================================ */
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .app-content {
-            animation: fadeIn 0.3s ease;
-        }
+            .app-content {
+                animation: fadeIn 0.3s ease;
+            }
     </style>
 
     {% block extra_css %}{% endblock %}
@@ -795,212 +796,237 @@
 
 {% if request.url.path not in ['/login', '/change-password'] %}
 
-    <!-- 🎨 Sidebar (سمت راست) -->
-    <aside class="app-sidebar" id="appSidebar">
-        <!-- لوگو -->
-        <a href="/dashboard" class="sidebar-logo">
-            <div class="logo-icon">
-                <i class="bi bi-clock-history"></i>
-            </div>
-            <div>
-                <div class="logo-text">Timex</div>
-                <div class="logo-sub">سامانه حضور و غیاب</div>
-            </div>
+<!-- 🎨 Sidebar (سمت راست) -->
+<aside class="app-sidebar" id="appSidebar">
+    <!-- لوگو -->
+    <a href="/dashboard" class="sidebar-logo">
+        <div class="logo-icon">
+            <i class="bi bi-clock-history"></i>
+        </div>
+        <div>
+            <div class="logo-text">Timex</div>
+            <div class="logo-sub">سامانه حضور و غیاب</div>
+        </div>
+    </a>
+
+    <!-- منوی اصلی -->
+    <div class="sidebar-section">
+        <div class="sidebar-section-title">منوی اصلی</div>
+        <a href="/dashboard" class="sidebar-link {% if request.url.path == '/dashboard' %}active{% endif %}">
+            <i class="bi bi-speedometer2"></i> داشبورد
+        </a>
+        <a href="/attendance" class="sidebar-link {% if request.url.path == '/attendance' %}active{% endif %}">
+            <i class="bi bi-clock-history"></i> رکوردهای تردد
+        </a>
+        <a href="/leave" class="sidebar-link {% if request.url.path.startswith('/leave') %}active{% endif %}">
+            <i class="bi bi-calendar-check"></i> مرخصی‌ها
+        </a>
+        <a href="/contract" class="sidebar-link {% if request.url.path == '/contract' %}active{% endif %}">
+            <i class="bi bi-file-earmark-text"></i> قراردادها
+        </a>
+        <a href="/education" class="sidebar-link {% if request.url.path == '/education' %}active{% endif %}">
+            <i class="bi bi-mortarboard"></i> تحصیلات
+        </a>
+    </div>
+
+    {% if is_admin %}
+    <!-- منوی مدیریت -->
+    <div class="sidebar-section">
+        <div class="sidebar-section-title">مدیریت</div>
+
+        <a href="/admin/"
+           class="sidebar-link {% if request.url.path == '/admin/' or request.url.path == '/admin' %}active{% endif %}">
+            <i class="bi bi-grid-1x2"></i> پنل مدیریت
         </a>
 
-        <!-- منوی اصلی -->
-        <div class="sidebar-section">
-            <div class="sidebar-section-title">منوی اصلی</div>
-            <a href="/dashboard" class="sidebar-link {% if request.url.path == '/dashboard' %}active{% endif %}">
-                <i class="bi bi-speedometer2"></i> داشبورد
+        <!-- حضور و غیاب -->
+        {% set att_active = '/admin/attendance' in request.url.path or '/admin/incomplete' in request.url.path or
+        '/admin/daily-status' in request.url.path %}
+        <a class="sidebar-link {% if att_active %}active{% endif %}" data-bs-toggle="collapse" href="#attMenu"
+           role="button" aria-expanded="{{ 'true' if att_active else 'false' }}">
+            <i class="bi bi-people"></i> حضور و غیاب
+            <i class="bi bi-chevron-down sidebar-toggle-icon"></i>
+        </a>
+        <div class="collapse sidebar-submenu {% if att_active %}show{% endif %}" id="attMenu">
+            <a href="/admin/attendance"
+               class="sidebar-link {% if request.url.path == '/admin/attendance' %}active{% endif %}">
+                <i class="bi bi-clock"></i> تردد کارمندان
             </a>
-            <a href="/attendance" class="sidebar-link {% if request.url.path == '/attendance' %}active{% endif %}">
-                <i class="bi bi-clock-history"></i> رکوردهای تردد
+            <a href="/admin/incomplete"
+               class="sidebar-link {% if request.url.path == '/admin/incomplete' %}active{% endif %}">
+                <i class="bi bi-exclamation-triangle"></i> ترددهای ناقص
             </a>
-            <a href="/leave" class="sidebar-link {% if request.url.path.startswith('/leave') %}active{% endif %}">
-                <i class="bi bi-calendar-check"></i> مرخصی‌ها
-            </a>
-            <a href="/contract" class="sidebar-link {% if request.url.path == '/contract' %}active{% endif %}">
-                <i class="bi bi-file-earmark-text"></i> قراردادها
-            </a>
-            <a href="/education" class="sidebar-link {% if request.url.path == '/education' %}active{% endif %}">
-                <i class="bi bi-mortarboard"></i> تحصیلات
+            <a href="/admin/daily-status"
+               class="sidebar-link {% if request.url.path == '/admin/daily-status' %}active{% endif %}">
+                <i class="bi bi-calendar-day"></i> مأموریت و استراحت
             </a>
         </div>
 
-        {% if is_admin %}
-        <!-- منوی مدیریت -->
-        <div class="sidebar-section">
-            <div class="sidebar-section-title">مدیریت</div>
-
-            <a href="/admin/" class="sidebar-link {% if request.url.path == '/admin/' or request.url.path == '/admin' %}active{% endif %}">
-                <i class="bi bi-grid-1x2"></i> پنل مدیریت
-            </a>
-
-            <!-- حضور و غیاب -->
-            {% set att_active = '/admin/attendance' in request.url.path or '/admin/incomplete' in request.url.path or '/admin/daily-status' in request.url.path %}
-            <a class="sidebar-link {% if att_active %}active{% endif %}" data-bs-toggle="collapse" href="#attMenu" role="button" aria-expanded="{{ 'true' if att_active else 'false' }}">
-                <i class="bi bi-people"></i> حضور و غیاب
-                <i class="bi bi-chevron-down sidebar-toggle-icon"></i>
-            </a>
-            <div class="collapse sidebar-submenu {% if att_active %}show{% endif %}" id="attMenu">
-                <a href="/admin/attendance" class="sidebar-link {% if request.url.path == '/admin/attendance' %}active{% endif %}">
-                    <i class="bi bi-clock"></i> تردد کارمندان
-                </a>
-                <a href="/admin/incomplete" class="sidebar-link {% if request.url.path == '/admin/incomplete' %}active{% endif %}">
-                    <i class="bi bi-exclamation-triangle"></i> ترددهای ناقص
-                </a>
-                <a href="/admin/daily-status" class="sidebar-link {% if request.url.path == '/admin/daily-status' %}active{% endif %}">
-                    <i class="bi bi-calendar-day"></i> مأموریت و استراحت
-                </a>
-            </div>
-
-            <!-- مرخصی‌ها -->
-            {% set leave_active = '/admin/leave' in request.url.path or '/admin/carry-forward' in request.url.path %}
-            <a class="sidebar-link {% if leave_active %}active{% endif %}" data-bs-toggle="collapse" href="#leaveMenu" role="button" aria-expanded="{{ 'true' if leave_active else 'false' }}">
-                <i class="bi bi-calendar2-week"></i> مرخصی‌ها
-                <i class="bi bi-chevron-down sidebar-toggle-icon"></i>
-            </a>
-            <div class="collapse sidebar-submenu {% if leave_active %}show{% endif %}" id="leaveMenu">
-                <a href="/admin/leave-requests?status_filter=P" class="sidebar-link {% if request.url.path == '/admin/leave-requests' %}active{% endif %}">
-                    <i class="bi bi-hourglass-split"></i> درخواست‌های مرخصی
-                    {% if pending_count is defined and pending_count > 0 %}
-                    <span class="badge-count">{{ pending_count }}</span>
-                    {% endif %}
-                </a>
-                <a href="/admin/leave-balances" class="sidebar-link {% if request.url.path == '/admin/leave-balances' %}active{% endif %}">
-                    <i class="bi bi-wallet2"></i> مانده مرخصی
-                </a>
-                <a href="/admin/leave-transactions" class="sidebar-link {% if request.url.path == '/admin/leave-transactions' %}active{% endif %}">
-                    <i class="bi bi-arrow-left-right"></i> تراکنش‌های مرخصی
-                </a>
-                <a href="/admin/carry-forward-requests?status_filter=P" class="sidebar-link {% if request.url.path == '/admin/carry-forward-requests' %}active{% endif %}">
-                    <i class="bi bi-box-arrow-in-right"></i> انتقال/بازخرید مرخصی
-                    {% if pending_cf_count is defined and pending_cf_count > 0 %}
-                    <span class="badge-count">{{ pending_cf_count }}</span>
-                    {% endif %}
-                </a>
-            </div>
-
-            <!-- قراردادها و کاربران -->
-            {% set org_active = '/admin/contracts' in request.url.path or '/admin/users' in request.url.path %}
-            <a class="sidebar-link {% if org_active %}active{% endif %}" data-bs-toggle="collapse" href="#orgMenu" role="button" aria-expanded="{{ 'true' if org_active else 'false' }}">
-                <i class="bi bi-briefcase"></i> قراردادها و کاربران
-                <i class="bi bi-chevron-down sidebar-toggle-icon"></i>
-            </a>
-            <div class="collapse sidebar-submenu {% if org_active %}show{% endif %}" id="orgMenu">
-                <a href="/admin/contracts" class="sidebar-link {% if request.url.path == '/admin/contracts' %}active{% endif %}">
-                    <i class="bi bi-file-earmark-text"></i> مدیریت قراردادها
-                </a>
-                <a href="/admin/users" class="sidebar-link {% if request.url.path == '/admin/users' %}active{% endif %}">
-                    <i class="bi bi-people"></i> مدیریت کاربران
-                </a>
-                    <!-- 🆕 اینجا اضافه شود -->
-    {% if user and user.role == 'super_admin' %}
-    <a href="/admin/permissions" class="sidebar-link {% if '/permissions' in request.url.path %}active{% endif %}">
-        <i class="bi bi-shield-lock"></i> مدیریت دسترسی‌ها
-    </a>
-    {% endif %}
-                <a href="/admin/education" class="sidebar-link {% if request.url.path == '/admin/education' %}active{% endif %}">
-                    <i class="bi bi-mortarboard"></i> مدارک تحصیلی
-                </a>
-                {% if user and user.role == 'super_admin' %}
-                <a href="/admin/policies" class="sidebar-link {% if '/admin/policies' in request.url.path %}active{% endif %}">
-                    <i class="bi bi-gear-wide-connected"></i> سیاست کلی
-                </a>
+        <!-- مرخصی‌ها -->
+        {% set leave_active = '/admin/leave' in request.url.path or '/admin/carry-forward' in request.url.path %}
+        <a class="sidebar-link {% if leave_active %}active{% endif %}" data-bs-toggle="collapse" href="#leaveMenu"
+           role="button" aria-expanded="{{ 'true' if leave_active else 'false' }}">
+            <i class="bi bi-calendar2-week"></i> مرخصی‌ها
+            <i class="bi bi-chevron-down sidebar-toggle-icon"></i>
+        </a>
+        <div class="collapse sidebar-submenu {% if leave_active %}show{% endif %}" id="leaveMenu">
+            <a href="/admin/leave-requests?status_filter=P"
+               class="sidebar-link {% if request.url.path == '/admin/leave-requests' %}active{% endif %}">
+                <i class="bi bi-hourglass-split"></i> درخواست‌های مرخصی
+                {% if pending_count is defined and pending_count > 0 %}
+                <span class="badge-count">{{ pending_count }}</span>
                 {% endif %}
-            </div>
-
-            <!-- گزارشات -->
-            <a href="/reports" class="sidebar-link {% if request.url.path.startswith('/reports') %}active{% endif %}">
-                <i class="bi bi-bar-chart-line"></i> گزارشات
             </a>
-
-            <!-- تنظیمات -->
-            {% set set_active = '/admin/holidays' in request.url.path or '/admin/import-previous-leave' in request.url.path %}
-            <a class="sidebar-link {% if set_active %}active{% endif %}" data-bs-toggle="collapse" href="#setMenu" role="button" aria-expanded="{{ 'true' if set_active else 'false' }}">
-                <i class="bi bi-gear"></i> تنظیمات
-                <i class="bi bi-chevron-down sidebar-toggle-icon"></i>
+            <a href="/admin/leave-balances"
+               class="sidebar-link {% if request.url.path == '/admin/leave-balances' %}active{% endif %}">
+                <i class="bi bi-wallet2"></i> مانده مرخصی
             </a>
-            <div class="collapse sidebar-submenu {% if set_active %}show{% endif %}" id="setMenu">
-                <a href="/admin/holidays" class="sidebar-link {% if request.url.path == '/admin/holidays' %}active{% endif %}">
-                    <i class="bi bi-calendar-x"></i> مدیریت تعطیلات
-                </a>
-                <a href="/admin/import-previous-leave" class="sidebar-link {% if request.url.path == '/admin/import-previous-leave' %}active{% endif %}">
-                    <i class="bi bi-box-arrow-in-down"></i> ورود مرخصی سال قبل
-                </a>
-            </div>
+            <a href="/admin/leave-transactions"
+               class="sidebar-link {% if request.url.path == '/admin/leave-transactions' %}active{% endif %}">
+                <i class="bi bi-arrow-left-right"></i> تراکنش‌های مرخصی
+            </a>
+            <a href="/admin/carry-forward-requests?status_filter=P"
+               class="sidebar-link {% if request.url.path == '/admin/carry-forward-requests' %}active{% endif %}">
+                <i class="bi bi-box-arrow-in-right"></i> انتقال/بازخرید مرخصی
+                {% if pending_cf_count is defined and pending_cf_count > 0 %}
+                <span class="badge-count">{{ pending_cf_count }}</span>
+                {% endif %}
+            </a>
         </div>
-        {% endif %}
 
-<!-- منوی کاربر (پایین sidebar) -->
-<div class="sidebar-section" style="margin-top: auto; border-top: 1px solid var(--border-color);">
-    <a href="/profile" class="sidebar-link {% if request.url.path == '/profile' %}active{% endif %}">
-        <i class="bi bi-person-circle"></i>
-        {{ user.display_name if user and user.display_name else (user.name if user else 'کاربر') }}
-    </a>
-    <a href="/change-password" class="sidebar-link">
-        <i class="bi bi-key"></i> تغییر رمز
-    </a>
-    <a href="/logout" class="sidebar-link" style="color: #dc3545;">
-        <i class="bi bi-box-arrow-right"></i> خروج
-    </a>
-</div>
-    </aside>
+        <!-- قراردادها و کاربران -->
+        {% set org_active = '/admin/contracts' in request.url.path or '/admin/users' in request.url.path %}
+        <a class="sidebar-link {% if org_active %}active{% endif %}" data-bs-toggle="collapse" href="#orgMenu"
+           role="button" aria-expanded="{{ 'true' if org_active else 'false' }}">
+            <i class="bi bi-briefcase"></i> قراردادها و کاربران
+            <i class="bi bi-chevron-down sidebar-toggle-icon"></i>
+        </a>
+        <div class="collapse sidebar-submenu {% if org_active %}show{% endif %}" id="orgMenu">
+            <a href="/admin/contracts"
+               class="sidebar-link {% if request.url.path == '/admin/contracts' %}active{% endif %}">
+                <i class="bi bi-file-earmark-text"></i> مدیریت قراردادها
+            </a>
+            <a href="/admin/users" class="sidebar-link {% if request.url.path == '/admin/users' %}active{% endif %}">
+                <i class="bi bi-people"></i> مدیریت کاربران
+            </a>
+            <!-- 🆕 اینجا اضافه شود -->
+            {% if user and user.role == 'super_admin' %}
+            <a href="/admin/permissions"
+               class="sidebar-link {% if '/permissions' in request.url.path %}active{% endif %}">
+                <i class="bi bi-shield-lock"></i> مدیریت دسترسی‌ها
+            </a>
+            {% endif %}
+            <a href="/admin/education"
+               class="sidebar-link {% if request.url.path == '/admin/education' %}active{% endif %}">
+                <i class="bi bi-mortarboard"></i> مدارک تحصیلی
+            </a>
+        </div>
 
-    <!-- 🎨 Overlay برای موبایل -->
-    <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+        <!-- گزارشات -->
+        <a href="/reports" class="sidebar-link {% if request.url.path.startswith('/reports') %}active{% endif %}">
+            <i class="bi bi-bar-chart-line"></i> گزارشات
+        </a>
 
-    <!-- 🎨 Topbar -->
-    <header class="app-topbar">
-        <button class="topbar-toggle-btn" onclick="toggleSidebar()">
-            <i class="bi bi-list"></i>
+        <!-- تنظیمات -->
+        {% set set_active = '/admin/holidays' in request.url.path or '/admin/import-previous-leave' in request.url.path
+        %}
+        <a class="sidebar-link {% if set_active %}active{% endif %}" data-bs-toggle="collapse" href="#setMenu"
+           role="button" aria-expanded="{{ 'true' if set_active else 'false' }}">
+            <i class="bi bi-gear"></i> تنظیمات
+            <i class="bi bi-chevron-down sidebar-toggle-icon"></i>
+        </a>
+        <div class="collapse sidebar-submenu {% if set_active %}show{% endif %}" id="setMenu">
+            {% if user and user.role == 'super_admin' %}
+            <a href="/admin/policies"
+               class="sidebar-link {% if '/admin/policies' in request.url.path %}active{% endif %}">
+                <i class="bi bi-gear-wide-connected"></i> سیاست کلی
+            </a>
+            <a href="/admin/holidays"
+               class="sidebar-link {% if request.url.path == '/admin/holidays' %}active{% endif %}">
+                <i class="bi bi-calendar-x"></i> مدیریت تعطیلات
+            </a>
+            <a href="/admin/import-previous-leave"
+               class="sidebar-link {% if request.url.path == '/admin/import-previous-leave' %}active{% endif %}">
+                <i class="bi bi-box-arrow-in-down"></i> ورود مرخصی سال قبل
+            </a>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- منوی کاربر (پایین sidebar) -->
+    <div class="sidebar-section" style="margin-top: auto; border-top: 1px solid var(--border-color);">
+        <a href="/profile" class="sidebar-link {% if request.url.path == '/profile' %}active{% endif %}">
+            <i class="bi bi-person-circle"></i>
+            {{ user.display_name if user and user.display_name else (user.name if user else 'کاربر') }}
+        </a>
+        <a href="/change-password" class="sidebar-link">
+            <i class="bi bi-key"></i> تغییر رمز
+        </a>
+        <a href="/logout" class="sidebar-link" style="color: #dc3545;">
+            <i class="bi bi-box-arrow-right"></i> خروج
+        </a>
+    </div>
+</aside>
+
+<!-- 🎨 Overlay برای موبایل -->
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+<!-- 🎨 Topbar -->
+<header class="app-topbar">
+    <button class="topbar-toggle-btn" onclick="toggleSidebar()">
+        <i class="bi bi-list"></i>
+    </button>
+
+    <div class="topbar-title">
+        {% block topbar_title %}سامانه حضور و غیاب{% endblock %}
+    </div>
+
+    <div class="topbar-actions">
+        <!-- 🌙 دکمه حالت روز/شب -->
+        <button class="theme-toggle-btn" onclick="toggleTheme()" title="تغییر حالت روز/شب">
+            <i class="bi bi-moon-stars" id="themeIcon"></i>
         </button>
 
-        <div class="topbar-title">
-            {% block topbar_title %}سامانه حضور و غیاب{% endblock %}
-        </div>
-
-        <div class="topbar-actions">
-            <!-- 🌙 دکمه حالت روز/شب -->
-            <button class="theme-toggle-btn" onclick="toggleTheme()" title="تغییر حالت روز/شب">
-                <i class="bi bi-moon-stars" id="themeIcon"></i>
-            </button>
-
-<!-- 👤 منوی کاربر -->
-<div class="dropdown">
-    <button class="user-dropdown-btn dropdown-toggle" data-bs-toggle="dropdown" type="button">
-        <div class="user-avatar">
-            <i class="bi bi-person"></i>
-        </div>
-        <span class="d-none d-md-inline">
+        <!-- 👤 منوی کاربر -->
+        <div class="dropdown">
+            <button class="user-dropdown-btn dropdown-toggle" data-bs-toggle="dropdown" type="button">
+                <div class="user-avatar">
+                    <i class="bi bi-person"></i>
+                </div>
+                <span class="d-none d-md-inline">
             {{ user.display_name if user and user.display_name else (user.name if user else 'کاربر') }}
         </span>
-    </button>
-    <ul class="dropdown-menu dropdown-menu-end">
-        <li>
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end">
+                <li>
             <span class="dropdown-item-text small text-muted">
                 <i class="bi bi-person-circle"></i>
                 {{ user.display_name if user and user.display_name else 'کاربر' }}
             </span>
-        </li>
-        <li><hr class="dropdown-divider"></li>
-        <li><a class="dropdown-item" href="/profile"><i class="bi bi-person-circle"></i> پروفایل</a></li>
-        <li><a class="dropdown-item" href="/change-password"><i class="bi bi-key"></i> تغییر رمز</a></li>
-        <li><hr class="dropdown-divider"></li>
-        <li><a class="dropdown-item text-danger" href="/logout"><i class="bi bi-box-arrow-right"></i> خروج</a></li>
-    </ul>
-</div>
+                </li>
+                <li>
+                    <hr class="dropdown-divider">
+                </li>
+                <li><a class="dropdown-item" href="/profile"><i class="bi bi-person-circle"></i> پروفایل</a></li>
+                <li><a class="dropdown-item" href="/change-password"><i class="bi bi-key"></i> تغییر رمز</a></li>
+                <li>
+                    <hr class="dropdown-divider">
+                </li>
+                <li><a class="dropdown-item text-danger" href="/logout"><i class="bi bi-box-arrow-right"></i> خروج</a>
+                </li>
+            </ul>
         </div>
-    </header>
+    </div>
+</header>
 
-    <!-- 🎨 Content -->
-    <main class="app-content">
-        {% block content %}{% endblock %}
-    </main>
+<!-- 🎨 Content -->
+<main class="app-content">
+    {% block content %}{% endblock %}
+</main>
 
 {% else %}
-    {% block content_full %}{% endblock %}
+{% block content_full %}{% endblock %}
 {% endif %}
 
 <!-- Bootstrap JS -->

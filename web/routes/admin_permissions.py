@@ -29,15 +29,49 @@ async def admin_permissions_page(
     search: str = Query(None),
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=5, le=100),
+    permission: str = Query(None),
+    role: str = Query(None),
+    state: str = Query(None),            # allowed / denied
+    only_override: bool = Query(False),
+    tab: str = Query(None),              # users / perms
     user: User = Depends(require_super_admin),
     db: Session = Depends(get_db)
 ):
-    """صفحه مدیریت دسترسی‌ها - لیست کاربران (با pagination و بدون N+1)"""
+    """لیست کاربران (User-Centric) یا نمای Permission-Centric («چه کسانی این دسترسی را دارند»).
+
+    بدون پرامتر permission رفتار قبلی/فاز ۴ دقیقاً حفظ می‌شود.
+    با پرامتر permission، برای همان دسترسیِ انتخاب‌شده، وضعیت مؤثر هر کاربر
+    (نقش + override — دقیقاً معادل منطق get_effective_permissions) محاسبه و
+    شمارش‌های سراسری قبل از pagination به نمایش درمی‌آید (هرگز از صفحهٔ جاری حدس زده نمی‌شود).
+    """
+    from sqlalchemy import or_
+
+    # ---- اعتبارسنجی پرامترهای اختیاری (مقادیر نامعتبر → صادقانه نادیده/گزارش) ----
+    permission_error = False
+    if permission and permission not in ALL_PERMISSIONS:
+        permission_error = True
+        permission = None
+    if role not in ("user", "admin", "super_admin"):
+        role = None
+    if state not in ("allowed", "denied"):
+        state = None
+    perm_selected = permission in ALL_PERMISSIONS
+
+    active_tab = 'perms' if (tab == 'perms' or perm_selected) else 'users'
+    all_permissions = [
+        {"code": code, "label": info["label"]}
+        for code, info in ALL_PERMISSIONS.items()
+    ]
+    permission_label = ALL_PERMISSIONS[permission]["label"] if perm_selected else ""
+    role_default_self = (
+        ALL_PERMISSIONS[permission].get(user.role or 'user', False)
+        if perm_selected else None
+    )
+
     query = db.query(User).outerjoin(Employee, User.user_id == Employee.user_id)
 
     if search and search.strip():
         term = search.strip()
-        from sqlalchemy import or_
         query = query.filter(
             or_(
                 User.user_id.ilike(f"%{term}%"),
@@ -47,39 +81,117 @@ async def admin_permissions_page(
             )
         )
 
-    total = query.count()
-    total_pages = max(1, (total + per_page - 1) // per_page)
-    page = min(page, total_pages)
-    users = query.order_by(User.user_id).offset((page - 1) * per_page).limit(per_page).all()
+    if perm_selected and role:
+        query = query.filter(User.role == role)
 
-    # Batch fetch برای حذف N+1
-    user_ids = [u.user_id for u in users]
-    emp_map = {}
-    if user_ids:
-        for emp in db.query(Employee).filter(Employee.user_id.in_(user_ids)).all():
-            emp_map[emp.user_id] = emp
-    override_map_all: dict[str, list] = {uid: [] for uid in user_ids}
-    if user_ids:
-        for ov in db.query(UserPermission).filter(UserPermission.user_id.in_(user_ids)).all():
-            override_map_all.setdefault(ov.user_id, []).append(ov)
+    # ══════════════════ نمای Permission-Centric ══════════════════
+    if perm_selected:
+        # کل مجموعهٔ منطبق (فیلتر search/role) — بدون pagination، برای شمارش صادق
+        matched = query.with_entities(User.user_id, User.role).order_by(User.user_id).all()
+        matched_ids = [m[0] for m in matched]
 
-    user_list = []
-    for u in users:
-        overrides = override_map_all.get(u.user_id, [])
-        # محاسبه مؤثر بدون کوئری اضافه
-        role = u.role or 'user'
-        effective = {code for code, info in ALL_PERMISSIONS.items() if info.get(role, False)}
-        for ov in overrides:
-            if ov.granted:
-                effective.add(ov.permission)
+        # override های همین دسترسی روی کل set (یک کوئری دسته‌ای، بدون N+1)
+        ov_map = {}
+        if matched_ids:
+            for ov in db.query(UserPermission).filter(
+                UserPermission.user_id.in_(matched_ids),
+                UserPermission.permission == permission,
+            ).all():
+                ov_map[ov.user_id] = ov
+
+        # مؤثر = نقش + grant/revoke — همان فرمول get_effective_permissions (ترکیب نقش/override)
+        perm_rows = []  # (user_id, role, active, source, has_override)
+        cnt_eff = cnt_denied = cnt_override = 0
+        for uid, urole in matched:
+            rd = ALL_PERMISSIONS[permission].get(urole or 'user', False)
+            ov = ov_map.get(uid)
+            has_ov = ov is not None
+            active = ov.granted if has_ov else rd
+            source = 'grant' if (has_ov and ov.granted) else ('revoke' if has_ov else 'role')
+            if state == 'allowed' and not active:
+                continue
+            if state == 'denied' and active:
+                continue
+            if only_override and not has_ov:
+                continue
+            perm_rows.append((uid, urole, active, source, has_ov))
+            if active:
+                cnt_eff += 1
             else:
-                effective.discard(ov.permission)
-        user_list.append({
-            'user': u,
-            'employee': emp_map.get(u.user_id),
-            'effective_perms_count': len(effective),
-            'override_count': len(overrides),
-        })
+                cnt_denied += 1
+            if has_ov:
+                cnt_override += 1
+
+        perm_counts = {
+            "total": len(perm_rows),
+            "effective": cnt_eff,
+            "denied": cnt_denied,
+            "override": cnt_override,
+        }
+        total = len(perm_rows)
+        total_pages = max(1, (total + per_page - 1) // per_page)
+        page = min(page, total_pages)
+
+        page_ids = [r[0] for r in perm_rows[(page - 1) * per_page: page * per_page]]
+        page_state = {uid: (active, source) for uid, _r, active, source, _h in perm_rows}
+
+        emp_map = {}
+        if page_ids:
+            for emp in db.query(Employee).filter(Employee.user_id.in_(page_ids)).all():
+                emp_map[emp.user_id] = emp
+        users_by_id = {}
+        if page_ids:
+            for u in db.query(User).filter(User.user_id.in_(page_ids)).all():
+                users_by_id[u.user_id] = u
+
+        user_list = []
+        for uid in page_ids:
+            active, source = page_state[uid]
+            real_u = users_by_id.get(uid)
+            if real_u is None:
+                continue
+            user_list.append({
+                "user": real_u,
+                "employee": emp_map.get(uid),
+                "perm_active": active,
+                "perm_source": source,
+            })
+
+    # ══════════════════ نمای User-Centric (فاز ۴ — بدون تغییر) ══════════════════
+    else:
+        total = query.count()
+        total_pages = max(1, (total + per_page - 1) // per_page)
+        page = min(page, total_pages)
+        users = query.order_by(User.user_id).offset((page - 1) * per_page).limit(per_page).all()
+
+        # Batch fetch برای حذف N+1
+        user_ids = [u.user_id for u in users]
+        emp_map = {}
+        if user_ids:
+            for emp in db.query(Employee).filter(Employee.user_id.in_(user_ids)).all():
+                emp_map[emp.user_id] = emp
+        override_map_all: dict[str, list] = {uid: [] for uid in user_ids}
+        if user_ids:
+            for ov in db.query(UserPermission).filter(UserPermission.user_id.in_(user_ids)).all():
+                override_map_all.setdefault(ov.user_id, []).append(ov)
+
+        user_list = []
+        perm_counts = None
+        for u in users:
+            overrides = override_map_all.get(u.user_id, [])
+            role_u = u.role or 'user'
+            effective = {code for code, info in ALL_PERMISSIONS.items() if info.get(role_u, False)}
+            for ov in overrides:
+                if ov.granted:
+                    effective.add(ov.permission)
+                else:
+                    effective.discard(ov.permission)
+            user_list.append({
+                'user': u,
+                'employee': emp_map.get(u.user_id),
+                'effective_perms_count': len(effective),
+                'override_count': len(overrides),
+            })
 
     return templates.TemplateResponse(request, "admin/permissions.html", {
         "user": user,
@@ -91,6 +203,17 @@ async def admin_permissions_page(
         "total_pages": total_pages,
         "is_admin": True,
         "is_super_admin": True,
+        # ── نمای Permission-Centric ──
+        "active_tab": active_tab,
+        "all_permissions": all_permissions,
+        "permission": permission if perm_selected else "",
+        "permission_label": permission_label,
+        "permission_error": permission_error,
+        "role_default_self": role_default_self,
+        "selected_role": role or "",
+        "selected_state": state or "",
+        "only_override": only_override,
+        "perm_counts": perm_counts,
     })
 
 
