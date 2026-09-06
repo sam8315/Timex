@@ -576,22 +576,40 @@
         }
     }
 
-    // انتخاب دسترسی → ارسال فوری (برای حالت بدون-JS دکمهٔ نمایش موجود است)
+    // ساخت URL با حفظ فیلترهای جاری (tab + permission + role/state/only_override/search)
+    function buildPermUrl() {
+        var params = ['tab=perms'];
+        if (sel && sel.value) { params.push('permission=' + encodeURIComponent(sel.value)); }
+        var role = document.getElementById('permRole');
+        if (role && role.value) { params.push('role=' + encodeURIComponent(role.value)); }
+        var state = document.getElementById('permState');
+        if (state && state.value) { params.push('state=' + encodeURIComponent(state.value)); }
+        var ov = document.getElementById('permOnlyOverride');
+        if (ov && ov.checked) { params.push('only_override=true'); }
+        var search = document.getElementById('permSearchTxt');
+        if (search && search.value.trim()) { params.push('search=' + encodeURIComponent(search.value.trim())); }
+        return '/admin/permissions?' + params.join('&');
+    }
+
+    // انتخاب دسترسی → ناوبری مستقیم GET (نه requestSubmit)
+    // دلیل: requestSubmit یک رویداد submit دیسپچ می‌کند و همان guard پایین آن را لغو می‌کرد؛
+    // در نتیجه درخواست ارسال نمی‌شد و اسپینر هیچ‌وقت خاموش نمی‌شد.
     if (sel) {
         sel.addEventListener('change', function () {
             if (navLock) { return; }
-            if (!sel.value) {
-                window.location.href = '/admin/permissions?tab=perms';
-                return;
-            }
             navLock = true;
             lock();
-            form.requestSubmit();
+            if (sel.value) {
+                window.location.href = buildPermUrl();
+            } else {
+                window.location.href = '/admin/permissions?tab=perms';
+            }
         });
     }
 
-    form.addEventListener('submit', function () {
-        if (navLock) { event.preventDefault(); return; }
+    // دکمهٔ «نمایش» (حالت بدون-JS): ارسال عادی GET، فقط یک بار (جلوگیری از دوباره‌تایم)
+    form.addEventListener('submit', function (ev) {
+        if (navLock) { ev.preventDefault(); return; }
         navLock = true;
         lock();
     });

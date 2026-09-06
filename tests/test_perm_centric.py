@@ -225,6 +225,40 @@ def test_invalid_permission_param_warns_and_no_table(client, db, make_user):
     assert "وضعیت مؤثر</th>" not in body
 
 
+def test_selector_change_navigates_to_permission_results(client, db, make_user):
+    """Regression باگ فاز ۵: انتخاب دسترسی باید با ناوبری مستقیم GET انجام شود.
+
+    ریشهٔ باگ: هندلر change با `requestSubmit()` یک رویداد submit دیسپچ می‌کرد که
+    توسط guardِ خودِ فرم (`if (navLock) preventDefault`) لغو می‌شد → درخواست هیچ‌وقت
+    فرستاده نمی‌شد و اسپینر بی‌پایان می‌ماند. بنابراین JS نباید دیگر requestSubmit
+    داشته باشد و باید URLِ GET بسازد و مستقیم برود — همان URL که سرور نتایج می‌دهد.
+    """
+    super_u = make_user(role="super_admin")
+    login_as(client, super_u["national_code"])
+
+    perms_tab = _page(client, "/admin/permissions?tab=perms")
+    # (الف) سازوکار معیوب حذف شده است (فراخوانیِ نکردن dispatch، نه واژه در کامنت)
+    assert "form.requestSubmit" not in perms_tab
+    # (ب) ناوبری مستقیم با URLِ ساخته‌شده در JS تعبیه شده است
+    assert "buildPermUrl" in perms_tab
+    assert "window.location.href = buildPermUrl()" in perms_tab
+
+    # (ج) همان URLِ GET که JS پس از انتخاب می‌سازد → نتایج صحیح رندر می‌شود (loading تمام)
+    body = _page(client, "/admin/permissions?tab=perms&permission=manage_users")
+    assert "مدیریت کاربران" in body
+    assert 'value="manage_users" selected' in body
+    assert "وضعیت مؤثر</th>" in body and "منبع</th>" in body
+    assert _tile(body, "کاربران (مطابق فیلترها)") == 1   # فقط سوپرادمین
+    assert _n(body, "state-badge badge-allowed") == 1
+    assert _n(body, "source-tag role-only") == 1
+
+    # (د) تغییر دسترسی در URL → نتایجِ دیگر رندر می‌شود (انتخاب جدید در dropdown)
+    body2 = _page(client, "/admin/permissions?tab=perms&permission=view_dashboard")
+    assert "مشاهده داشبورد" in body2
+    assert 'value="view_dashboard" selected' in body2
+    assert 'value="manage_users" selected' not in body2
+
+
 def test_url_state_refresh_defaults_to_users_tab(client, db, make_user):
     """بدون پارامتر، تب پیش‌فرض «کاربران» و نشانِ active روی آن است (رفتار فاز ۴)."""
     super_u = make_user(role="super_admin")
