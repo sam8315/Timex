@@ -5,6 +5,7 @@ from fastapi.templating import Jinja2Templates
 from pathlib import Path
 from sqlalchemy.orm import Session
 from web.dependencies import get_db, require_super_admin
+from web.config import WebConfig
 from models.user import User
 from models.employee import Employee
 from models.user_permission import UserPermission
@@ -21,6 +22,19 @@ from datetime import datetime
 
 router = APIRouter(tags=["Admin Permissions"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
+
+
+# ── نقش‌ها: کد از منبع واقعی (WebConfig)؛ برچسب = همان برچسب‌های نمایشیِ موجود در UI ──
+VALID_ROLES = (
+    WebConfig.ROLE_USER,
+    WebConfig.ROLE_ADMIN,
+    WebConfig.ROLE_SUPER_ADMIN,
+)
+ROLE_CATALOG = [
+    {"code": WebConfig.ROLE_ADMIN, "label": "مدیر"},
+    {"code": WebConfig.ROLE_USER, "label": "کاربر"},
+    {"code": WebConfig.ROLE_SUPER_ADMIN, "label": "مدیر ارشد"},
+]
 
 
 @router.get("/admin/permissions", response_class=HTMLResponse)
@@ -51,13 +65,24 @@ async def admin_permissions_page(
     if permission and permission not in ALL_PERMISSIONS:
         permission_error = True
         permission = None
-    if role not in ("user", "admin", "super_admin"):
+    role_error = False
+    if role and role not in VALID_ROLES:
+        role_error = True
         role = None
     if state not in ("allowed", "denied"):
         state = None
     perm_selected = permission in ALL_PERMISSIONS
 
-    active_tab = 'perms' if (tab == 'perms' or perm_selected) else 'users'
+    if perm_selected:
+        active_tab = 'perms'
+    elif tab == 'roles':
+        active_tab = 'roles'
+    elif tab == 'users':
+        active_tab = 'users'
+    elif tab == 'perms':
+        active_tab = 'perms'
+    else:
+        active_tab = 'users'
     all_permissions = [
         {"code": code, "label": info["label"]}
         for code, info in ALL_PERMISSIONS.items()
@@ -67,6 +92,24 @@ async def admin_permissions_page(
         ALL_PERMISSIONS[permission].get(user.role or 'user', False)
         if perm_selected else None
     )
+
+    # ── نمای Role-Centric: فقط-خواندنی؛ پیش‌فرض نقش دقیقاً از همان فرمول موتور ──
+    role_selected = active_tab == 'roles' and role in VALID_ROLES
+    role_label = ""
+    role_perms = []
+    role_counts = None
+    if role_selected:
+        role_label = next((r["label"] for r in ROLE_CATALOG if r["code"] == role), role)
+        for code, info in ALL_PERMISSIONS.items():
+            # همان `info.get(role, False)` قدم اولِ get_effective_permissions
+            active = info.get(role, False)
+            role_perms.append({"code": code, "label": info["label"], "active": active})
+        granted = sum(1 for rp in role_perms if rp["active"])
+        role_counts = {
+            "total": len(role_perms),
+            "granted": granted,
+            "not_granted": len(role_perms) - granted,
+        }
 
     query = db.query(User).outerjoin(Employee, User.user_id == Employee.user_id)
 
@@ -157,6 +200,14 @@ async def admin_permissions_page(
                 "perm_source": source,
             })
 
+    # ══════════════════ نمای Role-Centric (فاز ۶ — فقط-خواندنی) ══════════════════
+    elif active_tab == 'roles':
+        # هیچ تغییر دسترسی/نقشی انجام نمی‌شود؛ فقط پیش‌فرض‌های نقش از ALL_PERMISSIONS.
+        user_list = []
+        perm_counts = None
+        total = 0
+        total_pages = 1
+
     # ══════════════════ نمای User-Centric (فاز ۴ — بدون تغییر) ══════════════════
     else:
         total = query.count()
@@ -214,6 +265,13 @@ async def admin_permissions_page(
         "selected_state": state or "",
         "only_override": only_override,
         "perm_counts": perm_counts,
+        # ── نمای Role-Centric ──
+        "all_roles": ROLE_CATALOG,
+        "role_selected": role_selected,
+        "role_label": role_label,
+        "role_perms": role_perms,
+        "role_counts": role_counts,
+        "role_error": role_error,
     })
 
 

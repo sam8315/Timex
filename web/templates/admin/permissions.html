@@ -78,22 +78,23 @@
 
     /* موبایل: جدول → کارت بدون تکرار markup (data-label) */
     @media (max-width: 767.98px) {
-        .perm-table thead { display: none; }
-        .perm-table, .perm-table tbody, .perm-table tr, .perm-table td { display: block; width: 100%; }
-        .perm-table tr {
+        .perm-table thead, .role-perm-table thead { display: none; }
+        .perm-table, .perm-table tbody, .perm-table tr, .perm-table td,
+        .role-perm-table, .role-perm-table tbody, .role-perm-table tr, .role-perm-table td { display: block; width: 100%; }
+        .perm-table tr, .role-perm-table tr {
             border: 1px solid var(--border-color);
             border-radius: 12px;
             padding: .6rem .9rem;
             margin-bottom: .9rem;
             background: var(--bg-card);
         }
-        .perm-table td {
+        .perm-table td, .role-perm-table td {
             display: flex; flex-wrap: wrap;
             align-items: center; justify-content: space-between;
             gap: .4rem .75rem;
             border: none; padding: .5rem 0;
         }
-        .perm-table td::before {
+        .perm-table td::before, .role-perm-table td::before {
             content: attr(data-label);
             font-size: .72rem; font-weight: 700;
             color: var(--text-muted); flex-shrink: 0;
@@ -122,7 +123,7 @@
 {% endif %}
 
 <!-- ══════════ تب‌ها (لینک‌محور؛ وضعیت در URL) ══════════ -->
-<ul class="nav nav-tabs nav-perm-tabs mb-4" role="tablist" aria-label="نمایش کاربران یا دسترسی‌ها">
+<ul class="nav nav-tabs nav-perm-tabs mb-4" role="tablist" aria-label="نمایش کاربران، دسترسی‌ها یا نقش‌ها">
     <li class="nav-item" role="presentation">
         <a class="nav-link {% if active_tab == 'users' %}active{% endif %}"
            id="tab-users" href="/admin/permissions?tab=users" role="tab"
@@ -140,7 +141,24 @@
             <i class="bi bi-shield-check"></i> دسترسی‌ها
         </a>
     </li>
+    <li class="nav-item" role="presentation">
+        <a class="nav-link {% if active_tab == 'roles' %}active{% endif %}"
+           id="tab-roles"
+           href="/admin/permissions?tab=roles{% if selected_role %}&amp;role={{ selected_role }}{% endif %}"
+           role="tab" aria-selected="{% if active_tab == 'roles' %}true{% else %}false{% endif %}"
+           aria-controls="pane-roles">
+            <i class="bi bi-person-badge"></i> نقش‌ها
+        </a>
+    </li>
 </ul>
+
+{# ── نقش نامعتبر از URL ── #}
+{% if role_error %}
+<div class="alert alert-warning d-flex align-items-center gap-2 fade show" role="alert">
+    <i class="bi bi-exclamation-triangle"></i>
+    <span>نقش انتخاب‌شده معتبر نیست. لطفاً از فهرست نقش‌ها انتخاب کنید.</span>
+</div>
+{% endif %}
 
 {# ═══════════════════════════════════════════════════════════════════════════ #
    پنل Leader-Centric (فاز ۴ — بدون تغییر در منطق)
@@ -556,6 +574,136 @@
     {% endif %}
 </div>
 {% endif %}
+
+{# ═══════════════════════════════════════════════════════════════════════════ #
+   پنل Role-Centric (فاز ۶): «این نقش به‌صورت پیش‌فرض کدام دسترسی‌ها را دارد؟»
+   فقط‌خواندنی — هیچ اعطا/سلب/بازنشانی/تغییر نقشی انجام نمی‌شود.
+   نقش‌ها از منبع واقعی (WebConfig.ROLE_*)؛ پیش‌فرض‌ها از ALL_PERMISSIONS
+   (دقیقاً قدم اولِ get_effective_permissions). هیچ عددی حدس زده نمی‌شود.
+#}
+{% if active_tab == 'roles' %}
+<div id="pane-roles" role="tabpanel" aria-labelledby="tab-roles">
+    <form method="get" action="/admin/permissions" id="roleForm">
+        <input type="hidden" name="tab" value="roles">
+
+        <!-- ── انتخاب نقش (گزینه‌ها از WebConfig.ROLE_*) ── -->
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-body">
+                <label class="form-label fw-bold" for="roleSelector">نقش مورد نظر</label>
+                <div class="d-flex flex-wrap gap-2 align-items-center">
+                    <select id="roleSelector" name="role" class="form-select w-auto flex-grow-1"
+                            style="min-width: 260px;" aria-label="انتخاب نقش">
+                        <option value="">— انتخاب نقش —</option>
+                        {% for r in all_roles %}
+                        <option value="{{ r.code }}"{% if selected_role == r.code %} selected{% endif %}>{{ r.label }} ({{ r.code }})</option>
+                        {% endfor %}
+                    </select>
+                    <button type="submit" class="btn btn-primary rounded-pill px-4">
+                        <span class="spinner-border spinner-border-sm role-spin d-none" aria-hidden="true"></span>
+                        نمایش
+                    </button>
+                </div>
+                {% if not role_selected %}
+                <p class="text-muted small mt-2 mb-0">
+                    <i class="bi bi-info-circle"></i>
+                    یک نقش را انتخاب کنید تا دسترسی‌های پیش‌فرض آن (از سیستم دسترسی) نمایش داده شوند. این نما فقط‌خواندنی است.
+                </p>
+                {% endif %}
+            </div>
+        </div>
+
+        {% if role_selected %}
+        <!-- ── اطلاعات نقش انتخاب‌شده ── -->
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-body d-flex flex-wrap align-items-center gap-3">
+                <div class="stat-icon stat-blue"><i class="bi bi-person-badge"></i></div>
+                <div>
+                    <h5 class="fw-bold mb-0">{{ role_label }}</h5>
+                    <div class="d-flex align-items-center gap-2 small text-muted">
+                        <code dir="ltr">{{ selected_role }}</code>
+                        <span class="text-nowrap">دسترسی‌های پیش‌فرض این نقش</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── آمار (از ALL_PERMISSIONS؛ نه از ردیف‌های صفحه) ── -->
+        {% if role_counts %}
+        <div class="row g-3 mb-4" aria-label="آمار نقش انتخاب‌شده">
+            <div class="col-4">
+                <div class="card stat-tile border-0 h-100">
+                    <div class="card-body d-flex align-items-center gap-3">
+                        <div class="stat-icon stat-blue"><i class="bi bi-shield-lock"></i></div>
+                        <div>
+                            <div class="fs-4 fw-bold lh-1">{{ role_counts.total }}</div>
+                            <small class="text-muted">کل دسترسی‌ها</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-4">
+                <div class="card stat-tile border-0 h-100">
+                    <div class="card-body d-flex align-items-center gap-3">
+                        <div class="stat-icon stat-green"><i class="bi bi-check-circle"></i></div>
+                        <div>
+                            <div class="fs-4 fw-bold lh-1">{{ role_counts.granted }}</div>
+                            <small class="text-muted">فعال از نقش</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-4">
+                <div class="card stat-tile border-0 h-100">
+                    <div class="card-body d-flex align-items-center gap-3">
+                        <div class="stat-icon stat-red"><i class="bi bi-x-circle"></i></div>
+                        <div>
+                            <div class="fs-4 fw-bold lh-1">{{ role_counts.not_granted }}</div>
+                            <small class="text-muted">غیرفعال</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- ── جدول دسترسی‌های پیش‌فرض نقش (فقط‌خواندنی) ── -->
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <small class="text-muted"><i class="bi bi-list-check"></i> {{ role_label }} — پیش‌فرض دسترسی‌ها</small>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0 role-perm-table">
+                        <thead class="table-light">
+                            <tr>
+                                <th scope="col">کد دسترسی</th>
+                                <th scope="col">عنوان</th>
+                                <th scope="col" class="text-center">وضعیت</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for rp in role_perms %}
+                            <tr>
+                                <td data-label="کد دسترسی"><code dir="ltr">{{ rp.code }}</code></td>
+                                <td data-label="عنوان">{{ rp.label }}</td>
+                                <td data-label="وضعیت" class="text-center">
+                                    {% if rp.active %}
+                                    <span class="state-badge badge-allowed"><i class="bi bi-check-circle"></i> فعال</span>
+                                    {% else %}
+                                    <span class="state-badge badge-denied"><i class="bi bi-x-circle"></i> غیرفعال</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </form>
+</div>
+{% endif %}
 {% endblock %}
 
 {% block extra_js %}
@@ -612,6 +760,42 @@
         if (navLock) { ev.preventDefault(); return; }
         navLock = true;
         lock();
+    });
+})();
+
+(function () {
+    'use strict';
+    // ناوبری مستقیم نقش (فاز ۶): همین الگوی بدون-requestSubmit که باگ فاز ۵ را رفع کرد.
+    var rsel = document.getElementById('roleSelector');
+    var rform = document.getElementById('roleForm');
+    if (!rsel || !rform) { return; }
+    var rSubmit = rform.querySelector('button[type="submit"]');
+    var rLock = false;
+
+    function rlock() {
+        if (rSubmit) {
+            rSubmit.disabled = true;
+            var rspin = rSubmit.querySelector('.role-spin');
+            if (rspin) { rspin.classList.remove('d-none'); }
+        }
+    }
+
+    rsel.addEventListener('change', function () {
+        if (rLock) { return; }
+        rLock = true;
+        rlock();
+        if (rsel.value) {
+            window.location.href = '/admin/permissions?tab=roles&role=' + encodeURIComponent(rsel.value);
+        } else {
+            window.location.href = '/admin/permissions?tab=roles';
+        }
+    });
+
+    // دکمهٔ «نمایش» (حالت بدون-JS)
+    rform.addEventListener('submit', function (ev) {
+        if (rLock) { ev.preventDefault(); return; }
+        rLock = true;
+        rlock();
     });
 })();
 </script>
