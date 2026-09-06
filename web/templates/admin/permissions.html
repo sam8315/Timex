@@ -1,74 +1,179 @@
 {% extends "base.html" %}
 {% block title %}مدیریت دسترسی‌ها | پنل مدیریت{% endblock %}
 
+{% block extra_css %}
+<style>
+    /* پیل شمارنده دسترسی مؤثر — رنگ تنها شاخص نیست: آیکون + عدد + متن */
+    .perm-count {
+        display: inline-flex; align-items: center; gap: .4rem;
+        padding: .35rem .7rem; border-radius: 50rem;
+        font-size: .82rem; font-weight: 700; line-height: 1; white-space: nowrap;
+    }
+    .perm-count .bi { font-size: .95rem; }
+    .perm-count.high { background: #d9f2e3; color: #0f6a33; border: 1px solid #95d5a8; }
+    .perm-count.mid  { background: #fff4d6; color: #8a6d00; border: 1px solid #f1d98a; }
+    .perm-count.low  { background: #f8dddd; color: #a01919; border: 1px solid #f0b4b4; }
+    [data-theme="dark"] .perm-count.high { background: #1e3a2f; color: #a3e6c1; border-color: #2a4d3e; }
+    [data-theme="dark"] .perm-count.mid  { background: #3d3521; color: #ffdb85; border-color: #4a4229; }
+    [data-theme="dark"] .perm-count.low  { background: #3d2121; color: #f5a3a3; border-color: #4d2a2a; }
+
+    /* کاشی آمار */
+    .stat-tile { border-radius: 12px; box-shadow: var(--shadow-sm); }
+    .stat-tile .stat-icon {
+        width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0;
+        display: flex; align-items: center; justify-content: center; font-size: 1.3rem;
+    }
+    .stat-blue   { background: var(--primary-soft); color: var(--primary); }
+    .stat-amber  { background: #fff4d6; color: #8a6d00; }
+    [data-theme="dark"] .stat-amber { background: #3d3521; color: #ffdb85; }
+    .stat-purple { background: #ece4fb; color: #6f42c1; }
+    [data-theme="dark"] .stat-purple { background: #2b2440; color: #c9bdf0; }
+
+    .perm-search .form-control:focus { box-shadow: 0 0 0 3px rgba(13, 110, 253, .15); }
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h4 class="fw-bold"><i class="bi bi-shield-lock text-primary"></i> مدیریت دسترسی‌ها</h4>
+<!-- سربرگ -->
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <h4 class="fw-bold mb-0">
+        <i class="bi bi-shield-lock text-primary"></i> مدیریت دسترسی کاربران
+    </h4>
     <a href="/admin" class="btn btn-outline-primary btn-sm rounded-pill">
-        <i class="bi bi-arrow-right"></i> بازگشت
+        <i class="bi bi-arrow-right"></i> برگشت
     </a>
 </div>
 
+<!-- آمار (بر اساس داده‌های واقعی Backend؛ محدودهٔ «این صفحه»، نه سراسری) -->
+<div class="row g-3 mb-4" id="permStats" aria-label="آمار کاربران">
+    <div class="col-md-4 col-sm-6">
+        <div class="card stat-tile border-0">
+            <div class="card-body d-flex align-items-center gap-3">
+                <div class="stat-icon stat-blue"><i class="bi bi-people"></i></div>
+                <div>
+                    <div class="fs-4 fw-bold lh-1">{{ total }}</div>
+                    <small class="text-muted">کل کاربران (نتایج جستجو)</small>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 col-sm-6">
+        <div class="card stat-tile border-0">
+            <div class="card-body d-flex align-items-center gap-3">
+                <div class="stat-icon stat-amber"><i class="bi bi-person-gear"></i></div>
+                <div>
+                    {% set tile_page_override = namespace(n=0) %}
+                    {% for _it in user_list %}
+                        {% if _it.override_count > 0 %}{% set tile_page_override.n = tile_page_override.n + 1 %}{% endif %}
+                    {% endfor %}
+                    <div class="fs-4 fw-bold lh-1">{{ tile_page_override.n }}</div>
+                    <small class="text-muted">دارای دسترسی اختصاصی (این صفحه)</small>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 col-sm-6">
+        <div class="card stat-tile border-0">
+            <div class="card-body d-flex align-items-center gap-3">
+                <div class="stat-icon stat-purple"><i class="bi bi-shield-check"></i></div>
+                <div>
+                    {% set tile_page_admin = namespace(n=0) %}
+                    {% for _it in user_list %}
+                        {% if _it.user.role in ('admin', 'super_admin') %}{% set tile_page_admin.n = tile_page_admin.n + 1 %}{% endif %}
+                    {% endfor %}
+                    <div class="fs-4 fw-bold lh-1">{{ tile_page_admin.n }}</div>
+                    <small class="text-muted">مدیر / مدیر ارشد (این صفحه)</small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- جستجو -->
-<div class="card border-0 shadow-sm mb-4">
+<div class="card border-0 shadow-sm perm-search mb-4">
     <div class="card-body py-3">
-        <form method="get" action="/admin/permissions" class="d-flex gap-2">
-            <input type="text" name="search" class="form-control form-control-sm"
-                   placeholder="جستجوی کاربر (نام، کد پرسنلی...)" value="{{ search }}">
-            <button type="submit" class="btn btn-primary btn-sm">
-                <i class="bi bi-search"></i> جستجو
-            </button>
+        <form method="get" action="/admin/permissions" role="search" class="row g-2 align-items-center">
+            <div class="col-md-6 col-lg-5 col-xl-4">
+                <div class="input-group">
+                    <span class="input-group-text bg-transparent"><i class="bi bi-search"></i></span>
+                    <input type="text" name="search" class="form-control"
+                           placeholder="جستجوی کاربر (نام، کد پرسنلی...)"
+                           value="{{ search }}" aria-label="جستجوی کاربر">
+                </div>
+            </div>
+            <div class="col-auto">
+                <button type="submit" class="btn btn-primary rounded-pill px-4">
+                    <i class="bi bi-search"></i> جستجو
+                </button>
+            </div>
+            {% if search %}
+            <div class="col-auto">
+                <a href="/admin/permissions" class="btn btn-outline-secondary rounded-pill px-3">
+                    <i class="bi bi-x-circle"></i> پاک کردن
+                </a>
+            </div>
+            {% endif %}
         </form>
     </div>
 </div>
 
 <!-- لیست کاربران -->
 <div class="card border-0 shadow-sm">
-    <div class="card-header bg-white d-flex justify-content-between align-items-center">
-        <small class="text-muted">مجموع: <strong>{{ total }}</strong> کاربر</small>
+    <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <small class="text-muted"><i class="bi bi-list-check"></i> مجموع: <strong>{{ total }}</strong> کاربر</small>
         <small class="text-muted">صفحه {{ page }} از {{ total_pages }}</small>
     </div>
+
+    {% if user_list %}
     <div class="card-body p-0">
         <div class="table-responsive">
-            <table class="table table-hover mb-0">
+            <table class="table table-hover align-middle mb-0">
                 <thead class="table-light">
                     <tr>
-                        <th>کد پرسنلی</th>
-                        <th>نام کامل</th>
-                        <th>نقش</th>
-                        <th class="text-center">دسترسی‌های فعال</th>
-                        <th class="text-center">تغییرات دستی</th>
-                        <th class="text-center">عملیات</th>
+                        <th scope="col">کد پرسنلی</th>
+                        <th scope="col">نام کامل</th>
+                        <th scope="col">نقش</th>
+                        <th scope="col" class="text-center">وضعیت دسترسی</th>
+                        <th scope="col" class="text-center">Override</th>
+                        <th scope="col" class="text-center">اقدامات</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for item in user_list %}
                     <tr>
-                        <td>{{ item.user.user_id }}</td>
-                        <td>{{ item.employee.full_name if item.employee else '-' }}</td>
+                        <td><code dir="ltr">{{ item.user.user_id }}</code></td>
+                        <td class="fw-medium">{{ item.employee.full_name if item.employee else '-' }}</td>
                         <td>
                             {% if item.user.role == 'super_admin' %}
-                            <span class="badge bg-danger">مدیر ارشد</span>
+                            <span class="badge bg-danger"><i class="bi bi-shield-lock"></i> مدیر ارشد</span>
                             {% elif item.user.role == 'admin' %}
-                            <span class="badge bg-primary">مدیر</span>
+                            <span class="badge bg-primary"><i class="bi bi-shield"></i> مدیر</span>
                             {% else %}
-                            <span class="badge bg-secondary">کاربر</span>
+                            <span class="badge bg-secondary"><i class="bi bi-person"></i> کاربر</span>
                             {% endif %}
                         </td>
                         <td class="text-center">
-                            <span class="badge bg-success">{{ item.effective_perms_count }}</span>
+                            {% set c = item.effective_perms_count %}
+                            {% if c >= 12 %}
+                            <span class="perm-count high" title="دسترسی‌های مؤثر"><i class="bi bi-check-circle"></i> {{ c }} فعال</span>
+                            {% elif c >= 6 %}
+                            <span class="perm-count mid" title="دسترسی‌های مؤثر"><i class="bi bi-exclamation-circle"></i> {{ c }} محدود</span>
+                            {% else %}
+                            <span class="perm-count low" title="دسترسی‌های مؤثر"><i class="bi bi-x-circle"></i> {{ c }} کم</span>
+                            {% endif %}
                         </td>
                         <td class="text-center">
                             {% if item.override_count > 0 %}
-                            <span class="badge bg-warning text-dark">{{ item.override_count }}</span>
+                            <span class="badge bg-warning text-dark"><i class="bi bi-sliders"></i> {{ item.override_count }} اختصاصی</span>
                             {% else %}
-                            <span class="text-muted">-</span>
+                            <span class="text-muted">—</span>
                             {% endif %}
                         </td>
                         <td class="text-center">
                             <a href="/admin/permissions/{{ item.user.user_id }}"
-                               class="btn btn-outline-primary btn-sm">
-                                <i class="bi bi-gear"></i> مدیریت
+                               class="btn btn-outline-primary btn-sm rounded-pill"
+                               aria-label="مدیریت دسترسی‌های {{ item.employee.full_name if item.employee else item.user.user_id }}">
+                                <i class="bi bi-list-check"></i> مدیریت
                             </a>
                         </td>
                     </tr>
@@ -77,15 +182,29 @@
             </table>
         </div>
     </div>
+
     {% if total_pages > 1 %}
-    <div class="card-footer bg-white d-flex justify-content-center gap-2 py-3">
+    <div class="card-footer bg-white d-flex justify-content-center align-items-center gap-3 py-3">
         {% if page > 1 %}
-        <a href="/admin/permissions?search={{ search }}&page={{ page - 1 }}&per_page={{ per_page }}" class="btn btn-outline-primary btn-sm">قبلی</a>
+        <a href="/admin/permissions?search={{ search }}&page={{ page - 1 }}&per_page={{ per_page }}"
+           class="btn btn-outline-primary btn-sm rounded-pill">قبلی</a>
         {% endif %}
-        <span class="align-self-center small text-muted">صفحه {{ page }} از {{ total_pages }}</span>
+        <span class="small text-muted">صفحه {{ page }} از {{ total_pages }}</span>
         {% if page < total_pages %}
-        <a href="/admin/permissions?search={{ search }}&page={{ page + 1 }}&per_page={{ per_page }}" class="btn btn-outline-primary btn-sm">بعدی</a>
+        <a href="/admin/permissions?search={{ search }}&page={{ page + 1 }}&per_page={{ per_page }}"
+           class="btn btn-outline-primary btn-sm rounded-pill">بعدی</a>
         {% endif %}
+    </div>
+    {% endif %}
+
+    {% else %}
+    <div class="card-body text-center py-5">
+        <i class="bi bi-inbox display-1 text-muted"></i>
+        <h5 class="fw-bold mt-3">هیچ کاربری یافت نشد</h5>
+        <p class="text-muted">جستجو یا فیلتر خود را تغییر دهید</p>
+        <a href="/admin/permissions" class="btn btn-primary rounded-pill px-4">
+            <i class="bi bi-arrow-counterclockwise"></i> نمایش همه کاربران
+        </a>
     </div>
     {% endif %}
 </div>
