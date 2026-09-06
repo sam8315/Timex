@@ -3,6 +3,13 @@
 {% block content %}
 
 <!-- پیام‌های موفقیت -->
+{% if request.query_params.get('created') %}
+<div class="alert alert-success alert-dismissible fade show">
+    <i class="bi bi-person-plus"></i> کاربر با موفقیت ایجاد شد.
+    رمز اولیه کد ملی است و در اولین ورود باید تغییر کند.
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
 {% if request.query_params.get('saved') %}
 <div class="alert alert-success alert-dismissible fade show">
     <i class="bi bi-check-circle"></i> اطلاعات با موفقیت ذخیره شد

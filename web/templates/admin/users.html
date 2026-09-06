@@ -4,9 +4,16 @@
 
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h4><i class="bi bi-people"></i> مدیریت کاربران</h4>
-    <a href="/admin/" class="btn btn-outline-primary btn-sm">
-        <i class="bi bi-arrow-right"></i> بازگشت به پنل مدیریت
-    </a>
+    <div class="d-flex gap-2">
+        {% if is_super_admin %}
+        <a href="/admin/users/create" class="btn btn-success btn-sm">
+            <i class="bi bi-person-plus"></i> کاربر جدید
+        </a>
+        {% endif %}
+        <a href="/admin/" class="btn btn-outline-primary btn-sm">
+            <i class="bi bi-arrow-right"></i> بازگشت به پنل مدیریت
+        </a>
+    </div>
 </div>
 
 <!-- 🔍 نوار جستجو و فیلتر -->
