@@ -8,11 +8,15 @@ from starlette.middleware.sessions import SessionMiddleware
 from web.routes import auth, dashboard, attendance, leave, admin, contract, profile, holidays, admin_contracts, admin_leave, admin_daily_status, carry_forward, education, phones, reports, admin_policy
 BASE_PATH = Path(__file__).parent
 from web.routes.admin_permissions import router as permissions_router
+from web.error_handlers import register_exception_handlers
 
 app = FastAPI(title="Timex - سامانه حضور و غیاب", version="1.0.0")
 
 # 🆕 اضافه کردن SessionMiddleware برای ذخیره session
 app.add_middleware(SessionMiddleware, secret_key="timex-web-secret-key-2024-change-in-production")
+
+# 🆕 هندلر متمرکز خطاهای HTTP (403 → صفحه HTML برای مرورگر، JSON برای API)
+register_exception_handlers(app)
 
 # Static files
 app.mount("/static", StaticFiles(directory=str(BASE_PATH / "static")), name="static")
