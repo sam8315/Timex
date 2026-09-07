@@ -1,0 +1,301 @@
+{% extends "base.html" %}
+{% block title %}{{ form_title }} | مدیریت{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4>
+        <i class="bi bi-clock text-primary"></i>
+        {{ form_title }}
+    </h4>
+    <a href="/admin/policies/attendance" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-right"></i> بازگشت
+    </a>
+</div>
+
+{% if request.query_params.get('error') %}
+<div class="alert alert-danger alert-dismissible fade show" role="alert">
+    <i class="bi bi-exclamation-triangle"></i>
+    {{ request.query_params.get('error') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<form method="post" action="{{ form_action }}" class="needs-validation" novalidate>
+    <div class="row g-4">
+        <!-- Basic Info -->
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-header bg-light">
+                    <h6 class="mb-0"><i class="bi bi-info-circle"></i> اطلاعات پایه</h6>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <!-- Employment Type -->
+                        <div class="col-md-3">
+                            <label class="form-label fw-bold">نوع عضویت <span class="text-danger">*</span></label>
+                            <select name="employment_type_code" class="form-select" required>
+                                <option value="">انتخاب کنید</option>
+                                {% for code, name in dept_types %}
+                                <option value="{{ code }}" {% if policy and policy.employment_type_code == code %}selected{% endif %}>
+                                    {{ name }} (کد: {{ code }})
+                                </option>
+                                {% endfor %}
+                            </select>
+                            <div class="invalid-feedback">نوع عضویت را انتخاب کنید</div>
+                        </div>
+
+                        <!-- Employee Override -->
+                        <div class="col-md-3">
+                            <label class="form-label">Override کارمند (اختیاری)</label>
+                            <input type="text" name="user_id_override" class="form-control"
+                                   list="employee-list" placeholder="کد پرسنلی یا نام"
+                                   value="{{ policy.user_id if policy else '' }}">
+                            <datalist id="employee-list">
+                                {% for emp in employees %}
+                                <option value="{{ emp.user_id }}">{{ emp.full_name }} ({{ emp.user_id }})</option>
+                                {% endfor %}
+                            </datalist>
+                            <div class="form-text">
+                                خالی = سیاست برای کل نوع عضویت. پر شده = فقط برای این کارمند.
+                            </div>
+                        </div>
+
+                        <!-- Effective From -->
+                        <div class="col-md-3">
+                            <label class="form-label fw-bold">شروع اعتبار <span class="text-danger">*</span></label>
+                            <input type="text" name="effective_from_date_str" class="form-control jalali-date"
+                                   placeholder="1405/01/01" autocomplete="off" required
+                                   value="{{ effective_from_j if policy and effective_from_j else '' }}">
+                            <div class="invalid-feedback">تاریخ شروع را وارد کنید</div>
+                        </div>
+
+                        <!-- Effective To -->
+                        <div class="col-md-3">
+                            <label class="form-label">پایان اعتبار (اختیاری)</label>
+                            <input type="text" name="effective_to_date_str" class="form-control jalali-date"
+                                   placeholder="خالی = باز" autocomplete="off"
+                                   value="{{ effective_to_j if policy and effective_to_j else '' }}">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Late Settings -->
+        <div class="col-md-6">
+            <div class="card shadow-sm">
+                <div class="card-header bg-light">
+                    <h6 class="mb-0"><i class="bi bi-alarm text-warning"></i> تنظیمات دیرکرد</h6>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3 align-items-end">
+                        <div class="col-md-4">
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" name="late_enabled" id="late_enabled"
+                                       {% if not policy or policy.late_enabled %}checked{% endif %}>
+                                <label class="form-check-label fw-bold" for="late_enabled">دیرکرد فعال</label>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">دقیقه مجاز دیرکرد</label>
+                            <input type="number" name="late_allowed_minutes" class="form-control"
+                                   value="{{ policy.late_allowed_minutes if policy else 0 }}" min="0" max="120">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">مرجع محاسبه</label>
+                            <select name="late_reference_mode" class="form-select">
+                                <option value="FIXED_TIME" {% if not policy or policy.late_reference_mode == 'FIXED_TIME' %}selected{% endif %}>ساعت ثابت (از برنامه هفتگی)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Early Leave Settings -->
+        <div class="col-md-6">
+            <div class="card shadow-sm">
+                <div class="card-header bg-light">
+                    <h6 class="mb-0"><i class="bi bi-door-open text-danger"></i> تنظیمات خروج زود</h6>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3 align-items-end">
+                        <div class="col-md-4">
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" name="early_leave_enabled" id="early_leave_enabled"
+                                       {% if not policy or policy.early_leave_enabled %}checked{% endif %}>
+                                <label class="form-check-label fw-bold" for="early_leave_enabled">خروج زود فعال</label>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">دقیقه مجاز خروج زود</label>
+                            <input type="number" name="early_leave_allowed_minutes" class="form-control"
+                                   value="{{ policy.early_leave_allowed_minutes if policy else 0 }}" min="0" max="120">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">مرجع محاسبه</label>
+                            <select name="early_reference_mode" class="form-select">
+                                <option value="FIXED_TIME" {% if not policy or policy.early_leave_reference_mode == 'FIXED_TIME' %}selected{% endif %}>ساعت ثابت (از برنامه هفتگی)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Weekly Schedule -->
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-header bg-light">
+                    <h6 class="mb-0"><i class="bi bi-calendar-week"></i> برنامه هفتگی (0=دوشنبه ... 6=یکشنبه)</h6>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-bordered align-middle" id="schedule-table">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width: 100px;">روز هفته</th>
+                                    <th style="width: 100px;">نوع</th>
+                                    <th style="width: 150px;">ساعت ورود</th>
+                                    <th style="width: 150px;">ساعت خروج</th>
+                                    <th>مظنه موظفی</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% set weekday_names = ['دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنج‌شنبه', 'جمعه', 'شنبه', 'یکشنبه'] %}
+                                {% for wd in range(7) %}
+                                <tr class="schedule-row" data-wd="{{ wd }}">
+                                    <td class="fw-bold">{{ weekday_names[wd] }}</td>
+                                    <td>
+                                        <div class="form-check form-switch">
+                                            <input class="form-check-input working-toggle" type="checkbox" name="wd{{ wd }}_working"
+                                                   id="wd{{ wd }}_working"
+                                                   {% if schedule and schedule[wd].is_working_day %}checked{% elif not schedule and wd <= 4 %}checked{% endif %}
+                                                   data-wd="{{ wd }}">
+                                            <label class="form-check-label" for="wd{{ wd }}_working">کاری</label>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <input type="time" name="wd{{ wd }}_start" class="form-control form-control-sm time-input"
+                                               value="{{ schedule[wd].start_time if schedule else '07:00' }}"
+                                               {% if not schedule or not schedule[wd].is_working_day %}disabled{% endif %}>
+                                    </td>
+                                    <td>
+                                        <input type="time" name="wd{{ wd }}_end" class="form-control form-control-sm time-input"
+                                               value="{{ schedule[wd].end_time if schedule else '14:20' }}"
+                                               {% if not schedule or not schedule[wd].is_working_day %}disabled{% endif %}>
+                                    </td>
+                                    <td>
+                                        <span class="required-minutes-display text-muted">-</span>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="alert alert-info small mb-0">
+                        <i class="bi bi-info-circle"></i>
+                        حداقل یک روز کاری باید تعریف شود. روزهای غیرکاری ساعت ورود/خروج ندارند.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Submit -->
+        <div class="col-12">
+            <div class="d-flex justify-content-end gap-2">
+                <a href="/admin/policies/attendance" class="btn btn-outline-secondary">
+                    <i class="bi bi-x-circle"></i> انصراف
+                </a>
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-save"></i> ذخیره
+                </button>
+            </div>
+        </div>
+    </div>
+</form>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Jalali date picker initialization
+document.addEventListener('DOMContentLoaded', function() {
+    if (typeof window.initPersianDatePicker === 'function') {
+        document.querySelectorAll('input.jalali-date').forEach(function(el) {
+            window.initPersianDatePicker(el);
+        });
+    }
+
+    // Schedule row toggling
+    document.querySelectorAll('.working-toggle').forEach(function(toggle) {
+        toggle.addEventListener('change', function() {
+            const wd = this.dataset.wd;
+            const startInput = document.querySelector('[name="wd' + wd + '_start"]');
+            const endInput = document.querySelector('[name="wd' + wd + '_end"]');
+            const disabled = !this.checked;
+            startInput.disabled = disabled;
+            endInput.disabled = disabled;
+            if (disabled) {
+                startInput.value = '';
+                endInput.value = '';
+            }
+            updateRequiredMinutes(wd);
+        });
+    });
+
+    // Update required minutes on time change
+    document.querySelectorAll('.time-input').forEach(function(input) {
+        input.addEventListener('change', function() {
+            const wd = this.name.match(/wd(\d+)/)[1];
+            updateRequiredMinutes(wd);
+        });
+    });
+
+    function updateRequiredMinutes(wd) {
+        const working = document.querySelector('[name="wd' + wd + '_working"]').checked;
+        const startStr = document.querySelector('[name="wd' + wd + '_start"]').value;
+        const endStr = document.querySelector('[name="wd' + wd + '_end"]').value;
+        const display = document.querySelector('[name="wd' + wd + '_start"]').closest('tr').querySelector('.required-minutes-display');
+
+        if (working && startStr && endStr) {
+            const [sh, sm] = startStr.split(':').map(Number);
+            const [eh, em] = endStr.split(':').map(Number);
+            const startMin = sh * 60 + sm;
+            const endMin = eh * 60 + em;
+            if (endMin > startMin) {
+                const diff = endMin - startMin;
+                const h = Math.floor(diff / 60);
+                const m = diff % 60;
+                display.textContent = h + ':' + m.toString().padStart(2, '0') + ' (' + diff + ' دقیقه)';
+                display.className = 'required-minutes-display text-success';
+            } else {
+                display.textContent = 'نامعتبر (ورود >= خروج)';
+                display.className = 'required-minutes-display text-danger';
+            }
+        } else {
+            display.textContent = '-';
+            display.className = 'required-minutes-display text-muted';
+        }
+    }
+
+    // Initial calculation
+    for (let wd = 0; wd < 7; wd++) {
+        updateRequiredMinutes(wd);
+    }
+
+    // Form validation
+    (function() {
+        'use strict';
+        const form = document.querySelector('.needs-validation');
+        form.addEventListener('submit', function(event) {
+            if (!form.checkValidity()) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+            form.classList.add('was-validated');
+        }, false);
+    })();
+});
+</script>
+{% endblock %}

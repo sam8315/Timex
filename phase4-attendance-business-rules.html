@@ -1,0 +1,1556 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phase 4 — Attendance Business Rules</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700&display=swap">
+<style>
+  :root {
+    --bg: #fafbfc; --fg: #1a1d21; --muted: #6b7280; --border: #e5e7eb;
+    --accent: #0d6efd; --accent-light: #e7f1ff; --accent-dark: #0a58ca;
+    --success: #059669; --success-light: #d1e7dd; --warning: #d97706; --warning-light: #fff3cd;
+    --danger: #dc2626; --danger-light: #fef2f2;
+    --card: #ffffff; --code-bg: #f1f5f9;
+    --decision-bg: #fefce8; --decision-border: #facc15;
+    --tag-p0: #dc2626; --tag-p1: #d97706; --tag-p2: #0d6efd; --tag-new: #059669;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #111318; --fg: #e5e7eb; --muted: #9ca3af; --border: #374151;
+      --accent: #60a5fa; --accent-light: #1e3a5f; --accent-dark: #93c5fd;
+      --success: #34d399; --success-light: #064e3b; --warning: #fbbf24; --warning-light: #78350f;
+      --danger: #f87171; --danger-light: #7f1d1d;
+      --card: #1f2937; --code-bg: #1a1d21;
+      --decision-bg: #422006; --decision-border: #fbbf24;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #111318; --fg: #e5e7eb; --muted: #9ca3af; --border: #374151;
+    --accent: #60a5fa; --accent-light: #1e3a5f; --accent-dark: #93c5fd;
+    --success: #34d399; --success-light: #064e3b; --warning: #fbbf24; --warning-light: #78350f;
+    --danger: #f87171; --danger-light: #7f1d1d;
+    --card: #1f2937; --code-bg: #1a1d21;
+    --decision-bg: #422006; --decision-border: #fbbf24;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0; background: var(--bg); color: var(--fg);
+    font: 14.5px/1.7 'Vazirmatn', 'Segoe UI', Tahoma, sans-serif;
+  }
+
+  .container { max-width: 1000px; margin: 0 auto; padding: 2rem 1.5rem; }
+
+  h1 { font-size: 1.7rem; font-weight: 700; margin: 0 0 0.5rem; padding-bottom: 0.6rem;
+       border-bottom: 3px solid var(--accent); }
+  .subtitle { color: var(--muted); margin: 0 0 1.5rem; font-size: 0.95rem; }
+
+  h2 { font-size: 1.25rem; font-weight: 600; color: var(--accent-dark);
+       margin: 2.5rem 0 1rem; padding-bottom: 0.4rem; border-bottom: 1px solid var(--border); }
+  h3 { font-size: 1.1rem; font-weight: 600; margin: 1.5rem 0 0.75rem; }
+  h4 { font-size: 1rem; font-weight: 600; margin: 1rem 0 0.5rem; color: var(--fg); }
+
+  p { margin: 0.5rem 0; }
+  ul, ol { margin: 0.5rem 0; padding-right: 1.5rem; }
+  li { margin: 0.3rem 0; }
+
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 13.5px; }
+  th, td { border: 1px solid var(--border); padding: 8px 12px; text-align: right; }
+  th { background: var(--accent-light); font-weight: 600; }
+  tr:nth-child(even) { background: rgba(0,0,0,0.02); }
+
+  code { font-family: 'Cascadia Code', 'Fira Code', monospace; background: var(--code-bg);
+         padding: 2px 6px; border-radius: 4px; font-size: 13px; direction: ltr; }
+  pre { background: var(--code-bg); padding: 14px; border-radius: 8px; overflow-x: auto;
+        direction: ltr; text-align: left; font-size: 12.5px; line-height: 1.5; }
+  pre code { background: none; padding: 0; }
+
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+          padding: 1rem 1.25rem; margin: 1rem 0; }
+  .card-header { font-weight: 600; font-size: 1rem; margin-bottom: 0.75rem; color: var(--accent-dark); }
+
+  .bug { background: var(--danger-light); border-right: 4px solid var(--danger);
+         padding: 12px 16px; margin: 1rem 0; border-radius: 6px; }
+  .bug::before { content: '⚠ BUG: '; font-weight: 700; color: var(--danger); }
+
+  .warn { background: var(--warning-light); border-right: 4px solid var(--warning);
+          padding: 12px 16px; margin: 1rem 0; border-radius: 6px; }
+  .warn::before { content: '⚠ WARNING: '; font-weight: 700; color: #92400e; }
+
+  .info { background: var(--accent-light); border-right: 4px solid var(--accent);
+          padding: 12px 16px; margin: 1rem 0; border-radius: 6px; }
+  .info::before { content: 'ℹ INFO: '; font-weight: 700; color: var(--accent); }
+
+  .ok { background: var(--success-light); border-right: 4px solid var(--success);
+        padding: 12px 16px; margin: 1rem 0; border-radius: 6px; }
+  .ok::before { content: '✅ OK: '; font-weight: 700; color: var(--success); }
+
+  .decision { background: var(--decision-bg); border: 2px solid var(--decision-border);
+              border-radius: 8px; padding: 16px 20px; margin: 1.2rem 0; }
+  .decision-title { font-weight: 700; font-size: 1.05rem; color: #92400e; margin-bottom: 0.5rem; }
+  .decision p { margin: 0.3rem 0; }
+  .decision strong { color: #92400e; }
+
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px;
+         font-weight: 600; margin-left: 6px; color: #fff; }
+  .tag-p0 { background: var(--tag-p0); }
+  .tag-p1 { background: var(--tag-p1); }
+  .tag-p2 { background: var(--tag-p2); }
+  .tag-new { background: var(--tag-new); }
+
+  .option-box { border: 1px solid var(--border); border-radius: 6px; padding: 12px 16px;
+                margin: 10px 0; background: var(--card); }
+  .option-box.recommended { border-color: var(--success); border-width: 2px; }
+  .option-box.recommended::before { content: '⭐ پیشنهادی — '; color: var(--success); font-weight: 700; }
+
+  .toc { background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+         padding: 1.25rem 1.5rem; margin: 1.5rem 0; }
+  .toc-title { font-weight: 700; font-size: 1.05rem; margin-bottom: 0.75rem; }
+  .toc ol { columns: 2; column-gap: 2rem; padding-right: 1.2rem; margin: 0; }
+  .toc li { margin: 4px 0; }
+  .toc a { color: var(--accent); text-decoration: none; font-size: 13.5px; }
+  .toc a:hover { text-decoration: underline; }
+
+  .diagram { background: var(--code-bg); border-radius: 8px; padding: 16px;
+             direction: ltr; text-align: left; font-size: 12px; line-height: 1.4;
+             overflow-x: auto; white-space: pre; font-family: 'Cascadia Code', monospace; }
+
+  .mono { direction: ltr; text-align: left; font-family: 'Cascadia Code', monospace; font-size: 13px; }
+
+  .footer { margin-top: 3rem; padding-top: 1.5rem; border-top: 2px solid var(--border);
+            font-size: 14px; color: var(--muted); text-align: center; }
+  .footer strong { color: var(--fg); }
+
+  @media (max-width: 768px) {
+    .container { padding: 1rem; }
+    .toc ol { columns: 1; }
+    h1 { font-size: 1.4rem; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>Phase 4 — Attendance Business Rules & Calculation Specification</h1>
+<p class="subtitle">Timex Time &amp; Attendance System | 2026-09-07 | READ-ONLY Final Specification</p>
+
+<div class="toc">
+<div class="toc-title">فهرست بخش‌ها</div>
+<ol>
+<li><a href="#s1">Verified Employment Type Model</a></li>
+<li><a href="#s2">Verified Current Attendance Calculation</a></li>
+<li><a href="#s3">Required Work Decision</a></li>
+<li><a href="#s4">Weekly Schedule Decision</a></li>
+<li><a href="#s5">Break Decision</a></li>
+<li><a href="#s6">Holiday Decision</a></li>
+<li><a href="#s7">Leave Decision</a></li>
+<li><a href="#s8">Non-working Day Decision</a></li>
+<li><a href="#s9">Late Decision</a></li>
+<li><a href="#s10">Early Leave Decision</a></li>
+<li><a href="#s11">Grace Semantics</a></li>
+<li><a href="#s12">Fixed Time Decision</a></li>
+<li><a href="#s13">Future Shift Compatibility</a></li>
+<li><a href="#s14">Effective Date Decision</a></li>
+<li><a href="#s15">Policy Scope Decision</a></li>
+<li><a href="#s16">Default Policy Decision</a></li>
+<li><a href="#s17">Duration Storage Decision</a></li>
+<li><a href="#s18">Balance Decision</a></li>
+<li><a href="#s19">User View</a></li>
+<li><a href="#s20">Manager View</a></li>
+<li><a href="#s21">Reports</a></li>
+<li><a href="#s22">Final Data Model</a></li>
+<li><a href="#s23">Final Business Rules</a></li>
+<li><a href="#s24">Final Implementation Specification</a></li>
+<li><a href="#s25">Open Business Decisions</a></li>
+<li><a href="#s26">Final Recommendation</a></li>
+<li><a href="#s27">File Change Plan</a></li>
+<li><a href="#s28">Test Plan</a></li>
+<li><a href="#s29">Risks</a></li>
+</ol>
+</div>
+
+<div class="info">
+<strong>نکته مهم:</strong> این سند نهایی‌ترین specification قبل از Implementation است. تمام ابهام‌ها باید در این سند حل شده باشند. اگر موردی از Repository قابل تعیین نیست، به‌عنوان Open Business Decision ثبت شده است.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s1">1. Verified Employment Type Model</h2>
+
+<h3>Current Source</h3>
+<table>
+<tr><th>فیلد</th><th>جدول</th><th>مقادیر</th><th>کاربرد</th></tr>
+<tr><td><code>Employee.department</code></td><td>employee</td><td>'1'-'5' (String(100))</td><td>Employment Type</td></tr>
+<tr><td><code>Contract.contract_type_code</code></td><td>contracts</td><td>'1'-'7' (String(2))</td><td>Contract Type (Leave Entitlement)</td></tr>
+</table>
+
+<h3>Business Meaning</h3>
+<p><code>Employee.department</code> = نوع عضویت (Employment Type) با کدهای:</p>
+<table>
+<tr><th>Code</th><th>نام فارسی</th><th>Holiday.group_id</th></tr>
+<tr><td>'1'</td><td>رسمی</td><td>'1'</td></tr>
+<tr><td>'2'</td><td>وظیفه</td><td>'2'</td></tr>
+<tr><td>'3'</td><td>خریدخدمت</td><td>'3'</td></tr>
+<tr><td>'4'</td><td>قراردادی</td><td>'4'</td></tr>
+<tr><td>'5'</td><td>پزشک</td><td>'5'</td></tr>
+</table>
+
+<h3>Repository Evidence</h3>
+<ul>
+<li><strong>admin_policy.py:24-31</strong>: <code>DEPT_TYPES</code> با کامنت «انواع عضویت (مطابق کدهای دپارتمان Employee)»</li>
+<li><strong>reports.py</strong>: ستون «نوع عضویت» از <code>Employee.department</code> می‌خواند</li>
+<li><strong>Holiday.group_id</strong>: روی مقادیر '1'-'5' فیلتر می‌کند</li>
+<li><strong>attendance.py:460</strong>: <strong>BUG</strong> — <code>Employee.department</code> به جای <code>emp.department</code> استفاده شده</li>
+</ul>
+
+<div class="bug">
+<strong>خطای شناسایی‌شده:</strong> در attendance.py خط 460، <code>Employee.department</code> (کلاس مدل) به جای <code>emp.department</code> (实例) استفاده شده. این باعث می‌شود تعطیلات گروهی به درستی فیلتر نشوند.
+</div>
+
+<h3>Known Problems</h3>
+<ul>
+<li>نام <code>department</code> از نظر Domain نادرست است — این فیلد نوع عضویت را نشان می‌دهد، نه دپارتمان را</li>
+<li>aterangepicker ندارد (String(100) به جای String(10))</li>
+</ul>
+
+<h3>Recommended Abstraction</h3>
+<p>در Business Layer از نام <code>employment_type_code</code> استفاده شود. تغییر Schema فعلاً انجام نشود.</p>
+
+<pre class="mono">
+# Business Layer Abstraction
+employment_type_code = employee.department  # '1'-'5'
+EMPLOYMENT_TYPES = {
+    '1': 'رسمی',
+    '2': 'وظیفه',
+    '3': 'خریدخدمت',
+    '4': 'قراردادی',
+    '5': 'پزشک',
+}
+</pre>
+
+<!-- ============================================================ -->
+<h2 id="s2">2. Verified Current Attendance Calculation</h2>
+
+<h3>Current Formula</h3>
+<pre class="mono">
+DAILY_DUTY_HOURS = 7 + 20/60  # 7.333... hours = 7:20
+
+# Monthly Duty
+duty_days_month = work_days_in_month - leave_days_in_month - rest_days_in_month
+monthly_duty_hours = duty_days_month * DAILY_DUTY_HOURS
+
+# Instant Duty (up to reference date)
+duty_days_until_ref = count of working days until reference
+instant_duty_hours = duty_days_until_ref * DAILY_DUTY_HOURS
+
+# Balance
+monthly_balance = total_work_hours_month - monthly_duty_hours
+instant_balance = work_hours_until_ref - instant_duty_hours
+</pre>
+
+<h3>All Locations Using DAILY_DUTY_HOURS</h3>
+<table>
+<tr><th>#</th><th>File</th><th>Line</th><th>Usage</th></tr>
+<tr><td>1</td><td>web/routes/attendance.py</td><td>55</td><td><strong>Definition:</strong> <code>DAILY_DUTY_HOURS = 7 + 20/60</code></td></tr>
+<tr><td>2</td><td>web/routes/attendance.py</td><td>622</td><td>Monthly duty: <code>duty_days_month * DAILY_DUTY_HOURS</code></td></tr>
+<tr><td>3</td><td>web/routes/attendance.py</td><td>661</td><td>Instant duty: <code>duty_days_until_ref * DAILY_DUTY_HOURS</code></td></tr>
+<tr><td>4</td><td>web/routes/admin.py</td><td>28,33</td><td>Import from attendance.py</td></tr>
+<tr><td>5</td><td>web/routes/admin.py</td><td>1100</td><td>Monthly duty</td></tr>
+<tr><td>6</td><td>web/routes/admin.py</td><td>1129</td><td>Instant duty</td></tr>
+<tr><td>7</td><td>web/routes/admin.py</td><td>1188</td><td>This week duty</td></tr>
+<tr><td>8</td><td>web/routes/admin.py</td><td>1212</td><td>Previous week duty</td></tr>
+<tr><td>9</td><td>web/routes/admin.py</td><td>1255</td><td>Weekly balance calculation</td></tr>
+<tr><td>10</td><td>core/detailed_monthly_report.py</td><td>23</td><td><code>DAILY_REQUIRED_HOURS = 7.33</code></td></tr>
+<tr><td>11</td><td>core/detailed_monthly_report_v2.py</td><td>24</td><td><code>DAILY_REQUIRED_HOURS = 7.33</code></td></tr>
+<tr><td>12</td><td>core/analytical_report.py</td><td>24</td><td>Per-department dictionary</td></tr>
+</table>
+
+<h3>How Working Days Are Counted</h3>
+<pre class="mono">
+# attendance.py:602-618
+current = month_start_g
+while current <= month_end_g:
+    is_friday = current.weekday() == 4
+    is_holiday = current in holiday_dates
+    is_day_off = is_friday or is_holiday
+
+    if not is_day_off:
+        work_days_in_month += 1
+        if current in leaves_by_date:
+            leave_days_in_month += 1
+        elif current in rest_dates:
+            rest_days_in_month += 1
+    current += timedelta(days=1)
+
+duty_days_month = work_days_in_month - leave_days_in_month - rest_days_in_month
+</pre>
+
+<div class="warn">
+<strong>Key Finding:</strong> Current system uses a <strong>fixed daily duty hours</strong> (7.33) multiplied by the number of duty days. There is no concept of per-weekday schedules. This is the core limitation that Phase 4 addresses.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s3">3. Required Work Decision</h2>
+
+<h3>Current State</h3>
+<pre class="mono">
+Monthly Required Work = duty_days × 7.33 hours
+</pre>
+
+<h3>Proposed State</h3>
+<pre class="mono">
+Monthly Required Work = Sum(Required Work of each applicable working day)
+</pre>
+
+<h3>Example Comparison</h3>
+<table>
+<tr><th>Day</th><th>Current Model</th><th>Proposed Model</th></tr>
+<tr><td>شنبه (Sat)</td><td>7.33h</td><td>7h (07:00→14:00)</td></tr>
+<tr><td>یکشنبه (Sun)</td><td>7.33h</td><td>7h (07:00→14:00)</td></tr>
+<tr><td>دوشنبه (Mon)</td><td>7.33h</td><td>7h (07:00→14:00)</td></tr>
+<tr><td>سه‌شنبه (Tue)</td><td>7.33h</td><td>7h (07:00→14:00)</td></tr>
+<tr><td>چهارشنبه (Wed)</td><td>7.33h</td><td>7h (07:00→14:00)</td></tr>
+<tr><td>پنج‌شنبه (Thu)</td><td>7.33h</td><td>4.5h (07:00→11:30)</td></tr>
+<tr><td>جمعه (Fri)</td><td>0h</td><td>0h (non-working)</td></tr>
+<tr><td><strong>Weekly Total</strong></td><td><strong>43.98h</strong></td><td><strong>39.5h</strong></td></tr>
+</table>
+
+<div class="decision">
+<div class="decision-title">Decision #1: Required Work Source</div>
+<p><strong>Question:</strong> آیا Required Work باید از Daily Schedule روزانه محاسبه شود؟</p>
+<p><strong>Why it matters:</strong> فعلی 43.98h/week، پیشنهادی 39.5h/week. تفاوت ~4.5h/week.</p>
+<p><strong>Repository Evidence:</strong> فعلی از ثابت 7.33 استفاده می‌کند. هیچ Schedule روزانه‌ای وجود ندارد.</p>
+<p><strong>Recommended:</strong> بله — Required Work = Sum of daily schedules. این دقیق‌تر و انعطاف‌پذیرتر است.</p>
+<p><strong>Needs confirmation: YES</strong></p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s4">4. Weekly Schedule Decision</h2>
+
+<h3>Data Model</h3>
+<pre class="mono">
+AttendancePolicy
+    ├── id (PK)
+    ├── employment_type_code ('1'-'5')
+    ├── effective_from_year (integer)
+    ├── effective_to_year (integer, nullable)
+    ├── late_enabled (boolean)
+    ├── late_allowed_minutes (integer)
+    ├── late_reference_mode ('FIXED_TIME' | 'SHIFT')
+    ├── early_leave_enabled (boolean)
+    ├── early_leave_allowed_minutes (integer)
+    ├── early_leave_reference_mode ('FIXED_TIME' | 'SHIFT')
+    ├── is_active (boolean)
+    ├── created_at, updated_at
+
+AttendancePolicyDay
+    ├── id (PK)
+    ├── policy_id (FK → AttendancePolicy.id)
+    ├── weekday (integer: 0=Sat, 1=Sun, ..., 6=Fri)
+    ├── is_working_day (boolean)
+    ├── start_time (TIME, nullable)
+    └── end_time (TIME, nullable)
+</pre>
+
+<h3>Weekday Mapping</h3>
+<table>
+<tr><th>weekday</th><th>روز</th><th>Python weekday()</th></tr>
+<tr><td>0</td><td>شنبه</td><td>5</td></tr>
+<tr><td>1</td><td>یکشنبه</td><td>6</td></tr>
+<tr><td>2</td><td>دوشنبه</td><td>0</td></tr>
+<tr><td>3</td><td>سه‌شنبه</td><td>1</td></tr>
+<tr><td>4</td><td>چهارشنبه</td><td>2</td></tr>
+<tr><td>5</td><td>پنج‌شنبه</td><td>3</td></tr>
+<tr><td>6</td><td>جمعه</td><td>4</td></tr>
+</table>
+
+<pre class="mono">
+def to_jalali_weekday(g_weekday: int) -> int:
+    """Convert Python weekday (Mon=0) to Jalali weekday (Sat=0)"""
+    return (g_weekday + 2) % 7
+</pre>
+
+<div class="decision">
+<div class="decision-title">Decision #2: Weekly Schedule Storage</div>
+<p><strong>Question:</strong> چه مدل داده‌ای برای Weekly Schedule استفاده شود؟</p>
+<p><strong>Recommended:</strong> Child Table <code>AttendancePolicyDay</code>. تمیز، قابل مدیریت، historization-friendly.</p>
+<p><strong>Needs confirmation: YES</strong></p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s5">5. Break Decision</h2>
+
+<h3>Repository Evidence</h3>
+<p>بررسی کامل Repository:</p>
+<table>
+<tr><th>Search Term</th><th>Result</th></tr>
+<tr><td>break</td><td>Only Python break statements (not business concept)</td></tr>
+<tr><td>lunch</td><td>No matches</td></tr>
+<tr><td>rest_time</td><td>No matches (rest = استراحت = DailyStatus code 'R')</td></tr>
+<tr><td>pause</td><td>No matches</td></tr>
+<tr><td>interruption</td><td>No matches</td></tr>
+</table>
+
+<div class="ok">
+<strong>Current Phase: No Break Support</strong>
+<p>هیچ مفهوم Break/Lunch در کد وجود ندارد. تمام محاسبات <code>DAILY_DUTY_HOURS = 7.33</code> را به‌عنوان ثابت استفاده می‌کنند.</p>
+</div>
+
+<h3>Decision</h3>
+<p>در این وضعیت:</p>
+<pre class="mono">
+Required Work = Scheduled Span
+</pre>
+
+<p>مثال: اگر ساعت کاری 07:00 → 14:00 باشد:</p>
+<pre class="mono">
+Scheduled Span = 14:00 - 07:00 = 7 hours
+Required Work = 7 hours (بدون Break)
+</pre>
+
+<div class="decision">
+<div class="decision-title">Decision #3: Required Work = Scheduled Span</div>
+<p><strong>Question:</strong> آیا Required Work = Scheduled Span باشد؟</p>
+<p><strong>Repository Evidence:</strong> هیچ Break در کد وجود ندارد. تمام محاسبات 7:20 ثابت هستند.</p>
+<p><strong>Recommended:</strong> بله — Required Work = Scheduled Span. اگر در آینده Break اضافه شد، <code>required_work = span - break</code> محاسبه شود.</p>
+<p><strong>Needs confirmation: YES</strong></p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s6">6. Holiday Decision</h2>
+
+<h3>Repository Evidence</h3>
+<pre class="mono">
+# attendance.py:463-479
+holiday_query = db.query(Holiday).filter(
+    Holiday.holiday_date >= month_start_g,
+    Holiday.holiday_date <= month_end_g
+)
+if user_group:
+    holiday_query = holiday_query.filter(
+        or_(Holiday.group_id == None, Holiday.group_id == user_group)
+    )
+else:
+    holiday_query = holiday_query.filter(Holiday.group_id == None)
+</pre>
+
+<h3>Holiday Model</h3>
+<pre class="mono">
+class Holiday:
+    holiday_date: date
+    title: str
+    is_national: bool
+    group_id: Optional[str]  # '1'-'5' or None (national)
+</pre>
+
+<h3>Current Behavior</h3>
+<pre class="mono">
+# attendance.py:608-610
+is_friday = current.weekday() == 4
+is_holiday = current in holiday_dates
+is_day_off = is_friday or is_holiday
+
+if not is_day_off:
+    work_days_in_month += 1
+</pre>
+
+<div class="ok">
+<strong>Holiday Rule:</strong>
+<p>اگر <code>Policy Day = Working Day</code> ولی <code>Date = Official Holiday</code>:</p>
+<ul>
+<li><code>Required Work = 0</code> (روز تعطیل است)</li>
+<li><code>duty_days</code> افزایش نمی‌یابد</li>
+<li>تردد در تعطیل رسمی = هشدار <code>WARN_HOLIDAY_WORK</code></li>
+</ul>
+</div>
+
+<div class="decision">
+<div class="decision-title">Decision #4: Holiday Override</div>
+<p><strong>Question:</strong> آیا Holiday اولویت بالاتری از Policy Day دارد؟</p>
+<p><strong>Repository Evidence:</strong> بله — <code>is_day_off = is_friday or is_holiday</code>. Holiday همیشه اولویت دارد.</p>
+<p><strong>Recommended:</strong> بله — Holiday اولویت بالاتری دارد. اگر Date = Holiday، Required Work = 0.</p>
+<p><strong>Needs confirmation: YES</strong></p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s7">7. Leave Decision</h2>
+
+<h3>Repository Evidence</h3>
+<pre class="mono">
+# attendance.py:482-504
+approved_leaves = db.query(LeaveRequest).filter(
+    LeaveRequest.user_id == user.user_id,
+    LeaveRequest.status == 'A',
+    LeaveRequest.from_date <= month_end_g,
+    LeaveRequest.to_date >= month_start_g
+).all()
+
+# Build leaves_by_date dict
+for leave in approved_leaves:
+    current_leave = leave.from_date
+    while current_leave <= leave.to_date:
+        leaves_by_date[current_leave] = leave.leave_type
+        current_leave += timedelta(days=1)
+</pre>
+
+<h3>Leave Types</h3>
+<pre class="mono">
+LEAVE_TYPE_NAMES_LOCAL = {
+    'AL': 'استحقاقی',
+    'SL': 'استعلاجی',
+    'RL': 'تشویقی',
+    'CW': 'ذخیره',
+}
+</pre>
+
+<h3>Current Behavior</h3>
+<pre class="mono">
+# attendance.py:536-542
+leave_type = leaves_by_date.get(current)
+if leave_type and not is_friday and holiday_title is None:
+    status_info['main_status'] = STATUS_LEAVE
+    status_info['main_label'] = f'🌴 مرخصی {type_name}'
+
+# attendance.py:614-617
+if current in leaves_by_date:
+    leave_days_in_month += 1
+</pre>
+
+<div class="ok">
+<strong>Leave Rule:</strong>
+<ul>
+<li><code>Required Work = 0</code> (روز مرخصی)</li>
+<li><code>duty_days</code> افزایش نمی‌یابد</li>
+<li>تردد در روز مرخصی هنوز ثبت می‌شود ولی وضعیت = مرخصی</li>
+<li>انواع مرخصی (استحقاقی، استعلاجی، تشویقی) هیچ تفاوتی در محاسبه ندارند</li>
+</ul>
+</div>
+
+<div class="decision">
+<div class="decision-title">Decision #5: Half-day/Hourly Leave</div>
+<p><strong>Question:</strong> آیا مرخصی نیم‌روز یا ساعتی پشتیبانی شود؟</p>
+<p><strong>Repository Evidence:</strong> فعلی فقط مرخصی روزانه (from_date → to_date) دارد. هیچ مفهوم نیم‌روز یا ساعتی وجود ندارد.</p>
+<p><strong>Recommended:</strong> فعلاً فقط مرخصی روزانه. نیم‌روز و ساعتی Phase بعد.</p>
+<p><strong>Needs confirmation: YES</strong></p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s8">8. Non-working Day Decision</h2>
+
+<h3>Definition</h3>
+<pre class="mono">
+Non-working Day =
+    (Policy Day.is_working_day == false)
+    OR (Date = Official Holiday)
+    OR (Date = Friday)
+</pre>
+
+<h3>Current Behavior</h3>
+<pre class="mono">
+# attendance.py:301-307
+if is_friday and day_records:
+    warnings.append({
+        'code': WARN_FRIDAY_WORK,
+        'label': '🟡 جمعه‌کاری',
+        'color': 'info'
+    })
+</pre>
+
+<div class="ok">
+<strong>Non-working Day Rule:</strong>
+<ul>
+<li><code>Required Work = 0</code></li>
+<li><code>Late = 0</code> (no policy to compare against)</li>
+<li><code>Early Leave = 0</code></li>
+<li>تردد = هشدار (جمعه‌کاری یا تعطیل‌کاری)</li>
+<li>ساعات واقعی در Balance لحاظ می‌شوند (اگر کارمند کار کند)</li>
+</ul>
+</div>
+
+<div class="decision">
+<div class="decision-title">Decision #6: Overtime on Non-working Days</div>
+<p><strong>Question:</strong> اگر Employee در روز غیرکاری Punch داشته باشد، ساعات او در Balance لحاظ شوند؟</p>
+<p><strong>Repository Evidence:</strong> فعلی <code>total_work_hours_month</code> شامل همه ساعات است (حتی جمعه‌کاری).</p>
+<p><strong>Recommended:</strong> بله — ساعات واقعی در Balance لحاظ می‌شوند. اما Late/Early = 0.</p>
+<p><strong>Needs confirmation: YES</strong></p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s9">9. Late Decision</h2>
+
+<h3>Definition</h3>
+<pre class="mono">
+Late = Actual First Check-in > Scheduled Start + Grace Period
+
+Example:
+    Scheduled Start = 07:00
+    Grace = 5 minutes
+    Actual = 07:12
+
+    Effective Deadline = 07:00 + 0:05 = 07:05
+    Late = 07:12 - 07:05 = 7 minutes
+</pre>
+
+<h3>Semantics Options</h3>
+
+<div class="option-box">
+<strong>Option A: Only Violation Minutes</strong>
+<pre class="mono">
+Actual = 07:12
+Scheduled Start = 07:00
+Grace = 10 minutes
+Late = 2 minutes (only the violation)
+</pre>
+<strong>Cons:</strong> Loses information about total lateness
+</div>
+
+<div class="option-box recommended">
+<strong>Option B: Total Late with Grace Flag (Recommended)</strong>
+<pre class="mono">
+Actual = 07:12
+Scheduled Start = 07:00
+Grace = 10 minutes
+
+Total Late = 12 minutes
+Grace Applied = 10 minutes
+Late Violation = 2 minutes (excess)
+Late Flag = TRUE (total > grace)
+</pre>
+<strong>Pros:</strong> Preserves full information, Grace only controls the flag
+</div>
+
+<div class="decision">
+<div class="decision-title">Decision #7: Late Semantics</div>
+<p><strong>Question:</strong> Late چگونه گزارش شود؟</p>
+<p><strong>Recommended:</strong> Option B — ذخیره Total Late Minutes و Grace Applied. Late Flag از مقایسه مشتق شود.</p>
+<p><strong>Needs confirmation: YES</strong></p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s10">10. Early Leave Decision</h2>
+
+<h3>Definition</h3>
+<pre class="mono">
+Early Leave = Scheduled End - Grace Period > Actual Last Check-out
+
+Example:
+    Scheduled End = 14:00
+    Grace = 10 minutes
+    Actual = 13:50
+
+    Effective Deadline = 14:00 - 0:10 = 13:50
+    Early Leave = 0 (within grace)
+</pre>
+
+<h3>Semantics</h3>
+<pre class="mono">
+Actual = 13:50
+Scheduled End = 14:00
+Grace = 10 minutes
+
+Total Early = 10 minutes (how early)
+Grace Applied = 10 minutes
+Early Violation = 0 minutes (excess)
+Early Flag = FALSE (total <= grace)
+</pre>
+
+<div class="decision">
+<div class="decision-title">Decision #8: Early Leave Semantics</div>
+<p><strong>Question:</strong> Early Leave چگونه گزارش شود؟</p>
+<p><strong>Recommended:</strong> مشابه Late — ذخیره Total Early Minutes و Grace Applied.</p>
+<p><strong>Needs confirmation: YES</strong></p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s11">11. Grace Semantics</h2>
+
+<h3>Key Principle</h3>
+<div class="ok">
+<strong>Grace Period فقط برچسب Late/Early را کنترل می‌کند. Balance مستقل محاسبه می‌شود.</strong>
+</div>
+
+<h3>Example</h3>
+<pre class="mono">
+Scheduled: 07:00 → 14:00 (7 hours required)
+Grace: 10 minutes
+
+Employee:
+    Actual: 07:12 → 13:50
+
+    Actual Work = 6h 38m
+    Required Work = 7h 00m
+    Balance = -22 minutes
+
+    Late: 12 minutes total, 10 grace, 2 violation
+    Early Leave: 10 minutes total, 10 grace, 0 violation
+
+    Late Flag: TRUE (12 > 10)
+    Early Flag: FALSE (10 <= 10)
+</pre>
+
+<div class="ok">
+<strong>Double Counting Prevention:</strong>
+<p>Late/Early فقط برچسب هستند. Balance از Work Hours محاسبه می‌شود. بنابراین Double Counting رخ نمی‌دهد.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s12">12. Fixed Time Decision</h2>
+
+<h3>Current Mode: FIXED_TIME</h3>
+<p>مرجع Late/Early از <code>AttendancePolicyDay</code> خوانده می‌شود:</p>
+<pre class="mono">
+Thursday
+    Start = 07:00
+    End   = 11:30
+
+Late Reference → 07:00
+Early Leave Reference → 11:30
+</pre>
+
+<h3>Resolution Flow</h3>
+<pre class="mono">
+def get_scheduled_times(employee, target_date):
+    policy = resolve_attendance_policy(employee, target_date)
+    weekday = to_jalali_weekday(target_date.weekday())
+    day = policy.get_day(weekday)
+
+    if day.is_working_day:
+        return day.start_time, day.end_time
+    else:
+        return None, None  # No late/early on non-working days
+</pre>
+
+<div class="decision">
+<div class="decision-title">Decision #9: Fixed Time Mode</div>
+<p><strong>Question:</strong> آیا مرجع Late/Early از AttendancePolicyDay خوانده شود؟</p>
+<p><strong>Recommended:</strong> بله — در حالت FIXED_TIME، scheduled times از PolicyDay می‌آید.</p>
+<p><strong>Needs confirmation: YES</strong></p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s13">13. Future Shift Compatibility</h2>
+
+<h3>Abstraction Layer</h3>
+<pre class="mono">
+class ReferenceTimeResolver(ABC):
+    @abstractmethod
+    def get_scheduled_start(self, employee, date) -> Optional[time]: ...
+
+    @abstractmethod
+    def get_scheduled_end(self, employee, date) -> Optional[time]: ...
+
+class FixedTimeResolver(ReferenceTimeResolver):
+    """Reads from AttendancePolicyDay"""
+    def get_scheduled_start(self, employee, date):
+        policy = resolve_attendance_policy(employee, date)
+        weekday = to_jalali_weekday(date.weekday())
+        day = policy.get_day(weekday)
+        return day.start_time if day and day.is_working_day else None
+
+    def get_scheduled_end(self, employee, date):
+        policy = resolve_attendance_policy(employee, date)
+        weekday = to_jalali_weekday(date.weekday())
+        day = policy.get_day(weekday)
+        return day.end_time if day and day.is_working_day else None
+
+# Future: ShiftResolver will be added later
+# No Shift tables created now
+</pre>
+
+<div class="decision">
+<div class="decision-title">Decision #10: Shift Abstraction</div>
+<p><strong>Question:</strong> آیا Abstraction Layer برای Shift آماده شود؟</p>
+<p><strong>Recommended:</strong> بله — FixedTimeResolver امروز، ShiftResolver در آینده. هیچ Shift Table ساخته نشود.</p>
+<p><strong>Needs confirmation: YES</strong></p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s14">14. Effective Date Decision</h2>
+
+<h3>Options Comparison</h3>
+<table>
+<tr><th>Option</th><th>Columns</th><th>Granularity</th><th>Complexity</th></tr>
+<tr><td>A: Year-based</td><td>effective_from_year, effective_to_year</td><td>Year</td><td>Low</td></tr>
+<tr><td>B: Date-based</td><td>effective_from_date, effective_to_date</td><td>Day</td><td>Medium</td></tr>
+<tr><td>C: Versioning</td><td>version, valid_from, valid_to</td><td>Day</td><td>High</td></tr>
+</table>
+
+<h3>Scenario Analysis</h3>
+<pre class="mono">
+Scenario: Policy changes mid-year
+    Sep 1: Policy A effective
+    Sep 15: Policy B effective
+
+Option A (Year-based):
+    Policy A: effective_from_year=1404, effective_to_year=1404
+    Policy B: effective_from_year=1405, effective_to_year=None
+    ❌ Cannot handle mid-year change
+
+Option B (Date-based):
+    Policy A: effective_from_date=1404/01/01, effective_to_date=1406/06/14
+    Policy B: effective_from_date=1406/06/15, effective_to_year=None
+    ✅ Can handle mid-year change
+
+Option C (Versioning):
+    Same as B but with explicit version numbers
+    ✅ Can handle mid-year change, more complex
+</pre>
+
+<div class="decision">
+<div class="decision-title">Decision #11: Effective Date Granularity</div>
+<p><strong>Question:</strong> Effective Date باید بر اساس سال باشد یا تاریخ؟</p>
+<p><strong>Repository Evidence:</strong> فعلی <code>EmployeeRegion</code> از <code>effective_from/effective_to</code> (date) استفاده می‌کند.</p>
+<p><strong>Recommended:</strong> Option B — Date-based. سازگار با الگوی موجود EmployeeRegion.</p>
+<p><strong>Needs confirmation: YES</strong></p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s15">15. Policy Scope Decision</h2>
+
+<h3>Resolution Priority</h3>
+<pre class="mono">
+Employee Override (highest)
+        ↓
+Employment Type Policy
+        ↓
+System Default (lowest)
+</pre>
+
+<h3>Implementation</h3>
+<pre class="mono">
+def resolve_attendance_policy(employee, target_date):
+    employment_type = employee.department  # '1'-'5'
+
+    # 1. Employee Override
+    if employee.user_id:
+        override = db.query(AttendancePolicy).filter(
+            AttendancePolicy.user_id == employee.user_id,
+            AttendancePolicy.is_active == True,
+            # effective date check
+        ).first()
+        if override:
+            return override
+
+    # 2. Employment Type Policy
+    if employment_type in ('1', '2', '3', '4', '5'):
+        type_policy = db.query(AttendancePolicy).filter(
+            AttendancePolicy.employment_type_code == employment_type,
+            AttendancePolicy.user_id == None,  # Not employee override
+            AttendancePolicy.is_active == True,
+            # effective date check
+        ).first()
+        if type_policy:
+            return type_policy
+
+    # 3. System Default
+    return get_system_default_policy()
+</pre>
+
+<div class="decision">
+<div class="decision-title">Decision #12: Employee Override</div>
+<p><strong>Question:</strong> آیا Per-Employee Override لازم است؟</p>
+<p><strong>Why it matters:</strong> برخی کارمندان ممکن است ساعت کاری متفاوت داشته باشند.</p>
+<p><strong>Recommended:</strong> بله — از همان الگوی <code>_user_{id}</code> استفاده شود.</p>
+<p><strong>Needs confirmation: YES</strong></p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s16">16. Default Policy Decision</h2>
+
+<h3>Current Value</h3>
+<pre class="mono">
+DAILY_DUTY_HOURS = 7 + 20/60  # 7.333... hours = 7:20
+</pre>
+
+<h3>Should This Be 7:20?</h3>
+<p>بررسی کد:</p>
+<ul>
+<li>attendance.py:55 — <code>DAILY_DUTY_HOURS = 7 + 20/60</code></li>
+<li>core/detailed_monthly_report.py:23 — <code>DAILY_REQUIRED_HOURS = 7.33</code></li>
+<li>core/detailed_monthly_report_v2.py:24 — <code>DAILY_REQUIRED_HOURS = 7.33</code></li>
+<li>core/analytical_report.py:24 — Per-department dictionary</li>
+</ul>
+
+<div class="warn">
+<strong>NOT Business Verified:</strong> مقدار 7:20 از کد استخراج شده ولی توسط Business تایید نشده. ممکن است شامل Break باشد.
+</div>
+
+<div class="decision">
+<div class="decision-title">Decision #13: Default Policy Values</div>
+<p><strong>Question:</strong> مقادیر پیش‌فرض چه باشد؟</p>
+<p><strong>Repository Evidence:</strong> 7:20 ثابت در تمام کدها.</p>
+<p><strong>Recommended:</strong> از مقادیر فعلی کد استفاده شود (07:00 → 14:20). Business بعداً تایید کند.</p>
+<p><strong>Needs confirmation: YES</strong></p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s17">17. Duration Storage Decision</h2>
+
+<h3>Options Comparison</h3>
+<table>
+<tr><th>Option</th><th>Type</th><th>Example</th><th>Precision</th><th>Comparison</th></tr>
+<tr><td>A: Float Hours</td><td>float</td><td>7.33</td><td>±0.01h (36s)</td><td>Easy</td></tr>
+<tr><td>B: Integer Minutes</td><td>integer</td><td>440</td><td>±1min</td><td>Easy</td></tr>
+<tr><td>C: TIME/INTERVAL</td><td>TIME</td><td>07:20</td><td>±1sec</td><td>Moderate</td></tr>
+</table>
+
+<h3>Precision Analysis</h3>
+<pre class="mono">
+7.33 hours = 7h 19m 48s  ❌ (not 7:20)
+7.333 hours = 7h 19m 58s ❌ (not 7:20)
+440 minutes = 7h 20m     ✅ (exact)
+07:20 = 7h 20m           ✅ (exact)
+</pre>
+
+<div class="decision">
+<div class="decision-title">Decision #14: Duration Storage</div>
+<p><strong>Question:</strong> مدت زمان چگونه ذخیره شود؟</p>
+<p><strong>Recommended:</strong> Option B — Integer Minutes. دقیق، ساده، مقایسه آسان.</p>
+<p><strong>Needs confirmation: YES</strong></p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s18">18. Balance Decision</h2>
+
+<h3>Formula</h3>
+<pre class="mono">
+Balance = Actual Work Hours - Required Work Hours
+
+Where:
+    Actual Work Hours = Sum of daily work hours (from Attendance records)
+    Required Work Hours = Sum of daily required hours (from Policy)
+</pre>
+
+<h3>Component Analysis</h3>
+<table>
+<tr><th>Component</th><th>Effect on Balance</th><th>Notes</th></tr>
+<tr><td>Late</td><td>Indirect (via Actual Work Hours)</td><td>If late, work hours decrease → balance decreases</td></tr>
+<tr><td>Early Leave</td><td>Indirect (via Actual Work Hours)</td><td>If early, work hours decrease → balance decreases</td></tr>
+<tr><td>Overtime</td><td>Positive (Actual > Required)</td><td>Balance > 0</td></tr>
+<tr><td>Non-working Day</td><td>Optional positive</td><td>If employee works, hours count</td></tr>
+<tr><td>Leave</td><td>Zero Required Work</td><td>Day not counted in duty_days</td></tr>
+<tr><td>Holiday</td><td>Zero Required Work</td><td>Day not counted in duty_days</td></tr>
+</table>
+
+<div class="ok">
+<strong>Balance Rule:</strong>
+<ul>
+<li>Balance = Actual Work - Required Work</li>
+<li>Late/Early <strong>NOT</strong> subtracted from Balance</li>
+<li>Late/Early are <strong>informational labels only</strong></li>
+</ul>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s19">19. User View</h2>
+
+<h3>Data Items</h3>
+<table>
+<tr><th>Item</th><th>Source</th><th>Backend/Presentation</th></tr>
+<tr><td>Date</td><td>Attendance record</td><td>Presentation</td></tr>
+<tr><td>Scheduled Start</td><td>AttendancePolicyDay.start_time</td><td>Backend</td></tr>
+<tr><td>Scheduled End</td><td>AttendancePolicyDay.end_time</td><td>Backend</td></tr>
+<tr><td>Required Work</td><td>AttendancePolicyDay (end - start)</td><td>Backend</td></tr>
+<tr><td>Actual Work</td><td>Attendance records</td><td>Backend</td></tr>
+<tr><td>Balance</td><td>Actual - Required</td><td>Backend</td></tr>
+<tr><td>Late Minutes</td><td>First punch vs start + grace</td><td>Backend</td></tr>
+<tr><td>Early Leave Minutes</td><td>Last punch vs end - grace</td><td>Backend</td></tr>
+<tr><td>Late Flag</td><td>Late minutes > grace</td><td>Backend</td></tr>
+<tr><td>Early Leave Flag</td><td>Early minutes > grace</td><td>Backend</td></tr>
+</table>
+
+<h3>Display</h3>
+<ul>
+<li>Day header: ساعت موظفی (مثلاً "07:00 - 14:00")</li>
+<li>Late indicator: ⏰ با تعداد دقیقه</li>
+<li>Early Leave indicator: ⏰ با تعداد دقیقه</li>
+<li>Balance: رنگی (سبز = مثبت، قرمز = منفی)</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="s20">20. Manager View</h2>
+
+<h3>Shared Service</h3>
+<pre class="mono">
+# core/attendance_policy_service.py
+
+class AttendancePolicyService:
+    def resolve_policy(self, employee, target_date) -> AttendancePolicy:
+        """Resolve attendance policy for employee on date"""
+        ...
+
+    def resolve_required_work_minutes(self, employee, target_date) -> int:
+        """Get required work minutes for employee on date"""
+        ...
+
+    def compute_late_minutes(self, employee, date, first_punch_in) -> int:
+        """Compute late minutes for employee"""
+        ...
+
+    def compute_early_leave_minutes(self, employee, date, last_punch_out) -> int:
+        """Compute early leave minutes for employee"""
+        ...
+
+    def compute_daily_balance(self, employee, date, actual_work_hours) -> float:
+        """Compute daily balance for employee"""
+        ...
+</pre>
+
+<div class="ok">
+<strong>Architecture Rule:</strong>
+<p>User View و Manager View باید از یک <code>AttendancePolicyService</code> استفاده کنند. Calculation مستقل نباشد.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s21">21. Reports</h2>
+
+<h3>Reports Affected</h3>
+<table>
+<tr><th>Report</th><th>File</th><th>Change Required</th></tr>
+<tr><td>Detailed Monthly V2</td><td>core/detailed_monthly_report_v2.py</td><td>Replace DAILY_REQUIRED_HOURS with policy lookup</td></tr>
+<tr><td>Detailed Monthly V1</td><td>core/detailed_monthly_report.py</td><td>Same</td></tr>
+<tr><td>Analytical Report</td><td>core/analytical_report.py</td><td>Replace per-department dictionary with policy lookup</td></tr>
+<tr><td>Monthly Stats</td><td>web/routes/reports.py</td><td>Indirect via attendance calculations</td></tr>
+</table>
+
+<div class="ok">
+<strong>Rule:</strong>
+<p>هیچ Reportی نباید به <code>DAILY_DUTY_HOURS</code> یا <code>7.33</code> Hard-code وابسته بماند. همه باید از Policy Lookup استفاده کنند.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s22">22. Final Data Model</h2>
+
+<pre class="mono">
+-- Attendance Policy (per employment type or employee override)
+CREATE TABLE attendance_policy (
+    id SERIAL PRIMARY KEY,
+
+    -- Scope
+    employment_type_code VARCHAR(10),    -- '1'-'5' (null for employee override)
+    user_id VARCHAR(50),                 -- FK (null for type policy)
+
+    -- Effective Date
+    effective_from_date DATE NOT NULL,
+    effective_to_date DATE,              -- null = currently active
+
+    -- Late Policy
+    late_enabled BOOLEAN DEFAULT FALSE,
+    late_allowed_minutes INTEGER DEFAULT 0,
+    late_reference_mode VARCHAR(20) DEFAULT 'FIXED_TIME',
+
+    -- Early Leave Policy
+    early_leave_enabled BOOLEAN DEFAULT FALSE,
+    early_leave_allowed_minutes INTEGER DEFAULT 0,
+    early_leave_reference_mode VARCHAR(20) DEFAULT 'FIXED_TIME',
+
+    -- Status
+    is_active BOOLEAN DEFAULT TRUE,
+
+    -- Audit
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP,
+
+    -- Constraints
+    CHECK (employment_type_code IS NOT NULL OR user_id IS NOT NULL),
+    CHECK (late_reference_mode IN ('FIXED_TIME', 'SHIFT')),
+    CHECK (early_leave_reference_mode IN ('FIXED_TIME', 'SHIFT'))
+);
+
+-- Weekly Schedule (per policy)
+CREATE TABLE attendance_policy_day (
+    id SERIAL PRIMARY KEY,
+    policy_id INTEGER NOT NULL REFERENCES attendance_policy(id) ON DELETE CASCADE,
+
+    weekday INTEGER NOT NULL,           -- 0=Sat, 1=Sun, ..., 6=Fri
+    is_working_day BOOLEAN DEFAULT TRUE,
+    start_time TIME,                    -- null if not working
+    end_time TIME,                      -- null if not working
+
+    UNIQUE (policy_id, weekday),
+    CHECK (weekday BETWEEN 0 AND 6)
+);
+</pre>
+
+<!-- ============================================================ -->
+<h2 id="s23">23. Final Business Rules</h2>
+
+<div class="card">
+<div class="card-header">Rule 1: Employment Type Source</div>
+<p>Employment Type = <code>Employee.department</code> با کدهای '1'-'5'.</p>
+</div>
+
+<div class="card">
+<div class="card-header">Rule 2: Policy Resolution</div>
+<p>اولویت: Employee Override → Employment Type Policy → System Default.</p>
+</div>
+
+<div class="card">
+<div class="card-header">Rule 3: Required Work = Scheduled Span</div>
+<p>Required Work Minutes = End Time - Start Time (بدون Break).</p>
+</div>
+
+<div class="card">
+<div class="card-header">Rule 4: Weekly Schedule</div>
+<p>هر روز هفته می‌تواند ساعت ورود/خروج متفاوت داشته باشد.</p>
+</div>
+
+<div class="card">
+<div class="card-header">Rule 5: Non-working Day</div>
+<p>Friday + Official Holiday + Policy Day (is_working_day=false) = Required Work = 0.</p>
+</div>
+
+<div class="card">
+<div class="card-header">Rule 6: Holiday Override</div>
+<p>Official Holiday اولویت بالاتری از Policy Day دارد. اگر Date = Holiday، Required Work = 0.</p>
+</div>
+
+<div class="card">
+<div class="card-header">Rule 7: Leave</div>
+<p>Approved Leave = Required Work = 0. فقط مرخصی روزانه پشتیبانی می‌شود.</p>
+</div>
+
+<div class="card">
+<div class="card-header">Rule 8: Monthly Required Work</div>
+<p>Monthly Required = Sum(Required Work of each duty day).</p>
+</div>
+
+<div class="card">
+<div class="card-header">Rule 9: Balance</div>
+<p>Balance = Actual Work - Required Work. Late/Early تأثیری ندارند.</p>
+</div>
+
+<div class="card">
+<div class="card-header">Rule 10: Late</div>
+<p>Late = Actual First Check-in - (Scheduled Start + Grace). اگر ≤ 0 → Late = 0.</p>
+</div>
+
+<div class="card">
+<div class="card-header">Rule 11: Early Leave</div>
+<p>Early Leave = (Scheduled End - Grace) - Actual Last Check-out. اگر ≤ 0 → Early Leave = 0.</p>
+</div>
+
+<div class="card">
+<div class="card-header">Rule 12: Late/Early Independence</div>
+<p>Late و Early مستقل هستند. فعال بودن یکی دیگری را فعال نمی‌کند.</p>
+</div>
+
+<div class="card">
+<div class="card-header">Rule 13: Effective Date</div>
+<p>Policy بر اساس تاریخ (نه سال) اعتبارسنجی می‌شود.</p>
+</div>
+
+<div class="card">
+<div class="card-header">Rule 14: Duration Storage</div>
+<p>مدت زمان به صورت Integer Minutes ذخیره می‌شود.</p>
+</div>
+
+<div class="card">
+<div class="card-header">Rule 15: Future Shift</div>
+<p>FIXED_TIME امروز، SHIFT در آینده. هیچ Shift Table ساخته نشود.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s24">24. Final Implementation Specification</h2>
+
+<h3>1. Employment Type</h3>
+<pre class="mono">
+employment_type_code = employee.department  # '1'-'5'
+</pre>
+
+<h3>2. Policy Scope</h3>
+<pre class="mono">
+Per Employment Type + Optional Employee Override
+</pre>
+
+<h3>3. Policy Resolution</h3>
+<pre class="mono">
+Employee Override → Employment Type → System Default
+</pre>
+
+<h3>4. Required Work</h3>
+<pre class="mono">
+Required Work = Scheduled Span (end_time - start_time)
+Stored as: Integer Minutes
+</pre>
+
+<h3>5. Weekly Schedule</h3>
+<pre class="mono">
+AttendancePolicyDay: weekday, is_working_day, start_time, end_time
+7 rows per policy (Sat-Fri)
+</pre>
+
+<h3>6. Non-working Day</h3>
+<pre class="mono">
+Required Work = 0
+Late = 0
+Early Leave = 0
+Actual hours still count toward Balance
+</pre>
+
+<h3>7. Holiday</h3>
+<pre class="mono">
+Holiday overrides Policy Day
+Required Work = 0
+Actual hours still count toward Balance
+</pre>
+
+<h3>8. Leave</h3>
+<pre class="mono">
+Approved Leave = Required Work = 0
+Only full-day leave supported (Phase 1)
+</pre>
+
+<h3>9. Late</h3>
+<pre class="mono">
+Late = max(0, actual_first_punch - (scheduled_start + grace_minutes))
+</pre>
+
+<h3>10. Early Leave</h3>
+<pre class="mono">
+Early Leave = max(0, (scheduled_end - grace_minutes) - actual_last_punch)
+</pre>
+
+<h3>11. Grace</h3>
+<pre class="mono">
+Late Grace and Early Leave Grace are independent
+Grace only affects Late/Early flags, NOT Balance
+</pre>
+
+<h3>12. Fixed Time</h3>
+<pre class="mono">
+Reference from AttendancePolicyDay.start_time / end_time
+</pre>
+
+<h3>13. Future Shift</h3>
+<pre class="mono">
+Abstract ReferenceTimeResolver
+FixedTimeResolver (today)
+ShiftResolver (future, not implemented)
+</pre>
+
+<h3>14. Effective Date</h3>
+<pre class="mono">
+effective_from_date, effective_to_date (DATE type)
+</pre>
+
+<h3>15. Duration Storage</h3>
+<pre class="mono">
+Integer Minutes
+</pre>
+
+<h3>16. Balance</h3>
+<pre class="mono">
+Balance = Actual Work Minutes - Required Work Minutes
+</pre>
+
+<h3>17. User View</h3>
+<pre class="mono">
+Shows: Scheduled Start/End, Required Work, Actual Work, Balance, Late, Early
+</pre>
+
+<h3>18. Manager View</h3>
+<pre class="mono">
+Same as User View via shared AttendancePolicyService
+</pre>
+
+<h3>19. Reports</h3>
+<pre class="mono">
+Replace all DAILY_DUTY_HOURS with policy lookup
+</pre>
+
+<h3>20. UI</h3>
+<pre class="mono">
+/admin/policies/attendance — List of employment types
+/admin/policies/attendance/{code} — Edit policy per type
+</pre>
+
+<h3>21. Validation</h3>
+<pre class="mono">
+- employment_type_code in '1'-'5'
+- start_time < end_time (same day)
+- effective_from_date <= effective_to_date
+- No overlapping policies
+- At least one working day per week
+</pre>
+
+<h3>22. Database Model</h3>
+<pre class="mono">
+attendance_policy (NEW)
+attendance_policy_day (NEW)
+</pre>
+
+<h3>23. Migration Requirements</h3>
+<pre class="mono">
+- Create attendance_policy table
+- Create attendance_policy_day table
+- Seed default policies for each employment type
+</pre>
+
+<h3>24. Tests</h3>
+<pre class="mono">
+- Policy resolution (by type, by employee, default)
+- Late/Early computation
+- Balance calculation
+- Historical policy (effective date)
+- Non-working day behavior
+</pre>
+
+<!-- ============================================================ -->
+<h2 id="s25">25. Open Business Decisions</h2>
+
+<div class="decision">
+<div class="decision-title">Decision #1: Employee Override</div>
+<p><strong>Question:</strong> Should per-employee override be supported?</p>
+<p><strong>Why it matters:</strong> Some employees may need different work hours.</p>
+<p><strong>Options:</strong> (A) Yes, (B) No</p>
+<p><strong>Recommended:</strong> Option A — Yes, use <code>_user_{id}</code> suffix pattern.</p>
+<p><strong>Needs User Confirmation: YES</strong></p>
+</div>
+
+<div class="decision">
+<div class="decision-title">Decision #2: Required Work = Scheduled Span</div>
+<p><strong>Question:</strong> Should required_work = (end - start) without break?</p>
+<p><strong>Why it matters:</strong> If break exists, required work would be less.</p>
+<p><strong>Repository Evidence:</strong> No break concept found. All calculations use 7:20 directly.</p>
+<p><strong>Recommended:</strong> Option A — Yes, assume equality. Add break in future if needed.</p>
+<p><strong>Needs User Confirmation: YES</strong></p>
+</div>
+
+<div class="decision">
+<div class="decision-title">Decision #3: Weekly Schedule Storage</div>
+<p><strong>Question:</strong> Which database model for weekly schedule?</p>
+<p><strong>Why it matters:</strong> Balance between simplicity and extensibility.</p>
+<p><strong>Recommended:</strong> Option B — Child table <code>AttendancePolicyDay</code>.</p>
+<p><strong>Needs User Confirmation: YES</strong></p>
+</div>
+
+<div class="decision">
+<div class="decision-title">Decision #4: Holiday Override</div>
+<p><strong>Question:</strong> Does holiday override policy day?</p>
+<p><strong>Repository Evidence:</strong> Yes — <code>is_day_off = is_friday or is_holiday</code>.</p>
+<p><strong>Recommended:</strong> Yes — Holiday has higher priority.</p>
+<p><strong>Needs User Confirmation: YES</strong></p>
+</div>
+
+<div class="decision">
+<div class="decision-title">Decision #5: Half-day/Hourly Leave</div>
+<p><strong>Question:</strong> Should half-day or hourly leave be supported?</p>
+<p><strong>Repository Evidence:</strong> Currently only full-day leave (from_date → to_date).</p>
+<p><strong>Recommended:</strong> No — Only full-day leave in Phase 1.</p>
+<p><strong>Needs User Confirmation: YES</strong></p>
+</div>
+
+<div class="decision">
+<div class="decision-title">Decision #6: Overtime on Non-working Days</div>
+<p><strong>Question:</strong> Should work hours on non-working days count toward balance?</p>
+<p><strong>Repository Evidence:</strong> Currently <code>total_work_hours_month</code> includes all hours.</p>
+<p><strong>Recommended:</strong> Yes — Actual hours count, but late/early = 0.</p>
+<p><strong>Needs User Confirmation: YES</strong></p>
+</div>
+
+<div class="decision">
+<div class="decision-title">Decision #7: Late Semantics</div>
+<p><strong>Question:</strong> How should late be reported?</p>
+<p><strong>Why it matters:</strong> Affects how HR interprets late violations.</p>
+<p><strong>Recommended:</strong> Store total late minutes and grace. Flag = total > grace.</p>
+<p><strong>Needs User Confirmation: YES</strong></p>
+</div>
+
+<div class="decision">
+<div class="decision-title">Decision #8: Early Leave Semantics</div>
+<p><strong>Question:</strong> How should early leave be reported?</p>
+<p><strong>Why it matters:</strong> Affects how HR interprets early leave violations.</p>
+<p><strong>Recommended:</strong> Store total early minutes and grace. Flag = total > grace.</p>
+<p><strong>Needs User Confirmation: YES</strong></p>
+</div>
+
+<div class="decision">
+<div class="decision-title">Decision #9: Fixed Time Mode</div>
+<p><strong>Question:</strong> Should late/early reference come from AttendancePolicyDay?</p>
+<p><strong>Why it matters:</strong> Defines the source of scheduled times.</p>
+<p><strong>Recommended:</strong> Yes — In FIXED_TIME mode, read from PolicyDay.</p>
+<p><strong>Needs User Confirmation: YES</strong></p>
+</div>
+
+<div class="decision">
+<div class="decision-title">Decision #10: Shift Abstraction</div>
+<p><strong>Question:</strong> Should abstraction layer be prepared for future shift?</p>
+<p><strong>Why it matters:</strong> Future-proofing without creating tables now.</p>
+<p><strong>Recommended:</strong> Yes — FixedTimeResolver today, ShiftResolver later.</p>
+<p><strong>Needs User Confirmation: YES</strong></p>
+</div>
+
+<div class="decision">
+<div class="decision-title">Decision #11: Effective Date Granularity</div>
+<p><strong>Question:</strong> Should effective date be year-based or date-based?</p>
+<p><strong>Repository Evidence:</strong> EmployeeRegion uses date-based effective_from/effective_to.</p>
+<p><strong>Recommended:</strong> Option B — Date-based, consistent with existing pattern.</p>
+<p><strong>Needs User Confirmation: YES</strong></p>
+</div>
+
+<div class="decision">
+<div class="decision-title">Decision #12: Employee Override</div>
+<p><strong>Question:</strong> Should per-employee override be supported?</p>
+<p><strong>Why it matters:</strong> Some employees may need different work hours.</p>
+<p><strong>Recommended:</strong> Yes — Use <code>_user_{id}</code> suffix pattern.</p>
+<p><strong>Needs User Confirmation: YES</strong></p>
+</div>
+
+<div class="decision">
+<div class="decision-title">Decision #13: Default Policy Values</div>
+<p><strong>Question:</strong> What should the default policy values be?</p>
+<p><strong>Repository Evidence:</strong> 7:20 is hardcoded in all locations.</p>
+<p><strong>Recommended:</strong> Use current code values (07:00 → 14:20). Business to verify later.</p>
+<p><strong>Needs User Confirmation: YES</strong></p>
+</div>
+
+<div class="decision">
+<div class="decision-title">Decision #14: Duration Storage</div>
+<p><strong>Question:</strong> How should duration be stored?</p>
+<p><strong>Why it matters:</strong> Affects precision and comparison logic.</p>
+<p><strong>Recommended:</strong> Option B — Integer Minutes. Exact, simple, easy comparison.</p>
+<p><strong>Needs User Confirmation: YES</strong></p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s26">26. Final Recommendation</h2>
+
+<h3>Architecture Decision</h3>
+<div class="ok">
+<strong>For Timex, the best architecture is:</strong>
+<p>Per-Employment-Type Attendance Policy with Child Table for Weekly Schedule, using Date-based Effective Dating and Integer Minutes for Duration Storage.</p>
+</div>
+
+<h3>Complete Flow</h3>
+<div class="diagram">
+Employee
+   │
+   ├── department ('1'-'5')
+   │
+   ▼
+Employment Type Resolution
+   │
+   ├── Employee Override (highest priority)
+   ├── Employment Type Policy
+   └── System Default (lowest priority)
+   │
+   ▼
+Attendance Policy
+   │
+   ├── Late Policy (enabled, grace, reference_mode)
+   ├── Early Leave Policy (enabled, grace, reference_mode)
+   │
+   ▼
+Policy Day (per weekday)
+   │
+   ├── is_working_day
+   ├── start_time
+   └── end_time
+   │
+   ▼
+Required Work Calculation
+   │
+   ├── Daily: end_time - start_time (minutes)
+   └── Monthly: Sum of daily required minutes
+   │
+   ▼
+Reference Time Resolution
+   │
+   ├── FIXED_TIME: from PolicyDay
+   └── SHIFT: from Shift Assignment (future)
+   │
+   ▼
+Late / Early Leave Computation
+   │
+   ├── Late = max(0, actual_in - (start + grace))
+   └── Early = max(0, (end - grace) - actual_out)
+   │
+   ▼
+Balance Calculation
+   │
+   └── Balance = Actual Work - Required Work
+   │
+   ▼
+Output
+   │
+   ├── User View
+   ├── Manager View
+   └── Reports
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s27">27. File Change Plan</h2>
+
+<table>
+<tr><th>Priority</th><th class="mono">Path</th><th>Component</th><th>Expected Change</th></tr>
+<tr><td><span class="tag tag-new">NEW</span></td><td class="mono">models/attendance_policy.py</td><td>Model</td><td>AttendancePolicy + AttendancePolicyDay models</td></tr>
+<tr><td><span class="tag tag-new">NEW</span></td><td class="mono">core/attendance_policy_service.py</td><td>Service</td><td>Policy resolution, late/early computation, reference abstraction</td></tr>
+<tr><td><span class="tag tag-new">NEW</span></td><td class="mono">web/routes/admin_attendance_policy.py</td><td>Route</td><td>GET/POST policy management pages</td></tr>
+<tr><td><span class="tag tag-new">NEW</span></td><td class="mono">web/templates/admin/policy_attendance.html</td><td>Template</td><td>Attendance policy form (per employment type)</td></tr>
+<tr><td><span class="tag tag-new">NEW</span></td><td class="mono">tests/test_attendance_policy.py</td><td>Test</td><td>Unit and integration tests</td></tr>
+<tr><td><span class="tag tag-p0">P0</span></td><td class="mono">web/routes/attendance.py</td><td>Route</td><td>Replace DAILY_DUTY_HOURS; fix line 460 bug; add late/early</td></tr>
+<tr><td><span class="tag tag-p0">P0</span></td><td class="mono">web/routes/admin.py</td><td>Route</td><td>Replace DAILY_DUTY_HOURS; add late/early to manager views</td></tr>
+<tr><td><span class="tag tag-p1">P1</span></td><td class="mono">core/detailed_monthly_report_v2.py</td><td>Report</td><td>Replace DAILY_REQUIRED_HOURS with policy lookup</td></tr>
+<tr><td><span class="tag tag-p1">P1</span></td><td class="mono">core/detailed_monthly_report.py</td><td>Report</td><td>Same</td></tr>
+<tr><td><span class="tag tag-p1">P1</span></td><td class="mono">core/analytical_report.py</td><td>Report</td><td>Replace per-department dictionary</td></tr>
+<tr><td><span class="tag tag-p1">P1</span></td><td class="mono">web/templates/admin/policies.html</td><td>Template</td><td>Enable "حضور و غیاب" card</td></tr>
+<tr><td><span class="tag tag-p2">P2</span></td><td class="mono">web/templates/attendance.html</td><td>Template</td><td>Add scheduled time, late/early indicators</td></tr>
+<tr><td><span class="tag tag-p2">P2</span></td><td class="mono">alembic/versions/xxx_create_attendance_policy.py</td><td>Migration</td><td>Create tables + seed data</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="s28">28. Test Plan</h2>
+
+<h3>Unit Tests</h3>
+<table>
+<tr><th>Test</th><th>Input</th><th>Expected</th></tr>
+<tr><td>resolve_policy with valid type</td><td>dept='4', date=2026-09-07</td><td>Returns policy for قراردادی</td></tr>
+<tr><td>resolve_policy with invalid type</td><td>dept='X'</td><td>Returns system default</td></tr>
+<tr><td>resolve_policy with historical date</td><td>date in previous year</td><td>Returns policy effective that year</td></tr>
+<tr><td>compute_late_minutes on time</td><td>in=07:00, start=07:00, grace=10</td><td>0</td></tr>
+<tr><td>compute_late_minutes within grace</td><td>in=07:05, start=07:00, grace=10</td><td>0</td></tr>
+<tr><td>compute_late_minutes over grace</td><td>in=07:15, start=07:00, grace=10</td><td>5</td></tr>
+<tr><td>compute_early_leave_minutes on time</td><td>out=14:00, end=14:00, grace=10</td><td>0</td></tr>
+<tr><td>compute_early_leave_minutes early</td><td>out=13:45, end=14:00, grace=10</td><td>5</td></tr>
+<tr><td>non-working day</td><td>Fri, grace=10, in=07:00</td><td>Late=0 (no policy)</td></tr>
+<tr><td>balance calculation</td><td>duty=420min, work=400min</td><td>Balance=-20min</td></tr>
+<tr><td>late + balance independent</td><td>Late=5, work=400</td><td>Late=5, Balance=-20 (no double count)</td></tr>
+</table>
+
+<h3>Integration Tests</h3>
+<ul>
+<li>Admin UI: Save attendance policy → verify DB rows</li>
+<li>User view: Verify balance uses policy value</li>
+<li>Report: Verify per-employee required hours</li>
+<li>Historical: Change policy → verify past attendance unchanged</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="s29">29. Risks</h2>
+
+<table>
+<tr><th>Risk</th><th>Impact</th><th>Likelihood</th><th>Mitigation</th></tr>
+<tr><td>Department field empty or invalid</td><td>Policy resolution fails</td><td>Medium</td><td>System default fallback + admin warning</td></tr>
+<tr><td>Night shift late false positives</td><td>Incorrect labels</td><td>Medium</td><td>Disable late/early for implicit night-shift entries</td></tr>
+<tr><td>Policy change affects historical data</td><td>Retroactive balance changes</td><td>Low</td><td>Effective-date resolution (already designed)</td></tr>
+<tr><td>Performance: policy lookup per employee per day</td><td>Slow reports</td><td>Low</td><td>Cache policy dict by employment type</td></tr>
+<tr><td>UI complexity for 5 types × 7 days</td><td>Usability</td><td>Low</td><td>Good UI design with sensible defaults</td></tr>
+<tr><td>attendance.py:460 bug</td><td>Wrong holidays in user view</td><td>High (existing)</td><td>Fix included in P0 changes</td></tr>
+<tr><td>Default values not business-verified</td><td>Incorrect calculations</td><td>Medium</td><td>Business confirmation required before implementation</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<div class="footer">
+<p><strong>READ-ONLY PHASE 4 COMPLETE</strong></p>
+<p>No files modified.<br>
+No files created.<br>
+No migrations created.<br>
+No database changes performed.<br>
+No commits created.</p>
+<p>Implementation has NOT started.</p>
+</div>
+
+</div>
+</body>
+</html>

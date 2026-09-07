@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block title %}سیاست‌های حضور و غیاب | مدیریت{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4>
+        <i class="bi bi-clock text-primary"></i>
+        ⏱️ سیاست‌های حضور و غیاب
+    </h4>
+    <a href="/admin/policies/attendance/add" class="btn btn-primary">
+        <i class="bi bi-plus-circle"></i> افزودن سیاست
+    </a>
+</div>
+
+{% if request.query_params.get('success') %}
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+    <i class="bi bi-check-circle"></i>
+    {% if request.query_params.get('success') == 'saved' %}
+    سیاست با موفقیت ذخیره شد.
+    {% elif request.query_params.get('success') == 'updated' %}
+    سیاست با موفقیت ویرایش شد.
+    {% elif request.query_params.get('success') == 'deleted' %}
+    سیاست با موفقیت حذف شد.
+    {% else %}
+    عملیات با موفقیت انجام شد.
+    {% endif %}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+{% if request.query_params.get('error') %}
+<div class="alert alert-danger alert-dismissible fade show" role="alert">
+    <i class="bi bi-exclamation-triangle"></i> {{ request.query_params.get('error') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<div class="row g-4">
+    <!-- Employee Overrides -->
+    <div class="col-12">
+        <div class="card shadow-sm">
+            <div class="card-header bg-light">
+                <h5 class="mb-0"><i class="bi bi-person-badge"></i> Override‌های کارمندی (Employee Overrides)</h5>
+            </div>
+            <div class="card-body">
+                {% if overrides %}
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover">
+                        <thead>
+                            <tr>
+                                <th>کارمند</th>
+                                <th>شروع اعتبار</th>
+                                <th>پایان اعتبار</th>
+                                <th>عملیات</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for ov in overrides %}
+                            <tr>
+                                <td>{{ ov.full_name }} ({{ ov.user_id }})</td>
+                                <td>{{ ov.from_date }}</td>
+                                <td>{{ ov.to_date }}</td>
+                                <td>
+                                    <form method="post" action="/admin/policies/attendance/{{ ov.id }}/delete"
+                                          onsubmit="return confirm('آیا از حذف این override اطمینان دارید؟');" style="display:inline">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">
+                                            <i class="bi bi-trash"></i> حذف
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted mb-0">هیچ Override فعالی وجود ندارد.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Employment Type Policies -->
+    {% for code, name in dept_types %}
+    <div class="col-12">
+        <div class="card shadow-sm">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">
+                    <i class="bi bi-briefcase"></i> {{ name }} (کد: {{ code }})
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if policies_by_type[code] %}
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover">
+                        <thead>
+                            <tr>
+                                <th>شروع اعتبار</th>
+                                <th>پایان اعتبار</th>
+                                <th>دیرکرد: فعال/مجاز</th>
+                                <th>خروج زود: فعال/مجاز</th>
+                                <th>برنامه هفتگی</th>
+                                <th>عملیات</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for p in policies_by_type[code] %}
+                            <tr>
+                                <td>{{ p.from_date }}</td>
+                                <td>{{ p.to_date }}</td>
+                                <td>
+                                    {% if p.late_enabled %}
+                                    <span class="badge bg-success">✅ {{ p.late_allowed }} دقیقه</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">❌ غیرفعال</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if p.early_enabled %}
+                                    <span class="badge bg-success">✅ {{ p.early_allowed }} دقیقه</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">❌ غیرفعال</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <a href="/admin/policies/attendance/{{ p.id }}/edit" class="btn btn-sm btn-outline-primary">
+                                        <i class="bi bi-calendar-week"></i> مشاهده
+                                    </a>
+                                </td>
+                                <td>
+                                    <a href="/admin/policies/attendance/{{ p.id }}/edit" class="btn btn-sm btn-outline-warning">
+                                        <i class="bi bi-pencil"></i>
+                                    </a>
+                                    <form method="post" action="/admin/policies/attendance/{{ p.id }}/delete"
+                                          onsubmit="return confirm('آیا از حذف این سیاست اطمینان دارید؟');" style="display:inline">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="alert alert-info mb-0">
+                    <i class="bi bi-info-circle"></i> هیچ سیاستی برای این نوع عضویت تعریف نشده است.
+                    <a href="/admin/policies/attendance/add" class="btn btn-sm btn-primary ms-2">+ افزودن سیاست</a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+{% endblock %}

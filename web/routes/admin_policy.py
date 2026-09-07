@@ -6,9 +6,11 @@ from fastapi import APIRouter, Request, Depends, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
-from typing import Optional
+from typing import Optional, List
 import re
+import jdatetime
 from web.dependencies import get_db, require_super_admin
 from web.permissions import has_permission
 from web.services.notification_service import is_sms_enabled, set_sms_enabled
@@ -17,6 +19,7 @@ from models.region import Region
 from models.policy import Policy, PolicyValue, PolicyAuditLog
 from models.employee_region import EmployeeRegion
 from models.employee import Employee
+from models.attendance import AttendancePolicy, AttendancePolicyDay
 
 router = APIRouter()
 templates = Jinja2Templates(directory=Path(__file__).parent.parent / "templates")
@@ -623,3 +626,623 @@ async def admin_policies_regions(
         "regions": region_data,
         "history": history,
     })
+
+
+# ============================================
+# 🆕 Attendance Policy Management (Phase 5)
+# ============================================
+
+@router.get("/admin/policies/attendance", response_class=HTMLResponse)
+async def admin_policies_attendance(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_super_admin)
+):
+    """صفحه مدیریت سیاست‌های حضور و غیاب"""
+    if not has_permission(db, user, 'manage_users'):
+        return RedirectResponse(url="/admin/", status_code=302)
+
+    # دریافت همه سیاست‌های فعال
+    policies = db.query(AttendancePolicy).filter(
+        AttendancePolicy.is_active == True
+    ).order_by(AttendancePolicy.employment_type_code, AttendancePolicy.effective_from_date.desc()).all()
+
+    # ساخت دیکشنری سیاست‌ها به تفکیک employment_type
+    policies_by_type = {code: [] for code, _ in DEPT_TYPES}
+    for p in policies:
+        if p.user_id:
+            # Employee Override - در بخش جداگانه نمایش داده می‌شود
+            continue
+        if p.employment_type_code in policies_by_type:
+            from_date_j = ''
+            to_date_j = 'نامحدود'
+            if p.effective_from_date:
+                from_date_j = jdatetime.date.fromgregorian(date=p.effective_from_date).strftime('%Y/%m/%d')
+            if p.effective_to_date:
+                to_date_j = jdatetime.date.fromgregorian(date=p.effective_to_date).strftime('%Y/%m/%d')
+            policies_by_type[p.employment_type_code].append({
+                'id': p.id,
+                'from_date': from_date_j,
+                'to_date': to_date_j,
+                'late_enabled': p.late_enabled,
+                'late_allowed': p.late_allowed_minutes,
+                'early_enabled': p.early_leave_enabled,
+                'early_allowed': p.early_leave_allowed_minutes,
+            })
+
+    # دریافت Employee Overrides
+    overrides = db.query(AttendancePolicy).filter(
+        AttendancePolicy.user_id.isnot(None),
+        AttendancePolicy.is_active == True
+    ).all()
+    override_list = []
+    for ov in overrides:
+        emp = db.query(Employee).filter(Employee.user_id == ov.user_id).first()
+        ov_from_j = ''
+        ov_to_j = 'نامحدود'
+        if ov.effective_from_date:
+            ov_from_j = jdatetime.date.fromgregorian(date=ov.effective_from_date).strftime('%Y/%m/%d')
+        if ov.effective_to_date:
+            ov_to_j = jdatetime.date.fromgregorian(date=ov.effective_to_date).strftime('%Y/%m/%d')
+        override_list.append({
+            'id': ov.id,
+            'user_id': ov.user_id,
+            'full_name': emp.full_name if emp else ov.user_id,
+            'from_date': ov_from_j,
+            'to_date': ov_to_j,
+        })
+
+    return templates.TemplateResponse(request, "admin/policy_attendance.html", {
+        "user": user,
+        "is_admin": True,
+        "is_super_admin": True,
+        "dept_types": DEPT_TYPES,
+        "policies_by_type": policies_by_type,
+        "overrides": override_list,
+    })
+
+
+# ============================================
+# Phase 6: Attendance Policy CRUD
+# ============================================
+
+@router.get("/admin/policies/attendance/add", response_class=HTMLResponse)
+async def admin_policies_attendance_add(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_super_admin)
+):
+    """صفحه افزودن سیاست حضور و غیاب جدید"""
+    if not has_permission(db, user, 'manage_users'):
+        return RedirectResponse(url="/admin/", status_code=302)
+
+    # Get employees for override autocomplete
+    employees = db.query(Employee).filter(
+        Employee.is_active == True
+    ).order_by(Employee.last_name, Employee.first_name).limit(100).all()
+
+    return templates.TemplateResponse(request, "admin/policy_attendance_form.html", {
+        "user": user,
+        "is_admin": True,
+        "is_super_admin": True,
+        "dept_types": DEPT_TYPES,
+        "policy": None,  # Add mode
+        "schedule": None,
+        "employees": [{"user_id": e.user_id, "full_name": e.full_name} for e in employees],
+        "form_action": "/admin/policies/attendance/save",
+        "form_title": "افزودن سیاست جدید",
+    })
+
+
+@router.post("/admin/policies/attendance/save")
+async def admin_policies_attendance_save(
+    request: Request,
+    employment_type_code: str = Form(...),
+    user_id_override: str = Form(""),
+    effective_from_date_str: str = Form(...),
+    effective_to_date_str: str = Form(""),
+    late_enabled: str = Form(""),
+    late_allowed_minutes: int = Form(0),
+    late_reference_mode: str = Form("FIXED_TIME"),
+    early_leave_enabled: str = Form(""),
+    early_leave_allowed_minutes: int = Form(0),
+    early_reference_mode: str = Form("FIXED_TIME"),
+    # Schedule: 7 days (weekday 0-6)
+    wd0_working: str = Form(""),
+    wd0_start: str = Form(""),
+    wd0_end: str = Form(""),
+    wd1_working: str = Form(""),
+    wd1_start: str = Form(""),
+    wd1_end: str = Form(""),
+    wd2_working: str = Form(""),
+    wd2_start: str = Form(""),
+    wd2_end: str = Form(""),
+    wd3_working: str = Form(""),
+    wd3_start: str = Form(""),
+    wd3_end: str = Form(""),
+    wd4_working: str = Form(""),
+    wd4_start: str = Form(""),
+    wd4_end: str = Form(""),
+    wd5_working: str = Form(""),
+    wd5_start: str = Form(""),
+    wd5_end: str = Form(""),
+    wd6_working: str = Form(""),
+    wd6_start: str = Form(""),
+    wd6_end: str = Form(""),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_super_admin)
+):
+    """ذخیره سیاست حضور و غیاب جدید"""
+    if not has_permission(db, user, 'manage_users'):
+        return RedirectResponse(url="/admin/", status_code=302)
+
+    try:
+        # Validation: employment_type_code
+        valid_codes = [code for code, _ in DEPT_TYPES]
+        if employment_type_code not in valid_codes:
+            raise ValueError("نوع عضویت نامعتبر است")
+
+        # Validation: late/early grace minutes (0-120)
+        late_allowed_minutes = max(0, min(120, late_allowed_minutes))
+        early_leave_allowed_minutes = max(0, min(120, early_leave_allowed_minutes))
+
+        # Validation: reference mode
+        if late_reference_mode not in ('FIXED_TIME',):
+            late_reference_mode = 'FIXED_TIME'
+        if early_reference_mode not in ('FIXED_TIME',):
+            early_reference_mode = 'FIXED_TIME'
+
+        # Parse dates (Persian to Gregorian)
+        from datetime import date as date_class
+
+        try:
+            from_j = jdatetime.datetime.strptime(effective_from_date_str.strip(), "%Y/%m/%d").date()
+            effective_from_date = from_j.togregorian()
+        except (ValueError, AttributeError):
+            raise ValueError("تاریخ شروع نامعتبر است")
+
+        effective_to_date = None
+        if effective_to_date_str.strip():
+            try:
+                to_j = jdatetime.datetime.strptime(effective_to_date_str.strip(), "%Y/%m/%d").date()
+                effective_to_date = to_j.togregorian()
+            except (ValueError, AttributeError):
+                raise ValueError("تاریخ پایان نامعتبر است")
+            if effective_to_date <= effective_from_date:
+                raise ValueError("تاریخ پایان باید بعد از تاریخ شروع باشد")
+
+        # Validate override user exists if provided
+        override_user_id = user_id_override.strip() or None
+        if override_user_id:
+            emp = db.query(Employee).filter(Employee.user_id == override_user_id).first()
+            if not emp:
+                raise ValueError("کارمند یافت نشد")
+
+        # Check for overlapping active policies
+        overlap_query = db.query(AttendancePolicy).filter(
+            AttendancePolicy.employment_type_code == employment_type_code,
+            AttendancePolicy.is_active == True
+        )
+        if override_user_id:
+            overlap_query = overlap_query.filter(AttendancePolicy.user_id == override_user_id)
+        else:
+            overlap_query = overlap_query.filter(AttendancePolicy.user_id.is_(None))
+
+        # Date overlap check
+        overlap_query = overlap_query.filter(
+            AttendancePolicy.effective_from_date <= (effective_to_date or date_class.max),
+            or_(
+                AttendancePolicy.effective_to_date.is_(None),
+                AttendancePolicy.effective_to_date >= effective_from_date
+            )
+        )
+        existing = overlap_query.first()
+        if existing:
+            raise ValueError("سیاست همپوشانی با سیاست موجود دارد")
+
+        # Parse schedule
+        schedule_data = []
+        working_days_count = 0
+        for wd in range(7):
+            working = locals()[f'wd{wd}_working'] == 'on'
+            start_str = locals()[f'wd{wd}_start']
+            end_str = locals()[f'wd{wd}_end']
+
+            start_time = None
+            end_time = None
+
+            if working:
+                if not start_str or not end_str:
+                    raise ValueError(f"ساعت ورود/خروج برای روز {wd} الزامی است")
+                start_time = parse_time(start_str)
+                end_time = parse_time(end_str)
+                if not start_time or not end_time:
+                    raise ValueError(f"ساعت نامعتبر برای روز {wd}")
+                if start_time >= end_time:
+                    raise ValueError(f"ساعت ورود باید قبل از خروج برای روز {wd} باشد")
+                working_days_count += 1
+            else:
+                # Non-working day: ensure null times
+                if start_str or end_str:
+                    raise ValueError(f"روز غیرکاری نباید ساعت داشته باشد")
+
+            schedule_data.append({
+                'weekday': wd,
+                'is_working_day': working,
+                'start_time': start_time,
+                'end_time': end_time
+            })
+
+        # Validation: at least one working day
+        if working_days_count == 0:
+            raise ValueError("حداقل یک روز کاری باید تعریف شود")
+
+        # Create policy
+        policy = AttendancePolicy(
+            employment_type_code=employment_type_code,
+            user_id=override_user_id,
+            effective_from_date=effective_from_date,
+            effective_to_date=effective_to_date,
+            late_enabled=(late_enabled == 'on'),
+            late_allowed_minutes=late_allowed_minutes,
+            late_reference_mode=late_reference_mode,
+            early_leave_enabled=(early_leave_enabled == 'on'),
+            early_leave_allowed_minutes=early_leave_allowed_minutes,
+            early_leave_reference_mode=early_reference_mode,
+            is_active=True
+        )
+        db.add(policy)
+        db.flush()  # Get policy ID
+
+        # Create schedule (7 days)
+        for day_data in schedule_data:
+            policy_day = AttendancePolicyDay(
+                policy_id=policy.id,
+                weekday=day_data['weekday'],
+                is_working_day=day_data['is_working_day'],
+                start_time=day_data['start_time'],
+                end_time=day_data['end_time']
+            )
+            db.add(policy_day)
+
+        db.commit()
+
+        referer = request.headers.get("referer", "/admin/policies/attendance")
+        return RedirectResponse(
+            url=build_redirect_url(referer, "success", "saved"),
+            status_code=302
+        )
+
+    except ValueError as e:
+        db.rollback()
+        referer = request.headers.get("referer", "/admin/policies/attendance/add")
+        return RedirectResponse(
+            url=build_redirect_url(referer, "error", str(e)),
+            status_code=302
+        )
+    except Exception as e:
+        db.rollback()
+        referer = request.headers.get("referer", "/admin/policies/attendance/add")
+        return RedirectResponse(
+            url=build_redirect_url(referer, "error", f"خطا: {str(e)}"),
+            status_code=302
+        )
+
+
+@router.get("/admin/policies/attendance/{policy_id}/edit", response_class=HTMLResponse)
+async def admin_policies_attendance_edit(
+    request: Request,
+    policy_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_super_admin)
+):
+    """صفحه ویرایش سیاست حضور و غیاب"""
+    if not has_permission(db, user, 'manage_users'):
+        return RedirectResponse(url="/admin/", status_code=302)
+
+    policy = db.query(AttendancePolicy).filter(AttendancePolicy.id == policy_id).first()
+    if not policy:
+        return RedirectResponse(url="/admin/policies/attendance?error=یافت نشد", status_code=302)
+
+    # Get schedule
+    schedule_days = db.query(AttendancePolicyDay).filter(
+        AttendancePolicyDay.policy_id == policy_id
+    ).order_by(AttendancePolicyDay.weekday).all()
+
+    schedule = {}
+    for day in schedule_days:
+        schedule[day.weekday] = {
+            'is_working_day': day.is_working_day,
+            'start_time': day.start_time.strftime('%H:%M') if day.start_time else '',
+            'end_time': day.end_time.strftime('%H:%M') if day.end_time else ''
+        }
+
+    # Get employees for override autocomplete
+    employees = db.query(Employee).filter(
+        Employee.is_active == True
+    ).order_by(Employee.last_name, Employee.first_name).limit(100).all()
+
+    # Convert Gregorian effective dates to Jalali for form pre-filling
+    effective_from_j = ""
+    effective_to_j = ""
+    if policy.effective_from_date:
+        effective_from_j = jdatetime.date.fromgregorian(
+            date=policy.effective_from_date
+        ).strftime('%Y/%m/%d')
+    if policy.effective_to_date:
+        effective_to_j = jdatetime.date.fromgregorian(
+            date=policy.effective_to_date
+        ).strftime('%Y/%m/%d')
+
+    return templates.TemplateResponse(request, "admin/policy_attendance_form.html", {
+        "user": user,
+        "is_admin": True,
+        "is_super_admin": True,
+        "dept_types": DEPT_TYPES,
+        "policy": policy,
+        "schedule": schedule,
+        "effective_from_j": effective_from_j,
+        "effective_to_j": effective_to_j,
+        "employees": [{"user_id": e.user_id, "full_name": e.full_name} for e in employees],
+        "form_action": f"/admin/policies/attendance/{policy_id}/update",
+        "form_title": "ویرایش سیاست",
+    })
+
+
+@router.post("/admin/policies/attendance/{policy_id}/update")
+async def admin_policies_attendance_update(
+    request: Request,
+    policy_id: int,
+    employment_type_code: str = Form(...),
+    user_id_override: str = Form(""),
+    effective_from_date_str: str = Form(...),
+    effective_to_date_str: str = Form(""),
+    late_enabled: str = Form(""),
+    late_allowed_minutes: int = Form(0),
+    late_reference_mode: str = Form("FIXED_TIME"),
+    early_leave_enabled: str = Form(""),
+    early_leave_allowed_minutes: int = Form(0),
+    early_reference_mode: str = Form("FIXED_TIME"),
+    # Schedule
+    wd0_working: str = Form(""),
+    wd0_start: str = Form(""),
+    wd0_end: str = Form(""),
+    wd1_working: str = Form(""),
+    wd1_start: str = Form(""),
+    wd1_end: str = Form(""),
+    wd2_working: str = Form(""),
+    wd2_start: str = Form(""),
+    wd2_end: str = Form(""),
+    wd3_working: str = Form(""),
+    wd3_start: str = Form(""),
+    wd3_end: str = Form(""),
+    wd4_working: str = Form(""),
+    wd4_start: str = Form(""),
+    wd4_end: str = Form(""),
+    wd5_working: str = Form(""),
+    wd5_start: str = Form(""),
+    wd5_end: str = Form(""),
+    wd6_working: str = Form(""),
+    wd6_start: str = Form(""),
+    wd6_end: str = Form(""),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_super_admin)
+):
+    """به‌روزرسانی سیاست حضور و غیاب"""
+    if not has_permission(db, user, 'manage_users'):
+        return RedirectResponse(url="/admin/", status_code=302)
+
+    policy = db.query(AttendancePolicy).filter(AttendancePolicy.id == policy_id).first()
+    if not policy:
+        return RedirectResponse(url="/admin/policies/attendance?error=یافت نشد", status_code=302)
+
+    try:
+        # Validation: employment_type_code
+        valid_codes = [code for code, _ in DEPT_TYPES]
+        if employment_type_code not in valid_codes:
+            raise ValueError("نوع عضویت نامعتبر است")
+
+        # Validation: late/early grace minutes (0-120)
+        late_allowed_minutes = max(0, min(120, late_allowed_minutes))
+        early_leave_allowed_minutes = max(0, min(120, early_leave_allowed_minutes))
+
+        # Validation: reference mode
+        if late_reference_mode not in ('FIXED_TIME',):
+            late_reference_mode = 'FIXED_TIME'
+        if early_reference_mode not in ('FIXED_TIME',):
+            early_reference_mode = 'FIXED_TIME'
+
+        # Parse dates
+        from datetime import date as date_class
+
+        try:
+            from_j = jdatetime.datetime.strptime(effective_from_date_str.strip(), "%Y/%m/%d").date()
+            effective_from_date = from_j.togregorian()
+        except (ValueError, AttributeError):
+            raise ValueError("تاریخ شروع نامعتبر است")
+
+        effective_to_date = None
+        if effective_to_date_str.strip():
+            try:
+                to_j = jdatetime.datetime.strptime(effective_to_date_str.strip(), "%Y/%m/%d").date()
+                effective_to_date = to_j.togregorian()
+            except (ValueError, AttributeError):
+                raise ValueError("تاریخ پایان نامعتبر است")
+            if effective_to_date <= effective_from_date:
+                raise ValueError("تاریخ پایان باید بعد از تاریخ شروع باشد")
+
+        # Validate override user
+        override_user_id = user_id_override.strip() or None
+        if override_user_id:
+            emp = db.query(Employee).filter(Employee.user_id == override_user_id).first()
+            if not emp:
+                raise ValueError("کارمند یافت نشد")
+
+        # Check for overlapping policies (exclude current)
+        overlap_query = db.query(AttendancePolicy).filter(
+            AttendancePolicy.employment_type_code == employment_type_code,
+            AttendancePolicy.is_active == True,
+            AttendancePolicy.id != policy_id
+        )
+        if override_user_id:
+            overlap_query = overlap_query.filter(AttendancePolicy.user_id == override_user_id)
+        else:
+            overlap_query = overlap_query.filter(AttendancePolicy.user_id.is_(None))
+
+        overlap_query = overlap_query.filter(
+            AttendancePolicy.effective_from_date <= (effective_to_date or date_class.max),
+            or_(
+                AttendancePolicy.effective_to_date.is_(None),
+                AttendancePolicy.effective_to_date >= effective_from_date
+            )
+        )
+        existing = overlap_query.first()
+        if existing:
+            raise ValueError("سیاست همپوشانی با سیاست موجود دارد")
+
+        # Parse schedule
+        working_days_count = 0
+        for wd in range(7):
+            working = locals()[f'wd{wd}_working'] == 'on'
+            start_str = locals()[f'wd{wd}_start']
+            end_str = locals()[f'wd{wd}_end']
+
+            start_time = None
+            end_time = None
+
+            if working:
+                if not start_str or not end_str:
+                    raise ValueError(f"ساعت ورود/خروج برای روز {wd} الزامی است")
+                start_time = parse_time(start_str)
+                end_time = parse_time(end_str)
+                if not start_time or not end_time:
+                    raise ValueError(f"ساعت نامعتبر برای روز {wd}")
+                if start_time >= end_time:
+                    raise ValueError(f"ساعت ورود باید قبل از خروج برای روز {wd} باشد")
+                working_days_count += 1
+            else:
+                if start_str or end_str:
+                    raise ValueError(f"روز غیرکاری نباید ساعت داشته باشد")
+
+        if working_days_count == 0:
+            raise ValueError("حداقل یک روز کاری باید تعریف شود")
+
+        # Update policy
+        policy.employment_type_code = employment_type_code
+        policy.user_id = override_user_id
+        policy.effective_from_date = effective_from_date
+        policy.effective_to_date = effective_to_date
+        policy.late_enabled = (late_enabled == 'on')
+        policy.late_allowed_minutes = late_allowed_minutes
+        policy.late_reference_mode = late_reference_mode
+        policy.early_leave_enabled = (early_leave_enabled == 'on')
+        policy.early_leave_allowed_minutes = early_leave_allowed_minutes
+        policy.early_leave_reference_mode = early_reference_mode
+
+        # Delete existing schedule and recreate
+        db.query(AttendancePolicyDay).filter(
+            AttendancePolicyDay.policy_id == policy_id
+        ).delete()
+
+        for wd in range(7):
+            working = locals()[f'wd{wd}_working'] == 'on'
+            start_str = locals()[f'wd{wd}_start']
+            end_str = locals()[f'wd{wd}_end']
+
+            start_time = parse_time(start_str) if start_str else None
+            end_time = parse_time(end_str) if end_str else None
+
+            policy_day = AttendancePolicyDay(
+                policy_id=policy_id,
+                weekday=wd,
+                is_working_day=working,
+                start_time=start_time,
+                end_time=end_time
+            )
+            db.add(policy_day)
+
+        db.commit()
+
+        referer = request.headers.get("referer", "/admin/policies/attendance")
+        return RedirectResponse(
+            url=build_redirect_url(referer, "success", "updated"),
+            status_code=302
+        )
+
+    except ValueError as e:
+        db.rollback()
+        referer = request.headers.get("referer", f"/admin/policies/attendance/{policy_id}/edit")
+        return RedirectResponse(
+            url=build_redirect_url(referer, "error", str(e)),
+            status_code=302
+        )
+    except Exception as e:
+        db.rollback()
+        referer = request.headers.get("referer", f"/admin/policies/attendance/{policy_id}/edit")
+        return RedirectResponse(
+            url=build_redirect_url(referer, "error", f"خطا: {str(e)}"),
+            status_code=302
+        )
+
+
+@router.post("/admin/policies/attendance/{policy_id}/delete")
+async def admin_policies_attendance_delete(
+    request: Request,
+    policy_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_super_admin)
+):
+    """حذف (غیرفعال کردن) سیاست حضور و غیاب - Soft Delete
+
+    سیاستی که قبلاً شروع به کار کرده است ممکن است برای رزولوشن تردد تاریخی
+    استفاده شده باشد؛ حذف آن باعث می‌شود آن تاریخ‌ها به پیش‌فرض یا سیاست
+    دیگری برگردند و رزولوشن تاریخی خراب شود. بنابراین فقط سیاست‌هایی که هنوز
+    در آینده شروع نشده‌اند قابل حذف (غیرفعال‌سازی) هستند. برای تغییر یک
+    سیاستِ جاری، از ویرایش استفاده می‌شود.
+    """
+    if not has_permission(db, user, 'manage_users'):
+        return RedirectResponse(url="/admin/", status_code=302)
+
+    policy = db.query(AttendancePolicy).filter(AttendancePolicy.id == policy_id).first()
+    if not policy:
+        return RedirectResponse(
+            url="/admin/policies/attendance?error=سیاست یافت نشد",
+            status_code=302
+        )
+
+    # Correction #5: رد حذف سیاستی که بازه‌اش قبلاً شروع شده (استفاده‌شده در
+    # بازه‌ی تاریخی) تا رزولوشن تاریخی خراب نشود.
+    from datetime import date as date_class
+    today = date_class.today()
+    if policy.effective_from_date and policy.effective_from_date <= today:
+        return RedirectResponse(
+            url="/admin/policies/attendance?error=این سیاست در بازه‌ی تاریخی استفاده شده است و قابل حذف نیست. برای تغییر، آن را ویرایش کنید.",
+            status_code=302
+        )
+
+    policy.is_active = False
+    db.commit()
+
+    referer = request.headers.get("referer", "/admin/policies/attendance")
+    return RedirectResponse(
+        url=build_redirect_url(referer, "success", "deleted"),
+        status_code=302
+    )
+
+
+def parse_time(time_str: str):
+    """Parse HH:MM time string to time object"""
+    if not time_str:
+        return None
+    try:
+        from datetime import time
+        parts = time_str.strip().split(':')
+        if len(parts) != 2:
+            return None
+        hour = int(parts[0])
+        minute = int(parts[1])
+        if hour < 0 or hour > 23 or minute < 0 or minute > 59:
+            return None
+        return time(hour, minute)
+    except (ValueError, IndexError):
+        return None

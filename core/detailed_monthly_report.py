@@ -20,6 +20,8 @@ class DetailedMonthlyReportGenerator:
     """تولید گزارش تفصیلی ماهانه"""
 
     # ساعات موظفی روزانه (گروه قراردادی)
+    # 🆕 Phase 5: این مقدار باید از Attendance Policy Service خوانده شود
+    # فعلاً برای سازگاری با داده‌های قبلی نگه داشته شده
     DAILY_REQUIRED_HOURS = 7.33  # 7:20
 
     # ساعات موظفی هفتگی

@@ -20,6 +20,8 @@ from core.time_calculator import calculate_shift_hours
 class AnalyticalReportGenerator:
     """تولید گزارش تحلیلی ماهانه"""
 
+# 🆕 Phase 5: این مقادیر باید از Attendance Policy Service خوانده شود
+    # فعلاً برای سازگاری با داده‌های قبلی نگه داشته شده
     # ساعات موظفی روزانه بر اساس گروه
     DAILY_REQUIRED_HOURS = {
         '0': 7.33,  # بدون گروه (7:20)

@@ -1,0 +1,1003 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phase 2 — Attendance Policy Architecture Deep Review</title>
+<style>
+  :root {
+    --bg: #f8f9fa; --fg: #212529; --accent: #0d6efd; --accent-light: #e7f1ff;
+    --danger: #dc3545; --danger-light: #f8d7da; --success: #198754;
+    --success-light: #d1e7dd; --warning: #ffc107; --warning-light: #fff3cd;
+    --muted: #6c757d; --border: #dee2e6; --card-bg: #fff; --code-bg: #f1f3f5;
+    --open-bg: #fff3cd; --open-border: #ffc107;
+    --font: 'Segoe UI', Tahoma, Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a1d21; --fg: #e1e3e6; --accent: #6ea8fe; --accent-light: #1a2a3e;
+      --danger: #ea868f; --danger-light: #3b1c1f; --success: #75b798;
+      --success-light: #1c3a2a; --warning: #ffda6a; --warning-light: #3d3214;
+      --muted: #adb5bd; --border: #495057; --card-bg: #212529; --code-bg: #2b3035;
+      --open-bg: #3d3214; --open-border: #ffda6a;
+    }
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0; padding: 2rem; background: var(--bg); color: var(--fg); font: 14px/1.7 var(--font); }
+  .container { max-width: 960px; margin: 0 auto; }
+  h1 { font-size: 1.6rem; border-bottom: 3px solid var(--accent); padding-bottom: .5rem; margin-top: 2rem; }
+  h2 { font-size: 1.3rem; color: var(--accent); margin-top: 2.5rem; border-bottom: 1px solid var(--border); padding-bottom: .3rem; }
+  h3 { font-size: 1.1rem; margin-top: 1.5rem; }
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 13px; }
+  th, td { border: 1px solid var(--border); padding: 6px 10px; text-align: right; }
+  th { background: var(--accent-light); font-weight: 600; }
+  code, pre { font-family: 'Cascadia Code', 'Fira Code', monospace; }
+  code { background: var(--code-bg); padding: 1px 5px; border-radius: 3px; font-size: 13px; }
+  pre { background: var(--code-bg); padding: 12px; border-radius: 6px; overflow-x: auto; direction: ltr; text-align: left; font-size: 12.5px; line-height: 1.5; }
+  .bug { background: var(--danger-light); border-left: 4px solid var(--danger); padding: 10px 14px; margin: 1rem 0; border-radius: 4px; }
+  .bug::before { content: '⚠ BUG: '; font-weight: 700; color: var(--danger); }
+  .warn { background: var(--warning-light); border-left: 4px solid var(--warning); padding: 10px 14px; margin: 1rem 0; border-radius: 4px; }
+  .warn::before { content: '⚠ WARNING: '; font-weight: 700; color: #856404; }
+  .info { background: var(--accent-light); border-left: 4px solid var(--accent); padding: 10px 14px; margin: 1rem 0; border-radius: 4px; }
+  .info::before { content: 'ℹ INFO: '; font-weight: 700; color: var(--accent); }
+  .ok { background: var(--success-light); border-left: 4px solid var(--success); padding: 10px 14px; margin: 1rem 0; border-radius: 4px; }
+  .ok::before { content: '✅ OK: '; font-weight: 700; color: var(--success); }
+  .decision { background: var(--open-bg); border: 2px solid var(--open-border); border-radius: 8px; padding: 14px 18px; margin: 1.2rem 0; }
+  .decision strong { color: #856404; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin-left: 4px; }
+  .tag-p0 { background: var(--danger); color: #fff; }
+  .tag-p1 { background: var(--warning); color: #000; }
+  .tag-p2 { background: var(--accent); color: #fff; }
+  .tag-new { background: var(--success); color: #fff; }
+  .file { direction: ltr; text-align: left; }
+  .footer { margin-top: 3rem; padding-top: 1rem; border-top: 2px solid var(--border); font-size: 13px; color: var(--muted); }
+  .toc { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.5rem; margin: 1.5rem 0; }
+  .toc a { color: var(--accent); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  .toc ol { padding-right: 1.2rem; margin: 0; }
+  .toc li { margin: 3px 0; }
+  .option-box { border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; margin: 8px 0; background: var(--card-bg); }
+  .option-box.recommended { border-color: var(--success); border-width: 2px; }
+  .option-box.recommended::before { content: '⭐ پیشنهادی '; color: var(--success); font-weight: 700; }
+  .mono { direction: ltr; text-align: left; font-family: 'Cascadia Code', monospace; font-size: 12.5px; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>Phase 2 — Attendance Policy Architecture Deep Review</h1>
+<p style="color:var(--muted); margin-top:-0.5rem;">Timex Time & Attendance System &mdash; 2026-09-07</p>
+<p style="color:var(--muted);">Scope: Architecture Discovery → Business Rules Discovery → Final Implementation Specification</p>
+
+<div class="toc">
+<strong>فهرست</strong>
+<ol>
+<li><a href="#s1">Executive Summary</a></li>
+<li><a href="#s2">Current Data Model</a></li>
+<li><a href="#s3">Employee / Contract Analysis</a></li>
+<li><a href="#s4">Schedule / Workday Analysis</a></li>
+<li><a href="#s5">Required Work Analysis</a></li>
+<li><a href="#s6">7:20 Hard-code Analysis</a></li>
+<li><a href="#s7">Existing Policy Architecture</a></li>
+<li><a href="#s8">Policy Scope Options</a></li>
+<li><a href="#s9">Recommended Policy Architecture</a></li>
+<li><a href="#s10">Default Policy Decision</a></li>
+<li><a href="#s11">Historical Attendance Strategy</a></li>
+<li><a href="#s12">Late Analysis</a></li>
+<li><a href="#s13">Early Leave Analysis</a></li>
+<li><a href="#s14">Grace Period Semantics</a></li>
+<li><a href="#s15">Balance Interaction</a></li>
+<li><a href="#s16">User View</a></li>
+<li><a href="#s17">Manager View</a></li>
+<li><a href="#s18">Reports</a></li>
+<li><a href="#s19">UI Design</a></li>
+<li><a href="#s20">Validation Rules</a></li>
+<li><a href="#s21">Final Architecture</a></li>
+<li><a href="#s22">Final Implementation Specification</a></li>
+<li><a href="#s23">Open Business Decisions</a></li>
+<li><a href="#s24">File Change Plan</a></li>
+<li><a href="#s25">Test Plan</a></li>
+<li><a href="#s26">Risks</a></li>
+<li><a href="#s27">Final Verdict</a></li>
+</ol>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s1">1. Executive Summary</h2>
+
+<p>This review discovers the full attendance-policy architecture of the Timex system, identifies all hard-coded values and structural gaps, and delivers a final implementation specification. The goal: make attendance configurable via the existing <code>Policy/PolicyValue</code> infrastructure, enable Late/Early tracking, and provide a clear path for reports.</p>
+
+<h3>Key Discoveries</h3>
+<ol>
+<li><strong>7:20 (7.33h) is hard-coded in 11+ locations</strong> across <code>attendance.py</code>, <code>admin.py</code>, <code>detailed_monthly_report_v2.py</code>, and <code>analytical_report.py</code>. There is no policy lookup anywhere in the attendance path.</li>
+<li><strong>No Schedule/Shift model exists.</strong> There is no per-employee or per-department scheduled start/end time. "Shift" in <code>time_calculator.py</code> means morning/evening/night time-of-day bands — not a shift assignment.</li>
+<li><strong>No Late/Early logic exists.</strong> Zero code computes lateness or early departure. This is entirely new functionality.</li>
+<li><strong>Employee.department is a free-text String(100)</strong> used as a numeric group code ('1'-'5'). It is NOT the contract type. The real contract type lives in <code>Contract.contract_type_code</code> ('1'-'7').</li>
+<li><strong>Latent bug in <code>attendance.py:460</code></strong>: <code>Employee.department if Employee else None</code> compares against an unhydrated SQLAlchemy Column object, not an employee's department value.</li>
+<li><strong><code>policies.html</code> already has a disabled "حضور و غیاب" card</strong> (line 68-81), confirming the infrastructure was designed to be extended.</li>
+<li><strong>The <code>Policy</code> model's <code>category</code> column comment literally says <code>"leave / attendance / overtime / absence"</code></strong>, confirming the 'attendance' category was anticipated.</li>
+<li><strong>Phase 1's <code>DEFAULT_REQUIRED_HOURS = 8.0</code></strong> is NOT supported by any code in the repository. Every location uses 7.33/7:20. This is an open business decision.</li>
+</ol>
+
+<h3>Phase 1 vs Phase 2 Findings</h3>
+<table>
+<tr><th>Finding</th><th>Phase 1 Said</th><th>Phase 2 Verified</th><th>Discrepancy</th></tr>
+<tr><td>7:20 hard-coded</td><td>✅ Correct</td><td>✅ Confirmed in 11+ locations</td><td>None</td></tr>
+<tr><td>Default 8.0h</td><td>Suggested DEFAULT_REQUIRED_HOURS=8.0</td><td>❌ NOT in codebase — 7.33 everywhere</td><td><strong>Yes — unsupported by repo</strong></td></tr>
+<tr><td>Policy category 'attendance'</td><td>Proposed as new</td><td>✅ Already anticipated in model comment</td><td>Phase 1 undersold existing support</td></tr>
+<tr><td>attendance.py:460 bug</td><td>Identified as "likely latent bug"</td><td>✅ Confirmed — Column object comparison</td><td>None</td></tr>
+<tr><td>Contract.department conflation</td><td>Identified</td><td>✅ Confirmed — employee.department ≠ contract_type_code</td><td>None</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="s2">2. Current Data Model</h2>
+
+<h3>Entity Relationship (simplified)</h3>
+<pre>
+User (1) ──────── (1) Employee ──────── (N) Contract
+   │                  │                      │
+   │ user_id (FK)     │ department (str)     │ contract_type_code (str '1'-'7')
+   │ role             │ region_code (str)    │ start_date / end_date
+   │                  │ hire_date            │ annual_leave_days / sick_leave_days
+   │                  │ is_active            │ service_deduction_days
+   │                  │                      │ is_active (property)
+   │
+   ├── (N) Attendance ── user_id, timestamp, status, punch, source, is_deleted
+   ├── (N) LeaveRequest ── user_id, from/to_date, leave_type, status
+   ├── (N) DailyStatus ── user_id, status_date, status_code ('M'/'R')
+   └── (N) EmployeeRegion ── user_id, region_code, effective_from, effective_to
+
+Holiday ── holiday_date (unique), title, is_national, group_id (None=/'1'-'5')
+
+Policy ── category ('leave'/'attendance'/...), name, is_active, effective_from/to_year
+   └── PolicyValue ── policy_id, region_code, parameter_key, parameter_value
+</pre>
+
+<h3>Key Observations</h3>
+<ul>
+<li><strong>User → Employee</strong>: 1:1 via unique <code>user_id</code> FK. Employee is the stable identity.</li>
+<li><strong>Employee → Contract</strong>: 1:N temporal. <code>get_active_contract(user_id, target_date)</code> resolves the active contract for any date.</li>
+<li><strong>Employee → EmployeeRegion</strong>: 1:N temporal via <code>effective_from/effective_to</code>. This is the precedent for date-scoped attribute resolution.</li>
+<li><strong>No Schedule/Shift table exists</strong>: No table stores planned start/end times for any employee or department.</li>
+<li><strong>No AttendancePolicy table exists</strong>: All attendance configuration is currently hard-coded.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="s3">3. Employee / Contract Analysis</h2>
+
+<h3>The Conflation Problem</h3>
+<p><code>Employee.department</code> (String(100)) is a free-text field set at user creation time. In practice, it stores numeric codes '1'-'5' which are used as group identifiers in reports, holidays, and policy keys:</p>
+
+<table>
+<tr><th>Code</th><th>DEPT_TYPES (admin_policy.py)</th><th>DEPT_NAMES_REPORT (reports.py)</th><th>Holiday.group_id</th></tr>
+<tr><td>'1'</td><td>رسمی</td><td>رسمی</td><td>✅ Used</td></tr>
+<tr><td>'2'</td><td>وظیفه</td><td>وظیفه</td><td>✅ Used</td></tr>
+<tr><td>'3'</td><td>خریدخدمت</td><td>خریدخدمت</td><td>✅ Used</td></tr>
+<tr><td>'4'</td><td>قراردادی</td><td>قراردادی</td><td>✅ Used</td></tr>
+<tr><td>'5'</td><td>پزشک</td><td>پزشک</td><td>✅ Used</td></tr>
+</table>
+
+<p><code>Contract.contract_type_code</code> (String(10)) stores codes '1'-'7' per <code>CONTRACT_TYPES</code>:</p>
+<table>
+<tr><th>Code</th><th>Type</th><th>Annual Leave</th><th>Sick Leave</th><th>Notes</th></tr>
+<tr><td>'1'</td><td>رسمی</td><td>35</td><td>—</td><td>government employee</td></tr>
+<tr><td>'2'</td><td>وظیفه</td><td>35</td><td>—</td><td>military service</td></tr>
+<tr><td>'3'</td><td>خریدخدمت</td><td>30</td><td>9</td><td>service purchase</td></tr>
+<tr><td>'4'</td><td>قراردادی</td><td>30</td><td>9</td><td>contract-based</td></tr>
+<tr><td>'5'</td><td>پزشک</td><td>0</td><td>—</td><td>medical</td></tr>
+<tr><td>'6'</td><td>سایر</td><td>0</td><td>0</td><td>other</td></tr>
+<tr><td>'7'</td><td>قرارداد با بیمهها</td><td>0</td><td>0</td><td>insurance contract</td></tr>
+</table>
+
+<div class="warn"><strong>Drift detected</strong>: <code>core/contract_manager.py</code> references <code>contract.contract_type</code>, <code>contract.reward_leave_days</code>, and <code>contract.unpaid_leave_days</code> — fields that do NOT exist on the current Contract model. This indicates stale legacy code not yet migrated to match the current schema.</div>
+
+<h3>Which Should Be the Policy Scope?</h3>
+<p>For attendance policy purposes, the key question is: <strong>what determines an employee's work hours requirement?</strong></p>
+<ul>
+<li><strong>Option A: Employee.department ('1'-'5')</strong> — Used today by reports and holidays. Only 5 values. But it's a free-text field with no FK constraint, no validation, and is set once at creation.</li>
+<li><strong>Option B: Contract.contract_type_code ('1'-'7')</strong> — The authoritative employment type. Has 7 values. Is date-scoped (an employee can have different contract types over time). Has a resolver: <code>get_active_contract()</code>.</li>
+<li><strong>Option C: A new AttendancePolicy entity</strong> — Explicitly assigned per-employee or per-group, decoupled from both department and contract type.</li>
+</ul>
+<div class="info">This is a critical architecture decision. See <a href="#s8">Section 8</a> for full comparison. See <a href="#d1">Decision #1</a>.</div>
+
+<!-- ============================================================ -->
+<h2 id="s4">4. Schedule / Workday Analysis</h2>
+
+<h3>Current Workday Definition</h3>
+<p>The system has no formal "workday" concept. The day-off logic is entirely hard-coded:</p>
+<ul>
+<li><strong>Friday</strong> (weekday==4): always a day off</li>
+<li><strong>Holiday</strong>: from Holiday table (national or group-specific)</li>
+<li><strong>Rest day</strong>: DailyStatus code 'R' — treated as a day off in duty calculation</li>
+<li><strong>Leave</strong>: approved LeaveRequest — treated as a day off in duty calculation</li>
+<li><strong>Mission ('M')</strong>: DailyStatus code 'M' — <strong>NOT excluded from duty days</strong>. A mission day is still a work day.</li>
+</ul>
+
+<div class="info">There is NO per-weekday schedule. No "Saturday is a work day, Sunday is off" beyond the Friday rule. Every non-Friday, non-Holiday day is a potential work day.</div>
+
+<h3>No Scheduled Times</h3>
+<p><strong>Zero tables, zero code</strong> defines when an employee is expected to start or end their work day. The word "shift" in <code>core/time_calculator.py</code> refers to time-of-day band selection (morning 06:00-14:00 / evening 14:00-22:00 / night 22:00-06:00) for hour calculation, NOT a shift assignment.</p>
+
+<p>This means: <strong>Late and Early Leave cannot be computed without adding scheduled times.</strong> See Sections 12-13.</p>
+
+<!-- ============================================================ -->
+<h2 id="s5">5. Required Work Analysis</h2>
+
+<h3>How Duty Hours Are Calculated Today</h3>
+<p>Both the user view (<code>attendance.py:601-674</code>) and manager view (<code>admin.py:1082-1137</code>) use identical logic:</p>
+
+<pre>
+work_days = total_days - fridays - holidays      # non-off days
+duty_days = work_days - leave_days - rest_days   # subtract absences
+monthly_duty_hours = duty_days × DAILY_DUTY_HOURS  # DAILY_DUTY_HOURS = 7.333
+monthly_balance = actual_work_hours - monthly_duty_hours
+</pre>
+
+<p>Where <code>DAILY_DUTY_HOURS = 7 + 20/60 = 7.333...</code> (7 hours and 20 minutes).</p>
+
+<h3>All Locations Using DAILY_DUTY_HOURS</h3>
+<table>
+<tr><th>#</th><th class="file">File</th><th>Line(s)</th><th>Usage</th></tr>
+<tr><td>1</td><td class="file">web/routes/attendance.py</td><td>55</td><td><strong>Definition</strong>: <code>DAILY_DUTY_HOURS = 7 + 20/60</code></td></tr>
+<tr><td>2</td><td class="file">web/routes/attendance.py</td><td>622</td><td>User view monthly duty</td></tr>
+<tr><td>3</td><td class="file">web/routes/attendance.py</td><td>661</td><td>User view instant duty</td></tr>
+<tr><td>4</td><td class="file">web/routes/admin.py</td><td>1100</td><td>Manager view monthly duty</td></tr>
+<tr><td>5</td><td class="file">web/routes/admin.py</td><td>1129</td><td>Manager view instant duty</td></tr>
+<tr><td>6</td><td class="file">web/routes/admin.py</td><td>1188</td><td>This-week duty hours</td></tr>
+<tr><td>7</td><td class="file">web/routes/admin.py</td><td>1212</td><td>Prev-week duty hours</td></tr>
+<tr><td>8</td><td class="file">web/routes/admin.py</td><td>1255</td><td>Weekly balance (past months)</td></tr>
+<tr><td>9</td><td class="file">core/detailed_monthly_report_v2.py</td><td>Class const</td><td><code>DAILY_REQUIRED_HOURS = 7.33</code></td></tr>
+<tr><td>10</td><td class="file">core/analytical_report.py</td><td>Dict init</td><td><code>DAILY_REQUIRED_HOURS = {'0':7.33, ..., '5':7.33}</code></td></tr>
+</table>
+
+<div class="info"><strong>Phase 1 discrepancy confirmed</strong>: Phase 1 suggested <code>DEFAULT_REQUIRED_HOURS = 8.0</code> as a fallback. This value does NOT exist anywhere in the repository. The only value in code is 7.33/7:20. See <a href="#s10">Section 10</a> for the default-policy decision.</div>
+
+<!-- ============================================================ -->
+<h2 id="s6">6. 7:20 Hard-code Analysis</h2>
+
+<h3>Why 7:20?</h3>
+<p>The value 7:20 (7 hours, 20 minutes = 7.333 hours) appears to be the official daily required work hours per Iranian labor law for a standard 44-hour work week (44 / 6 working days ≈ 7.33). However:</p>
+<ul>
+<li>The repo hard-codes this for ALL employees regardless of contract type</li>
+<li>Contract types '5' (پزشک), '6' (سایر), '7' (قرارداد با بیمهها) have 0 annual leave in CONTRACT_TYPES, suggesting different rules — but no different work hours</li>
+<li>No code anywhere resolves "what are this employee's required hours?" — it's always the global constant</li>
+</ul>
+
+<h3>Impact of Hard-coding</h3>
+<ul>
+<li><strong>Balance calculation</strong> is wrong for any employee whose actual requirement differs from 7:20</li>
+<li><strong>Reports</strong> (V2 and analytical) use 7.33 as a fixed value, with a comment in analytical_report.py: <code>"# بعداً تغییر میکند"</code> ("will change later") — confirming the developer intended this to be configurable</li>
+<li><strong>Overtime</strong> calculations are downstream of this; wrong duty hours → wrong overtime</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="s7">7. Existing Policy Architecture</h2>
+
+<h3>Policy + PolicyValue Pattern</h3>
+<pre>
+Policy (id, category, name, description, is_active, effective_from_year, effective_to_year)
+  └── PolicyValue (policy_id, region_code, parameter_key, parameter_value, is_editable, notes)
+        └── PolicyAuditLog (entity_type, entity_id, action, old_value, new_value, changed_by, reason)
+</pre>
+
+<h3>Current Categories</h3>
+<table>
+<tr><th>Category</th><th>Parameters</th><th>Admin UI</th></tr>
+<tr><td><code>'leave'</code></td><td>carry_forward_dept_{1-5}, annual_leave_dept_{1-5}, region_applies_dept_{1-5}</td><td>✅ <code>/admin/policies/leave</code></td></tr>
+<tr><td><code>'attendance'</code></td><td><em>None yet</em></td><td>🔜 <code>/admin/policies/attendance</code> (disabled card in policies.html)</td></tr>
+</table>
+
+<h3>How Leave Policy is Resolved</h3>
+<p>The leave policy uses a per-department key pattern: <code>carry_forward_dept_1</code>, <code>annual_leave_dept_2</code>, etc. The <code>_dept_{N}</code> suffix matches <code>Employee.department</code> values. Region override is via a separate <code>region_applies_dept_{N}</code> key.</p>
+
+<div class="ok">The existing Policy/PolicyValue infrastructure is fully capable of supporting attendance policy. No new tables or schema changes are required.</div>
+
+<h3>EmployeeRegion — Temporal Precedent</h3>
+<p><code>EmployeeRegion(user_id, region_code, effective_from, effective_to)</code> is the only date-scoped attribute resolution in the system. Its pattern (nullable <code>effective_to</code> for "current") is the model for any future temporal policy resolution.</p>
+
+<!-- ============================================================ -->
+<h2 id="s8">8. Policy Scope Options</h2>
+
+<p>Question: <strong>What determines an employee's attendance policy (required hours, late rules, etc.)?</strong></p>
+
+<h3>Option A: Contract Type (contract_type_code)</h3>
+<div class="option-box">
+<strong>Approach</strong>: Resolve the employee's active contract via <code>get_active_contract(user_id, target_date)</code>, then use <code>contract.contract_type_code</code> to look up policy parameters.<br>
+<strong>Pros</strong>: Already date-scoped; authoritative employment type; 7 distinct types.<br>
+<strong>Cons</strong>: Requires joining Contract on every attendance calculation; contract_type codes (1-7) don't match department codes (1-5) in existing leave policy keys; two employees with same contract_type may need different schedules.<br>
+<strong>Key issue</strong>: Leave policy already uses department codes ('1'-'5'), not contract codes ('1'-'7'). This would create two parallel scoping systems.
+</div>
+
+<h3>Option B: Employee Department (department field)</h3>
+<div class="option-box">
+<strong>Approach</strong>: Use <code>Employee.department</code> (the existing group code '1'-'5') as the policy scope key, matching the leave policy pattern.<br>
+<strong>Pros</strong>: Consistent with existing leave policy keys (<code>_dept_{N}</code>); already used by reports and holidays; no join needed (Employee is already loaded).<br>
+<strong>Cons</strong>: Free-text field with no FK constraint; only 5 values; doesn't capture per-employee overrides; values could be misspelled.<br>
+<strong>Key issue</strong>: This perpetuates the department-as-group conflation. It works, but it's architecturally impure.
+</div>
+
+<h3>Option C: Explicit Policy Assignment (new field or join table)</h3>
+<div class="option-box recommended">
+<strong>Approach</strong>: Add a <code>policy_group</code> field to Employee (or use a mapping table), explicitly linking each employee to an attendance policy group. The group determines default parameters, with optional per-employee overrides via PolicyValue.<br>
+<strong>Pros</strong>: Decoupled from both department and contract type; supports per-employee overrides; clean separation of concerns; can evolve independently.<br>
+<strong>Cons</strong>: Requires a new field (migration); requires initial data population; adds one more lookup.<br>
+<strong>Key issue</strong>: The existing <code>Employee.department</code> already functions as a policy group in practice. Adding another field may be over-engineering.
+</div>
+
+<h3>Option D: Hybrid — Department as default, per-employee override via PolicyValue</h3>
+<div class="option-box recommended">
+<strong>Approach</strong>: Use <code>Employee.department</code> as the default policy scope (matching the existing <code>_dept_{N}</code> pattern), BUT allow per-employee overrides by adding PolicyValue entries with a <code>user_id</code> scope instead of <code>region_code</code>.<br>
+<strong>Pros</strong>: Backward-compatible with leave policy pattern; supports exceptions; no new fields; uses existing infrastructure.<br>
+<strong>Cons</strong>: Slightly more complex resolution logic; still relies on the department field being properly set.<br>
+<strong>This is the recommended approach.</strong> It builds on proven patterns and requires minimal change.
+</div>
+
+<div class="decision" id="d1">
+<strong>Decision #1: Policy Scope</strong><br>
+<strong>Question</strong>: What determines an employee's attendance policy (required hours, scheduled times, late/early rules)?<br>
+<strong>Why it matters</strong>: This is the foundational design decision. Every downstream component (policy resolution, report calculation, UI) depends on this.<br>
+<strong>Options</strong>: (A) Contract type, (B) Department, (C) Explicit assignment, (D) Hybrid dept+override.<br>
+<strong>Recommended</strong>: Option D — Hybrid. Use Employee.department as the default scope (consistent with leave policy), with per-employee PolicyValue overrides.<br>
+<strong>Needs user confirmation: YES</strong>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s9">9. Recommended Policy Architecture</h2>
+
+<h3>Attendance Policy Parameters</h3>
+<p>Proposed PolicyValue entries under <code>category='attendance'</code>:</p>
+
+<table>
+<tr><th>parameter_key</th><th>Default</th><th>Description</th><th>Scope</th></tr>
+<tr><td><code>required_work_hours</code></td><td>7.33</td><td>Daily required work hours (e.g., 7:20 = 7.33)</td><td>Per-dept + per-employee override</td></tr>
+<tr><td><code>scheduled_start_time</code></td><td>07:00</td><td>Expected arrival time (HH:MM)</td><td>Per-dept + per-employee override</td></tr>
+<tr><td><code>scheduled_end_time</code></td><td>14:20</td><td>Expected departure time (HH:MM)</td><td>Per-dept + per-employee override</td></tr>
+<tr><td><code>late_enabled</code></td><td>false</td><td>Whether to track late arrivals</td><td>Per-dept</td></tr>
+<tr><td><code>late_allowed_minutes</code></td><td>0</td><td>Grace period before counting as late (minutes)</td><td>Per-dept</td></tr>
+<tr><td><code>early_leave_enabled</code></td><td>false</td><td>Whether to track early departures</td><td>Per-dept</td></tr>
+<tr><td><code>early_leave_allowed_minutes</code></td><td>0</td><td>Grace period before counting as early leave (minutes)</td><td>Per-dept</td></tr>
+</table>
+
+<h3>Resolution Order</h3>
+<pre>
+resolve_attendance_policy(user_id, target_date):
+  1. Get employee's department code
+  2. Look up PolicyValue(category='attendance', key=param, suffix='_dept_{code}')
+  3. If per-employee override exists (new key pattern: 'param_user_{user_id}'), use it
+  4. If no policy found → use system default (see Section 10)
+</pre>
+
+<h3>Why NOT per-Contract-Type?</h3>
+<p>The leave policy already established the <code>_dept_{N}</code> pattern. Using a different scoping mechanism for attendance would create confusion. The department field, while imperfect, is the proven convention. Per-employee overrides handle any exceptions.</p>
+
+<!-- ============================================================ -->
+<h2 id="s10">10. Default Policy Decision</h2>
+
+<p>When no PolicyValue entry exists for an employee, what should the system do?</p>
+
+<h3>Options</h3>
+<div class="option-box">
+<strong>Option A: Use 8.0 hours (Phase 1 suggestion)</strong><br>
+Phase 1 proposed <code>DEFAULT_REQUIRED_HOURS = 8.0</code>. However, this value does NOT exist anywhere in the current codebase. Every single usage is 7.33. Changing the default to 8.0 would alter balance calculations for ALL employees without policy — a breaking change with no business justification.
+</div>
+
+<div class="option-box recommended">
+<strong>Option B: Use 7.33 (7:20) — preserve current behavior</strong><br>
+The current hard-coded value is 7:20. Using this as the default ensures zero behavioral change during migration. All existing balances remain correct. This is the safe no-policy behavior.
+</div>
+
+<div class="option-box">
+<strong>Option C: Fail / show warning</strong><br>
+Treat missing policy as a configuration error. Show a warning in UI. This forces immediate policy setup but risks breaking the attendance view for all employees until policy is configured.
+</div>
+
+<div class="decision" id="d2">
+<strong>Decision #2: Default Required Hours</strong><br>
+<strong>Question</strong>: What is the default daily required work hours when no attendance policy is configured?<br>
+<strong>Why it matters</strong>: This determines what happens to all existing employees during and after migration. 8.0 would change balances; 7.33 preserves current behavior.<br>
+<strong>Options</strong>: (A) 8.0, (B) 7.33 (current), (C) fail/warn.<br>
+<strong>Recommended</strong>: Option B — 7.33 (7:20). Zero behavioral change during migration. Matches all existing code.<br>
+<strong>Needs user confirmation: YES</strong>
+</div>
+
+<div class="warn"><strong>Phase 1 discrepancy</strong>: Phase 1 suggested <code>DEFAULT_REQUIRED_HOURS = 8.0</code> without repository evidence. The repo contains only 7.33. Adopting 8.0 would be a business decision, not a technical one, and would change every employee's balance calculation.</div>
+
+<!-- ============================================================ -->
+<h2 id="s11">11. Historical Attendance Strategy</h2>
+
+<p>When an employee's attendance policy changes (e.g., required hours change from 7:20 to 8:00), how should past attendance be treated?</p>
+
+<h3>Option A: Current-only (no history)</h3>
+<div class="option-box">
+<strong>Approach</strong>: Always apply the CURRENT policy to all attendance calculations, including past months.<br>
+<strong>Pros</strong>: Simplest implementation; no date-scoping logic needed.<br>
+<strong>Cons</strong>: Historically calculated balances change retroactively; past reports show different numbers after policy change; audit trail is lost.
+</div>
+
+<h3>Option B: Effective-date resolution (like EmployeeRegion)</h3>
+<div class="option-box recommended">
+<strong>Approach</strong>: Store policy changes with effective dates. When calculating attendance for a given date, resolve the policy that was active on that date.<br>
+<strong>Pros</strong>: Correct historical calculation; audit trail; retroactive policy changes work correctly.<br>
+<strong>Cons</strong>: More complex resolution logic; requires Policy.effective_from_year/to_year to be properly maintained.
+</div>
+
+<h3>Option C: Store resolved values per-attendance-day</h3>
+<div class="option-box">
+<strong>Approach</strong>: When attendance is recorded, resolve and store the applicable policy values alongside the attendance record.<br>
+<strong>Pros</strong>: Fast reads; immutable audit trail.<br>
+<strong>Cons</strong>: Schema change to Attendance table; data duplication; policy changes don't retroactively fix stored values.
+</div>
+
+<div class="decision" id="d3">
+<strong>Decision #3: Historical Attendance</strong><br>
+<strong>Question</strong>: How should past attendance be calculated when the policy changes?<br>
+<strong>Why it matters</strong>: This affects report accuracy, audit compliance, and implementation complexity.<br>
+<strong>Options</strong>: (A) Current-only, (B) Effective-date resolution, (C) Store resolved values.<br>
+<strong>Recommended</strong>: Option B — Effective-date resolution. The existing <code>Policy.effective_from_year/effective_to_year</code> already supports this. Follow the EmployeeRegion pattern.<br>
+<strong>Needs user confirmation: YES</strong>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s12">12. Late Analysis</h2>
+
+<h3>Current State</h3>
+<p><strong>Zero late-tracking logic exists.</strong> The system records when an employee punches in/out but never compares against a scheduled time. No "late" status, no late count, no late penalty.</p>
+
+<h3>What's Needed</h3>
+<ol>
+<li><strong>Scheduled start time</strong>: Must be stored per-department or per-employee (see Section 9: <code>scheduled_start_time</code> parameter)</li>
+<li><strong>First-entry comparison</strong>: Compare the employee's first punch-in of the day against the scheduled start time + grace period</li>
+<li><strong>Late computation</strong>: <code>late_minutes = max(0, first_punch_in - scheduled_start - grace_minutes)</code></li>
+<li><strong>Status display</strong>: Show 'late' status in the daily attendance view</li>
+</ol>
+
+<h3>Night Shift Complication</h3>
+<p>The system has implicit enter/exit for night shifts (00:00:00 entry, 23:59:59 exit). Late calculation for night shifts would need different scheduled times. This adds complexity.</p>
+
+<div class="decision" id="d4">
+<strong>Decision #4: Late Tracking Scope</strong><br>
+<strong>Question</strong>: Should late tracking apply to all employees or only specific groups?<br>
+<strong>Why it matters</strong>: Not all contract types may have strict arrival requirements (e.g., doctors, on-call staff).<br>
+<strong>Options</strong>: (A) All employees, (B) Per-department enable/disable via policy, (C) Per-employee opt-in.<br>
+<strong>Recommended</strong>: Option B — Per-department via <code>late_enabled</code> policy parameter. Default OFF.<br>
+<strong>Needs user confirmation: YES</strong>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s13">13. Early Leave Analysis</h2>
+
+<h3>Current State</h3>
+<p><strong>Zero early-leave logic exists.</strong> Same as late — no comparison against scheduled end time.</p>
+
+<h3>What's Needed</h3>
+<ol>
+<li><strong>Scheduled end time</strong>: Must be stored per-department or per-employee (Section 9: <code>scheduled_end_time</code>)</li>
+<li><strong>Last-exit comparison</strong>: Compare the employee's last punch-out against the scheduled end time minus grace period</li>
+<li><strong>Early leave computation</strong>: <code>early_minutes = max(0, scheduled_end - grace_minutes - last_punch_out)</code></li>
+<li><strong>Status display</strong>: Show 'early leave' in the daily view</li>
+</ol>
+
+<h3>Interaction with Work Hours</h3>
+<p>An employee who leaves early but already worked <code>required_work_hours</code> (e.g., arrived at 06:00, finished at 13:20, required = 7:20) should NOT be penalized. Early leave should only trigger when the employee hasn't completed their required hours AND left before the scheduled end.</p>
+
+<div class="decision" id="d5">
+<strong>Decision #5: Early Leave Scope</strong><br>
+<strong>Question</strong>: Should early leave tracking mirror the late tracking configuration?<br>
+<strong>Why it matters</strong>: Same flexibility concern as late tracking.<br>
+<strong>Options</strong>: (A) Mirror late settings, (B) Independent <code>early_leave_enabled</code> per department.<br>
+<strong>Recommended</strong>: Option B — Independent. Some departments may want late tracking but not early leave, or vice versa.<br>
+<strong>Needs user confirmation: YES</strong>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s14">14. Grace Period Semantics</h2>
+
+<h3>Double-Counting Risk</h3>
+<p>If grace period is applied to both late and early leave, an employee arriving 10 minutes late and leaving 10 minutes early (with a 10-minute grace) would show as: 0 late, 0 early — but they worked 20 fewer minutes. Is this the desired behavior?</p>
+
+<h3>Options</h3>
+<div class="option-box recommended">
+<strong>Option A: Independent grace periods</strong><br>
+Late grace and early leave grace are independent. An employee arriving 10 min late with 10-min grace = not late. Leaving 10 min early with 10-min grace = not early. The missing 20 minutes are reflected in the WORK HOURS balance, not in late/early counts.<br>
+<strong>This is the standard approach.</strong>
+</div>
+
+<div class="option-box">
+<strong>Option B: Combined grace budget</strong><br>
+A single daily grace budget (e.g., 10 minutes) shared between late and early. If you use 5 minutes of grace for lateness, you have 5 left for early departure.<br>
+<strong>More complex, unusual, but prevents gaming.</strong>
+</div>
+
+<div class="decision" id="d6">
+<strong>Decision #6: Grace Period Semantics</strong><br>
+<strong>Question</strong>: How should late and early-leave grace periods interact?<br>
+<strong>Why it matters</strong>: Affects employee fairness and potential gaming behavior.<br>
+<strong>Options</strong>: (A) Independent, (B) Combined budget.<br>
+<strong>Recommended</strong>: Option A — Independent. Simpler, standard, and the work-hours balance already captures the total time shortfall.<br>
+<strong>Needs user confirmation: YES</strong>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s15">15. Balance Interaction</h2>
+
+<h3>Current Balance Formula</h3>
+<pre>
+monthly_balance = actual_work_hours - (duty_days × required_hours)
+</pre>
+
+<h3>How Late/Early Should Interact</h3>
+<p>Late/early are <strong>informational labels</strong> on top of the existing balance calculation. They do NOT change the balance formula:</p>
+<ul>
+<li><strong>Balance</strong>: Still computed from actual hours vs. required hours. An employee who is 30 min late but works through lunch has the same balance as one who arrived on time and left on time.</li>
+<li><strong>Late count</strong>: A separate metric. Useful for HR reporting and policy compliance.</li>
+<li><strong>Early leave count</strong>: Same — informational.</li>
+<li><strong>Grace period</strong>: Only affects whether a punch is labeled "late" or "early"; does NOT add time to the balance.</li>
+</ul>
+
+<div class="ok">The existing balance formula is correct. Late/early are overlay metrics, not balance modifiers.</div>
+
+<!-- ============================================================ -->
+<h2 id="s16">16. User View</h2>
+
+<h3>Current User View (<code>attendance.py</code>)</h3>
+<ul>
+<li>Shows daily attendance with punch pairs, work hours, status</li>
+<li>Monthly duty: <code>duty_days × DAILY_DUTY_HOURS</code></li>
+<li>Instant duty: duty days up to reference date × DAILY_DUTY_HOURS</li>
+<li>Balance: actual - duty</li>
+<li>Progress: actual / duty × 100</li>
+</ul>
+
+<h3>Bug in User View</h3>
+<div class="bug">
+<code>attendance.py:460</code>: <code>user_group = Employee.department if Employee else None</code><br>
+<br>
+<code>Employee</code> here is the SQLAlchemy model class (imported at the top of the file), NOT an employee instance. It is always truthy. This means <code>user_group</code> is always the Column object <code>Employee.department</code>, never None.<br>
+<br>
+The holiday filter at line 469-476 then compares <code>Holiday.group_id == &lt;Column object&gt;</code>, which likely generates incorrect SQL. The user view never fetches the Employee row for the current user.<br>
+<br>
+<strong>Fix needed</strong>: Fetch the Employee row for <code>user.user_id</code> and use <code>emp.department</code>.
+</div>
+
+<h3>Proposed Changes</h3>
+<ul>
+<li>Replace hard-coded <code>DAILY_DUTY_HOURS</code> with policy lookup</li>
+<li>Fix the Employee.department bug (fetch Employee row)</li>
+<li>Add late/early indicators per day (if enabled)</li>
+<li>Show scheduled start/end times in the day header</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="s17">17. Manager View</h2>
+
+<h3>Current Manager View (<code>admin.py:1000-1280</code>)</h3>
+<ul>
+<li>Same duty/balance calculation as user view (duplicated code)</li>
+<li>Weekly cards: this week / prev week / weekly balance for past months</li>
+<li>Per-user attendance detail with all punch records</li>
+<li>Uses <code>DAILY_DUTY_HOURS</code> at lines 1100, 1129, 1188, 1212, 1255</li>
+</ul>
+
+<h3>Code Duplication</h3>
+<div class="warn">
+The duty calculation logic is duplicated between <code>attendance.py:601-674</code> and <code>admin.py:1082-1137</code>. Any policy resolution should be extracted to a shared function (see Section 21).
+</div>
+
+<h3>Proposed Changes</h3>
+<ul>
+<li>Same policy-aware calculation as user view</li>
+<li>Late/early summary per employee (manager dashboard)</li>
+<li>Late/early detail in per-user view</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="s18">18. Reports</h2>
+
+<h3>Reports Affected by Attendance Policy</h3>
+<table>
+<tr><th>Report</th><th class="file">File</th><th>Hard-coded Value</th><th>Impact</th></tr>
+<tr><td>Detailed Monthly V2</td><td class="file">core/detailed_monthly_report_v2.py</td><td><code>DAILY_REQUIRED_HOURS = 7.33</code></td><td>Surplus/deficit calculation</td></tr>
+<tr><td>Analytical Report</td><td class="file">core/analytical_report.py</td><td><code>DAILY_REQUIRED_HOURS = {0-5: 7.33}</code></td><td>Monthly difference calculation</td></tr>
+<tr><td>Monthly Stats</td><td class="file">web/routes/reports.py</td><td>None (uses attendance view data)</td><td>Indirect via attendance calculations</td></tr>
+</table>
+
+<h3>Report Generator Pattern</h3>
+<p>Both report generators filter employees by <code>Employee.department</code> (V2 defaults to '4' قراردادی). They compute per-day statuses and surplus/deficit against the hard-coded 7.33.</p>
+
+<h3>Proposed Changes</h3>
+<ul>
+<li>Replace <code>DAILY_REQUIRED_HOURS</code> with policy-aware lookup per employee</li>
+<li>Add late/early columns to detailed reports (if enabled)</li>
+<li>Add department-level late/early summaries to analytical report</li>
+</ul>
+
+<div class="decision" id="d7">
+<strong>Decision #7: Report Late/Early Inclusion</strong><br>
+<strong>Question</strong>: Should late/early data appear in all reports or only specific ones?<br>
+<strong>Why it matters</strong>: Affects report complexity and data volume.<br>
+<strong>Options</strong>: (A) All reports, (B) Only detailed monthly, (C) Only a new "late/early report".<br>
+<strong>Recommended</strong>: Option B — Start with detailed monthly report only. Add to other reports based on feedback.<br>
+<strong>Needs user confirmation: YES</strong>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s19">19. UI Design</h2>
+
+<h3>Admin Policies Page (<code>/admin/policies</code>)</h3>
+<p>The <code>policies.html</code> template already has a disabled "حضور و غیاب" card (lines 68-81). Enable it and link to a new <code>/admin/policies/attendance</code> page.</p>
+
+<h3>Proposed Attendance Policy Page</h3>
+<p>Follow the pattern of <code>policy_leave.html</code>: cards per department with input fields for each parameter.</p>
+
+<pre>
+/admin/policies/attendance (GET)
+  → Renders policy_attendance.html
+  → Shows table: Department | Required Hours | Start Time | End Time | Late Enabled | Late Grace | Early Enabled | Early Grace
+
+/admin/policies/attendance/save (POST)
+  → Saves all PolicyValue entries for category='attendance'
+  → Writes PolicyAuditLog for each change
+</pre>
+
+<h3>User View Changes</h3>
+<ul>
+<li>Add scheduled time display in day header: "موظفی: 07:00 - 14:20"</li>
+<li>Add late indicator: ⏰ with minutes if late</li>
+<li>Add early leave indicator: ⏰ with minutes if left early</li>
+<li>Keep existing balance display unchanged</li>
+</ul>
+
+<h3>Manager View Changes</h3>
+<ul>
+<li>Add late/early count to the weekly summary cards</li>
+<li>Add late/early indicators in per-user daily detail</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="s20">20. Validation Rules</h2>
+
+<table>
+<tr><th>Rule</th><th>Where</th><th>Enforcement</th></tr>
+<tr><td>required_work_hours must be 0-24</td><td>Policy UI + API</td><td>Server-side + client-side</td></tr>
+<tr><td>scheduled_start_time must be valid HH:MM</td><td>Policy UI + API</td><td>Server-side parse</td></tr>
+<tr><td>scheduled_end_time must be valid HH:MM</td><td>Policy UI + API</td><td>Server-side parse</td></tr>
+<tr><td>start_time must be before end_time (same day)</td><td>Policy UI + API</td><td>Server-side compare</td></tr>
+<tr><td>late_allowed_minutes must be 0-120</td><td>Policy UI + API</td><td>Server-side + client-side</td></tr>
+<tr><td>early_leave_allowed_minutes must be 0-120</td><td>Policy UI + API</td><td>Server-side + client-side</td></tr>
+<tr><td>At least one policy must exist per active department</td><td>System check</td><td>Warning in admin UI if missing</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="s21">21. Final Architecture</h2>
+
+<h3>Architecture Diagram</h3>
+<pre>
+┌─────────────────────────────────────────────────────────────────┐
+│                      Admin Policy UI                            │
+│              /admin/policies/attendance                         │
+│         ┌──────────────────────────────┐                        │
+│         │  PolicyValue(category='attend')│                       │
+│         │  per-dept + per-employee      │                       │
+│         └──────────────┬───────────────┘                        │
+├────────────────────────┼────────────────────────────────────────┤
+│                   Shared Service                                │
+│         ┌──────────────┴───────────────┐                        │
+│         │  resolve_attendance_policy() │                       │
+│         │  - required_work_hours       │                       │
+│         │  - scheduled_start_time      │                       │
+│         │  - scheduled_end_time        │                       │
+│         │  - late_enabled/grace        │                       │
+│         │  - early_leave_enabled/grace │                       │
+│         └──────────────┬───────────────┘                        │
+├────────────────────────┼────────────────────────────────────────┤
+│              ┌─────────┴──────────┐                             │
+│              ▼                    ▼                              │
+│     ┌────────────┐     ┌─────────────┐                          │
+│     │ User View  │     │ Manager View│                          │
+│     │attendance.py│    │ admin.py    │                          │
+│     └─────┬──────┘     └──────┬──────┘                          │
+│           │                   │                                  │
+│           ▼                   ▼                                  │
+│     ┌──────────────────────────────┐                             │
+│     │     Report Generators        │                             │
+│     │  V2 + Analytical + Stats     │                             │
+│     └──────────────────────────────┘                             │
+└─────────────────────────────────────────────────────────────────┘
+</pre>
+
+<h3>Key Design Decisions</h3>
+<ol>
+<li><strong>Policy scope</strong>: Employee.department (hybrid with per-employee override)</li>
+<li><strong>Default required hours</strong>: 7.33 (7:20) — zero behavioral change</li>
+<li><strong>No new tables</strong>: Use existing Policy/PolicyValue infrastructure</li>
+<li><strong>Shared service</strong>: Single <code>resolve_attendance_policy()</code> used by user view, manager view, and reports</li>
+<li><strong>Late/early are overlay metrics</strong>: Do not change balance formula</li>
+<li><strong>Grace periods are independent</strong>: Late grace ≠ early leave grace</li>
+<li><strong>Historical resolution</strong>: Use Policy.effective_from_year/to_year (follow EmployeeRegion pattern)</li>
+</ol>
+
+<!-- ============================================================ -->
+<h2 id="s22">22. Final Implementation Specification</h2>
+
+<h3>22.1 New Shared Function</h3>
+<pre class="mono">
+# File: core/attendance_policy.py (NEW)
+
+def resolve_attendance_policy(
+    db: Session,
+    user_id: str,
+    department: Optional[str],
+    target_date: Optional[date] = None
+) -> dict:
+    """
+    Resolves attendance policy for a user.
+    Returns dict with keys:
+      required_work_hours (float, default 7.33)
+      scheduled_start_time (str 'HH:MM', default '07:00')
+      scheduled_end_time (str 'HH:MM', default '14:20')
+      late_enabled (bool, default False)
+      late_allowed_minutes (int, default 0)
+      early_leave_enabled (bool, default False)
+      early_leave_allowed_minutes (int, default 0)
+    """
+</pre>
+
+<h3>22.2 PolicyValue Key Patterns</h3>
+<pre class="mono">
+# Per-department (default for all employees in that dept):
+attendance_required_work_hours_dept_{1-5}
+attendance_scheduled_start_time_dept_{1-5}
+attendance_scheduled_end_time_dept_{1-5}
+attendance_late_enabled_dept_{1-5}
+attendance_late_allowed_minutes_dept_{1-5}
+attendance_early_leave_enabled_dept_{1-5}
+attendance_early_leave_allowed_minutes_dept_{1-5}
+
+# Per-employee (override):
+attendance_required_work_hours_user_{user_id}
+attendance_scheduled_start_time_user_{user_id}
+# ... etc
+</pre>
+
+<h3>22.3 Late/Early Computation</h3>
+<pre class="mono">
+def compute_late_minutes(first_punch_in: time, scheduled_start: time, grace: int) -> int:
+    """Returns late minutes, or 0 if within grace."""
+    scheduled_dt = datetime.combine(date.today(), scheduled_start) + timedelta(minutes=grace)
+    actual_dt = datetime.combine(date.today(), first_punch_in)
+    diff = (actual_dt - scheduled_dt).total_seconds() / 60
+    return max(0, int(diff))
+
+def compute_early_leave_minutes(last_punch_out: time, scheduled_end: time, grace: int) -> int:
+    """Returns early-leave minutes, or 0 if within grace."""
+    scheduled_dt = datetime.combine(date.today(), scheduled_end) - timedelta(minutes=grace)
+    actual_dt = datetime.combine(date.today(), last_punch_out)
+    diff = (scheduled_dt - actual_dt).total_seconds() / 60
+    return max(0, int(diff))
+</pre>
+
+<h3>22.4 Attendance Day Status Extension</h3>
+<pre class="mono">
+# Extend analyze_day_status() return dict with:
+{
+    'late_minutes': int,      # 0 if not late
+    'early_leave_minutes': int, # 0 if not early
+    'is_late': bool,
+    'is_early_leave': bool,
+}
+</pre>
+
+<h3>22.5 Report Changes</h3>
+<ul>
+<li><code>detailed_monthly_report_v2.py</code>: Replace <code>DAILY_REQUIRED_HOURS = 7.33</code> with per-employee policy lookup</li>
+<li><code>analytical_report.py</code>: Replace <code>DAILY_REQUIRED_HOURS</code> dict with per-employee lookup</li>
+<li>Add late/early columns to detailed monthly report output</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="s23">23. Open Business Decisions</h2>
+
+<div class="decision" id="d1-repeat">
+<strong>Decision #1: Policy Scope</strong><br>
+<strong>Question</strong>: What determines an employee's attendance policy?<br>
+<strong>Why it matters</strong>: Foundational design decision affecting every downstream component.<br>
+<strong>Options</strong>: (A) Contract type, (B) Department, (C) Explicit assignment, (D) Hybrid dept+override.<br>
+<strong>Recommended</strong>: D — Hybrid (department as default, per-employee override via PolicyValue).<br>
+<strong>Needs user confirmation: YES</strong>
+</div>
+
+<div class="decision" id="d2-repeat">
+<strong>Decision #2: Default Required Hours</strong><br>
+<strong>Question</strong>: What is the default daily required work hours when no policy is configured?<br>
+<strong>Why it matters</strong>: 8.0 would change balances for all existing employees; 7.33 preserves current behavior.<br>
+<strong>Options</strong>: (A) 8.0, (B) 7.33 (current), (C) fail/warn.<br>
+<strong>Recommended</strong>: B — 7.33. Zero behavioral change. Matches all existing code.<br>
+<strong>Needs user confirmation: YES</strong>
+</div>
+
+<div class="decision" id="d3-repeat">
+<strong>Decision #3: Historical Attendance</strong><br>
+<strong>Question</strong>: How should past attendance be calculated when policy changes?<br>
+<strong>Why it matters</strong>: Affects report accuracy and audit compliance.<br>
+<strong>Options</strong>: (A) Current-only, (B) Effective-date resolution, (C) Store resolved values.<br>
+<strong>Recommended</strong>: B — Effective-date resolution using Policy.effective_from/to_year.<br>
+<strong>Needs user confirmation: YES</strong>
+</div>
+
+<div class="decision" id="d4-repeat">
+<strong>Decision #4: Late Tracking Scope</strong><br>
+<strong>Question</strong>: Should late tracking apply to all employees or specific groups?<br>
+<strong>Why it matters</strong>: Not all contract types may have strict arrival requirements.<br>
+<strong>Options</strong>: (A) All, (B) Per-department enable/disable, (C) Per-employee opt-in.<br>
+<strong>Recommended</strong>: B — Per-department via <code>late_enabled</code> policy parameter. Default OFF.<br>
+<strong>Needs user confirmation: YES</strong>
+</div>
+
+<div class="decision" id="d5-repeat">
+<strong>Decision #5: Early Leave Scope</strong><br>
+<strong>Question</strong>: Should early leave tracking mirror late tracking?<br>
+<strong>Why it matters</strong>: Flexibility for different department policies.<br>
+<strong>Options</strong>: (A) Mirror late, (B) Independent <code>early_leave_enabled</code>.<br>
+<strong>Recommended</strong>: B — Independent enable/disable per department.<br>
+<strong>Needs user confirmation: YES</strong>
+</div>
+
+<div class="decision" id="d6-repeat">
+<strong>Decision #6: Grace Period Semantics</strong><br>
+<strong>Question</strong>: How should late and early-leave grace periods interact?<br>
+<strong>Why it matters</strong>: Affects fairness and gaming behavior.<br>
+<strong>Options</strong>: (A) Independent, (B) Combined budget.<br>
+<strong>Recommended</strong>: A — Independent. Standard approach. Work-hours balance captures total shortfall.<br>
+<strong>Needs user confirmation: YES</strong>
+</div>
+
+<div class="decision" id="d7-repeat">
+<strong>Decision #7: Report Late/Early Inclusion</strong><br>
+<strong>Question</strong>: Should late/early data appear in all reports or specific ones?<br>
+<strong>Why it matters</strong>: Affects report complexity and data volume.<br>
+<strong>Options</strong>: (A) All reports, (B) Only detailed monthly, (C) New dedicated report.<br>
+<strong>Recommended</strong>: B — Start with detailed monthly only. Expand based on feedback.<br>
+<strong>Needs user confirmation: YES</strong>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s24">24. File Change Plan</h2>
+
+<table>
+<tr><th>Priority</th><th class="file">File</th><th>Change</th></tr>
+<tr>
+  <td><span class="tag tag-new">NEW</span></td>
+  <td class="file">core/attendance_policy.py</td>
+  <td>New shared service: <code>resolve_attendance_policy()</code>, <code>compute_late_minutes()</code>, <code>compute_early_leave_minutes()</code></td>
+</tr>
+<tr>
+  <td><span class="tag tag-new">NEW</span></td>
+  <td class="file">web/templates/admin/policy_attendance.html</td>
+  <td>New template: attendance policy admin page (follow policy_leave.html pattern)</td>
+</tr>
+<tr>
+  <td><span class="tag tag-p0">P0</span></td>
+  <td class="file">web/routes/attendance.py</td>
+  <td>Line 460: Fix Employee.department bug. Lines 55/622/661: Replace DAILY_DUTY_HOURS with policy lookup. Add late/early to day status.</td>
+</tr>
+<tr>
+  <td><span class="tag tag-p0">P0</span></td>
+  <td class="file">web/routes/admin.py</td>
+  <td>Lines 1100/1129/1188/1212/1255: Replace DAILY_DUTY_HOURS with policy lookup. Add late/early to manager views.</td>
+</tr>
+<tr>
+  <td><span class="tag tag-p0">P0</span></td>
+  <td class="file">web/routes/admin_policy.py</td>
+  <td>Add routes: GET/POST <code>/admin/policies/attendance</code> and <code>/admin/policies/attendance/save</code></td>
+</tr>
+<tr>
+  <td><span class="tag tag-p1">P1</span></td>
+  <td class="file">core/detailed_monthly_report_v2.py</td>
+  <td>Replace <code>DAILY_REQUIRED_HOURS = 7.33</code> with per-employee policy lookup. Add late/early columns.</td>
+</tr>
+<tr>
+  <td><span class="tag tag-p1">P1</span></td>
+  <td class="file">core/analytical_report.py</td>
+  <td>Replace <code>DAILY_REQUIRED_HOURS</code> dict with per-employee lookup.</td>
+</tr>
+<tr>
+  <td><span class="tag tag-p1">P1</span></td>
+  <td class="file">web/templates/admin/policies.html</td>
+  <td>Enable the "حضور و غیاب" card (lines 68-81): remove disabled, add href to /admin/policies/attendance</td>
+</tr>
+<tr>
+  <td><span class="tag tag-p2">P2</span></td>
+  <td class="file">web/templates/attendance.html</td>
+  <td>Add scheduled time display, late/early indicators per day</td>
+</tr>
+<tr>
+  <td><span class="tag tag-p2">P2</span></td>
+  <td class="file">web/templates/admin/user_attendance.html</td>
+  <td>Add late/early indicators in manager per-user view</td>
+</tr>
+<tr>
+  <td><span class="tag tag-p2">P2</span></td>
+  <td class="file">tests/test_policy.py</td>
+  <td>Add tests for attendance policy resolution, late/early computation, grace periods</td>
+</tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="s25">25. Test Plan</h2>
+
+<h3>Unit Tests (test_policy.py additions)</h3>
+<table>
+<tr><th>Test</th><th>Input</th><th>Expected</th></tr>
+<tr><td>resolve_attendance_policy with no policy</td><td>Any user</td><td>Defaults: 7.33h, 07:00-14:20, late/early disabled</td></tr>
+<tr><td>resolve_attendance_policy with dept policy</td><td>User in dept '4' with policy set</td><td>Returns dept policy values</td></tr>
+<tr><td>resolve_attendance_policy with per-employee override</td><td>User with per-employee PolicyValue</td><td>Returns employee override</td></tr>
+<tr><td>compute_late_minutes — on time</td><td>first_in=07:00, scheduled=07:00, grace=0</td><td>0</td></tr>
+<tr><td>compute_late_minutes — within grace</td><td>first_in=07:05, scheduled=07:00, grace=10</td><td>0</td></tr>
+<tr><td>compute_late_minutes — over grace</td><td>first_in=07:15, scheduled=07:00, grace=10</td><td>5</td></tr>
+<tr><td>compute_early_leave_minutes — on time</td><td>last_out=14:20, scheduled=14:20, grace=0</td><td>0</td></tr>
+<tr><td>compute_early_leave_minutes — over grace</td><td>last_out=14:00, scheduled=14:20, grace=10</td><td>10</td></tr>
+</table>
+
+<h3>Integration Tests</h3>
+<ul>
+<li>Admin UI: save attendance policy, verify PolicyValue rows created</li>
+<li>User view: verify balance calculation uses policy value, not hard-coded</li>
+<li>Report: verify V2 report uses per-employee required hours</li>
+<li>Night shift: verify late/early not applied to implicit entries</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="s26">26. Risks</h2>
+
+<table>
+<tr><th>Risk</th><th>Impact</th><th>Likelihood</th><th>Mitigation</th></tr>
+<tr><td>Department field misspelled or empty</td><td>Policy lookup fails</td><td>Medium</td><td>Fallback to system default; admin warning</td></tr>
+<tr><td>Night shift late/early false positives</td><td>Incorrect labels</td><td>Medium</td><td>Disable late/early for night-shift implicit entries</td></tr>
+<tr><td>Performance: policy lookup per-employee per-day in reports</td><td>Slow reports for large orgs</td><td>Low</td><td>Cache policy dict per department; batch-resolve before report loop</td></tr>
+<tr><td>Legacy contract_manager.py references stale fields</td><td>Runtime errors in contract flow</td><td>High</td><td>Out of scope for this task; flag for separate fix</td></tr>
+<tr><td>PolicyValue key naming inconsistency</td><td>Lookup failures</td><td>Low</td><td>Define constants for all keys; test resolution</td></tr>
+<tr><td>attendance.py:460 bug may cause incorrect holiday filtering</td><td>Wrong duty days in user view</td><td>High (already exists)</td><td>P0 fix included in change plan</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="s27">27. Final Verdict</h2>
+
+<h3>Answering the 16 Acceptance Criteria Questions</h3>
+<ol>
+<li><strong>Where does an employee's duty come from?</strong>: <code>duty_days × DAILY_DUTY_HOURS</code>, where duty = work_days - leave - rest. Hard-coded at 7:20. Policy not yet used.</li>
+<li><strong>How is "contractual" determined?</strong>: <code>Employee.department</code> stores a group code ('1'-'5'). The real contract type is <code>Contract.contract_type_code</code>. They are conflated in reports but not the same field.</li>
+<li><strong>Is Contract Type the best policy scope?</strong>: No. Employee.department with per-employee override is recommended (Decision #1).</li>
+<li><strong>How is policy assigned to employee?</strong>: Via PolicyValue with <code>_dept_{N}</code> suffix (dept default) or <code>_user_{id}</code> suffix (per-employee override).</li>
+<li><strong>What happens if no policy?</strong>: System defaults: 7.33h, 07:00-14:20, late/early disabled (Decision #2).</li>
+<li><strong>Where exactly is 7:20 used?</strong>: 11+ locations across attendance.py (3), admin.py (5), detailed_monthly_report_v2.py (1), analytical_report.py (1). See Section 6 table.</li>
+<li><strong>What happens to past attendance?</strong>: Effective-date resolution (Decision #3). Policy.effective_from/to_year determines which policy applies.</li>
+<li><strong>How is Late computed?</strong>: <code>max(0, first_punch_in - scheduled_start - grace)</code>. Currently non-existent. New feature.</li>
+<li><strong>How is Early Leave computed?</strong>: <code>max(0, scheduled_end - grace - last_punch_out)</code>. Currently non-existent. New feature.</li>
+<li><strong>What does Grace Period mean?</strong>: Minutes of tolerance before late/early is flagged. Independent for late and early (Decision #6).</li>
+<li><strong>How do Late/Early interact with Balance?</strong>: They don't. They are informational overlay metrics. Balance = actual hours - required hours (Section 15).</li>
+<li><strong>How do User/Manager share business logic?</strong>: Via shared <code>resolve_attendance_policy()</code> in core/attendance_policy.py. Current duplication (attendance.py + admin.py) is extracted.</li>
+<li><strong>How do Reports consume the new policy?</strong>: Replace hard-coded DAILY_REQUIRED_HOURS with per-employee policy lookup (Section 18).</li>
+<li><strong>What is the exact General Policies UI?</strong>: New <code>/admin/policies/attendance</code> page with a table: Department | Required Hours | Start/End Time | Late/Early toggles + grace. Follow policy_leave.html pattern (Section 19).</li>
+<li><strong>What migration/data changes?</strong>: None. No new tables. Only new PolicyValue rows (category='attendance') seeded via the admin UI.</li>
+<li><strong>What tests?</strong>: Unit tests for resolve_attendance_policy, compute_late_minutes, compute_early_leave_minutes. Integration tests for admin UI save, user view balance, report generation (Section 25).</li>
+</ol>
+
+<h3>Pre-existing Bugs Found</h3>
+<ol>
+<li><strong><code>attendance.py:460</code></strong>: <code>Employee.department if Employee else None</code> — Column object, not employee value. Holiday filtering is broken in user view.</li>
+<li><strong><code>contract_manager.py</code></strong>: References <code>contract.contract_type</code>, <code>reward_leave_days</code>, <code>unpaid_leave_days</code> — fields not on current Contract model.</li>
+</ol>
+
+<div class="footer">
+<p><strong>READ-ONLY ARCHITECTURE REVIEW COMPLETE</strong></p>
+<p>No files modified.<br>
+No files created.<br>
+No migrations created.<br>
+No database changes performed.<br>
+No commits created.</p>
+<p>Implementation has NOT been started.</p>
+</div>
+
+</div>
+</body>
+</html>
