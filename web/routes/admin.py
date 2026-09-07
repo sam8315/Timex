@@ -25,16 +25,17 @@ from sqlalchemy import and_, or_, func, nulls_last
 from datetime import timedelta  # اگر نیست
 from models.employee_phone import EmployeePhone
 from web.routes.attendance import (
-    format_hours_hhmm, DAILY_DUTY_HOURS, STATUS_LEAVE
+    format_hours_hhmm, STATUS_LEAVE
 )
 from web.routes.attendance import (
     analyze_day_status,
     calculate_work_hours,
-    format_hours_hhmm, DAILY_DUTY_HOURS, STATUS_LEAVE,
+    format_hours_hhmm, STATUS_LEAVE,
     STATUS_COMPLETE, STATUS_NIGHT_SHIFT, STATUS_MISSING_EXIT,
     STATUS_MISSING_ENTER, STATUS_SEQUENCE_ERROR, STATUS_IMBALANCE,
     STATUS_NO_ATTENDANCE
 )
+from web.services.attendance_policy_service import compute_required_minutes_for_range
 from models.daily_status import DailyStatus
 from web.permissions import has_permission, get_effective_permissions, enforce_permission
 from models.employee_region import EmployeeRegion
@@ -1097,7 +1098,13 @@ async def admin_user_attendance(
         current_calc += timedelta(days=1)
 
     duty_days_month = work_days_in_month - leave_days_in_month - rest_days_in_month
-    monthly_duty_hours = duty_days_month * DAILY_DUTY_HOURS
+    monthly_required_minutes = compute_required_minutes_for_range(
+        db=db, employee=target_employee,
+        start_date=month_start_g, end_date=month_end_g,
+        rest_dates=rest_dates, holiday_dates=holiday_dates,
+        leaves_by_date=leaves_by_date,
+    )
+    monthly_duty_hours = monthly_required_minutes / 60
 
     # ---------- ۲. موظفی لحظه‌ای ----------
     today_g = today_j.togregorian()
@@ -1126,7 +1133,13 @@ async def admin_user_attendance(
                 duty_days_until_ref += 1
             work_hours_until_ref += day['work_hours']
 
-    instant_duty_hours = duty_days_until_ref * DAILY_DUTY_HOURS
+    instant_required_minutes = compute_required_minutes_for_range(
+        db=db, employee=target_employee,
+        start_date=month_start_g, end_date=reference_date,
+        rest_dates=rest_dates, holiday_dates=holiday_dates,
+        leaves_by_date=leaves_by_date,
+    )
+    instant_duty_hours = instant_required_minutes / 60
 
     # ---------- ۳ و ۴. اضافه/کسر کار ----------
     progress_percent = 0
@@ -1185,7 +1198,13 @@ async def admin_user_attendance(
                 if not is_leave and not is_rest:
                     this_week_work_days += 1
 
-    this_week_duty_hours = this_week_work_days * DAILY_DUTY_HOURS
+    this_week_required = compute_required_minutes_for_range(
+        db=db, employee=target_employee,
+        start_date=this_week_start_g, end_date=this_week_end_g,
+        rest_dates=rest_dates, holiday_dates=holiday_dates,
+        leaves_by_date=leaves_by_date,
+    )
+    this_week_duty_hours = this_week_required / 60
     this_week_progress = min(100, round((this_week_hours / this_week_duty_hours) * 100,
                                         1)) if this_week_duty_hours > 0 else 0
 
@@ -1209,7 +1228,13 @@ async def admin_user_attendance(
                 if not is_leave and not is_rest:
                     prev_week_work_days += 1
 
-    prev_week_duty_hours = prev_week_work_days * DAILY_DUTY_HOURS
+    prev_week_required = compute_required_minutes_for_range(
+        db=db, employee=target_employee,
+        start_date=prev_week_start_g, end_date=prev_week_end_g,
+        rest_dates=rest_dates, holiday_dates=holiday_dates,
+        leaves_by_date=leaves_by_date,
+    )
+    prev_week_duty_hours = prev_week_required / 60
     prev_week_progress = min(100, round((prev_week_hours / prev_week_duty_hours) * 100,
                                         1)) if prev_week_duty_hours > 0 else 0
 
@@ -1252,7 +1277,13 @@ async def admin_user_attendance(
                         if not is_leave and not is_rest:
                             week_duty_days += 1
 
-            week_duty_hours = week_duty_days * DAILY_DUTY_HOURS
+            week_required = compute_required_minutes_for_range(
+                db=db, employee=target_employee,
+                start_date=current_week_start, end_date=current_week_end,
+                rest_dates=rest_dates, holiday_dates=holiday_dates,
+                leaves_by_date=leaves_by_date,
+            )
+            week_duty_hours = week_required / 60
             week_balance = week_hours - week_duty_hours
 
             if week_duty_days > 0:  # فقط هفته‌هایی که روز کاری دارند

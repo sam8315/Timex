@@ -15,6 +15,7 @@ from models.user import User
 from models.attendance import Attendance
 from models.holiday import Holiday
 from models.leave_request import LeaveRequest  # 🆕
+from web.services.attendance_policy_service import compute_required_minutes_for_range
 
 router = APIRouter(tags=["Attendance"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
@@ -50,9 +51,8 @@ WARN_HOLIDAY_WORK = 'holiday_work'
 
 
 # ============================================
-# 🆕 ثابت‌ها و توابع کمکی موظفی
+# 🆕 توابع کمکی موظفی
 # ============================================
-DAILY_DUTY_HOURS = 7 + 20/60  # 7:20 = 7.333 ساعت
 
 def format_hours_hhmm(hours: float) -> str:
     """تبدیل ساعت اعشاری به فرمت H:MM"""
@@ -456,8 +456,9 @@ async def attendance_page(
         )
     ).order_by(Attendance.timestamp).all()
 
-    # 🆕 دریافت گروه کاربر (بر اساس دپارتمان)
-    user_group = Employee.department if Employee else None
+    # 🆕 دریافت گروه کاربر (بر اساس دپارتمان) - FIXED: use employee instance
+    emp = db.query(Employee).filter(Employee.user_id == user.user_id).first()
+    user_group = emp.department if emp else None
 
     # 🆕 دریافت تعطیلات: ملی + گروه کاربر
     holiday_query = db.query(Holiday).filter(
@@ -619,7 +620,14 @@ async def attendance_page(
 
     # روزهای موظفی = روزهای کاری - مرخصی - استراحت
     duty_days_month = work_days_in_month - leave_days_in_month - rest_days_in_month
-    monthly_duty_hours = duty_days_month * DAILY_DUTY_HOURS
+    # محاسبه موظفی ماهانه بر اساس Policy (نه ضرب ساده)
+    monthly_required_minutes = compute_required_minutes_for_range(
+        db=db, employee=emp,
+        start_date=month_start_g, end_date=month_end_g,
+        rest_dates=rest_dates, holiday_dates=holiday_dates,
+        leaves_by_date=leaves_by_date,
+    )
+    monthly_duty_hours = monthly_required_minutes / 60
 
     # ---------- ۲. موظفی لحظه‌ای ----------
     today_g = today_j.togregorian()
@@ -658,7 +666,14 @@ async def attendance_page(
 
             work_hours_until_ref += day['work_hours']
 
-    instant_duty_hours = duty_days_until_ref * DAILY_DUTY_HOURS
+    # محاسبه موظفی لحظه‌ای بر اساس Policy (جمع دقایق روزهای سپری‌شده)
+    instant_required_minutes = compute_required_minutes_for_range(
+        db=db, employee=emp,
+        start_date=month_start_g, end_date=reference_date,
+        rest_dates=rest_dates, holiday_dates=holiday_dates,
+        leaves_by_date=leaves_by_date,
+    )
+    instant_duty_hours = instant_required_minutes / 60
 
     # ---------- ۳ و ۴. اضافه/کسر کار ----------
     # کارکرد واقعی کل ماه (از روزهای بدون فیلتر)
