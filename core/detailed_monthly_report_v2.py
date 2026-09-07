@@ -1,6 +1,6 @@
 """
 ماژول گزارش تفصیلی ماهانه کارمند - نسخه ۲
-با ستون‌های متعدد ورود/خروج و مبنای محاسبه 7:20
+با ستون‌های متعدد ورود/خروج و مبنای محاسبه بر اساس سیاست گروه
 """
 from datetime import date, timedelta, datetime
 from typing import List, Dict, Optional
@@ -15,16 +15,14 @@ from models.daily_status import DailyStatus
 from models.leave_request import LeaveRequest
 from models.holiday import Holiday
 from core.time_calculator import calculate_shift_hours
+from web.services.attendance_policy_service import (
+    resolve_policy,
+    resolve_required_minutes,
+)
 
 
 class DetailedMonthlyReportGeneratorV2:
     """تولید گزارش تفصیلی ماهانه - نسخه ۲"""
-
-    # ساعات موظفی روزانه (گروه قراردادی)
-    DAILY_REQUIRED_HOURS = 7.33  # 7:20
-
-    # ساعات موظفی هفتگی
-    WEEKLY_REQUIRED_HOURS = 44.0
 
     # حداکثر تعداد جفت ورود/خروج
     MAX_PAIRS = 3
@@ -150,9 +148,21 @@ class DetailedMonthlyReportGeneratorV2:
             attendance_status = day_data['attendance_status']
             has_incomplete = day_data['has_incomplete']
 
-            # محاسبه اضافی/کسری بر اساس 7:20
+            # تعیین موظفی روز بر اساس سیاست گروه (Policy)
+            resolved = resolve_policy(self.db, employee, current)
+            required_minutes = resolve_required_minutes(
+                resolved=resolved,
+                target_date=current,
+                is_holiday=is_holiday,
+                is_leave=person_status['code'] == 'L',
+                is_rest=person_status['code'] == 'R',
+                is_friday=is_friday,
+            )
+            daily_required_hours = required_minutes / 60
+
+            # محاسبه اضافی/کسری بر اساس موظفی روز
             surplus, deficit = self._calculate_surplus_deficit(
-                work_hours, is_day_off, person_status
+                work_hours, is_day_off, person_status, daily_required_hours
             )
 
             # محاسبه ساعات تفکیکی
@@ -164,8 +174,8 @@ class DetailedMonthlyReportGeneratorV2:
                     shift_hours = calculate_shift_hours(first_enter, last_exit)
 
             # تعیین موظفی روز
-            has_duty = self._has_duty(is_day_off, person_status)
-            daily_duty = self.DAILY_REQUIRED_HOURS if has_duty else 0.0
+            has_duty = daily_required_hours > 0
+            daily_duty = daily_required_hours
 
             days.append({
                 'date': current,
@@ -398,9 +408,10 @@ class DetailedMonthlyReportGeneratorV2:
             'has_incomplete': False
         }
 
-    def _calculate_surplus_deficit(self, work_hours: float, is_day_off: bool, person_status: Dict) -> tuple:
+    def _calculate_surplus_deficit(self, work_hours: float, is_day_off: bool, person_status: Dict, daily_required_hours: float = 7.33) -> tuple:
         """
-        محاسبه اضافی و کسری بر اساس مبنای 7:20
+        محاسبه اضافی و کسری بر اساس موظفی روز (Policy)
+        daily_required_hours: ساعات موظفی روز از Policy (در صورت نبود، 7.33)
         """
         # اگر روز تعطیل است و تردد ندارد
         if is_day_off and person_status['code'] == 'H':
@@ -417,27 +428,17 @@ class DetailedMonthlyReportGeneratorV2:
             return 0.0, 0.0
 
         # روز کاری عادی
-        if work_hours > self.DAILY_REQUIRED_HOURS:
-            surplus = work_hours - self.DAILY_REQUIRED_HOURS
+        if work_hours > daily_required_hours:
+            surplus = work_hours - daily_required_hours
             return round(surplus, 2), 0.0
-        elif work_hours < self.DAILY_REQUIRED_HOURS and work_hours > 0:
-            deficit = self.DAILY_REQUIRED_HOURS - work_hours
+        elif work_hours < daily_required_hours and work_hours > 0:
+            deficit = daily_required_hours - work_hours
             return 0.0, round(deficit, 2)
         elif work_hours == 0:
             # روز کاری ولی بدون تردد
-            return 0.0, self.DAILY_REQUIRED_HOURS
+            return 0.0, daily_required_hours
 
         return 0.0, 0.0
-
-    def _has_duty(self, is_day_off: bool, person_status: Dict) -> bool:
-        """تعیین اینکه آیا روز موظفی دارد"""
-        if is_day_off:
-            return False
-        if person_status['code'] in ['L', 'R']:
-            return False
-        if person_status['code'] == 'A':
-            return True
-        return True
 
     def _calculate_monthly_summary(self, days: List[Dict]) -> Dict:
         """محاسبه خلاصه ماهانه"""
@@ -518,7 +519,7 @@ class DetailedMonthlyReportGeneratorV2:
         }
 
     def _calculate_weekly_overtime(self, days: List[Dict]) -> float:
-        """محاسبه اضافه کار هفتگی"""
+        """محاسبه اضافه کار هفتگی (بر اساس Policy هر روز)"""
         weekly_overtime = 0.0
 
         weeks = {}
@@ -534,9 +535,10 @@ class DetailedMonthlyReportGeneratorV2:
 
         for week_start, week_days in weeks.items():
             total_hours = sum(d['work_hours'] for d in week_days)
+            week_required_hours = sum(d['daily_duty'] for d in week_days)
 
-            if total_hours > self.WEEKLY_REQUIRED_HOURS:
-                weekly_overtime += total_hours - self.WEEKLY_REQUIRED_HOURS
+            if week_required_hours > 0 and total_hours > week_required_hours:
+                weekly_overtime += total_hours - week_required_hours
 
         return weekly_overtime
 
