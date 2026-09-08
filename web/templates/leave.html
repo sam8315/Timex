@@ -310,7 +310,7 @@
 
                         <!-- از تاریخ -->
                         <div class="col-md-6">
-                            <label class="form-label fw-bold">
+                            <label class="form-label fw-bold" id="fromDateLabel">
                                 <i class="bi bi-calendar-event text-success"></i> از تاریخ <span class="text-danger">*</span>
                             </label>
                             <div class="date-input-wrapper">
@@ -327,8 +327,8 @@
                             </div>
                         </div>
 
-                        <!-- تا تاریخ -->
-                        <div class="col-md-6">
+                        <!-- تا تاریخ (برای HL مخفی می‌شود) -->
+                        <div class="col-md-6" id="toDateCol">
                             <label class="form-label fw-bold">
                                 <i class="bi bi-calendar-check text-danger"></i> تا تاریخ <span class="text-danger">*</span>
                             </label>
@@ -624,6 +624,14 @@
 function clearDate(inputId) {
     document.getElementById(inputId).value = '';
     document.getElementById('daysDisplay').style.display = 'none';
+    // در حالت HL: from_date و to_date باید همیشه یکسان باشند،
+    // پس اگر «از تاریخ» پاک شود، toDate (مخفی) نیز پاک می‌شود.
+    if (inputId === 'fromDate') {
+        const leaveType = document.getElementById('leaveType');
+        if (leaveType && leaveType.value === 'HL') {
+            $('#toDate').val('');
+        }
+    }
 }
 
 // ============================================
@@ -692,6 +700,18 @@ window.calculateDays = async function() {
     const toDate = $('#toDate').val();
     const daysDisplay = document.getElementById('daysDisplay');
     const daysNumber = document.getElementById('daysNumber');
+    const leaveType = document.getElementById('leaveType');
+
+    // مرخصی ساعتی (HL) تک‌روزه است و مدت آن بر اساس ساعت شروع/پایان
+    // محاسبه می‌شود نه تعداد روز کاری. پس برای HL هرگز نمایش روز کاری
+    // فعال نمی‌شود (حتی اگر تاریخ انتخاب یا تغییر کند).
+    if (leaveType && leaveType.value === 'HL') {
+        if (daysDisplay) daysDisplay.style.display = 'none';
+        // HL فقط یک روز است؛ همان تاریخ در toDate (مخفی) نیز قرار می‌گیرد
+        // تا backend همچنان هم from_date و هم to_date را دریافت کند.
+        if (fromDate) $('#toDate').val(fromDate);
+        return;
+    }
 
     if (!fromDate || !toDate) {
         daysDisplay.style.display = 'none';
@@ -730,14 +750,28 @@ function toggleHLTimeSection() {
     const leaveType = document.getElementById('leaveType');
     const hlSection = document.getElementById('hlTimeSection');
     const daysDisplay = document.getElementById('daysDisplay');
+    const toDateCol = document.getElementById('toDateCol');
+    const fromDateLabel = document.getElementById('fromDateLabel');
+    const fromDate = document.getElementById('fromDate');
+    const toDate = document.getElementById('toDate');
 
     if (!leaveType || !hlSection) return;
 
     if (leaveType.value === 'HL') {
         hlSection.classList.add('visible');
         if (daysDisplay) daysDisplay.style.display = 'none';
+        // HL تک‌روزه است؛ فیلد «تا تاریخ» مخفی می‌شود و برچسب «از تاریخ» به «تاریخ» تغییر می‌کند
+        if (toDateCol) toDateCol.style.display = 'none';
+        if (fromDateLabel) fromDateLabel.innerHTML = '<i class="bi bi-calendar-event text-success"></i> تاریخ <span class="text-danger">*</span>';
+        // اگر تاریخی انتخاب شده، همان را در toDate (مخفی) نیز قرار بده
+        if (fromDate && fromDate.value) $('#toDate').val(fromDate.value);
     } else {
         hlSection.classList.remove('visible');
+        // بازگشت به مرخصی روزانه: فیلد «تا تاریخ» و برچسب اصلی دوباره نمایش داده می‌شوند
+        if (toDateCol) toDateCol.style.display = '';
+        if (fromDateLabel) fromDateLabel.innerHTML = '<i class="bi bi-calendar-event text-success"></i> از تاریخ <span class="text-danger">*</span>';
+        // محاسبه روز کاری را دوباره فعال کن
+        if (daysDisplay) calculateDays();
     }
 }
 
@@ -775,7 +809,8 @@ function calculateHLDuration() {
     const parts = [];
     if (hours > 0) parts.push(hours + ' ساعت');
     if (mins > 0) parts.push(mins + ' دقیقه');
-    durationText.textContent = parts.join(' و ') + (' (' + minutes + ' دقیقه)');
+    durationText.textContent = 'مدت مرخصی: ' + parts.join(' و ')
+        + (' (' + minutes + ' دقیقه)');
     durationDisplay.style.display = 'block';
 }
 

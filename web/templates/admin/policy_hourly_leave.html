@@ -1,128 +1,178 @@
 {% extends "base.html" %}
-{% block title %}مدیریت مرخصی ساعتی{% endblock %}
-
+{% block title %}سیاست‌های مرخصی ساعتی | مدیریت{% endblock %}
 {% block content %}
-<div class="container mx-auto px-4 py-8">
-    <div class="flex justify-between items-center mb-6">
-        <h1 class="text-2xl font-bold text-gray-800">سیاست‌های مرخصی ساعتی</h1>
-        <a href="/admin/policies/hourly-leave/new" class="btn btn-primary">
-            + افزودن سیاست جدید
-        </a>
-    </div>
 
-    <!-- Notifications -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4>
+        <i class="bi bi-hourglass-split text-primary"></i>
+        ⏳ سیاست‌های مرخصی ساعتی
+    </h4>
+    <a href="/admin/policies/hourly-leave/new" class="btn btn-primary">
+        <i class="bi bi-plus-circle"></i> افزودن سیاست
+    </a>
+</div>
+
+{% if request.query_params.get('success') %}
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+    <i class="bi bi-check-circle"></i>
     {% if request.query_params.get('success') == 'saved' %}
-    <div class="alert alert-success mb-4">سیاست با موفقیت ذخیره شد</div>
+    سیاست با موفقیت ذخیره شد.
+    {% elif request.query_params.get('success') == 'updated' %}
+    سیاست با موفقیت ویرایش شد.
+    {% elif request.query_params.get('success') == 'deleted' %}
+    سیاست غیرفعال شد.
+    {% else %}
+    عملیات با موفقیت انجام شد.
     {% endif %}
-    {% if request.query_params.get('success') == 'updated' %}
-    <div class="alert alert-success mb-4">سیاست با موفقیت به‌روزرسانی شد</div>
-    {% endif %}
-    {% if request.query_params.get('success') == 'deleted' %}
-    <div class="alert alert-success mb-4">سیاست غیرفعال شد</div>
-    {% endif %}
-    {% if request.query_params.get('error') %}
-    <div class="alert alert-danger mb-4">خطا: {{ request.query_params.get('error') }}</div>
-    {% endif %}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
 
-    <!-- Policies by Employment Type -->
+{% if request.query_params.get('error') %}
+<div class="alert alert-danger alert-dismissible fade show" role="alert">
+    <i class="bi bi-exclamation-triangle"></i> {{ request.query_params.get('error') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<div class="row g-4">
+
+    <!-- Employment Type Policies -->
     {% for code, name in dept_types %}
-    {% set policies = policies_by_type.get(code, []) %}
-    {% if policies %}
-    <div class="card mb-6">
-        <div class="card-header bg-gray-50 border-b border-gray-200 px-6 py-4">
-            <h2 class="text-lg font-semibold text-gray-700">{{ name }} ({{ code }})</h2>
-        </div>
-        <div class="overflow-x-auto">
-            <table class="w-full">
-                <thead class="bg-gray-50">
-                    <tr>
-                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">تاریخ شروع</th>
-                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">تاریخ پایان</th>
-                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">حقوقی</th>
-                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">حداکثر روزانه (دقیقه)</th>
-                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">معاف ماهانه (دقیقه)</th>
-                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">نرخ تبدیل (دقیقه/روز)</th>
-                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">گرانولاری (دقیقه)</th>
-                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">درخواست حداقل/حداکثر</th>
-                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">عملیات</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-gray-200">
-                    {% for p in policies %}
-                    <tr class="hover:bg-gray-50">
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ p.from_date }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ p.to_date }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap">
-                            <span class="px-2 py-1 text-xs rounded-full {{ 'bg-green-100 text-green-800' if p.hourly_leave_entitled else 'bg-red-100 text-red-800' }}">
-                                {{ 'بله' if p.hourly_leave_entitled else 'خیر' }}
-                            </span>
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ p.max_daily_minutes }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ p.monthly_exempt_minutes }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ p.conversion_minutes_per_day }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ p.granularity_minutes }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {{ p.min_request_minutes }} / {{ p.max_request_minutes or '∞' }}
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm space-x-2">
-                            <a href="/admin/policies/hourly-leave/{{ p.id }}/edit" class="text-blue-600 hover:text-blue-800">ویرایش</a>
-                            <form action="/admin/policies/hourly-leave/{{ p.id }}/delete" method="POST" class="inline" onsubmit="return confirm('آیا از غیرفعال کردن این سیاست اطمینان دارید؟');">
-                                <button type="submit" class="text-red-600 hover:text-red-800">حذف</button>
-                            </form>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+    <div class="col-12">
+        <div class="card shadow-sm">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">
+                    <i class="bi bi-briefcase"></i> {{ name }} (کد: {{ code }})
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if policies_by_type.get(code, []) %}
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover">
+                        <thead>
+                            <tr>
+                                <th>شروع اعتبار</th>
+                                <th>پایان اعتبار</th>
+                                <th>واجد شرایط</th>
+                                <th>حداکثر روزانه</th>
+                                <th>معاف ماهانه</th>
+                                <th>نرخ تبدیل</th>
+                                <th>گرانولاری</th>
+                                <th>حداقل/حداکثر درخواست</th>
+                                <th>عملیات</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for p in policies_by_type[code] %}
+                            <tr>
+                                <td>{{ p.from_date }}</td>
+                                <td>{{ p.to_date }}</td>
+                                <td>
+                                    {% if p.hourly_leave_entitled %}
+                                    <span class="badge bg-success">بله</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">خیر</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ p.max_daily_minutes }} دقیقه</td>
+                                <td>{{ p.monthly_exempt_minutes }} دقیقه</td>
+                                <td>{{ p.conversion_minutes_per_day }} دقیقه/روز</td>
+                                <td>{{ p.granularity_minutes }} دقیقه</td>
+                                <td>{{ p.min_request_minutes }} / {{ p.max_request_minutes or '∞' }} دقیقه</td>
+                                <td>
+                                    <a href="/admin/policies/hourly-leave/{{ p.id }}/edit" class="btn btn-sm btn-outline-warning">
+                                        <i class="bi bi-pencil"></i>
+                                    </a>
+                                    <form method="post" action="/admin/policies/hourly-leave/{{ p.id }}/delete"
+                                          onsubmit="return confirm('آیا از غیرفعال کردن این سیاست اطمینان دارید؟');" style="display:inline">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="alert alert-info mb-0">
+                    <i class="bi bi-info-circle"></i> هیچ سیاستی برای این نوع عضویت تعریف نشده است.
+                    <a href="/admin/policies/hourly-leave/new" class="btn btn-sm btn-primary ms-2">+ افزودن سیاست</a>
+                </div>
+                {% endif %}
+            </div>
         </div>
     </div>
-    {% endif %}
     {% endfor %}
 
     <!-- Employee Overrides -->
     {% if overrides %}
-    <div class="card mb-6">
-        <div class="card-header bg-purple-50 border-b border-purple-200 px-6 py-4">
-            <h2 class="text-lg font-semibold text-purple-700">Overrideهای کارمندی</h2>
-        </div>
-        <div class="overflow-x-auto">
-            <table class="w-full">
-                <thead class="bg-purple-50">
-                    <tr>
-                        <th class="px-6 py-3 text-right text-xs font-medium text-purple-600 uppercase">کارمند</th>
-                        <th class="px-6 py-3 text-right text-xs font-medium text-purple-600 uppercase">تاریخ شروع</th>
-                        <th class="px-6 py-3 text-right text-xs font-medium text-purple-600 uppercase">تاریخ پایان</th>
-                        <th class="px-6 py-3 text-right text-xs font-medium text-purple-600 uppercase">نوع عضویت</th>
-                        <th class="px-6 py-3 text-right text-xs font-medium text-purple-600 uppercase">عملیات</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-purple-100">
-                    {% for o in overrides %}
-                    <tr class="hover:bg-purple-50">
-                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ o.full_name }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ o.from_date }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ o.to_date }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ o.employment_type_name }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm space-x-2">
-                            <a href="/admin/policies/hourly-leave/{{ o.id }}/edit" class="text-blue-600 hover:text-blue-800">ویرایش</a>
-                            <form action="/admin/policies/hourly-leave/{{ o.id }}/delete" method="POST" class="inline" onsubmit="return confirm('آیا از غیرفعال کردن این override اطمینان دارید؟');">
-                                <button type="submit" class="text-red-600 hover:text-red-800">حذف</button>
-                            </form>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+    <div class="col-12">
+        <div class="card shadow-sm">
+            <div class="card-header bg-light">
+                <h5 class="mb-0"><i class="bi bi-person-badge"></i> Override‌های کارمندی (Employee Overrides)</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover">
+                        <thead>
+                            <tr>
+                                <th>کارمند</th>
+                                <th>شروع اعتبار</th>
+                                <th>پایان اعتبار</th>
+                                <th>نوع عضویت</th>
+                                <th>عملیات</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for o in overrides %}
+                            <tr>
+                                <td>{{ o.full_name }} ({{ o.user_id }})</td>
+                                <td>{{ o.from_date }}</td>
+                                <td>{{ o.to_date }}</td>
+                                <td>{{ o.employment_type_name }}</td>
+                                <td>
+                                    <a href="/admin/policies/hourly-leave/{{ o.id }}/edit" class="btn btn-sm btn-outline-warning">
+                                        <i class="bi bi-pencil"></i>
+                                    </a>
+                                    <form method="post" action="/admin/policies/hourly-leave/{{ o.id }}/delete"
+                                          onsubmit="return confirm('آیا از غیرفعال کردن این override اطمینان دارید؟');" style="display:inline">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </div>
     {% endif %}
 
     <!-- Empty State -->
-    {% if not any(policies_by_type.values()) and not overrides %}
-    <div class="card text-center py-12">
-        <p class="text-gray-500 mb-4">هیچ سیاست مرخصی ساعتی تعریف نشده است</p>
-        <a href="/admin/policies/hourly-leave/new" class="btn btn-primary">افزودن اولین سیاست</a>
+    {% set total_policies = namespace(count=0) %}
+    {% for code, name in dept_types %}
+        {% set total_policies.count = total_policies.count + policies_by_type.get(code, []) | length %}
+    {% endfor %}
+    {% if total_policies.count == 0 and not overrides %}
+    <div class="col-12">
+        <div class="card shadow-sm">
+            <div class="card-body text-center py-5">
+                <i class="bi bi-hourglass-split display-4 text-muted mb-3"></i>
+                <p class="text-muted mb-3">هیچ سیاست مرخصی ساعتی تعریف نشده است</p>
+                <a href="/admin/policies/hourly-leave/new" class="btn btn-primary">
+                    <i class="bi bi-plus-circle"></i> افزودن اولین سیاست
+                </a>
+            </div>
+        </div>
     </div>
     {% endif %}
+
 </div>
+
 {% endblock %}
