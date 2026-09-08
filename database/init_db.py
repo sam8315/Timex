@@ -26,6 +26,8 @@ def _column_ddl(column) -> str:
         dtype = "TIMESTAMP WITH TIME ZONE"
     elif isinstance(col_type, sa_types.Date):
         dtype = "DATE"
+    elif isinstance(col_type, sa_types.Time):
+        dtype = "TIME"
     elif isinstance(col_type, sa_types.Numeric):
         dtype = "NUMERIC"
     else:
@@ -56,6 +58,38 @@ def migrate_missing_columns() -> None:
                 print(f"  + column {table_name}.{column.name} added")
 
 
+def migrate_time_columns() -> None:
+    """
+    Ensure LeaveRequest hourly time columns match the SQLAlchemy TIME type.
+
+    Older databases may have received start_time/end_time while _column_ddl()
+    did not know about sa_types.Time, causing those columns to be created as TEXT.
+    PostgreSQL then returns strings from those columns instead of datetime.time.
+    Convert existing textual HH:MM values to TIME and leave NULL/empty values NULL.
+    """
+    inspector = inspect(engine)
+    if "leave_requests" not in inspector.get_table_names():
+        return
+
+    columns = {row["name"]: row for row in inspector.get_columns("leave_requests")}
+    for column_name in ("start_time", "end_time"):
+        column = columns.get(column_name)
+        if not column or isinstance(column["type"], sa_types.Time):
+            continue
+
+        with engine.connect() as conn:
+            conn.execute(text(
+                f'ALTER TABLE "leave_requests" '
+                f'ALTER COLUMN "{column_name}" TYPE TIME '
+                f'USING CASE '
+                f'WHEN "{column_name}" IS NULL OR BTRIM(CAST("{column_name}" AS TEXT)) = \'\' '
+                f'THEN NULL '
+                f'ELSE CAST("{column_name}" AS TIME) END'
+            ))
+            conn.commit()
+        print(f"  ~ column leave_requests.{column_name} converted to TIME")
+
+
 def migrate_data_fixes(bind_engine=None) -> None:
     """
     پاک‌سازی داده‌های قدیمی بدون آسیب به رکوردها.
@@ -84,6 +118,7 @@ def create_tables() -> None:
     try:
         migrate_missing_columns()
         Base.metadata.create_all(bind=engine)
+        migrate_time_columns()
         migrate_data_fixes()
         print("✅ جداول دیتابیس با موفقیت ساخته/بررسی شدند")
     except Exception as e:
@@ -100,7 +135,7 @@ def check_tables() -> None:
         print("⚠️  هیچ جدولی در دیتابیس وجود ندارد")
         return
 
-    print(f"\n📊 جداول موجود در دیتابیس ({len(tables)} جدول):")
+    print(f"\n📊 جداول دیتابیس موجود ({len(tables)} جدول):")
     for table in tables:
         columns = inspector.get_columns(table)
         print(f"  • {table} ({len(columns)} ستون)")
