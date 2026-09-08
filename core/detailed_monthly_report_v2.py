@@ -19,6 +19,7 @@ from web.services.attendance_policy_service import (
     resolve_policy,
     resolve_required_minutes,
 )
+from web.services.hourly_leave_service import get_approved_hl_minutes
 
 
 class DetailedMonthlyReportGeneratorV2:
@@ -116,6 +117,12 @@ class DetailedMonthlyReportGeneratorV2:
                     leaves_by_date[current] = leave.leave_type
                 current += timedelta(days=1)
 
+        # Phase 7: Fetch approved HL minutes for day-level duty adjustment
+        hl_minutes_by_date = get_approved_hl_minutes(
+            db=self.db, employee=employee,
+            start_date=g_start, end_date=g_end
+        )
+
         # ✅ ترکیب وضعیت‌ها: DailyStatus اولویت بالاتر دارد
         for leave_date, leave_type in leaves_by_date.items():
             if leave_date not in statuses_by_date:
@@ -158,6 +165,9 @@ class DetailedMonthlyReportGeneratorV2:
                 is_rest=person_status['code'] == 'R',
                 is_friday=is_friday,
             )
+            # Phase 7: Subtract approved HL minutes from required duty
+            hl_mins = hl_minutes_by_date.get(current, 0)
+            required_minutes = max(0, required_minutes - hl_mins)
             daily_required_hours = required_minutes / 60
 
             # محاسبه اضافی/کسری بر اساس موظفی روز

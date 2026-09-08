@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block title %}{{ form_title }}{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8 max-w-3xl">
+    <div class="mb-6">
+        <a href="/admin/policies/hourly-leave" class="text-blue-600 hover:text-blue-800 flex items-center gap-2">
+            <span>← بازگشت به لیست سیاست‌ها</span>
+        </a>
+    </div>
+
+    <h1 class="text-2xl font-bold text-gray-800 mb-6">{{ form_title }}</h1>
+
+    <!-- Notifications -->
+    {% if request.query_params.get('error') %}
+    <div class="alert alert-danger mb-4">خطا: {{ request.query_params.get('error') }}</div>
+    {% endif %}
+
+    <form action="{{ form_action }}" method="POST" class="card p-6 space-y-6">
+        <!-- Employment Type -->
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">نوع عضویت <span class="text-red-500">*</span></label>
+            <select name="employment_type_code" required class="input w-full">
+                {% for code, name in dept_types %}
+                <option value="{{ code }}" {% if policy and policy.employment_type_code == code %}selected{% endif %}>{{ name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <!-- Employee Override (Optional) -->
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">override کارمندی (اختیاری)</label>
+            <input type="text" name="user_id_override" id="employee_search"
+                   placeholder="جستجوی کارمند..."
+                   value="{{ policy.user_id if policy else '' }}"
+                   class="input w-full">
+            <input type="hidden" name="user_id_override" id="employee_id_hidden"
+                   value="{{ policy.user_id if policy else '' }}">
+            <small class="text-gray-500">اگر پر شود، این سیاست فقط برای کارمند منتخب اعمال می‌شود</small>
+        </div>
+
+        <!-- Effective Dates -->
+        <div class="grid grid-cols-2 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">تاریخ شروع <span class="text-red-500">*</span></label>
+                <input type="text" name="effective_from_date_str" required
+                       value="{{ effective_from_j if effective_from_j else today_j }}"
+                       pattern="[0-9]{4}/[0-9]{2}/[0-9]{2}"
+                       placeholder="1404/01/01"
+                       class="input w-full">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">تاریخ پایان (اختیاری)</label>
+                <input type="text" name="effective_to_date_str"
+                       value="{{ effective_to_j if effective_to_j else '' }}"
+                       pattern="[0-9]{4}/[0-9]{2}/[0-9]{2}"
+                       placeholder="1405/12/29"
+                       class="input w-full">
+            </div>
+        </div>
+
+        <hr class="border-gray-200">
+
+        <!-- Hourly Leave Rules -->
+        <h3 class="text-lg font-semibold text-gray-700">قوانین مرخصی ساعتی</h3>
+
+        <!-- Entitlement -->
+        <div class="flex items-center">
+            <input type="checkbox" name="hourly_leave_entitled" id="entitled"
+                   {% if not policy or policy.hourly_leave_entitled %}checked{% endif %}
+                   class="w-4 h-4 text-blue-600">
+            <label for="entitled" class="mr-2 text-sm text-gray-700">
+                واجد شرایط مرخصی ساعتی (در غیر این صورت 100% مشمول کسر استحقاقی)
+            </label>
+        </div>
+
+        <!-- Max Daily Minutes -->
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">حداکثر مرخصی روزانه (دقیقه)</label>
+            <input type="number" name="max_daily_minutes" min="30" max="1440" step="15"
+                   value="{{ policy.max_daily_minutes if policy else 180 }}"
+                   class="input w-48">
+            <small class="text-gray-500">اگر کل مرخصی هم‌روز از این مقدار بیشتر شود، به عنوان یک روز کامل محاسبه می‌شود</small>
+        </div>
+
+        <!-- Monthly Exempt Minutes -->
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">معافیت ماهانه (دقیقه)</label>
+            <input type="number" name="monthly_exempt_minutes" min="0" max="1440" step="15"
+                   value="{{ policy.monthly_exempt_minutes if policy else 480 }}"
+                   class="input w-48">
+            <small class="text-gray-500">این مقدار هر ماه معاف از کسر استحقاقی است (عدم انتقال به ماه بعد)</small>
+        </div>
+
+        <!-- Conversion Rate -->
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">نرخ تبدیل به روز استحقاقی (دقیقه/روز)</label>
+            <input type="number" name="conversion_minutes_per_day" min="30" max="1440" step="15"
+                   value="{{ policy.conversion_minutes_per_day if policy else 480 }}"
+                   class="input w-48">
+            <small class="text-gray-500">هر {conversion} دقیقه مرخصی مشمول = 1 روز استحقاقی</small>
+        </div>
+
+        <!-- Granularity -->
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">گرانولاری زمان (دقیقه)</label>
+            <input type="number" name="granularity_minutes" min="5" max="60" step="5"
+                   value="{{ policy.granularity_minutes if policy else 15 }}"
+                   class="input w-48">
+            <small class="text-gray-500">زمان درخواست باید مضربی از این مقدار باشد</small>
+        </div>
+
+        <!-- Min/Max Request Minutes -->
+        <div class="grid grid-cols-2 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">حداقل درخواست (دقیقه)</label>
+                <input type="number" name="min_request_minutes" min="5" max="720" step="5"
+                       value="{{ policy.min_request_minutes if policy else 15 }}"
+                       class="input w-full">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">حداکثر درخواست (دقیقه)</label>
+                <input type="number" name="max_request_minutes" min="15" max="1440" step="15"
+                       value="{{ policy.max_request_minutes if policy else 240 }}"
+                       class="input w-full">
+                <small class="text-gray-500">خالی بگذارید برای نامحدود</small>
+            </div>
+        </div>
+
+        <!-- Submit Button -->
+        <div class="pt-4 border-t border-gray-200">
+            <button type="submit" class="btn btn-primary">
+                {{ 'ذخیره تغییرات' if is_edit else 'ایجاد سیاست' }}
+            </button>
+            <a href="/admin/policies/hourly-leave" class="btn btn-secondary mr-2">لغو</a>
+        </div>
+    </form>
+</div>
+
+<script>
+// Employee autocomplete
+document.addEventListener('DOMContentLoaded', function() {
+    const searchInput = document.getElementById('employee_search');
+    const hiddenInput = document.getElementById('employee_id_hidden');
+
+    if (searchInput) {
+        let timeout;
+        searchInput.addEventListener('input', function() {
+            clearTimeout(timeout);
+            const query = this.value.trim();
+            if (query.length < 2) return;
+
+            timeout = setTimeout(async () => {
+                try {
+                    const resp = await fetch(`/api/employees/search?q=${encodeURIComponent(query)}`);
+                    const results = await resp.json();
+                    // Show results in a dropdown (implement as needed)
+                } catch (e) {
+                    console.error('Error searching employees:', e);
+                }
+            }, 300);
+        });
+
+        // On select (implementation depends on your UI library)
+        hiddenInput.addEventListener('change', function() {
+            searchInput.value = this.value;
+        });
+    }
+});
+</script>
+{% endblock %}

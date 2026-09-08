@@ -124,6 +124,19 @@
     .leave-type-RL { background: #fef3c7; color: #92400e; }
     .leave-type-UL { background: #e5e7eb; color: #374151; }
     .leave-type-CW { background: #ddd6fe; color: #5b21b6; }
+    .leave-type-HL { background: #ccfbf1; color: #0f766e; }
+
+    /* 🆕 فیلدهای مرخصی ساعتی */
+    .hl-time-section {
+        display: none;
+        background: #f0fdfa;
+        border: 1px solid #ccfbf1;
+        border-radius: 12px;
+        padding: 16px;
+    }
+    .hl-time-section.visible {
+        display: block;
+    }
 
     /* 🎨 فیلدهای تاریخ */
     .date-input-wrapper {
@@ -284,7 +297,7 @@
                                 {% for code, name in leave_types.items() %}
                                 <option value="{{ code }}"
                                         data-balance="{{ balances.get(code, 0) }}"
-                                        {% if code not in balances or balances.get(code, 0) <= 0 %}disabled{% endif %}>
+                                        {% if code not in ['HL'] and (code not in balances or balances.get(code, 0) <= 0) %}disabled{% endif %}>
                                     {{ name }}
                                     {% if code in ['RL', 'CW', 'AL', 'SL'] %}
                                     ({{ balances.get(code, 0) }} روز)
@@ -292,7 +305,7 @@
                                 </option>
                                 {% endfor %}
                             </select>
-                            <small class="text-muted">فقط انواعی که مانده دارند قابل انتخاب هستند</small>
+                            <small class="text-muted">مرخصی ساعتی محدودیت مانده ندارد</small>
                         </div>
 
                         <!-- از تاریخ -->
@@ -338,6 +351,35 @@
                             <div class="days-display" id="daysDisplay" style="display: none;">
                                 <div class="days-number" id="daysNumber">0</div>
                                 <div class="days-label">روز کاری (تعطیلات و جمعه‌ها کسر شده)</div>
+                            </div>
+                        </div>
+
+                        <!-- 🆕 بخش مرخصی ساعتی (فقط برای HL نمایش داده شود) -->
+                        <div class="col-12">
+                            <div class="hl-time-section" id="hlTimeSection">
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-bold">
+                                            <i class="bi bi-clock text-success"></i> ساعت شروع <span class="text-danger">*</span>
+                                        </label>
+                                        <input type="time" name="start_time_str" id="startTime"
+                                               class="form-control form-control-lg text-center" step="300">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-bold">
+                                            <i class="bi bi-clock text-danger"></i> ساعت پایان <span class="text-danger">*</span>
+                                        </label>
+                                        <input type="time" name="end_time_str" id="endTime"
+                                               class="form-control form-control-lg text-center" step="300">
+                                    </div>
+                                </div>
+                                <div class="mt-2 small text-muted">
+                                    <i class="bi bi-info-circle"></i>
+                                    زمان باید مضربی از ۱۵ دقیقه و در ساعات کاری روز باشد
+                                </div>
+                                <div class="mt-2" id="hlDurationDisplay" style="display: none;">
+                                    <span class="badge bg-info fs-6" id="hlDurationText">0 دقیقه</span>
+                                </div>
                             </div>
                         </div>
 
@@ -453,7 +495,7 @@
                         <th>نوع</th>
                         <th>از تاریخ</th>
                         <th>تا تاریخ</th>
-                        <th class="text-center">روزها</th>
+                        <th class="text-center">روزها/زمان</th>
                         <th>دلیل</th>
                         <th class="text-center">وضعیت</th>
                         <th class="text-center">عملیات</th>
@@ -473,6 +515,8 @@
                                 <i class="bi bi-gift"></i> تشویقی
                                 {% elif req.leave_type == 'CW' %}
                                 <i class="bi bi-box-seam"></i> ذخیره
+                                {% elif req.leave_type == 'HL' %}
+                                <i class="bi bi-clock"></i> ساعتی
                                 {% else %}
                                 {{ req.leave_type }}
                                 {% endif %}
@@ -485,7 +529,16 @@
                             <span class="badge bg-light text-dark border">{{ req.to_date_j }}</span>
                         </td>
                         <td class="text-center">
+                            {% if req.leave_type == 'HL' %}
+                            <div class="small">
+                                <span class="badge bg-info mb-1">
+                                    {{ req.start_time }} - {{ req.end_time }}
+                                </span>
+                                <div class="text-muted">{{ req.minutes }} دقیقه</div>
+                            </div>
+                            {% else %}
                             <strong>{{ req.days_count }}</strong>
+                            {% endif %}
                         </td>
                         <td>
                             {% if req.reason %}
@@ -669,5 +722,75 @@ window.calculateDays = async function() {
         daysDisplay.style.display = 'none';
     }
 };
+
+// ============================================
+// ⏰ مرخصی ساعتی (HL) toggle و محاسبه مدت
+// ============================================
+function toggleHLTimeSection() {
+    const leaveType = document.getElementById('leaveType');
+    const hlSection = document.getElementById('hlTimeSection');
+    const daysDisplay = document.getElementById('daysDisplay');
+
+    if (!leaveType || !hlSection) return;
+
+    if (leaveType.value === 'HL') {
+        hlSection.classList.add('visible');
+        if (daysDisplay) daysDisplay.style.display = 'none';
+    } else {
+        hlSection.classList.remove('visible');
+    }
+}
+
+function calculateHLDuration() {
+    const startInput = document.getElementById('startTime');
+    const endInput = document.getElementById('endTime');
+    const durationDisplay = document.getElementById('hlDurationDisplay');
+    const durationText = document.getElementById('hlDurationText');
+
+    if (!startInput || !endInput || !durationDisplay || !durationText) return;
+
+    const startVal = startInput.value;
+    const endVal = endInput.value;
+
+    if (!startVal || !endVal) {
+        durationDisplay.style.display = 'none';
+        return;
+    }
+
+    const [startHour, startMinute] = startVal.split(':').map(Number);
+    const [endHour, endMinute] = endVal.split(':').map(Number);
+
+    const startTotal = startHour * 60 + startMinute;
+    const endTotal = endHour * 60 + endMinute;
+    let minutes = endTotal - startTotal;
+
+    if (minutes <= 0) {
+        durationText.textContent = 'زمان پایان باید بعد از شروع باشد';
+        durationDisplay.style.display = 'block';
+        return;
+    }
+
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    const parts = [];
+    if (hours > 0) parts.push(hours + ' ساعت');
+    if (mins > 0) parts.push(mins + ' دقیقه');
+    durationText.textContent = parts.join(' و ') + (' (' + minutes + ' دقیقه)');
+    durationDisplay.style.display = 'block';
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const leaveType = document.getElementById('leaveType');
+    const startTime = document.getElementById('startTime');
+    const endTime = document.getElementById('endTime');
+
+    if (leaveType) {
+        leaveType.addEventListener('change', toggleHLTimeSection);
+        toggleHLTimeSection();
+    }
+
+    if (startTime) startTime.addEventListener('change', calculateHLDuration);
+    if (endTime) endTime.addEventListener('change', calculateHLDuration);
+});
 </script>
 {% endblock %}

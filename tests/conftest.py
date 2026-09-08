@@ -94,6 +94,19 @@ from models import Base  # noqa: E402
 
 Base.metadata.create_all(bind=test_engine)
 
+# Phase 7: Ensure HL columns exist in test DB (created before migration)
+from sqlalchemy import text as _sql_text
+with test_engine.connect() as _conn:
+    try:
+        _conn.execute(_sql_text("""
+            ALTER TABLE leave_requests
+            ADD COLUMN IF NOT EXISTS start_time TIME,
+            ADD COLUMN IF NOT EXISTS end_time TIME
+        """))
+        _conn.commit()
+    except Exception:
+        pass  # Column might already exist
+
 
 def _seed_regions() -> None:
     from models.region import Region

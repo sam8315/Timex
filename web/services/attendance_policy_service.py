@@ -331,6 +331,7 @@ def compute_required_minutes_for_range(
     rest_dates: set,
     holiday_dates: dict,
     leaves_by_date: dict,
+    hourly_leave_minutes_by_date: dict = None,
 ) -> int:
     """
     مجموع دقایق موظفی برای یک بازه تاریخی (بر اساس Policy)
@@ -340,12 +341,18 @@ def compute_required_minutes_for_range(
 
     Fallback: اگر Policy وجود نداشته باشد، DEFAULT_REQUIRED_MINUTES (440)
     برای روزهای کاری (غیر جمعه) استفاده می‌شود — رفتار فعلی حفظ می‌شود.
+
+    Phase 7: hourly_leave_minutes_by_date (dict[date, int]) — approved HL minutes
+    per date. Subtracted from base required minutes: effective = max(0, base - hl).
     """
+    if hourly_leave_minutes_by_date is None:
+        hourly_leave_minutes_by_date = {}
+
     total = 0
     current = start_date
     while current <= end_date:
         resolved = resolve_policy(db, employee, current)
-        total += resolve_required_minutes(
+        base_required = resolve_required_minutes(
             resolved=resolved,
             target_date=current,
             is_holiday=current in holiday_dates,
@@ -353,6 +360,12 @@ def compute_required_minutes_for_range(
             is_rest=current in rest_dates,
             is_friday=current.weekday() == 4,
         )
+
+        # Phase 7: subtract approved HL minutes from required (not from actual)
+        hl_minutes = hourly_leave_minutes_by_date.get(current, 0)
+        effective_required = max(0, base_required - hl_minutes)
+
+        total += effective_required
         current += timedelta(days=1)
     return total
 

@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}مدیریت مرخصی ساعتی{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-2xl font-bold text-gray-800">سیاست‌های مرخصی ساعتی</h1>
+        <a href="/admin/policies/hourly-leave/new" class="btn btn-primary">
+            + افزودن سیاست جدید
+        </a>
+    </div>
+
+    <!-- Notifications -->
+    {% if request.query_params.get('success') == 'saved' %}
+    <div class="alert alert-success mb-4">سیاست با موفقیت ذخیره شد</div>
+    {% endif %}
+    {% if request.query_params.get('success') == 'updated' %}
+    <div class="alert alert-success mb-4">سیاست با موفقیت به‌روزرسانی شد</div>
+    {% endif %}
+    {% if request.query_params.get('success') == 'deleted' %}
+    <div class="alert alert-success mb-4">سیاست غیرفعال شد</div>
+    {% endif %}
+    {% if request.query_params.get('error') %}
+    <div class="alert alert-danger mb-4">خطا: {{ request.query_params.get('error') }}</div>
+    {% endif %}
+
+    <!-- Policies by Employment Type -->
+    {% for code, name in dept_types %}
+    {% set policies = policies_by_type.get(code, []) %}
+    {% if policies %}
+    <div class="card mb-6">
+        <div class="card-header bg-gray-50 border-b border-gray-200 px-6 py-4">
+            <h2 class="text-lg font-semibold text-gray-700">{{ name }} ({{ code }})</h2>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">تاریخ شروع</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">تاریخ پایان</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">حقوقی</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">حداکثر روزانه (دقیقه)</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">معاف ماهانه (دقیقه)</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">نرخ تبدیل (دقیقه/روز)</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">گرانولاری (دقیقه)</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">درخواست حداقل/حداکثر</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">عملیات</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200">
+                    {% for p in policies %}
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ p.from_date }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ p.to_date }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <span class="px-2 py-1 text-xs rounded-full {{ 'bg-green-100 text-green-800' if p.hourly_leave_entitled else 'bg-red-100 text-red-800' }}">
+                                {{ 'بله' if p.hourly_leave_entitled else 'خیر' }}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ p.max_daily_minutes }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ p.monthly_exempt_minutes }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ p.conversion_minutes_per_day }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ p.granularity_minutes }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {{ p.min_request_minutes }} / {{ p.max_request_minutes or '∞' }}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm space-x-2">
+                            <a href="/admin/policies/hourly-leave/{{ p.id }}/edit" class="text-blue-600 hover:text-blue-800">ویرایش</a>
+                            <form action="/admin/policies/hourly-leave/{{ p.id }}/delete" method="POST" class="inline" onsubmit="return confirm('آیا از غیرفعال کردن این سیاست اطمینان دارید؟');">
+                                <button type="submit" class="text-red-600 hover:text-red-800">حذف</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+    {% endfor %}
+
+    <!-- Employee Overrides -->
+    {% if overrides %}
+    <div class="card mb-6">
+        <div class="card-header bg-purple-50 border-b border-purple-200 px-6 py-4">
+            <h2 class="text-lg font-semibold text-purple-700">Overrideهای کارمندی</h2>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full">
+                <thead class="bg-purple-50">
+                    <tr>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-purple-600 uppercase">کارمند</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-purple-600 uppercase">تاریخ شروع</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-purple-600 uppercase">تاریخ پایان</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-purple-600 uppercase">نوع عضویت</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-purple-600 uppercase">عملیات</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-purple-100">
+                    {% for o in overrides %}
+                    <tr class="hover:bg-purple-50">
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ o.full_name }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ o.from_date }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ o.to_date }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ o.employment_type_name }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm space-x-2">
+                            <a href="/admin/policies/hourly-leave/{{ o.id }}/edit" class="text-blue-600 hover:text-blue-800">ویرایش</a>
+                            <form action="/admin/policies/hourly-leave/{{ o.id }}/delete" method="POST" class="inline" onsubmit="return confirm('آیا از غیرفعال کردن این override اطمینان دارید؟');">
+                                <button type="submit" class="text-red-600 hover:text-red-800">حذف</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Empty State -->
+    {% if not any(policies_by_type.values()) and not overrides %}
+    <div class="card text-center py-12">
+        <p class="text-gray-500 mb-4">هیچ سیاست مرخصی ساعتی تعریف نشده است</p>
+        <a href="/admin/policies/hourly-leave/new" class="btn btn-primary">افزودن اولین سیاست</a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

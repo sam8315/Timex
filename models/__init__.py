@@ -3,7 +3,7 @@
 """
 from models.base import Base
 from models.user import User
-from models.attendance import Attendance, AttendancePolicy, AttendancePolicyDay
+from models.attendance import Attendance, AttendancePolicy, AttendancePolicyDay, HourlyLeavePolicy, HourlyLeaveResolution, HourlyLeaveTransaction, HourlyLeavePolicy, HourlyLeaveResolution, HourlyLeaveTransaction
 from models.contract import Contract
 from models.leave_balance import LeaveBalance
 from models.leave_transaction import LeaveTransaction
@@ -22,6 +22,7 @@ from models.employee_region import EmployeeRegion
 
 __all__ = [
     'Base', 'User', 'Attendance', 'AttendancePolicy', 'AttendancePolicyDay',
+    'HourlyLeavePolicy', 'HourlyLeaveResolution', 'HourlyLeaveTransaction',
     'Contract', 'LeaveBalance', 'LeaveTransaction',
     'LeaveRequest', 'LeaveCarryForwardRequest', 'Holiday', 'DailyStatus',
     'EmployeePhone', 'Education', 'UserPermission', 'UserPermissionHistory', 'BaleUser',

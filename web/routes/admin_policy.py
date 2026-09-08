@@ -19,7 +19,7 @@ from models.region import Region
 from models.policy import Policy, PolicyValue, PolicyAuditLog
 from models.employee_region import EmployeeRegion
 from models.employee import Employee
-from models.attendance import AttendancePolicy, AttendancePolicyDay
+from models.attendance import AttendancePolicy, AttendancePolicyDay, HourlyLeavePolicy
 
 router = APIRouter()
 templates = Jinja2Templates(directory=Path(__file__).parent.parent / "templates")
@@ -32,6 +32,7 @@ DEPT_TYPES = [
     ('4', 'قراردادی'),
     ('5', 'پزشک'),
 ]
+DEPT_TYPES_DICT = dict(DEPT_TYPES)
 
 # مقدار پیش‌فرض مرخصی استحقاقی بر اساس نوع عضویت
 # (استعلاجی دستی توسط مدیر ارشد شارژ می‌شود و اینجا مدیریت نمی‌شود)
@@ -1246,3 +1247,410 @@ def parse_time(time_str: str):
         return time(hour, minute)
     except (ValueError, IndexError):
         return None
+
+
+# ============================================
+# 🆕 Phase 7: Hourly Leave Policy CRUD
+# ============================================
+
+@router.get("/admin/policies/hourly-leave", response_class=HTMLResponse)
+async def admin_policies_hourly_leave(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_super_admin)
+):
+    """صفحه مدیریت سیاست‌های مرخصی ساعتی"""
+    if not has_permission(db, user, 'manage_users'):
+        return RedirectResponse(url="/admin/", status_code=302)
+
+    # دریافت همه سیاست‌ها ( Employment Type + Overrides )
+    policies_raw = db.query(HourlyLeavePolicy).filter(
+        HourlyLeavePolicy.is_active == True
+    ).order_by(
+        HourlyLeavePolicy.employment_type_code,
+        HourlyLeavePolicy.user_id,
+        HourlyLeavePolicy.effective_from_date.desc()
+    ).all()
+
+    policies_by_type = {code: [] for code, _ in DEPT_TYPES}
+    overrides_list = []
+
+    for p in policies_raw:
+        entry = {
+            'id': p.id,
+            'employment_type_code': p.employment_type_code,
+            'employment_type_name': DEPT_TYPES_DICT.get(p.employment_type_code, p.employment_type_code),
+            'from_date': jdatetime.date.fromgregorian(date=p.effective_from_date).strftime('%Y/%m/%d') if p.effective_from_date else '',
+            'to_date': jdatetime.date.fromgregorian(date=p.effective_to_date).strftime('%Y/%m/%d') if p.effective_to_date else 'نامحدود',
+            'hourly_leave_entitled': p.hourly_leave_entitled,
+            'max_daily_minutes': p.max_daily_minutes,
+            'monthly_exempt_minutes': p.monthly_exempt_minutes,
+            'conversion_minutes_per_day': p.conversion_minutes_per_day,
+            'granularity_minutes': p.granularity_minutes,
+            'min_request_minutes': p.min_request_minutes,
+            'max_request_minutes': p.max_request_minutes,
+            'is_user_override': p.user_id is not None,
+        }
+        if p.user_id:
+            emp = db.query(Employee).filter(Employee.user_id == p.user_id).first()
+            entry['full_name'] = emp.full_name if emp else p.user_id
+            overrides_list.append(entry)
+        else:
+            if p.employment_type_code in policies_by_type:
+                policies_by_type[p.employment_type_code].append(entry)
+
+    return templates.TemplateResponse(request, "admin/policy_hourly_leave.html", {
+        "user": user,
+        "is_admin": True,
+        "is_super_admin": True,
+        "dept_types": DEPT_TYPES,
+        "policies_by_type": policies_by_type,
+        "overrides": overrides_list,
+    })
+
+
+@router.get("/admin/policies/hourly-leave/new", response_class=HTMLResponse)
+async def admin_policies_hourly_leave_new(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_super_admin)
+):
+    """صفحه افزودن سیاست مرخصی ساعتی جدید"""
+    if not has_permission(db, user, 'manage_users'):
+        return RedirectResponse(url="/admin/", status_code=302)
+
+    employees = db.query(Employee).filter(
+        Employee.is_active == True
+    ).order_by(Employee.last_name, Employee.first_name).limit(100).all()
+
+    return templates.TemplateResponse(request, "admin/policy_hourly_leave_form.html", {
+        "user": user,
+        "is_admin": True,
+        "is_super_admin": True,
+        "dept_types": DEPT_TYPES,
+        "dept_types_dict": DEPT_TYPES_DICT,
+        "policy": None,
+        "employees": [{"user_id": e.user_id, "full_name": e.full_name} for e in employees],
+        "form_action": "/admin/policies/hourly-leave/save",
+        "form_title": "افزودن سیاست مرخصی ساعتی",
+        "is_edit": False,
+    })
+
+
+@router.post("/admin/policies/hourly-leave/save")
+async def admin_policies_hourly_leave_save(
+    request: Request,
+    employment_type_code: str = Form(...),
+    user_id_override: str = Form(""),
+    effective_from_date_str: str = Form(...),
+    effective_to_date_str: str = Form(""),
+    hourly_leave_entitled: str = Form("on"),
+    max_daily_minutes: int = Form(180),
+    monthly_exempt_minutes: int = Form(480),
+    conversion_minutes_per_day: int = Form(480),
+    granularity_minutes: int = Form(15),
+    min_request_minutes: int = Form(15),
+    max_request_minutes: int = Form(240),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_super_admin)
+):
+    """ذخیره سیاست مرخصی ساعتی جدید"""
+    if not has_permission(db, user, 'manage_users'):
+        return RedirectResponse(url="/admin/", status_code=302)
+
+    try:
+        from datetime import date as date_class
+
+        valid_codes = [code for code, _ in DEPT_TYPES]
+        if employment_type_code not in valid_codes:
+            raise ValueError("نوع عضویت نامعتبر است")
+
+        # Parse dates
+        try:
+            from_j = jdatetime.datetime.strptime(effective_from_date_str.strip(), "%Y/%m/%d").date()
+            effective_from_date = from_j.togregorian()
+        except (ValueError, AttributeError):
+            raise ValueError("تاریخ شروع نامعتبر است")
+
+        effective_to_date = None
+        if effective_to_date_str.strip():
+            try:
+                to_j = jdatetime.datetime.strptime(effective_to_date_str.strip(), "%Y/%m/%d").date()
+                effective_to_date = to_j.togregorian()
+            except (ValueError, AttributeError):
+                raise ValueError("تاریخ پایان نامعتبر است")
+            if effective_to_date <= effective_from_date:
+                raise ValueError("تاریخ پایان باید بعد از تاریخ شروع باشد")
+
+        # Validate override user
+        override_user_id = user_id_override.strip() or None
+        if override_user_id:
+            emp = db.query(Employee).filter(Employee.user_id == override_user_id).first()
+            if not emp:
+                raise ValueError("کارمند یافت نشد")
+
+        # Validation: numeric ranges
+        max_daily_minutes = max(30, min(1440, max_daily_minutes))
+        monthly_exempt_minutes = max(0, min(1440, monthly_exempt_minutes))
+        conversion_minutes_per_day = max(30, min(1440, conversion_minutes_per_day))
+        granularity_minutes = max(5, min(60, granularity_minutes))
+        min_request_minutes = max(5, min(720, min_request_minutes))
+        max_request_minutes_val = max(15, min(1440, max_request_minutes))
+        if min_request_minutes > max_request_minutes_val:
+            raise ValueError("حداقل درخواست نباید بیشتر از حداکثر باشد")
+
+        # Check overlapping active policies
+        overlap_query = db.query(HourlyLeavePolicy).filter(
+            HourlyLeavePolicy.employment_type_code == employment_type_code,
+            HourlyLeavePolicy.is_active == True,
+        )
+        if override_user_id:
+            overlap_query = overlap_query.filter(HourlyLeavePolicy.user_id == override_user_id)
+        else:
+            overlap_query = overlap_query.filter(HourlyLeavePolicy.user_id.is_(None))
+
+        overlap_query = overlap_query.filter(
+            HourlyLeavePolicy.effective_from_date <= (effective_to_date or date_class.max),
+            or_(
+                HourlyLeavePolicy.effective_to_date.is_(None),
+                HourlyLeavePolicy.effective_to_date >= effective_from_date
+            )
+        )
+        if existing := overlap_query.first():
+            raise ValueError("سیاست همپوشانی با سیاست موجود دارد")
+
+        # Create policy
+        policy = HourlyLeavePolicy(
+            employment_type_code=employment_type_code,
+            user_id=override_user_id,
+            effective_from_date=effective_from_date,
+            effective_to_date=effective_to_date,
+            is_active=True,
+            hourly_leave_entitled=(hourly_leave_entitled == 'on'),
+            max_daily_minutes=max_daily_minutes,
+            monthly_exempt_minutes=monthly_exempt_minutes,
+            conversion_minutes_per_day=conversion_minutes_per_day,
+            granularity_minutes=granularity_minutes,
+            min_request_minutes=min_request_minutes,
+            max_request_minutes=max_request_minutes_val if min_request_minutes < max_request_minutes_val else None,
+        )
+        db.add(policy)
+        db.commit()
+
+        referer = request.headers.get("referer", "/admin/policies/hourly-leave")
+        return RedirectResponse(
+            url=build_redirect_url(referer, "success", "saved"),
+            status_code=302
+        )
+
+    except ValueError as e:
+        db.rollback()
+        referer = request.headers.get("referer", "/admin/policies/hourly-leave/new")
+        return RedirectResponse(
+            url=build_redirect_url(referer, "error", str(e)),
+            status_code=302
+        )
+    except Exception as e:
+        db.rollback()
+        referer = request.headers.get("referer", "/admin/policies/hourly-leave/new")
+        return RedirectResponse(
+            url=build_redirect_url(referer, "error", f"خطا: {str(e)}"),
+            status_code=302
+        )
+
+
+@router.get("/admin/policies/hourly-leave/{policy_id}/edit", response_class=HTMLResponse)
+async def admin_policies_hourly_leave_edit(
+    request: Request,
+    policy_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_super_admin)
+):
+    """صفحه ویرایش سیاست مرخصی ساعتی"""
+    if not has_permission(db, user, 'manage_users'):
+        return RedirectResponse(url="/admin/", status_code=302)
+
+    policy = db.query(HourlyLeavePolicy).filter(HourlyLeavePolicy.id == policy_id).first()
+    if not policy:
+        return RedirectResponse(
+            url="/admin/policies/hourly-leave?error=یافت نشد", status_code=302)
+
+    employees = db.query(Employee).filter(
+        Employee.is_active == True
+    ).order_by(Employee.last_name, Employee.first_name).limit(100).all()
+
+    # Convert Gregorian dates to Jalali for form pre-filling
+    effective_from_j = ""
+    effective_to_j = ""
+    if policy.effective_from_date:
+        effective_from_j = jdatetime.date.fromgregorian(
+            date=policy.effective_from_date
+        ).strftime('%Y/%m/%d')
+    if policy.effective_to_date:
+        effective_to_j = jdatetime.date.fromgregorian(
+            date=policy.effective_to_date
+        ).strftime('%Y/%m/%d')
+
+    return templates.TemplateResponse(request, "admin/policy_hourly_leave_form.html", {
+        "user": user,
+        "is_admin": True,
+        "is_super_admin": True,
+        "dept_types": DEPT_TYPES,
+        "dept_types_dict": DEPT_TYPES_DICT,
+        "policy": policy,
+        "employees": [{"user_id": e.user_id, "full_name": e.full_name} for e in employees],
+        "form_action": f"/admin/policies/hourly-leave/{policy_id}/update",
+        "form_title": "ویرایش سیاست مرخصی ساعتی",
+        "is_edit": True,
+        "effective_from_j": effective_from_j,
+        "effective_to_j": effective_to_j,
+    })
+
+
+@router.post("/admin/policies/hourly-leave/{policy_id}/update")
+async def admin_policies_hourly_leave_update(
+    request: Request,
+    policy_id: int,
+    employment_type_code: str = Form(...),
+    user_id_override: str = Form(""),
+    effective_from_date_str: str = Form(...),
+    effective_to_date_str: str = Form(""),
+    hourly_leave_entitled: str = Form("on"),
+    max_daily_minutes: int = Form(180),
+    monthly_exempt_minutes: int = Form(480),
+    conversion_minutes_per_day: int = Form(480),
+    granularity_minutes: int = Form(15),
+    min_request_minutes: int = Form(15),
+    max_request_minutes: int = Form(240),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_super_admin)
+):
+    """به‌روزرسانی سیاست مرخصی ساعتی"""
+    if not has_permission(db, user, 'manage_users'):
+        return RedirectResponse(url="/admin/", status_code=302)
+
+    policy = db.query(HourlyLeavePolicy).filter(HourlyLeavePolicy.id == policy_id).first()
+    if not policy:
+        return RedirectResponse(
+            url="/admin/policies/hourly-leave?error=یافت نشد", status_code=302)
+
+    try:
+        from datetime import date as date_class
+
+        valid_codes = [code for code, _ in DEPT_TYPES]
+        if employment_type_code not in valid_codes:
+            raise ValueError("نوع عضویت نامعتبر است")
+
+        try:
+            from_j = jdatetime.datetime.strptime(effective_from_date_str.strip(), "%Y/%m/%d").date()
+            effective_from_date = from_j.togregorian()
+        except (ValueError, AttributeError):
+            raise ValueError("تاریخ شروع نامعتبر است")
+
+        effective_to_date = None
+        if effective_to_date_str.strip():
+            try:
+                to_j = jdatetime.datetime.strptime(effective_to_date_str.strip(), "%Y/%m/%d").date()
+                effective_to_date = to_j.togregorian()
+            except (ValueError, AttributeError):
+                raise ValueError("تاریخ پایان نامعتبر است")
+            if effective_to_date <= effective_from_date:
+                raise ValueError("تاریخ پایان باید بعد از تاریخ شروع باشد")
+
+        override_user_id = user_id_override.strip() or None
+        if override_user_id:
+            emp = db.query(Employee).filter(Employee.user_id == override_user_id).first()
+            if not emp:
+                raise ValueError("کارمند یافت نشد")
+
+        max_daily_minutes = max(30, min(1440, max_daily_minutes))
+        monthly_exempt_minutes = max(0, min(1440, monthly_exempt_minutes))
+        conversion_minutes_per_day = max(30, min(1440, conversion_minutes_per_day))
+        granularity_minutes = max(5, min(60, granularity_minutes))
+        min_request_minutes = max(5, min(720, min_request_minutes))
+        max_request_minutes_val = max(15, min(1440, max_request_minutes))
+        if min_request_minutes > max_request_minutes_val:
+            raise ValueError("حداقل درخواست نباید بیشتر از حداکثر باشد")
+
+        # Check overlap (exclude current)
+        overlap_query = db.query(HourlyLeavePolicy).filter(
+            HourlyLeavePolicy.employment_type_code == employment_type_code,
+            HourlyLeavePolicy.is_active == True,
+            HourlyLeavePolicy.id != policy_id,
+        )
+        if override_user_id:
+            overlap_query = overlap_query.filter(HourlyLeavePolicy.user_id == override_user_id)
+        else:
+            overlap_query = overlap_query.filter(HourlyLeavePolicy.user_id.is_(None))
+
+        overlap_query = overlap_query.filter(
+            HourlyLeavePolicy.effective_from_date <= (effective_to_date or date_class.max),
+            or_(
+                HourlyLeavePolicy.effective_to_date.is_(None),
+                HourlyLeavePolicy.effective_to_date >= effective_from_date
+            )
+        )
+        if existing := overlap_query.first():
+            raise ValueError("سیاست همپوشانی با سیاست موجود دارد")
+
+        # Update fields
+        policy.employment_type_code = employment_type_code
+        policy.user_id = override_user_id
+        policy.effective_from_date = effective_from_date
+        policy.effective_to_date = effective_to_date
+        policy.hourly_leave_entitled = (hourly_leave_entitled == 'on')
+        policy.max_daily_minutes = max_daily_minutes
+        policy.monthly_exempt_minutes = monthly_exempt_minutes
+        policy.conversion_minutes_per_day = conversion_minutes_per_day
+        policy.granularity_minutes = granularity_minutes
+        policy.min_request_minutes = min_request_minutes
+        policy.max_request_minutes = max_request_minutes_val if min_request_minutes < max_request_minutes_val else None
+
+        db.commit()
+
+        referer = request.headers.get("referer", "/admin/policies/hourly-leave")
+        return RedirectResponse(
+            url=build_redirect_url(referer, "success", "updated"),
+            status_code=302
+        )
+
+    except ValueError as e:
+        db.rollback()
+        referer = request.headers.get("referer", f"/admin/policies/hourly-leave/{policy_id}/edit")
+        return RedirectResponse(
+            url=build_redirect_url(referer, "error", str(e)),
+            status_code=302
+        )
+    except Exception as e:
+        db.rollback()
+        referer = request.headers.get("referer", f"/admin/policies/hourly-leave/{policy_id}/edit")
+        return RedirectResponse(
+            url=build_redirect_url(referer, "error", f"خطا: {str(e)}"),
+            status_code=302
+        )
+
+
+@router.post("/admin/policies/hourly-leave/{policy_id}/delete")
+async def admin_policies_hourly_leave_delete(
+    request: Request,
+    policy_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_super_admin)
+):
+    """حذف (غیرفعال کردن) سیاست مرخصی ساعتی"""
+    if not has_permission(db, user, 'manage_users'):
+        return RedirectResponse(url="/admin/", status_code=302)
+
+    policy = db.query(HourlyLeavePolicy).filter(HourlyLeavePolicy.id == policy_id).first()
+    if not policy:
+        return RedirectResponse(
+            url="/admin/policies/hourly-leave?error=سیاست یافت نشد", status_code=302)
+
+    policy.is_active = False
+    db.commit()
+
+    referer = request.headers.get("referer", "/admin/policies/hourly-leave")
+    return RedirectResponse(
+        url=build_redirect_url(referer, "success", "deleted"),
+        status_code=302
+    )

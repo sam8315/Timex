@@ -24,6 +24,11 @@ from datetime import datetime, timedelta  # 🆕 timedelta
 from models.employee_phone import EmployeePhone  # 🆕
 from core.sms_service import SmsService          # 🆕
 from web.services.notification_service import is_sms_enabled  # 🆕 سوییچ پیامک
+from web.services.hourly_leave_service import (
+    approve_hourly_leave,
+    reverse_hourly_leave,
+    compute_requested_minutes,
+)
 import threading                                  # 🆕 برای ارسال async
 
 router = APIRouter(tags=["Admin Leave"])
@@ -35,6 +40,7 @@ LEAVE_TYPES = {
     'RL': 'تشویقی',
     'UL': 'بدون حقوق',
     'CW': 'ذخیره سال قبل',  # 🆕
+    'HL': 'ساعتی',          # 🆕 Phase 7
 }
 
 TRANSACTION_TYPES = {
@@ -600,7 +606,43 @@ async def approve_leave_request(
             status_code=302
         )
 
-    # بررسی مانده کافی
+    # Phase 7: HL requests use separate approval flow
+    if leave_req.leave_type == 'HL':
+        try:
+            success, error_msg = approve_hourly_leave(db, leave_req, user.user_id)
+            if not success:
+                referer = request.headers.get("referer", "/admin/leave-requests")
+                return RedirectResponse(
+                    url=build_redirect_url(referer, "error", error_msg or "خطا در تایید مرخصی ساعتی"),
+                    status_code=302
+                )
+            db.commit()
+
+            # Compute summary for success message
+            minutes = compute_requested_minutes(
+                leave_req.start_time, leave_req.end_time
+            ) if leave_req.start_time and leave_req.end_time else 0
+            hours = minutes // 60
+            mins = minutes % 60
+            time_str = f"{hours}:{mins:02d}"
+
+            referer = request.headers.get("referer", "/admin/leave-requests")
+            return RedirectResponse(
+                url=build_redirect_url(
+                    referer, "success",
+                    f"مرخصی ساعتی تایید شد ({time_str} ساعت)"
+                ),
+                status_code=302
+            )
+        except Exception as e:
+            db.rollback()
+            referer = request.headers.get("referer", "/admin/leave-requests")
+            return RedirectResponse(
+                url=build_redirect_url(referer, "error", f"خطا: {str(e)}"),
+                status_code=302
+            )
+
+    # بررسی مانده کافی (for non-HL types)
     year_j = jdatetime.date.fromgregorian(date=leave_req.from_date).year
     balance = db.query(LeaveBalance).filter(
         LeaveBalance.user_id == leave_req.user_id,
@@ -805,6 +847,21 @@ async def delete_leave_request(
         )
 
     try:
+        # Phase 7: HL requests use separate reversal flow
+        if leave_req.leave_type == 'HL':
+            reverse_hourly_leave(db, leave_req)
+            db.commit()
+
+            type_name = LEAVE_TYPES.get(leave_req.leave_type, '')
+            referer = request.headers.get("referer", "/admin/leave-requests")
+            return RedirectResponse(
+                url=build_redirect_url(
+                    referer, "success",
+                    f"مرخصی {type_name} حذف شد و تراکنش‌های ساعتی بازگردانده شد"
+                ),
+                status_code=302
+            )
+
         year_j = jdatetime.date.fromgregorian(date=leave_req.from_date).year
 
         # ۱. پیدا کردن مانده

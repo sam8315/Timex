@@ -1,9 +1,9 @@
 """
 مدل جدول درخواست‌های مرخصی
 """
-from datetime import date, datetime
+from datetime import date, datetime, time
 from typing import Optional
-from sqlalchemy import Integer, String, Date, DateTime, ForeignKey, Text
+from sqlalchemy import Integer, String, Date, DateTime, Time, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from models.base import Base, TimestampMixin
 
@@ -35,6 +35,18 @@ class LeaveRequest(TimestampMixin, Base):
     to_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     days_count: Mapped[int] = mapped_column(Integer, nullable=False)
     reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Hourly Leave time fields (Phase 7) — only for leave_type='HL'
+    start_time: Mapped[Optional[time]] = mapped_column(
+        Time,
+        nullable=True,
+        comment="ساعت شروع (فقط برای مرخصی ساعتی)"
+    )
+    end_time: Mapped[Optional[time]] = mapped_column(
+        Time,
+        nullable=True,
+        comment="ساعت پایان (فقط برای مرخصی ساعتی)"
+    )
 
     # وضعیت: P=Pending, A=Approved, R=Rejected, D=Deleted
     status: Mapped[str] = mapped_column(String(1), default='P', nullable=False, index=True)
@@ -74,6 +86,8 @@ class LeaveRequest(TimestampMixin, Base):
             'to_date': self.to_date.isoformat(),
             'days_count': self.days_count,
             'reason': self.reason,
+            'start_time': self.start_time.strftime('%H:%M') if self.start_time else None,
+            'end_time': self.end_time.strftime('%H:%M') if self.end_time else None,
             'status': self.status,
             'status_name': self.status_name,
             'approved_by': self.approved_by,

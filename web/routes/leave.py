@@ -1,7 +1,7 @@
 """
 صفحه درخواست مرخصی کاربر
 """
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime as dt_datetime
 from fastapi import APIRouter, Request, Depends, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -11,6 +11,7 @@ from sqlalchemy import and_, or_
 import jdatetime
 from typing import Optional
 
+from datetime import time as time_type
 from web.dependencies import get_db, get_current_user, check_password_change
 from models.user import User
 from models.employee import Employee
@@ -19,6 +20,10 @@ from models.leave_request import LeaveRequest
 from models.contract import Contract
 from fastapi import Query
 from models.holiday import Holiday
+from web.services.hourly_leave_service import (
+    validate_hourly_leave_request,
+    compute_requested_minutes,
+)
 
 router = APIRouter(tags=["Leave"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
@@ -29,6 +34,7 @@ LEAVE_TYPES = {
     'SL': 'استعلاجی',
     'RL': 'تشویقی',          # 🆕
     'CW': 'ذخیره سال قبل',   # 🆕
+    'HL': 'ساعتی',           # 🆕 Phase 7: Hourly Leave
 }
 
 # 🆕 انواع مرخصی که فقط در صورت داشتن مانده نمایش داده می‌شوند
@@ -138,7 +144,7 @@ async def leave_page(
     for req in recent_requests_raw:
         j_from = jdatetime.date.fromgregorian(date=req.from_date)
         j_to = jdatetime.date.fromgregorian(date=req.to_date)
-        recent_requests.append({
+        req_data = {
             'id': req.id,
             'leave_type': req.leave_type,
             'leave_type_name': LEAVE_TYPES.get(req.leave_type, req.leave_type),
@@ -150,7 +156,13 @@ async def leave_page(
             'status_name': STATUS_NAMES.get(req.status, req.status),
             'rejection_reason': req.rejection_reason,
             'created_at': req.created_at.strftime('%Y/%m/%d %H:%M') if req.created_at else '',
-        })
+        }
+        if req.leave_type == 'HL':
+            req_data['start_time'] = req.start_time.strftime('%H:%M') if req.start_time else ''
+            req_data['end_time'] = req.end_time.strftime('%H:%M') if req.end_time else ''
+            from web.services.hourly_leave_service import compute_requested_minutes
+            req_data['minutes'] = compute_requested_minutes(req.start_time, req.end_time) if req.start_time and req.end_time else 0
+        recent_requests.append(req_data)
 
     # آمار درخواست‌ها
     pending_count = db.query(LeaveRequest).filter(
@@ -189,6 +201,8 @@ async def submit_leave_request(
     leave_type: str = Form(...),
     from_date_str: str = Form(...),
     to_date_str: str = Form(...),
+    start_time_str: str = Form(""),
+    end_time_str: str = Form(""),
     reason: str = Form(""),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -214,47 +228,81 @@ async def submit_leave_request(
         if from_date < today_g:
             raise ValueError("تاریخ شروع نمی‌تواند در گذشته باشد")
 
-        # بررسی بازه مجاز (حداکثر ۳۰ روز)
-        if (to_date - from_date).days > 30:
-            raise ValueError("حداکثر بازه مرخصی ۳۰ روز است")
+        # Phase 7: HL-specific handling
+        hl_start_time = None
+        hl_end_time = None
 
-        # محاسبه تعداد روزها (با کسر تعطیلات)
-        days_count = calculate_leave_days(db, user.user_id, from_date, to_date)
+        if leave_type == 'HL':
+            # HL is single-day only
+            if from_date != to_date:
+                raise ValueError("مرخصی ساعتی فقط برای یک روز امکان‌پذیر است")
 
-        if days_count <= 0:
-            raise ValueError("در بازه انتخابی، هیچ روز کاری وجود ندارد (همه تعطیل هستند)")
+            # Parse time fields
+            if not start_time_str or not end_time_str:
+                raise ValueError("ساعت شروع و پایان برای مرخصی ساعتی الزامی است")
 
-        # بررسی مانده کافی
-        year_j = from_j.year
-        balance = db.query(LeaveBalance).filter(
-            and_(
-                LeaveBalance.user_id == user.user_id,
-                LeaveBalance.year == year_j,
-                LeaveBalance.leave_type == leave_type
+            try:
+                hl_start_time = dt_datetime.strptime(start_time_str.strip(), "%H:%M").time()
+                hl_end_time = dt_datetime.strptime(end_time_str.strip(), "%H:%M").time()
+            except ValueError:
+                raise ValueError("فرمت ساعت نامعتبر است (HH:MM)")
+
+            # Validate via service
+            employee = db.query(Employee).filter(Employee.user_id == user.user_id).first()
+            if not employee:
+                raise ValueError("کارمند یافت نشد")
+
+            is_valid, error_msg = validate_hourly_leave_request(
+                db, employee, from_date, hl_start_time, hl_end_time
             )
-        ).first()
+            if not is_valid:
+                raise ValueError(error_msg or "درخواست نامعتبر است")
 
-        current_balance = balance.balance if balance else 0
+            days_count = 0  # HL doesn't use days_count
+        else:
+            # Non-HL validation
+            # بررسی بازه مجاز (حداکثر ۳۰ روز)
+            if (to_date - from_date).days > 30:
+                raise ValueError("حداکثر بازه مرخصی ۳۰ روز است")
 
-        if current_balance < days_count:
-            type_name = LEAVE_TYPES.get(leave_type, '')
-            raise ValueError(
-                f"مانده کافی نیست! مانده {type_name}: {current_balance} روز، "
-                f"درخواست: {days_count} روز"
-            )
+            # محاسبه تعداد روزها (با کسر تعطیلات)
+            days_count = calculate_leave_days(db, user.user_id, from_date, to_date)
 
-        # بررسی درخواست تکراری (همپوشانی تاریخ)
-        overlapping = db.query(LeaveRequest).filter(
-            and_(
-                LeaveRequest.user_id == user.user_id,
-                LeaveRequest.status.in_(['P', 'A']),
-                LeaveRequest.from_date <= to_date,
-                LeaveRequest.to_date >= from_date
-            )
-        ).first()
+            if days_count <= 0:
+                raise ValueError("در بازه انتخابی، هیچ روز کاری وجود ندارد (همه تعطیل هستند)")
 
-        if overlapping:
-            raise ValueError("در این بازه، درخواست مرخصی دیگری دارید")
+            # بررسی مانده کافی
+            year_j = from_j.year
+            balance = db.query(LeaveBalance).filter(
+                and_(
+                    LeaveBalance.user_id == user.user_id,
+                    LeaveBalance.year == year_j,
+                    LeaveBalance.leave_type == leave_type
+                )
+            ).first()
+
+            current_balance = balance.balance if balance else 0
+
+            if current_balance < days_count:
+                type_name = LEAVE_TYPES.get(leave_type, '')
+                raise ValueError(
+                    f"مانده کافی نیست! مانده {type_name}: {current_balance} روز، "
+                    f"درخواست: {days_count} روز"
+                )
+
+        # بررسی درخواست تکراری (همپوشانی تاریخ) — except HL overlap (already validated)
+        if leave_type != 'HL':
+            overlapping = db.query(LeaveRequest).filter(
+                and_(
+                    LeaveRequest.user_id == user.user_id,
+                    LeaveRequest.status.in_(['P', 'A']),
+                    LeaveRequest.from_date <= to_date,
+                    LeaveRequest.to_date >= from_date
+                )
+            ).first()
+
+            if overlapping:
+                raise ValueError("در این بازه، درخواست مرخصی دیگری دارید")
 
         # ثبت درخواست
         new_request = LeaveRequest(
@@ -264,20 +312,35 @@ async def submit_leave_request(
             to_date=to_date,
             days_count=days_count,
             reason=reason.strip() or None,
-            status='P'
+            status='P',
+            start_time=hl_start_time,
+            end_time=hl_end_time,
         )
         db.add(new_request)
         db.commit()
 
         type_name = LEAVE_TYPES.get(leave_type, '')
         referer = request.headers.get("referer", "/leave")
-        return RedirectResponse(
-            url=build_redirect_url(
-                referer, "success",
-                f"درخواست مرخصی {type_name} ({days_count} روز) با موفقیت ثبت شد"
-            ),
-            status_code=302
-        )
+
+        if leave_type == 'HL':
+            minutes = compute_requested_minutes(hl_start_time, hl_end_time)
+            hours = minutes // 60
+            mins = minutes % 60
+            return RedirectResponse(
+                url=build_redirect_url(
+                    referer, "success",
+                    f"درخواست مرخصی {type_name} ({hours}:{mins:02d} ساعت) با موفقیت ثبت شد"
+                ),
+                status_code=302
+            )
+        else:
+            return RedirectResponse(
+                url=build_redirect_url(
+                    referer, "success",
+                    f"درخواست مرخصی {type_name} ({days_count} روز) با موفقیت ثبت شد"
+                ),
+                status_code=302
+            )
     except ValueError as e:
         referer = request.headers.get("referer", "/leave")
         return RedirectResponse(

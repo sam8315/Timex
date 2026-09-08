@@ -36,6 +36,7 @@ from web.routes.attendance import (
     STATUS_NO_ATTENDANCE
 )
 from web.services.attendance_policy_service import compute_required_minutes_for_range
+from web.services.hourly_leave_service import get_approved_hl_minutes
 from models.daily_status import DailyStatus
 from web.permissions import has_permission, get_effective_permissions, enforce_permission
 from models.employee_region import EmployeeRegion
@@ -977,6 +978,12 @@ async def admin_user_attendance(
                 leaves_by_date[current_leave] = leave.leave_type
             current_leave += timedelta(days=1)
 
+    # Phase 7: Fetch approved hourly leave minutes by date
+    hourly_leave_minutes_by_date = get_approved_hl_minutes(
+        db=db, employee=target_employee,
+        start_date=month_start_g, end_date=month_end_g
+    )
+
     # گروه‌بندی بر اساس روز
     days_dict = {}
     for record in records:
@@ -1103,6 +1110,7 @@ async def admin_user_attendance(
         start_date=month_start_g, end_date=month_end_g,
         rest_dates=rest_dates, holiday_dates=holiday_dates,
         leaves_by_date=leaves_by_date,
+        hourly_leave_minutes_by_date=hourly_leave_minutes_by_date,
     )
     monthly_duty_hours = monthly_required_minutes / 60
 
@@ -1138,6 +1146,7 @@ async def admin_user_attendance(
         start_date=month_start_g, end_date=reference_date,
         rest_dates=rest_dates, holiday_dates=holiday_dates,
         leaves_by_date=leaves_by_date,
+        hourly_leave_minutes_by_date=hourly_leave_minutes_by_date,
     )
     instant_duty_hours = instant_required_minutes / 60
 
@@ -1203,6 +1212,7 @@ async def admin_user_attendance(
         start_date=this_week_start_g, end_date=this_week_end_g,
         rest_dates=rest_dates, holiday_dates=holiday_dates,
         leaves_by_date=leaves_by_date,
+        hourly_leave_minutes_by_date=hourly_leave_minutes_by_date,
     )
     this_week_duty_hours = this_week_required / 60
     this_week_progress = min(100, round((this_week_hours / this_week_duty_hours) * 100,
@@ -1233,6 +1243,7 @@ async def admin_user_attendance(
         start_date=prev_week_start_g, end_date=prev_week_end_g,
         rest_dates=rest_dates, holiday_dates=holiday_dates,
         leaves_by_date=leaves_by_date,
+        hourly_leave_minutes_by_date=hourly_leave_minutes_by_date,
     )
     prev_week_duty_hours = prev_week_required / 60
     prev_week_progress = min(100, round((prev_week_hours / prev_week_duty_hours) * 100,
@@ -1282,6 +1293,7 @@ async def admin_user_attendance(
                 start_date=current_week_start, end_date=current_week_end,
                 rest_dates=rest_dates, holiday_dates=holiday_dates,
                 leaves_by_date=leaves_by_date,
+                hourly_leave_minutes_by_date=hourly_leave_minutes_by_date,
             )
             week_duty_hours = week_required / 60
             week_balance = week_hours - week_duty_hours

@@ -16,6 +16,7 @@ from models.attendance import Attendance
 from models.holiday import Holiday
 from models.leave_request import LeaveRequest  # 🆕
 from web.services.attendance_policy_service import compute_required_minutes_for_range
+from web.services.hourly_leave_service import get_approved_hl_minutes
 
 router = APIRouter(tags=["Attendance"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
@@ -504,6 +505,12 @@ async def attendance_page(
                 leaves_by_date[current_leave] = leave.leave_type
             current_leave += timedelta(days=1)
 
+    # Phase 7: Fetch approved hourly leave minutes by date
+    hourly_leave_minutes_by_date = get_approved_hl_minutes(
+        db=db, employee=emp,
+        start_date=month_start_g, end_date=month_end_g
+    )
+
     # گروه‌بندی بر اساس روز
     days_dict = {}
     for record in records:
@@ -626,6 +633,7 @@ async def attendance_page(
         start_date=month_start_g, end_date=month_end_g,
         rest_dates=rest_dates, holiday_dates=holiday_dates,
         leaves_by_date=leaves_by_date,
+        hourly_leave_minutes_by_date=hourly_leave_minutes_by_date,
     )
     monthly_duty_hours = monthly_required_minutes / 60
 
@@ -672,6 +680,7 @@ async def attendance_page(
         start_date=month_start_g, end_date=reference_date,
         rest_dates=rest_dates, holiday_dates=holiday_dates,
         leaves_by_date=leaves_by_date,
+        hourly_leave_minutes_by_date=hourly_leave_minutes_by_date,
     )
     instant_duty_hours = instant_required_minutes / 60
 

@@ -3,7 +3,7 @@
 """
 from datetime import datetime, time, date
 from typing import Optional
-from sqlalchemy import Integer, String, DateTime, ForeignKey, UniqueConstraint, Boolean, Time, Date, Enum, Index
+from sqlalchemy import Integer, String, Text, DateTime, ForeignKey, UniqueConstraint, Boolean, Time, Date, Enum, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from models.base import Base, TimestampMixin
 
@@ -245,3 +245,315 @@ class AttendancePolicyDay(TimestampMixin, Base):
     @property
     def scheduled_end_str(self) -> Optional[str]:
         return self.end_time.strftime('%H:%M') if self.end_time else None
+
+
+# ============================================
+# Phase 7: Hourly Leave Models
+# ============================================
+
+class HourlyLeavePolicy(TimestampMixin, Base):
+    """
+    سیاست مرخصی ساعتی برای هر نوع عضویت (Employment Type)
+    هر Policy مربوط به یک نوع عضویت است و بازه زمانی فعال بودن دارد
+    NO weekly schedule — uses AttendancePolicyDay for working hours
+    """
+    __tablename__ = "hourly_leave_policies"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    # Scope (mirrors AttendancePolicy)
+    employment_type_code: Mapped[str] = mapped_column(
+        String(10),
+        nullable=False,
+        index=True,
+        comment="کد نوع عضویت: 1=رسمی، 2=وظیفه، 3=خریدخدمت، 4=قراردادی، 5=پزشک"
+    )
+
+    user_id: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        ForeignKey("users.user_id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+        comment="اگر ست شده، این Policy فقط برای این کاربر اعمال می‌شود (Override)"
+    )
+
+    effective_from_date: Mapped[date] = mapped_column(
+        Date,
+        nullable=False,
+        index=True,
+        comment="تاریخ شروع اعتبار"
+    )
+    effective_to_date: Mapped[Optional[date]] = mapped_column(
+        Date,
+        nullable=True,
+        index=True,
+        comment="تاریخ پایان اعتبار (NULL = باز)"
+    )
+
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
+
+    # HL-specific rules (NO weekly schedule — uses AttendancePolicyDay)
+    hourly_leave_entitled: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+        comment="اگر false: می‌توان درخواست داد اما معافیت ماهانه ندارد (100% مشمول استحقاقی)"
+    )
+
+    max_daily_minutes: Mapped[int] = mapped_column(
+        Integer,
+        default=180,
+        nullable=False,
+        comment="حداکثر دقیقه مرخصی ساعتی در روز — بیشتر از این = تبدیل به یک روز کامل"
+    )
+
+    monthly_exempt_minutes: Mapped[int] = mapped_column(
+        Integer,
+        default=480,
+        nullable=False,
+        comment="دقایق معاف از مرخصی استحقاقی در ماه (هر ماه ریست می‌شود، بدون انتقال)"
+    )
+
+    conversion_minutes_per_day: Mapped[int] = mapped_column(
+        Integer,
+        default=480,
+        nullable=False,
+        comment="دقیقه معادل یک روز مرخصی استحقاقی (مستقل از ساعت کاری روزانه)"
+    )
+
+    granularity_minutes: Mapped[int] = mapped_column(
+        Integer,
+        default=15,
+        nullable=False,
+        comment="حداقل و واحد گرد زمانی (مثلاً ۱۵ دقیقه)"
+    )
+
+    min_request_minutes: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+        default=15,
+        comment="حداقل دقایق درخواست مرخصی ساعتی"
+    )
+
+    max_request_minutes: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+        default=240,
+        comment="حداکثر دقایق درخواست مرخصی ساعتی"
+    )
+
+    # Relationships
+    user: Mapped[Optional["User"]] = relationship("User", backref="hourly_leave_policy_overrides")
+
+    __table_args__ = (
+        Index('ix_hourly_leave_policies_emp_type_date', 'employment_type_code', 'effective_from_date'),
+        Index('ix_hourly_leave_policies_user_date', 'user_id', 'effective_from_date'),
+    )
+
+    def __repr__(self) -> str:
+        scope = f"user={self.user_id}" if self.user_id else f"type={self.employment_type_code}"
+        return f"<HourlyLeavePolicy({scope}, from={self.effective_from_date}, active={self.is_active})>"
+
+
+class HourlyLeaveResolution(TimestampMixin, Base):
+    """
+    تاریخچه تصمیم‌گیری برای هر درخواست مرخصی ساعتی
+    شامل تمام محاسبات در زمان تایید: معافیت ماهانه، محدودیت روزانه، انباشت سالانه، تبدیل به استحقاقی
+    """
+    __tablename__ = "hourly_leave_resolutions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    leave_request_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("leave_requests.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="شناسه درخواست مرخصی"
+    )
+
+    # Input
+    requested_minutes: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        comment="دقایق درخواست شده"
+    )
+
+    # Policy snapshot at approval time
+    policy_conversion_rate: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        comment="نرخ تبدیل policy در زمان تایید (دقیقه = 1 روز)"
+    )
+    policy_monthly_exempt: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        comment="معافیت ماهانه policy در زمان تایید"
+    )
+    policy_daily_limit: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        comment="محدودیت روزانه policy در زمان تایید"
+    )
+    policy_entitled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        comment="آیا در زمان تایید entitled بوده یا خیر"
+    )
+
+    # Daily limit check
+    daily_usage_before: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        comment="دقایق مرخصی ساعتی تایید شده در همان روز قبل از این درخواست"
+    )
+    daily_usage_after: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        comment="دقایق مرخصی ساعتی تایید شده در همان روز بعد از این درخواست"
+    )
+    daily_limit_exceeded: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        comment="آیا محدودیت روزانه نقض شده است"
+    )
+    full_day_conversion: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        comment="آیا به دلیل نقض محدودیت روزانه، به یک روز کامل تبدیل شده است"
+    )
+
+    # Monthly exempt calculation
+    monthly_exempt_used_before: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        comment="دقایق معاف استفاده شده در همان ماه قبل از این درخواست"
+    )
+    monthly_exempt_applied: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        comment="دقایق معاف اعمال شده برای این درخواست"
+    )
+
+    # Subject to AL
+    minutes_subject_to_al: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        comment="دقایق مشمول کسر از مرخصی استحقاقی"
+    )
+
+    # Annual accumulation
+    annual_subject_minutes_before: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        comment="مجموع دقایق مشمول استحقاقی در سال قبل از این درخواست"
+    )
+    annual_subject_minutes_after: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        comment="مجموع دقایق مشمول استحقاقی در سال بعد از این درخواست"
+    )
+    annual_remainder_minutes: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        comment="باقیمانده دقایق مشمول استحقاقی پس از تبدیل به روز"
+    )
+
+    # AL conversion (only newly completed days)
+    new_al_days_deducted: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        comment="تعداد روزهای مرخصی استحقاقی کسر شده در این درخواست"
+    )
+
+    # Status tracking
+    status: Mapped[str] = mapped_column(
+        String(10),
+        nullable=False,
+        default='PENDING',
+        comment="وضعیت: PENDING, APPROVED, REJECTED, REVERSED"
+    )
+
+    # Relationships
+    leave_request: Mapped["LeaveRequest"] = relationship("LeaveRequest", backref="hourly_resolution")
+
+    def __repr__(self) -> str:
+        return f"<HourlyLeaveResolution(request={self.leave_request_id}, status={self.status}, al_days={self.new_al_days_deducted})>"
+
+
+class HourlyLeaveTransaction(TimestampMixin, Base):
+    """
+    تراکنش‌های مرخصی ساعتی بر اساس دقیقه (جدا از تراکنش‌های روزانه)
+    """
+    __tablename__ = "hourly_leave_transactions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(
+        String(50),
+        ForeignKey("users.user_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="شناسه کاربر"
+    )
+    year: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        index=True,
+        comment="سال شمسی"
+    )
+    month: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        index=True,
+        comment="ماه شمسی"
+    )
+    amount_minutes: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        comment="دقایق مرخصی ساعتی"
+    )
+    transaction_type: Mapped[str] = mapped_column(
+        String(10),
+        nullable=False,
+        index=True,
+        comment="نوع تراکنش: USE, REVERSE"
+    )
+    exempt_minutes: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        comment="دقایق معاف از کسر"
+    )
+    subject_to_al_minutes: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        comment="دقایق مشمول کسر از استحقاقی"
+    )
+    description: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="توضیحات"
+    )
+    reference_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+        index=True,
+        comment="شناسه درخواست مرخصی مرتبط"
+    )
+
+    # Relationships
+    user: Mapped["User"] = relationship("User", backref="hourly_leave_transactions")
+
+    __table_args__ = (
+        Index('idx_hourly_leave_transactions_user_year_month', 'user_id', 'year', 'month'),
+    )
+
+    def __repr__(self) -> str:
+        return f"<HourlyLeaveTransaction(user={self.user_id}, {self.year}/{self.month}, {self.amount_minutes}min, {self.transaction_type})>"
