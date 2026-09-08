@@ -98,10 +98,35 @@
                 </div>
 
                 <!-- تاریخ پایان -->
-                <div class="col-md-6">
+                <div class="col-md-6" id="toDateContainer">
                     <label class="form-label">📅 تا تاریخ <span class="text-danger">*</span></label>
                     <input type="text" name="to_date_str" class="form-control jalali-date"
                            id="toDate" value="{{ to_j }}" required placeholder="انتخاب تاریخ">
+                </div>
+
+                <!-- 🆕 بخش مرخصی ساعتی -->
+                <div class="col-md-6 d-none" id="hlTimeContainer">
+                    <label class="form-label">⏰ ساعت شروع و پایان <span class="text-danger">*</span></label>
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <input type="time" name="start_time_str" class="form-control"
+                                   id="hlStartTime" value="{{ hl_start_time }}" placeholder="شروع">
+                            <div class="form-text">ساعت شروع</div>
+                        </div>
+                        <div class="col-6">
+                            <input type="time" name="end_time_str" class="form-control"
+                                   id="hlEndTime" value="{{ hl_end_time }}" placeholder="پایان">
+                            <div class="form-text">ساعت پایان</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 🆕 نمایش مدت مرخصی ساعتی -->
+                <div class="col-md-6 d-none" id="hlDurationContainer">
+                    <label class="form-label">⏱️ مدت مرخصی</label>
+                    <div class="alert alert-info py-2 mb-0" id="hlDurationDisplay">
+                        <i class="bi bi-clock"></i> <span id="hlDurationText">-</span>
+                    </div>
                 </div>
 
                 <!-- دلیل -->
@@ -120,6 +145,7 @@
                     <li>تعداد روزها بر اساس بازه جدید و با کسر تعطیلات دوباره محاسبه می‌شود.</li>
                     <li>اگر وضعیت «تایید شده» انتخاب شود، از بالانس کاربر کسر می‌شود.</li>
                     <li>اگر درخواست قبلاً تایید شده بوده و وضعیت تغییر کند، کسر قبلی برگردانده می‌شود.</li>
+                    <li id="hlNote" class="d-none">⏰ برای مرخصی ساعتی، تاریخ پایان خودکار با تاریخ شروع یکسان تنظیم می‌شود و ساعت شروع/پایان تعیین می‌گردد.</li>
                 </ul>
             </div>
 
@@ -312,5 +338,60 @@ document.getElementById('editLeaveForm').addEventListener('submit', function(e) 
         return false;
     }
 });
+
+// 🆕 مدیریت نمایش فرم مرخصی ساعتی
+const leaveTypeSelect = document.querySelector('select[name="leave_type"]');
+const toDateContainer = document.getElementById('toDateContainer');
+const hlTimeContainer = document.getElementById('hlTimeContainer');
+const hlDurationContainer = document.getElementById('hlDurationContainer');
+const hlStartTime = document.getElementById('hlStartTime');
+const hlEndTime = document.getElementById('hlEndTime');
+const hlDurationText = document.getElementById('hlDurationText');
+const toDateInput = document.getElementById('toDate');
+
+function toggleHLFields() {
+    const isHL = leaveTypeSelect.value === 'HL';
+    const hlNote = document.getElementById('hlNote');
+    if (isHL) {
+        toDateContainer.classList.add('d-none');
+        toDateInput.removeAttribute('required');
+        hlTimeContainer.classList.remove('d-none');
+        hlDurationContainer.classList.remove('d-none');
+        if (hlNote) hlNote.classList.remove('d-none');
+    } else {
+        toDateContainer.classList.remove('d-none');
+        toDateInput.setAttribute('required', 'required');
+        hlTimeContainer.classList.add('d-none');
+        hlDurationContainer.classList.add('d-none');
+        if (hlNote) hlNote.classList.add('d-none');
+    }
+}
+
+function calculateHLDuration() {
+    if (!hlStartTime.value || !hlEndTime.value) {
+        hlDurationText.textContent = '-';
+        return;
+    }
+    const [sh, sm] = hlStartTime.value.split(':').map(Number);
+    const [eh, em] = hlEndTime.value.split(':').map(Number);
+    let diffMin = (eh * 60 + em) - (sh * 60 + sm);
+    if (diffMin <= 0) {
+        hlDurationText.textContent = '⚠️ ساعت پایان باید بعد از شروع باشد';
+        return;
+    }
+    const h = Math.floor(diffMin / 60);
+    const m = diffMin % 60;
+    hlDurationText.textContent = h > 0 ? `${h} ساعت و ${m} دقیقه` : `${m} دقیقه`;
+}
+
+leaveTypeSelect.addEventListener('change', toggleHLFields);
+hlStartTime.addEventListener('change', calculateHLDuration);
+hlEndTime.addEventListener('change', calculateHLDuration);
+
+// اعمال در بارگذاری اولیه
+toggleHLFields();
+if (leaveTypeSelect.value === 'HL') {
+    calculateHLDuration();
+}
 </script>
 {% endblock %}

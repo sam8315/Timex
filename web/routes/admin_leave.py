@@ -501,6 +501,17 @@ async def leave_requests_page(
                 ).first()
                 current_balance = balance.balance if balance else 0
 
+            # 🆕 محاسبه اطلاعات مرخصی ساعتی
+            hl_start_time = r.start_time.strftime('%H:%M') if r.start_time else None
+            hl_end_time = r.end_time.strftime('%H:%M') if r.end_time else None
+            hl_duration_minutes = None
+            hl_duration_display = None
+            if r.start_time and r.end_time:
+                hl_duration_minutes = compute_requested_minutes(r.start_time, r.end_time)
+                h = hl_duration_minutes // 60
+                m = hl_duration_minutes % 60
+                hl_duration_display = f"{h}h {m}m" if h > 0 else f"{m}m"
+
             requests_data.append({
                 'request': r,
                 'full_name': get_employee_name(db, r.user_id),
@@ -508,7 +519,11 @@ async def leave_requests_page(
                 'to_j': to_j,
                 'created_j': created_j,
                 'leave_type_name': LEAVE_TYPES.get(r.leave_type, r.leave_type),
-                'current_balance': current_balance,  # 🆕
+                'current_balance': current_balance,
+                'hl_start_time': hl_start_time,
+                'hl_end_time': hl_end_time,
+                'hl_duration_minutes': hl_duration_minutes,
+                'hl_duration_display': hl_duration_display,
             })
         total_days = sum(item['request'].days_count for item in requests_data)
 
@@ -1306,6 +1321,9 @@ async def edit_leave_request_form(
             'R': 'رد شده',
         },
         "is_admin": True,
+        "is_hl": leave_request.leave_type == 'HL',
+        "hl_start_time": leave_request.start_time.strftime('%H:%M') if leave_request.start_time else '',
+        "hl_end_time": leave_request.end_time.strftime('%H:%M') if leave_request.end_time else '',
     })
 
 
@@ -1319,6 +1337,8 @@ async def edit_leave_request_submit(
         to_date_str: str = Form(...),
         reason: str = Form(""),
         status: str = Form('P'),
+        start_time_str: str = Form(""),
+        end_time_str: str = Form(""),
         user: User = Depends(require_admin),
         db: Session = Depends(get_db)
 ):
@@ -1414,6 +1434,25 @@ async def edit_leave_request_submit(
         leave_request.days_count = days_count
         leave_request.reason = reason.strip()
         leave_request.status = status
+
+        # 🆕 به‌روزرسانی فیلدهای مرخصی ساعتی
+        if leave_type == 'HL' and start_time_str and end_time_str:
+            try:
+                from datetime import time as time_type
+                st_parts = start_time_str.strip().split(':')
+                et_parts = end_time_str.strip().split(':')
+                start_time = time_type(int(st_parts[0]), int(st_parts[1]))
+                end_time = time_type(int(et_parts[0]), int(et_parts[1]))
+                if start_time >= end_time:
+                    raise ValueError("ساعت شروع باید قبل از ساعت پایان باشد")
+                leave_request.start_time = start_time
+                leave_request.end_time = end_time
+            except ValueError as e:
+                raise ValueError(f"زمان نامعتبر: {str(e)}")
+        elif leave_type != 'HL':
+            # پاک کردن فیلدهای زمانی برای انواع غیر HL
+            leave_request.start_time = None
+            leave_request.end_time = None
 
         # مرحله ۳: اگر وضعیت جدید "تایید شده" است، کسر جدید اعمال شود
         if status == 'A':

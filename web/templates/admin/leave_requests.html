@@ -393,6 +393,9 @@
                     <th>از تاریخ</th>
                     <th>تا تاریخ</th>
                     <th class="text-center">روزها</th>
+                    <th class="text-center d-none d-md-table-cell">ساعت شروع</th>
+                    <th class="text-center d-none d-md-table-cell">ساعت پایان</th>
+                    <th class="text-center d-none d-md-table-cell">مدت</th>
                     <th>دلیل</th>
                     <th class="text-center">وضعیت</th>
                     <th class="text-center">عملیات</th>
@@ -412,13 +415,42 @@
                         <span class="badge bg-info text-dark">استعلاجی</span>
                         {% elif item.request.leave_type == 'UL' %}
                         <span class="badge bg-danger">بدون حقوق</span>
+                        {% elif item.request.leave_type == 'HL' %}
+                        <span class="badge bg-teal" style="background-color: #0f766e;">ساعتی</span>
                         {% else %}
                         <span class="badge bg-secondary">{{ item.leave_type_name }}</span>
                         {% endif %}
                     </td>
                     <td>{{ item.from_j }}</td>
                     <td>{{ item.to_j }}</td>
-                    <td class="text-center fw-bold">{{ item.request.days_count }}</td>
+                    <td class="text-center fw-bold">
+                        {% if item.request.leave_type == 'HL' %}
+                        <small class="text-muted">-</small>
+                        {% else %}
+                        {{ item.request.days_count }}
+                        {% endif %}
+                    </td>
+                    <td class="text-center d-none d-md-table-cell">
+                        {% if item.hl_start_time %}
+                        <span class="badge bg-light text-dark">{{ item.hl_start_time }}</span>
+                        {% else %}
+                        <small class="text-muted">-</small>
+                        {% endif %}
+                    </td>
+                    <td class="text-center d-none d-md-table-cell">
+                        {% if item.hl_end_time %}
+                        <span class="badge bg-light text-dark">{{ item.hl_end_time }}</span>
+                        {% else %}
+                        <small class="text-muted">-</small>
+                        {% endif %}
+                    </td>
+                    <td class="text-center d-none d-md-table-cell">
+                        {% if item.hl_duration_display %}
+                        <span class="badge bg-info text-dark">{{ item.hl_duration_display }}</span>
+                        {% else %}
+                        <small class="text-muted">-</small>
+                        {% endif %}
+                    </td>
                     <td>
                         <small class="text-muted" title="{{ item.request.reason or '' }}">
                             {{ item.request.reason[:30] + '...' if item.request.reason and item.request.reason|length >
