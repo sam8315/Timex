@@ -552,6 +552,89 @@ class TestAttendanceIntegration:
         )
         assert effective == 360  # 480 - 120
 
+    def test_hl_not_full_day_leave(self, db, make_user):
+        """HL must NOT cause is_leave=True (full-day leave)."""
+        user = make_user(role="user", balance_al=30, department="1")
+        emp = db.query(Employee).filter(
+            Employee.user_id == user["user_id"]
+        ).first()
+        # Policy: Mon-Thu 08:00-16:00 = 480 min
+        _seed_attendance_policy(db, emp, workday_start=time(8, 0), workday_end=time(16, 0))
+        _seed_hl_policy(db, emp, conversion=480, monthly_exempt=480)
+
+        leave_date = MONDAY
+        _create_and_approve_hl(db, emp, "09:00", "11:00", leave_date=leave_date)  # 120 min
+
+        hl_minutes = get_approved_hl_minutes(db, emp, leave_date, leave_date)
+        assert hl_minutes[leave_date] == 120
+
+        # ⚠️ ключевой: leaves_by_date НЕ содержит HL → is_leave=False → base required = 480
+        # effective = 480 - 120 = 360
+        effective_correct = compute_required_minutes_for_range(
+            db=db, employee=emp,
+            start_date=leave_date, end_date=leave_date,
+            rest_dates=set(), holiday_dates={}, leaves_by_date={},  # HL NOT in leaves
+            hourly_leave_minutes_by_date=hl_minutes,
+        )
+        assert effective_correct == 360
+
+        # ❌ incorrect: if HL leaked into leaves_by_date → is_leave=True → base=0 → effective=0
+        effective_wrong = compute_required_minutes_for_range(
+            db=db, employee=emp,
+            start_date=leave_date, end_date=leave_date,
+            rest_dates=set(), holiday_dates={},
+            leaves_by_date={leave_date: 'HL'},  # ❌ HL in leaves → WRONG
+            hourly_leave_minutes_by_date=hl_minutes,
+        )
+        assert effective_wrong == 0, "Bug: HL in leaves_by_date makes is_leave=True → required=0"
+
+    def test_hl_balance_with_actual_work(self, db, make_user):
+        """
+        Integration test: HL reduces required, NOT actual.
+
+        Scenario 1: Base=420, HL=120, Actual=300 → Required=300, Balance=0
+        Scenario 2: Base=420, HL=120, Actual=250 → Required=300, Deficit=50
+        """
+        user = make_user(role="user", balance_al=30, department="1")
+        emp = db.query(Employee).filter(
+            Employee.user_id == user["user_id"]
+        ).first()
+        # Policy: Mon-Thu 08:00-15:00 = 420 min (7 hours)
+        _seed_attendance_policy(db, emp, workday_start=time(8, 0), workday_end=time(15, 0))
+        _seed_hl_policy(db, emp, conversion=480, monthly_exempt=480)
+
+        leave_date = MONDAY
+        _create_and_approve_hl(db, emp, "09:00", "11:00", leave_date=leave_date)  # 120 min
+
+        hl_minutes = get_approved_hl_minutes(db, emp, leave_date, leave_date)
+        assert hl_minutes[leave_date] == 120
+
+        # Scenario 1: Actual work = 300 min (5 hours) → Balance = 0
+        required1 = compute_required_minutes_for_range(
+            db=db, employee=emp,
+            start_date=leave_date, end_date=leave_date,
+            rest_dates=set(), holiday_dates={}, leaves_by_date={},
+            hourly_leave_minutes_by_date=hl_minutes,
+        )
+        assert required1 == 300  # 420 - 120
+        actual1 = 300
+        balance1 = actual1 - required1
+        assert balance1 == 0, f"Scenario 1: expected balance 0, got {balance1}"
+
+        # Scenario 2: Actual work = 250 min (4h 10m) → Deficit = 50
+        required2 = required1  # same day, same HL
+        actual2 = 250
+        balance2 = actual2 - required2
+        assert balance2 == -50, f"Scenario 2: expected deficit 50, got {balance2}"
+
+        # Verify actual is NOT reduced by HL
+        assert actual1 == 300
+        assert actual2 == 250
+
+        # Verify required IS reduced by HL
+        assert required1 == 300
+        assert required2 == 300
+
 
 # ---------------------------------------------------------------------------
 # Test 9: Example A – Monthly Exempt, No AL Deduction

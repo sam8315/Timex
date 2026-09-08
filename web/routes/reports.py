@@ -469,10 +469,11 @@ async def monthly_stats_report_generate(
         # مرتب‌سازی بر اساس تاریخ عضویت
         employees = emp_query.order_by(Employee.hire_date, Employee.first_name).all()
 
-        # دریافت مرخصی‌های تأیید شده در بازه ماه
+        # دریافت مرخصی‌های تأیید شده در بازه ماه (فقط مرخصی‌های روزانه، HL جداگانه پردازش می‌شود)
         approved_leaves = db.query(LeaveRequest).filter(
             and_(
                 LeaveRequest.status == 'A',
+                LeaveRequest.leave_type != 'HL',  # ✅ HL در leaves_map نباشد
                 LeaveRequest.from_date <= month_end_g,
                 LeaveRequest.to_date >= month_start_g
             )

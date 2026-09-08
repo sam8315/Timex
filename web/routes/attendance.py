@@ -480,17 +480,18 @@ async def attendance_page(
     holidays = holiday_query.all()
     holiday_dates = {h.holiday_date: h.title for h in holidays}
 
-    # 🆕 دریافت مرخصی‌های تایید شده برای بازه ماه
+    # 🆕 دریافت مرخصی‌های تایید شده برای بازه ماه (فقط مرخصی‌های روزانه، HL جداگانه پردازش می‌شود)
     approved_leaves = db.query(LeaveRequest).filter(
         and_(
             LeaveRequest.user_id == user.user_id,
             LeaveRequest.status == 'A',
+            LeaveRequest.leave_type != 'HL',  # ✅ HL 제외: HL باید در leaves_by_date نباشد
             LeaveRequest.from_date <= month_end_g,
             LeaveRequest.to_date >= month_start_g
         )
     ).all()
 
-    # 🆕 ساخت دیکشنری مرخصی‌ها بر اساس تاریخ
+    # 🆕 ساخت دیکشنری مرخصی‌ها بر اساس تاریخ (فقط full-day leaves: AL, SL, RL, CW, ...)
     leaves_by_date = {}
     LEAVE_TYPE_NAMES_LOCAL = {
         'AL': 'استحقاقی',

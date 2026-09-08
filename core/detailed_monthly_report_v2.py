@@ -98,17 +98,18 @@ class DetailedMonthlyReportGeneratorV2:
 
         statuses_by_date = {ds.status_date: ds.status_code for ds in daily_statuses}
 
-        # ✅ دریافت درخواست‌های مرخصی تایید شده
+        # ✅ دریافت درخواست‌های مرخصی تایید شده (فقط مرخصی‌های روزانه، HL جداگانه پردازش می‌شود)
         approved_leaves = self.db.query(LeaveRequest).filter(
             and_(
                 LeaveRequest.user_id == user_id,
                 LeaveRequest.status == 'A',  # تایید شده
+                LeaveRequest.leave_type != 'HL',  # ✅ HL در leaves_by_date نباشد
                 LeaveRequest.from_date <= g_end,
                 LeaveRequest.to_date >= g_start
             )
         ).all()
 
-        # ✅ ساخت دیکشنری مرخصی‌ها بر اساس تاریخ
+        # ✅ ساخت دیکشنری مرخصی‌ها بر اساس تاریخ (فقط full-day leaves)
         leaves_by_date = {}
         for leave in approved_leaves:
             current = leave.from_date
