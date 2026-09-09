@@ -36,7 +36,11 @@ from web.routes.attendance import (
     STATUS_NO_ATTENDANCE
 )
 from web.services.attendance_policy_service import compute_required_minutes_for_range
-from web.services.hourly_leave_service import get_approved_hl_minutes
+from web.services.hourly_leave_service import (
+    get_approved_hl_minutes,
+    get_approved_hl_minutes_on_date,
+    format_hl_display,
+)
 from models.daily_status import DailyStatus
 from web.permissions import has_permission, get_effective_permissions, enforce_permission
 from models.employee_region import EmployeeRegion
@@ -758,9 +762,11 @@ async def admin_attendance(
     status_by_user = {ds.user_id: ds.status_code for ds in daily_statuses}
 
     # 🆕 دریافت مرخصی‌های تایید شده که شامل تاریخ هدف هستند
+    # ✅ HL جدا: HL نباید به‌عنوان مرخصی کامل روزانه دیده شود (فقط بج جداگانه نمایش داده می‌شود)
     approved_leaves = db.query(LeaveRequest).filter(
         and_(
             LeaveRequest.status == 'A',
+            LeaveRequest.leave_type != 'HL',  # ✅ HL در leave_by_user نباشد
             LeaveRequest.from_date <= target_date,
             LeaveRequest.to_date >= target_date
         )
@@ -786,6 +792,9 @@ async def admin_attendance(
         # تعیین وضعیت
         daily_status = status_by_user.get(emp.user_id)
         leave_type = leave_by_user.get(emp.user_id)
+
+        # 🕐 دقایق مرخصی ساعتی تایید شده در این روز (فقط نمایش)
+        hl_minutes = get_approved_hl_minutes_on_date(db, emp, target_date)
 
         LEAVE_TYPE_NAMES_LOCAL = {
             'AL': 'استحقاقی',
@@ -854,6 +863,9 @@ async def admin_attendance(
             'status_label': status_label,
             'status_color': status_color,
             'has_detail': len(user_atts) > 0,
+            # 🕐 HL تایید شده برای نمایش (بج جداگانه، بدون تغییر وضعیت اصلی)
+            'hourly_leave_minutes': hl_minutes,
+            'hourly_leave_display': format_hl_display(hl_minutes),
         })
 
     # آمار
@@ -1046,6 +1058,9 @@ async def admin_user_attendance(
             'is_holiday': holiday_title is not None,
             'holiday_title': holiday_title,
             'status': status_info,
+            # 🕐 HL تایید شده برای نمایش (بدون تاثیر روی وضعیت اصلی/محاسبات)
+            'hourly_leave_minutes': hourly_leave_minutes_by_date.get(current, 0),
+            'hourly_leave_display': format_hl_display(hourly_leave_minutes_by_date.get(current, 0)),
         })
         current += timedelta(days=1)
 

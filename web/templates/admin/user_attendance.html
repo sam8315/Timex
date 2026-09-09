@@ -520,6 +520,9 @@
                             {% for w in day.status.warnings %}
                             <br><span class="badge bg-{{ w.color }} mt-1">{{ w.label }}</span>
                             {% endfor %}
+                            {% if day.hourly_leave_minutes %}
+                            <br><span class="badge bg-success mt-1">🕐 {{ day.hourly_leave_display }}</span>
+                            {% endif %}
                         </td>
                         <td class="text-center">
                             {% if day.records | length > 0 %}

@@ -107,6 +107,23 @@ def compute_requested_minutes(start_time: time, end_time: time) -> int:
     return _time_to_minutes(end_time) - _time_to_minutes(start_time)
 
 
+def format_hl_display(minutes: int) -> str:
+    """فرمت‌بندی دقایق مرخصی ساعتی تایید شده فقط برای نمایش.
+
+    فقط برای نمایش است و هیچ منطق محاسباتی را تغییر نمی‌دهد.
+    Examples:
+        0   → ''
+        120 → 'مرخصی ساعتی 2:00'
+        15  → 'مرخصی ساعتی 0:15'
+        180 → 'مرخصی ساعتی 3:00'
+    """
+    if not minutes:
+        return ''
+    h = minutes // 60
+    m = minutes % 60
+    return f'مرخصی ساعتی {h}:{m:02d}'
+
+
 def get_approved_hl_minutes_on_date(
     db: Session,
     employee: Employee,

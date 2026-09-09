@@ -16,7 +16,7 @@ from models.attendance import Attendance
 from models.holiday import Holiday
 from models.leave_request import LeaveRequest  # 🆕
 from web.services.attendance_policy_service import compute_required_minutes_for_range
-from web.services.hourly_leave_service import get_approved_hl_minutes
+from web.services.hourly_leave_service import get_approved_hl_minutes, format_hl_display
 
 router = APIRouter(tags=["Attendance"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
@@ -570,6 +570,9 @@ async def attendance_page(
             'holiday_title': holiday_title,
             'status': status_info,
             'is_night_shift': status_info['main_status'] == STATUS_NIGHT_SHIFT,
+            # 🕐 HL تایید شده برای نمایش (بدون تاثیر روی وضعیت اصلی/محاسبات)
+            'hourly_leave_minutes': hourly_leave_minutes_by_date.get(current, 0),
+            'hourly_leave_display': format_hl_display(hourly_leave_minutes_by_date.get(current, 0)),
         })
         current += timedelta(days=1)
     # 🆕 محاسبه کارکرد کل ماه قبل از اعمال فیلتر

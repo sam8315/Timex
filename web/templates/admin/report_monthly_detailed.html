@@ -422,6 +422,9 @@
                         {% elif day.person_status == 'H' %}
                         <span class="badge bg-warning text-dark status-badge">تعطیل</span>
                         {% endif %}
+                        {% if day.hourly_leave_minutes %}
+                        <br><span class="badge bg-success status-badge">🕐 {{ day.hourly_leave_display }}</span>
+                        {% endif %}
                     </td>
                     <td>
                         {% if day.attendance_pairs %}

@@ -19,7 +19,7 @@ from web.services.attendance_policy_service import (
     resolve_policy,
     resolve_required_minutes,
 )
-from web.services.hourly_leave_service import get_approved_hl_minutes
+from web.services.hourly_leave_service import get_approved_hl_minutes, format_hl_display
 
 
 class DetailedMonthlyReportGeneratorV2:
@@ -208,7 +208,10 @@ class DetailedMonthlyReportGeneratorV2:
                 'evening_hours': shift_hours['evening'],
                 'night_hours': shift_hours['night'],
                 'has_duty': has_duty,
-                'daily_duty': daily_duty
+                'daily_duty': daily_duty,
+                # 🕐 HL تایید شده برای نمایش (بدون تاثیر روی وضعیت فرد/موظفی)
+                'hourly_leave_minutes': hl_mins,
+                'hourly_leave_display': format_hl_display(hl_mins),
             })
 
             current += timedelta(days=1)

@@ -218,6 +218,9 @@
                         </td>
                         <td class="text-center">
                             <span class="badge bg-{{ r.status_color }}">{{ r.status_label }}</span>
+                            {% if r.hourly_leave_minutes %}
+                            <br><span class="badge bg-success mt-1">🕐 {{ r.hourly_leave_display }}</span>
+                            {% endif %}
                         </td>
                         <td class="text-center">
                             {% if r.has_detail %}
