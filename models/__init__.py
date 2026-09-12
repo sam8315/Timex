@@ -19,6 +19,7 @@ from models.bale_user import BaleUser
 from models.region import Region
 from models.policy import Policy, PolicyValue, PolicyAuditLog
 from models.employee_region import EmployeeRegion
+from models import hourly_leave_policy_rules  # register hourly-leave policy normalization listeners
 
 __all__ = [
     'Base', 'User', 'Attendance', 'AttendancePolicy', 'AttendancePolicyDay',
@@ -27,5 +28,5 @@ __all__ = [
     'LeaveRequest', 'LeaveCarryForwardRequest', 'Holiday', 'DailyStatus',
     'EmployeePhone', 'Education', 'UserPermission', 'UserPermissionHistory', 'BaleUser',
     'Employee', 'Region', 'Policy', 'PolicyValue', 'PolicyAuditLog',
-    'EmployeeRegion'
+    'EmployeeRegion',
 ]
