@@ -137,6 +137,14 @@
                     if (typeof input.setSelectionRange === 'function') {
                         input.setSelectionRange(caretPos, caretPos);
                     }
+                    // Notify duration after smart normalization completes
+                    if (typeof Event === 'function') {
+                        input.dispatchEvent(new Event('input', { bubbles: true }));
+                    } else {
+                        var ev2 = document.createEvent('Event');
+                        ev2.initEvent('input', true, true);
+                        input.dispatchEvent(ev2);
+                    }
                     return;
                 }
             }
@@ -155,6 +163,14 @@
                     var caretPos2 = smartMinuteValue.length;
                     if (typeof input.setSelectionRange === 'function') {
                         input.setSelectionRange(caretPos2, caretPos2);
+                    }
+                    // Notify duration after smart minute normalization
+                    if (typeof Event === 'function') {
+                        input.dispatchEvent(new Event('input', { bubbles: true }));
+                    } else {
+                        var ev3 = document.createEvent('Event');
+                        ev3.initEvent('input', true, true);
+                        input.dispatchEvent(ev3);
                     }
                     return;
                 }
@@ -201,6 +217,17 @@
             var caretPosition = getCaretPosition(input, rawValue, formattedValue, event);
             if (typeof input.setSelectionRange === 'function') {
                 input.setSelectionRange(caretPosition, caretPosition);
+            }
+
+            // After normalization to a valid full time, notify duration listeners
+            if (isValidTimeValue(input.value)) {
+                if (typeof Event === 'function') {
+                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                } else {
+                    var ev = document.createEvent('Event');
+                    ev.initEvent('input', true, true);
+                    input.dispatchEvent(ev);
+                }
             }
         } finally {
             isFormatting = false;
