@@ -177,6 +177,17 @@ async def leave_page(
         and_(LeaveRequest.user_id == user.user_id, LeaveRequest.status == 'R')
     ).count()
 
+    # Resolve hourly leave policy granularity for hint text
+    hl_granularity = 15
+    try:
+        from web.services.hourly_leave_service import resolve_hourly_leave_policy
+        # We need a user and a date; use today as proxy for hint
+        hl_policy = resolve_hourly_leave_policy(db, user, date.today())
+        if hl_policy and hl_policy.granularity_minutes:
+            hl_granularity = hl_policy.granularity_minutes
+    except Exception:
+        pass
+
     return templates.TemplateResponse(request, "leave.html", {
         "user": user,
         "today_j": today_j.strftime('%Y/%m/%d'),
@@ -192,6 +203,7 @@ async def leave_page(
         "rejected_count": rejected_count,
         "leave_types": available_leave_types,  # 🆕 لیست فیلتر شده
         "is_admin": user.is_admin,
+        "hl_granularity": hl_granularity,
     })
 
 

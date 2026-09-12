@@ -356,26 +356,32 @@
 
                         <!-- 🆕 بخش مرخصی ساعتی (فقط برای HL نمایش داده شود) -->
                         <div class="col-12">
-                            <div class="hl-time-section" id="hlTimeSection">
+                            <div class="hl-time-section" id="hlTimeSection" data-granularity="{{ hl_granularity if hl_granularity is defined else 15 }}">
                                 <div class="row g-3">
                                     <div class="col-md-6">
                                         <label class="form-label fw-bold">
                                             <i class="bi bi-clock text-success"></i> ساعت شروع <span class="text-danger">*</span>
                                         </label>
-                                        <input type="time" name="start_time_str" id="startTime"
-                                               class="form-control form-control-lg text-center" step="300">
+                                        <input type="text" name="start_time_str" id="startTime"
+                                               class="form-control form-control-lg text-center"
+                                               placeholder="HH:MM" pattern="([01][0-9]|2[0-3]):([0-5][0-9])"
+                                               inputmode="numeric" maxlength="5" dir="ltr"
+                                               autocomplete="off" required data-time-input="true">
                                     </div>
                                     <div class="col-md-6">
                                         <label class="form-label fw-bold">
                                             <i class="bi bi-clock text-danger"></i> ساعت پایان <span class="text-danger">*</span>
                                         </label>
-                                        <input type="time" name="end_time_str" id="endTime"
-                                               class="form-control form-control-lg text-center" step="300">
+                                        <input type="text" name="end_time_str" id="endTime"
+                                               class="form-control form-control-lg text-center"
+                                               placeholder="HH:MM" pattern="([01][0-9]|2[0-3]):([0-5][0-9])"
+                                               inputmode="numeric" maxlength="5" dir="ltr"
+                                               autocomplete="off" required data-time-input="true">
                                     </div>
                                 </div>
-                                <div class="mt-2 small text-muted">
+                                <div class="mt-2 small text-muted" id="hlHint">
                                     <i class="bi bi-info-circle"></i>
-                                    زمان باید مضربی از ۱۵ دقیقه و در ساعات کاری روز باشد
+                                    <span id="hlHintText">زمان باید مضربی از ۱۵ دقیقه و در ساعات کاری روز باشد</span>
                                 </div>
                                 <div class="mt-2" id="hlDurationDisplay" style="display: none;">
                                     <span class="badge bg-info fs-6" id="hlDurationText">0 دقیقه</span>
@@ -783,11 +789,16 @@ function calculateHLDuration() {
 
     if (!startInput || !endInput || !durationDisplay || !durationText) return;
 
-    const startVal = startInput.value;
-    const endVal = endInput.value;
+    const startVal = startInput.value.trim();
+    const endVal = endInput.value.trim();
 
     if (!startVal || !endVal) {
         durationDisplay.style.display = 'none';
+        return;
+    }
+    if (!window.isValidTimeValue(startVal) || !window.isValidTimeValue(endVal)) {
+        durationText.textContent = 'فرمت ساعت باید HH:MM باشد';
+        durationDisplay.style.display = 'block';
         return;
     }
 
@@ -815,17 +826,35 @@ function calculateHLDuration() {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
+    // Dynamic hourly-leave policy hint
+    function updateHLHint() {
+        var hintText = document.getElementById('hlHintText');
+        if (!hintText) return;
+        var section = document.getElementById('hlTimeSection');
+        var gran = section ? (section.getAttribute('data-granularity') || '15') : '15';
+        var val = parseInt(gran, 10);
+        if (isNaN(val) || val < 1) val = 15;
+        if (val === 1) {
+            hintText.textContent = 'زمان می‌تواند با دقت ۱ دقیقه و در ساعات کاری روز وارد شود';
+        } else {
+            hintText.textContent = 'زمان باید مضربی از ' + val + ' دقیقه و در ساعات کاری روز باشد';
+        }
+    }
+    updateHLHint();
+
     const leaveType = document.getElementById('leaveType');
-    const startTime = document.getElementById('startTime');
-    const endTime = document.getElementById('endTime');
 
     if (leaveType) {
         leaveType.addEventListener('change', toggleHLTimeSection);
         toggleHLTimeSection();
     }
 
-    if (startTime) startTime.addEventListener('change', calculateHLDuration);
-    if (endTime) endTime.addEventListener('change', calculateHLDuration);
+    if (startTime) {
+        startTime.addEventListener('input', calculateHLDuration);
+    }
+    if (endTime) {
+        endTime.addEventListener('input', calculateHLDuration);
+    }
 });
 </script>
 {% endblock %}

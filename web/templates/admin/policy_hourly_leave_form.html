@@ -49,7 +49,7 @@
                             <label class="form-label fw-bold">Override کارمند (اختیاری)</label>
                             <input type="text" name="user_id_override" class="form-control"
                                    list="employee-list" placeholder="کد پرسنلی یا نام"
-                                   value="{{ policy.user_id if policy else '' }}">
+                                   value="">
                             <datalist id="employee-list">
                                 {% for emp in employees %}
                                 <option value="{{ emp.user_id }}">{{ emp.full_name }} ({{ emp.user_id }})</option>
@@ -132,7 +132,7 @@
                         <div class="col-md-4">
                             <label class="form-label fw-bold">گرانولاری زمان (دقیقه)</label>
                             <input type="number" name="granularity_minutes" class="form-control"
-                                   min="5" max="60" step="5"
+                                   min="1" max="60" step="5"
                                    value="{{ policy.granularity_minutes if policy else 15 }}">
                             <div class="form-text">زمان درخواست باید مضربی از این مقدار باشد</div>
                         </div>
@@ -152,7 +152,7 @@
                         <div class="col-md-6">
                             <label class="form-label fw-bold">حداقل درخواست (دقیقه)</label>
                             <input type="number" name="min_request_minutes" class="form-control"
-                                   min="5" max="720" step="5"
+                                   min="1" max="720" step="5"
                                    value="{{ policy.min_request_minutes if policy else 15 }}">
                         </div>
                         <div class="col-md-6">

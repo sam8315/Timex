@@ -1393,8 +1393,8 @@ async def admin_policies_hourly_leave_save(
         max_daily_minutes = max(30, min(1440, max_daily_minutes))
         monthly_exempt_minutes = max(0, min(1440, monthly_exempt_minutes))
         conversion_minutes_per_day = max(30, min(1440, conversion_minutes_per_day))
-        granularity_minutes = max(5, min(60, granularity_minutes))
-        min_request_minutes = max(5, min(720, min_request_minutes))
+        granularity_minutes = max(1, min(60, granularity_minutes))
+        min_request_minutes = max(1, min(720, min_request_minutes))
         max_request_minutes_val = max(15, min(1440, max_request_minutes))
         if min_request_minutes > max_request_minutes_val:
             raise ValueError("حداقل درخواست نباید بیشتر از حداکثر باشد")
@@ -1566,8 +1566,8 @@ async def admin_policies_hourly_leave_update(
         max_daily_minutes = max(30, min(1440, max_daily_minutes))
         monthly_exempt_minutes = max(0, min(1440, monthly_exempt_minutes))
         conversion_minutes_per_day = max(30, min(1440, conversion_minutes_per_day))
-        granularity_minutes = max(5, min(60, granularity_minutes))
-        min_request_minutes = max(5, min(720, min_request_minutes))
+        granularity_minutes = max(1, min(60, granularity_minutes))
+        min_request_minutes = max(1, min(720, min_request_minutes))
         max_request_minutes_val = max(15, min(1440, max_request_minutes))
         if min_request_minutes > max_request_minutes_val:
             raise ValueError("حداقل درخواست نباید بیشتر از حداکثر باشد")

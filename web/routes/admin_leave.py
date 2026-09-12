@@ -7,6 +7,7 @@ from fastapi.templating import Jinja2Templates
 from pathlib import Path
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_
+from datetime import time
 import jdatetime
 from typing import Optional
 
@@ -28,6 +29,7 @@ from web.services.hourly_leave_service import (
     approve_hourly_leave,
     reverse_hourly_leave,
     compute_requested_minutes,
+    validate_hourly_leave_request,
 )
 import threading                                  # 🆕 برای ارسال async
 
@@ -1165,11 +1167,23 @@ async def register_leave_form(
         for emp in employees
     ]
 
+    # Resolve hourly leave policy granularity for hint text (default 15)
+    hl_granularity = 15
+    try:
+        from web.services.hourly_leave_service import resolve_hourly_leave_policy
+        # Use first active employee or user; approximate with user for hint
+        hl_policy = resolve_hourly_leave_policy(db, user, __import__('datetime').date.today())
+        if hl_policy and hl_policy.granularity_minutes:
+            hl_granularity = hl_policy.granularity_minutes
+    except Exception:
+        pass
+
     return templates.TemplateResponse(request, "admin/leave_register.html", {
         "user": user,
         "employees": employees_list,
         "leave_types": LEAVE_TYPES,
         "is_admin": True,
+        "hl_granularity": hl_granularity,
     })
 
 
@@ -1179,7 +1193,9 @@ async def register_leave_for_user(
         target_user_id: str = Form(...),
         leave_type: str = Form(...),
         from_date_str: str = Form(...),
-        to_date_str: str = Form(...),
+        to_date_str: str = Form(""),
+        start_time_str: str = Form(""),
+        end_time_str: str = Form(""),
         reason: str = Form(""),
         user: User = Depends(require_admin),
         db: Session = Depends(get_db)
@@ -1203,55 +1219,106 @@ async def register_leave_for_user(
 
         # تبدیل تاریخ‌های شمسی به میلادی
         from_j = jdatetime.datetime.strptime(from_date_str.strip(), "%Y/%m/%d").date()
-        to_j = jdatetime.datetime.strptime(to_date_str.strip(), "%Y/%m/%d").date()
         from_date = from_j.togregorian()
-        to_date = to_j.togregorian()
 
-        # اعتبارسنجی بازه تاریخ
-        if from_date > to_date:
-            raise ValueError("تاریخ شروع باید قبل یا مساوی تاریخ پایان باشد")
+        # 🆕 منطق مرخصی ساعتی
+        if leave_type == 'HL':
+            if not start_time_str or not end_time_str:
+                raise ValueError("ساعت شروع و پایان برای مرخصی ساعتی الزامی است")
+            from datetime import time as time_type
+            try:
+                st = start_time_str.strip().split(':')
+                et = end_time_str.strip().split(':')
+                start_time = time_type(int(st[0]), int(st[1]))
+                end_time = time_type(int(et[0]), int(et[1]))
+                if start_time >= end_time:
+                    raise ValueError("ساعت شروع باید قبل از ساعت پایان باشد")
+            except Exception as e:
+                raise ValueError(f"فرمت ساعت نامعتبر: {str(e)}")
 
-        # نکته: هیچ محدودیتی برای تاریخ گذشته وجود ندارد
+            to_date = from_date  # ✅ HL: same day, to_date = from_date
+            days_count = 0  # ✅ HL: duration computed from minutes, not days
 
-        # محاسبه تعداد روزها (با کسر تعطیلات و جمعه‌ها)
-        days_count = calculate_leave_days_admin(db, target_user_id, from_date, to_date)
+            # Validate via service policy
+            employee = db.query(Employee).filter(Employee.user_id == target_user_id).first()
+            if employee:
+                valid, err = validate_hourly_leave_request(db, employee, from_date, start_time, end_time)
+                if not valid:
+                    raise ValueError(err or "اعتبارسنجی مرخصی ساعتی ناموفق")
 
-        if days_count <= 0:
-            raise ValueError("در بازه انتخابی، هیچ روز کاری وجود ندارد (همه تعطیل هستند)")
+            # Overlap check for HL (same date, existing approved/pending)
+            overlapping = db.query(LeaveRequest).filter(
+                and_(
+                    LeaveRequest.user_id == target_user_id,
+                    LeaveRequest.status.in_(['P', 'A']),
+                    LeaveRequest.leave_type == 'HL',
+                    LeaveRequest.from_date == from_date,
+                    or_(
+                        and_(LeaveRequest.start_time < end_time, LeaveRequest.end_time > start_time),
+                        and_(LeaveRequest.start_time == start_time, LeaveRequest.end_time == end_time),
+                    ),
+                )
+            ).first()
+            if overlapping:
+                raise ValueError("با مرخصی ساعتی موجود در این تاریخ تداخل زمانی دارد")
 
-        # بررسی همپوشانی با درخواست‌های قبلی
-        overlapping = db.query(LeaveRequest).filter(
-            and_(
-                LeaveRequest.user_id == target_user_id,
-                LeaveRequest.status.in_(['P', 'A']),
-                LeaveRequest.from_date <= to_date,
-                LeaveRequest.to_date >= from_date
+            new_request = LeaveRequest(
+                user_id=target_user_id,
+                leave_type=leave_type,
+                from_date=from_date,
+                to_date=to_date,
+                days_count=days_count,
+                start_time=start_time,
+                end_time=end_time,
+                reason=reason.strip() or f"ثبت شده توسط : {user.user_id}",
+                status='P',
             )
-        ).first()
-
-        if overlapping:
-            raise ValueError("کاربر در این بازه، درخواست مرخصی دیگری دارد")
-
-        # 🆕 ثبت درخواست مرخصی در حالت در انتظار بررسی
-        new_request = LeaveRequest(
-            user_id=target_user_id,
-            leave_type=leave_type,
-            from_date=from_date,
-            to_date=to_date,
-            days_count=days_count,
-            reason=reason.strip() or f"ثبت شده توسط : {user.user_id}",
-            status='P',  # 🆕 در انتظار بررسی
-        )
-        db.add(new_request)
-        db.commit()
-
-        type_name = LEAVE_TYPES.get(leave_type, '')
-        target_name = target_employee.full_name
-
-        return RedirectResponse(
-            url=f"/admin/leave-requests/register?success=درخواست مرخصی {type_name} ({days_count} روز) برای {target_name} در حالت در انتظار بررسی ثبت شد",
-            status_code=302
-        )
+            db.add(new_request)
+            db.commit()
+            duration_minutes = compute_requested_minutes(start_time, end_time)
+            h = duration_minutes // 60
+            m = duration_minutes % 60
+            time_str = f"{h}:{m:02d}" if h > 0 else f"{m} دقیقه"
+            return RedirectResponse(
+                url=f"/admin/leave-requests/register?success=درخواست مرخصی ساعتی ({time_str}) برای {target_employee.full_name} در حالت در انتظار بررسی ثبت شد",
+                status_code=302
+            )
+        else:
+            # غیر HL: منطق قبلی
+            to_j = jdatetime.datetime.strptime(to_date_str.strip(), "%Y/%m/%d").date()
+            to_date = to_j.togregorian()
+            if from_date > to_date:
+                raise ValueError("تاریخ شروع باید قبل یا مساوی تاریخ پایان باشد")
+            days_count = calculate_leave_days_admin(db, target_user_id, from_date, to_date)
+            if days_count <= 0:
+                raise ValueError("در بازه انتخابی، هیچ روز کاری وجود ندارد (همه تعطیل هستند)")
+            overlapping = db.query(LeaveRequest).filter(
+                and_(
+                    LeaveRequest.user_id == target_user_id,
+                    LeaveRequest.status.in_(['P', 'A']),
+                    LeaveRequest.from_date <= to_date,
+                    LeaveRequest.to_date >= from_date,
+                )
+            ).first()
+            if overlapping:
+                raise ValueError("کاربر در این بازه، درخواست مرخصی دیگری دارد")
+            new_request = LeaveRequest(
+                user_id=target_user_id,
+                leave_type=leave_type,
+                from_date=from_date,
+                to_date=to_date,
+                days_count=days_count,
+                reason=reason.strip() or f"ثبت شده توسط : {user.user_id}",
+                status='P',
+            )
+            db.add(new_request)
+            db.commit()
+            type_name = LEAVE_TYPES.get(leave_type, '')
+            target_name = target_employee.full_name
+            return RedirectResponse(
+                url=f"/admin/leave-requests/register?success=درخواست مرخصی {type_name} ({days_count} روز) برای {target_name} در حالت در انتظار بررسی ثبت شد",
+                status_code=302
+            )
     except ValueError as e:
         return RedirectResponse(
             url=f"/admin/leave-requests/register?error={str(e)}",

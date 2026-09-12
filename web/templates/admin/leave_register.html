@@ -171,10 +171,41 @@
                 </div>
 
                 <!-- تاریخ پایان -->
-                <div class="col-md-6">
+                <div class="col-md-6" id="toDateContainer">
                     <label class="form-label">📅 تا تاریخ <span class="text-danger">*</span></label>
                     <input type="text" name="to_date_str" class="form-control jalali-date"
                            id="toDate" required placeholder="انتخاب تاریخ">
+                </div>
+
+                <!-- 🆕 ساعت شروع و پایان برای مرخصی ساعتی -->
+                <div class="col-md-6 d-none" id="hlTimeContainer" data-granularity="{{ hl_granularity if hl_granularity is defined else 15 }}">
+                    <label class="form-label">⏰ ساعت شروع و پایان <span class="text-danger">*</span></label>
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <input type="text" name="start_time_str" class="form-control"
+                                   id="hlStartTime" placeholder="شروع"
+                                   pattern="([01][0-9]|2[0-3]):([0-5][0-9])"
+                                   inputmode="numeric" maxlength="5" dir="ltr"
+                                   autocomplete="off" data-time-input="true">
+                            <div class="form-text">ساعت شروع</div>
+                        </div>
+                        <div class="col-6">
+                            <input type="text" name="end_time_str" class="form-control"
+                                   id="hlEndTime" placeholder="پایان"
+                                   pattern="([01][0-9]|2[0-3]):([0-5][0-9])"
+                                   inputmode="numeric" maxlength="5" dir="ltr"
+                                   autocomplete="off" data-time-input="true">
+                            <div class="form-text">ساعت پایان</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 🆕 نمایش مدت مرخصی ساعتی -->
+                <div class="col-md-6 d-none" id="hlDurationContainer">
+                    <label class="form-label">⏱️ مدت مرخصی</label>
+                    <div class="alert alert-info py-2 mb-0" id="hlDurationDisplay">
+                        <i class="bi bi-clock"></i> <span id="hlDurationText">-</span>
+                    </div>
                 </div>
 
                 <!-- دلیل -->
@@ -382,6 +413,105 @@
             searchResults.classList.remove('show');
         }
     });
+
+const leaveTypeSelect = document.querySelector('select[name="leave_type"]');
+const toDateContainer = document.getElementById('toDateContainer');
+const toDateInput = document.getElementById('toDate');
+const hlTimeContainer = document.getElementById('hlTimeContainer');
+const hlDurationContainer = document.getElementById('hlDurationContainer');
+const hlStartTime = document.getElementById('hlStartTime');
+const hlEndTime = document.getElementById('hlEndTime');
+const hlDurationText = document.getElementById('hlDurationText');
+
+function toggleHLFields() {
+    const isHL = leaveTypeSelect.value === 'HL';
+    const hlNote = document.getElementById('hlNote');
+    if (isHL) {
+        toDateContainer.classList.add('d-none');
+        toDateInput.removeAttribute('required');
+        hlTimeContainer.classList.remove('d-none');
+        hlDurationContainer.classList.remove('d-none');
+        if (hlNote) hlNote.classList.remove('d-none');
+        // برای HL تاریخ پایان = تاریخ شروع (مخفی)
+        if (hlNote) hlNote.textContent = '⏰ برای مرخصی ساعتی، تاریخ پایان با تاریخ شروع یکسان است و ساعت شروع/پایان تعیین می‌گردد.';
+    } else {
+        toDateContainer.classList.remove('d-none');
+        toDateInput.setAttribute('required', 'required');
+        hlTimeContainer.classList.add('d-none');
+        hlDurationContainer.classList.add('d-none');
+        if (hlNote) hlNote.classList.add('d-none');
+    }
+}
+
+function calculateHLDuration() {
+    if (!hlStartTime || !hlEndTime || !hlDurationText) {
+        return;
+    }
+
+    const startVal = hlStartTime.value.trim();
+    const endVal = hlEndTime.value.trim();
+
+    if (!startVal || !endVal) {
+        hlDurationText.textContent = '-';
+        return;
+    }
+    if (!window.isValidTimeValue(startVal) || !window.isValidTimeValue(endVal)) {
+        hlDurationText.textContent = 'فرمت ساعت باید HH:MM باشد';
+        return;
+    }
+
+    const [sh, sm] = startVal.split(':').map(Number);
+    const [eh, em] = endVal.split(':').map(Number);
+    let diffMin = (eh * 60 + em) - (sh * 60 + sm);
+    if (diffMin <= 0) {
+        hlDurationText.textContent = '⚠️ ساعت پایان باید بعد از شروع باشد';
+        return;
+    }
+    const h = Math.floor(diffMin / 60);
+    const m = diffMin % 60;
+    hlDurationText.textContent = h > 0
+        ? (m > 0 ? `${h} ساعت و ${m} دقیقه` : `${h} ساعت`)
+        : `${m} دقیقه`;
+}
+
+if (leaveTypeSelect) {
+    leaveTypeSelect.addEventListener('change', toggleHLFields);
+    toggleHLFields();
+
+    if (hlStartTime) hlStartTime.addEventListener('input', calculateHLDuration);
+    if (hlEndTime) hlEndTime.addEventListener('input', calculateHLDuration);
+
+    if (leaveTypeSelect.value === 'HL') {
+        calculateHLDuration();
+    }
+}
+
+    // Dynamic hourly-leave policy hint
+    function updateHLHintAdmin() {
+        var hintText = document.getElementById('hlHintTextAdmin');
+        if (!hintText) {
+            // Add hint element dynamically if missing
+            var container = document.getElementById('hlDurationContainer');
+            if (container && !document.getElementById('hlHintTextAdmin')) {
+                var div = document.createElement('div');
+                div.className = 'mt-2 small text-muted';
+                div.innerHTML = '<i class="bi bi-info-circle"></i> <span id="hlHintTextAdmin">زمان باید مضربی از ۱۵ دقیقه و در ساعات کاری روز باشد</span>';
+                container.insertAdjacentElement('afterend', div);
+                hintText = document.getElementById('hlHintTextAdmin');
+            }
+        }
+        if (!hintText) return;
+        var section = document.getElementById('hlTimeContainer');
+        var gran = section ? (section.getAttribute('data-granularity') || '15') : '15';
+        var val = parseInt(gran, 10);
+        if (isNaN(val) || val < 1) val = 15;
+        if (val === 1) {
+            hintText.textContent = 'زمان می‌تواند با دقت ۱ دقیقه و در ساعات کاری روز وارد شود';
+        } else {
+            hintText.textContent = 'زمان باید مضربی از ' + val + ' دقیقه و در ساعات کاری روز باشد';
+        }
+    }
+    updateHLHintAdmin();
 
     // اعتبارسنجی فرم قبل از ارسال
     document.getElementById('registerLeaveForm').addEventListener('submit', function(e) {
