@@ -1,25 +1,33 @@
-{% extends "base.html" %}{% block title %}اعلان‌ها - مدیریت{% endblock %}{% block content %}
-<h4><i class="bi bi-megaphone"></i> مدیریت تازه‌های سیستم</h4>
-<a href="/admin/announcements/new" class="btn btn-primary mb-3">+ ایجاد اعلان جدید</a>
-<div class="table-responsive"><table class="table table-striped"><thead><tr><th>عنوان</th><th>نوع</th><th>فعال</th><th>انتشار</th><th>منقضی</th><th>عملیات</th></tr></thead><tbody>
-{% for i in items %}<tr>
-  <td>{{ i.title }}</td>
-  <td>{{ i.announcement_type }}</td>
-  <td>{{ 'بله' if i.is_active else 'خیر' }}</td>
-  <td>{{ i.published_at.strftime('%Y/%m/%d %H:%M') if i.published_at else '-' }}</td>
-  <td>{{ i.expires_at.strftime('%Y/%m/%d %H:%M') if i.expires_at else '-' }}</td>
-  <td>
-    <a href="/admin/announcements/{{ i.id }}/edit" class="btn btn-sm btn-warning">ویرایش</a>
-    <form method="post" action="/admin/announcements/{{ i.id }}/update" style="display:inline;" onsubmit="this.querySelector('input[name=is_active]').value=this.querySelector('button').innerText.includes('غیرفعال')?'false':'true';return true;">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <input type="hidden" name="title" value="{{ i.title }}">
-      <input type="hidden" name="summary" value="{{ i.summary or '' }}">
-      <input type="hidden" name="content" value="{{ i.content or '' }}">
-      <input type="hidden" name="announcement_type" value="{{ i.announcement_type }}">
-      <input type="hidden" name="is_active" value="{{ 'true' if i.is_active else 'false' }}">
-      <button type="submit" class="btn btn-sm btn-secondary">{{ 'غیرفعال' if i.is_active else 'فعال' }}</button>
-    </form>
-  </td>
-</tr>{% endfor %}
-</tbody></table></div>
+{% extends "base.html" %}
+{% block title %}اعلان‌ها - مدیریت{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+  <div>
+    <div class="d-flex align-items-center gap-2 mb-1"><i class="bi bi-megaphone-fill text-primary fs-4"></i><h4 class="mb-0">مدیریت تازه‌های سیستم</h4></div>
+    <div class="text-muted small">اعلان‌های قابل نمایش برای کاربران را ایجاد، ویرایش و فعال/غیرفعال کنید.</div>
+  </div>
+  <a href="/admin/announcements/new" class="btn btn-primary"><i class="bi bi-plus-lg"></i> ایجاد اعلان جدید</a>
+</div>
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    {% if items %}
+    <div class="table-responsive"><table class="table align-middle mb-0">
+      <thead><tr><th class="px-4">عنوان</th><th>نوع</th><th>وضعیت</th><th>انتشار</th><th class="text-end px-4">عملیات</th></tr></thead>
+      <tbody>
+      {% for i in items %}
+        <tr>
+          <td class="px-4"><div class="fw-semibold">{{ i.title }}</div>{% if i.summary %}<div class="small text-muted">{{ i.summary }}</div>{% endif %}</td>
+          <td><span class="badge bg-light text-dark border">{{ i.announcement_type }}</span></td>
+          <td>{% if i.is_active %}<span class="badge bg-success-subtle text-success"><i class="bi bi-check-circle"></i> فعال</span>{% else %}<span class="badge bg-secondary-subtle text-secondary"><i class="bi bi-pause-circle"></i> غیرفعال</span>{% endif %}</td>
+          <td class="small text-muted">{% if i.published_at %}{{ i.published_at.strftime('%Y/%m/%d %H:%M') }}{% else %}فوری/بدون زمان‌بندی{% endif %}</td>
+          <td class="text-end px-4"><div class="d-inline-flex flex-wrap gap-2 justify-content-end">
+            <a href="/admin/announcements/{{ i.id }}/edit" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil"></i> ویرایش</a>
+            <form method="post" action="/admin/announcements/{{ i.id }}/update" class="d-inline"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="title" value="{{ i.title }}"><input type="hidden" name="summary" value="{{ i.summary or '' }}"><input type="hidden" name="content" value="{{ i.content or '' }}"><input type="hidden" name="announcement_type" value="{{ i.announcement_type }}"><input type="hidden" name="is_active" value="{{ 'false' if i.is_active else 'true' }}"><button type="submit" class="btn btn-sm {% if i.is_active %}btn-outline-warning{% else %}btn-outline-success{% endif %}"><i class="bi {% if i.is_active %}bi-pause-circle{% else %}bi-play-circle{% endif %}"></i> {{ 'غیرفعال‌سازی' if i.is_active else 'فعال‌سازی' }}</button></form>
+          </div></td>
+        </tr>
+      {% endfor %}
+      </tbody></table></div>
+    {% else %}<div class="text-center text-muted py-5"><i class="bi bi-inbox fs-1 d-block mb-3"></i><h6>هنوز اعلانی ثبت نشده است</h6><p class="small mb-3">اولین اطلاعیه سیستم را برای کاربران ایجاد کنید.</p><a href="/admin/announcements/new" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg"></i> ایجاد اعلان</a></div>{% endif %}
+  </div>
+</div>
 {% endblock %}
