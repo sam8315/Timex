@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}{{ 'ویرایش اعلان' if announcement else 'اعلان جدید' }}{% endblock %}
+{% block content %}
+<div class="card border-0 shadow-sm"><div class="card-body p-4"><h4 class="mb-4"><i class="bi bi-megaphone"></i> {{ 'ویرایش اعلان' if announcement else 'اعلان جدید' }}</h4>
+<form method="post" action="{{ '/admin/announcements/' ~ announcement.id ~ '/update' if announcement else '/admin/announcements/create' }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<div class="mb-3"><label class="form-label">عنوان</label><input name="title" class="form-control" required maxlength="200" value="{{ announcement.title if announcement else '' }}"></div>
+<div class="mb-3"><label class="form-label">خلاصه</label><input name="summary" class="form-control" maxlength="500" value="{{ announcement.summary if announcement else '' }}"></div>
+<div class="mb-3"><label class="form-label">نوع</label><select name="announcement_type" class="form-select"><option value="feature" {% if announcement and announcement.announcement_type == 'feature' %}selected{% endif %}>قابلیت جدید</option><option value="bugfix" {% if announcement and announcement.announcement_type == 'bugfix' %}selected{% endif %}>رفع اشکال</option><option value="improvement" {% if announcement and announcement.announcement_type == 'improvement' %}selected{% endif %}>بهبود</option><option value="general" {% if announcement and announcement.announcement_type == 'general' %}selected{% endif %}>عمومی</option></select></div>
+<div class="mb-3"><label class="form-label">متن کامل</label><textarea name="content" class="form-control" rows="8" required>{{ announcement.content if announcement else '' }}</textarea></div>
+{% if announcement %}<div class="form-check form-switch mb-4"><input class="form-check-input" type="checkbox" name="is_active" value="true" id="active" {% if announcement.is_active %}checked{% endif %}><label class="form-check-label" for="active">فعال / منتشرشده</label></div>{% endif %}
+<div class="d-flex gap-2"><button class="btn btn-primary" type="submit"><i class="bi bi-check-lg"></i> ذخیره</button><a class="btn btn-outline-secondary" href="/admin/announcements">انصراف</a></div>
+</form></div></div>
+{% endblock %}
