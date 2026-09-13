@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
-from web.dependencies import get_db, get_current_user, check_password_change
+from web.dependencies import get_db, check_password_change
 from web.session import make_csrf_token, check_csrf_token
 from models.user import User
 from web.services.announcement_service import list_unread, list_history, get_unread_count, mark_as_seen
@@ -18,12 +18,23 @@ async def announcements_page(request: Request, user: User = Depends(check_passwo
     unread = list_unread(db, user.user_id)
     history = list_history(db, user.user_id)
     return templates.TemplateResponse(request, "announcements.html", {
-        "user": user,
-        "unread_announcements": unread,
-        "history": history,
-        "announcement_count": len(unread),
-        "csrf_token": make_csrf_token(user.user_id),
+        "user": user, "unread_announcements": unread, "history": history,
+        "announcement_count": len(unread), "csrf_token": make_csrf_token(user.user_id),
     })
+
+
+@router.post("/announcements/{announcement_id}/seen")
+async def mark_seen_page(
+    announcement_id: int,
+    csrf_token: str = Form(...),
+    user: User = Depends(check_password_change),
+    db: Session = Depends(get_db),
+):
+    if not check_csrf_token(csrf_token, user.user_id):
+        raise HTTPException(status_code=403, detail="CSRF token invalid")
+    if not mark_as_seen(db, user.user_id, announcement_id):
+        raise HTTPException(status_code=404, detail="Announcement not found")
+    return RedirectResponse("/announcements", status_code=303)
 
 
 @router.get("/api/announcements/unread")
@@ -38,7 +49,6 @@ async def unread_api(user: User = Depends(check_password_change), db: Session = 
 @router.post("/api/announcements/{announcement_id}/seen")
 async def seen_api(
     announcement_id: int,
-    request: Request,
     csrf_token: str = Form(...),
     user: User = Depends(check_password_change),
     db: Session = Depends(get_db),
