@@ -1,0 +1,14 @@
+{% extends "base.html" %}{% block title %}تازه‌های سیستم{% endblock %}{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+<h4><i class="bi bi-megaphone"></i> تازه‌های سیستم</h4>
+<a href="/dashboard" class="btn btn-outline-primary btn-sm"><i class="bi bi-arrow-right"></i> بازگشت به داشبورد</a>
+</div>
+{% if announcement_count is defined and announcement_count > 0 %}
+<div class="alert alert-info"><i class="bi bi-bell"></i> {{ announcement_count }} اعلان جدید دارید.</div>
+{% endif %}
+{% if unread_announcements %}<div class="card mb-3"><div class="card-header bg-primary text-white"><h6>تازه‌ها (خوانده نشده)</h6></div><div class="card-body"><ul class="list-group">{% for a in unread_announcements %}<li class="list-group-item"><strong>{{ a.title }}</strong> <span class="badge bg-info">جدید</span></li>{% endfor %}</ul></div></div>{% endif %}
+<div class="card"><div class="card-body"><h6>تاریخچه</h6>
+{% if history %}<table class="table"><thead><tr><th>عنوان</th><th>تاریخ مشاهده</th><th>وضعیت</th></tr></thead><tbody>
+{% for h in history %}<tr><td>{{ h.title }}</td><td>{{ h.seen_at.strftime('%Y/%m/%d %H:%M') if h.seen_at else '-' }}</td><td>{{ 'دیده' if h.seen_at else 'ندیده' }}</td></tr>{% endfor %}
+</tbody></table>{% else %}<p class="text-muted">هیچ سابقه‌ای یافت نشد.</p>{% endif %}</div></div>
+{% endblock %}

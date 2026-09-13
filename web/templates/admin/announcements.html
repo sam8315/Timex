@@ -1,0 +1,25 @@
+{% extends "base.html" %}{% block title %}اعلان‌ها - مدیریت{% endblock %}{% block content %}
+<h4><i class="bi bi-megaphone"></i> مدیریت تازه‌های سیستم</h4>
+<a href="/admin/announcements/new" class="btn btn-primary mb-3">+ ایجاد اعلان جدید</a>
+<div class="table-responsive"><table class="table table-striped"><thead><tr><th>عنوان</th><th>نوع</th><th>فعال</th><th>انتشار</th><th>منقضی</th><th>عملیات</th></tr></thead><tbody>
+{% for i in items %}<tr>
+  <td>{{ i.title }}</td>
+  <td>{{ i.announcement_type }}</td>
+  <td>{{ 'بله' if i.is_active else 'خیر' }}</td>
+  <td>{{ i.published_at.strftime('%Y/%m/%d %H:%M') if i.published_at else '-' }}</td>
+  <td>{{ i.expires_at.strftime('%Y/%m/%d %H:%M') if i.expires_at else '-' }}</td>
+  <td>
+    <a href="/admin/announcements/{{ i.id }}/edit" class="btn btn-sm btn-warning">ویرایش</a>
+    <form method="post" action="/admin/announcements/{{ i.id }}/update" style="display:inline;" onsubmit="this.querySelector('input[name=is_active]').value=this.querySelector('button').innerText.includes('غیرفعال')?'false':'true';return true;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="title" value="{{ i.title }}">
+      <input type="hidden" name="summary" value="{{ i.summary or '' }}">
+      <input type="hidden" name="content" value="{{ i.content or '' }}">
+      <input type="hidden" name="announcement_type" value="{{ i.announcement_type }}">
+      <input type="hidden" name="is_active" value="{{ 'true' if i.is_active else 'false' }}">
+      <button type="submit" class="btn btn-sm btn-secondary">{{ 'غیرفعال' if i.is_active else 'فعال' }}</button>
+    </form>
+  </td>
+</tr>{% endfor %}
+</tbody></table></div>
+{% endblock %}

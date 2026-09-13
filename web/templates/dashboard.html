@@ -344,6 +344,27 @@
     </div>
 </div>
 {% endif %}
+<!-- 🆕 مودال اعلان‌ها -->
+{% if announcement_count is defined and announcement_count > 0 %}
+<div class="modal fade rtl-text" id="announcementModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-hidden="true">
+<div class="modal-dialog modal-dialog-centered">
+<div class="modal-content shadow-lg border-0" style="border-radius:16px;overflow:hidden;">
+<div class="modal-header text-white py-3" style="background:linear-gradient(135deg,#0d6efd 0%,#6610f2 100%);">
+<h6 class="modal-title fw-bold mb-0"><i class="bi bi-megaphone me-2"></i> تازه‌های سیستم</h6>
+<button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+</div>
+<div class="modal-body p-4">
+<p>شما <strong>{{ announcement_count }}</strong> اعلان جدید دارید.</p>
+<a href="/announcements" class="btn btn-primary w-100">مشاهده اعلان‌ها</a>
+</div>
+</div></div></div>
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+  var m = new bootstrap.Modal(document.getElementById('announcementModal'));
+  m.show();
+});
+</script>
+{% endif %}
 <!-- ============================================ -->
 <!-- 🏖️ مودال انتقال مرخصی سال قبل (ساده‌شده)   -->
 <!-- ============================================ -->

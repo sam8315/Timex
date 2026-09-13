@@ -1,0 +1,13 @@
+{% extends "base.html" %}{% block title %}فرم اعلان{% endblock %}{% block content %}
+<h4><i class="bi bi-pencil"></i> {{ 'ویرایش' if item else 'ایجاد' }} اعلان</h4>
+<form method="post" action="{{ '/admin/announcements/' + item.id|string + '/update' if item else '/admin/announcements/create' }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="mb-2"><label>عنوان</label><input type="text" name="title" class="form-control" value="{{ item.title if item else '' }}" required></div>
+  <div class="mb-2"><label>خلاصه</label><input type="text" name="summary" class="form-control" value="{{ item.summary if item else '' }}"></div>
+  <div class="mb-2"><label>محتوا</label><textarea name="content" class="form-control" rows="3">{{ item.content if item else '' }}</textarea></div>
+  <div class="mb-2"><label>نوع</label><input type="text" name="announcement_type" class="form-control" value="{{ item.announcement_type if item else 'general' }}"></div>
+  <div class="mb-2"><label>فعال</label><input type="checkbox" name="is_active" value="true" {{ 'checked' if (item and item.is_active) else ('checked' if not item else '') }}></div>
+  <button type="submit" class="btn btn-success">ذخیره</button>
+  <a href="/admin/announcements" class="btn btn-secondary">بازگشت</a>
+</form>
+{% endblock %}

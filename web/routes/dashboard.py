@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, func
 import jdatetime
 from web.dependencies import get_db, check_password_change
+from web.session import make_csrf_token
 from models.user import User
 from models.employee import Employee
 from models.leave_balance import LeaveBalance
@@ -23,6 +24,7 @@ from web.services.carry_forward_service import (
     calculate_carry_forward_limit,
     analyze_yearly_contracts,
 )
+from web.services.announcement_service import get_unread_count, list_unread
 from models.leave_carry_forward_request import LeaveCarryForwardRequest
 
 router = APIRouter(tags=["Dashboard"])
@@ -277,6 +279,9 @@ async def dashboard(
         "month_attendance_count": month_attendance_count,
         "contract_info": contract_info,
         "is_admin": user.is_admin,
+        "announcement_count": get_unread_count(db, user.user_id),
+        "unread_announcements": list_unread(db, user.user_id),
+        "csrf_token": make_csrf_token(user.user_id),
         "last_login_display": last_login_display,
         # 🆕 متغیرهای انتقال مرخصی
         "unused_leave": unused_leave,

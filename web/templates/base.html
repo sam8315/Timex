@@ -922,6 +922,10 @@
             </a>
         </div>
 
+        <a href="/admin/announcements" class="sidebar-link {% if request.url.path == '/admin/announcements' %}active{% endif %}">
+            <i class="bi bi-megaphone"></i> تازه‌های سیستم
+        </a>
+
         <!-- گزارشات -->
         <a href="/reports" class="sidebar-link {% if request.url.path.startswith('/reports') %}active{% endif %}">
             <i class="bi bi-bar-chart-line"></i> گزارشات

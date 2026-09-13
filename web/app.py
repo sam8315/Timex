@@ -5,7 +5,7 @@ from fastapi.responses import RedirectResponse
 from pathlib import Path
 from starlette.middleware.sessions import SessionMiddleware
 
-from web.routes import auth, dashboard, attendance, leave, admin, contract, profile, holidays, admin_contracts, admin_leave, admin_daily_status, carry_forward, education, phones, reports, admin_policy
+from web.routes import auth, dashboard, attendance, leave, admin, contract, profile, holidays, admin_contracts, admin_leave, admin_daily_status, carry_forward, education, phones, reports, admin_policy, announcements, admin_announcements
 BASE_PATH = Path(__file__).parent
 from web.routes.admin_permissions import router as permissions_router
 from web.routes.admin_user_create import router as admin_user_create_router
@@ -39,6 +39,8 @@ app.include_router(education.router)
 app.include_router(phones.router)
 app.include_router(reports.router)
 app.include_router(admin_policy.router)
+app.include_router(announcements.router)
+app.include_router(admin_announcements.router, prefix="/admin")
 # 🆕 ماژول مدیریت دسترسی‌ها
 app.include_router(permissions_router)
 app.include_router(admin_user_create_router)

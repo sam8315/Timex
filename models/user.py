@@ -37,6 +37,12 @@ class User(TimestampMixin, Base):
         back_populates="user",
         cascade="all, delete-orphan"
     )
+    user_read_states: Mapped[List["UserAnnouncement"]] = relationship(
+        "UserAnnouncement",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
 
     def __repr__(self) -> str:
         return f"<User(user_id='{self.user_id}', name='{self.name}', role='{self.role}')>"
