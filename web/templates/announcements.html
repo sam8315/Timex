@@ -1,70 +1,88 @@
 {% extends "base.html" %}
 {% block title %}تازه‌های سیستم{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-  <h4><i class="bi bi-megaphone"></i> تازه‌های سیستم</h4>
-  <a href="/dashboard" class="btn btn-outline-primary btn-sm">
-    <i class="bi bi-arrow-right"></i> بازگشت به داشبورد
-  </a>
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+  <div>
+    <div class="d-flex align-items-center gap-2 mb-1">
+      <i class="bi bi-megaphone-fill text-primary fs-4"></i>
+      <h4 class="mb-0">تازه‌های سیستم</h4>
+      {% if announcement_count|default(0) > 0 %}<span class="badge rounded-pill bg-danger">{{ announcement_count }} جدید</span>{% endif %}
+    </div>
+    <div class="text-muted small">اطلاعیه‌های مهم، قابلیت‌های جدید و اصلاحات سامانه</div>
+  </div>
+  <a href="/dashboard" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-right"></i> بازگشت به داشبورد</a>
 </div>
-
-{% if announcement_count is defined and announcement_count > 0 %}
-<div class="alert alert-info">
-  <i class="bi bi-bell"></i> {{ announcement_count }} اعلان جدید دارید.
-</div>
-{% endif %}
 
 {% if unread_announcements %}
-<div class="card mb-3">
-  <div class="card-header bg-primary text-white">
-    <h6 class="mb-0">تازه‌ها (خوانده نشده)</h6>
-  </div>
-  <div class="card-body">
-    <div class="list-group">
-      {% for a in unread_announcements %}
-      <div class="list-group-item">
-        <div class="d-flex justify-content-between align-items-start gap-3">
-          <div>
-            <strong>{{ a.title }}</strong>
-            <span class="badge bg-info">جدید</span>
-            {% if a.summary %}<p class="mb-1 mt-2">{{ a.summary }}</p>{% endif %}
-            {% if a.content %}<div class="mt-2">{{ a.content }}</div>{% endif %}
+<div class="alert alert-info border-0 shadow-sm d-flex align-items-center gap-2 mb-4" role="status">
+  <i class="bi bi-bell-fill fs-5"></i>
+  <div><strong>{{ announcement_count }} اعلان جدید</strong> برای شما ثبت شده است. بعد از مطالعه، هر مورد را تأیید کنید.</div>
+</div>
+
+<div class="row g-3 mb-4">
+{% for a in unread_announcements %}
+  <div class="col-12">
+    <article class="card border-0 shadow-sm h-100">
+      <div class="card-body p-4">
+        <div class="d-flex flex-column flex-lg-row justify-content-between align-items-start gap-3">
+          <div class="flex-grow-1 w-100">
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+              <span class="badge bg-primary-subtle text-primary">جدید</span>
+              <span class="badge bg-light text-dark border">{{ a.announcement_type }}</span>
+              {% if a.published_at %}<span class="text-muted small"><i class="bi bi-calendar3"></i> {{ a.published_at.strftime('%Y/%m/%d %H:%M') }}</span>{% endif %}
+            </div>
+            <h5 class="fw-bold mb-2">{{ a.title }}</h5>
+            {% if a.summary %}<p class="text-secondary mb-2">{{ a.summary }}</p>{% endif %}
+            {% if a.content %}<div class="announcement-content text-body lh-lg">{{ a.content }}</div>{% endif %}
           </div>
-          <form method="post" action="/announcements/{{ a.id }}/seen" class="flex-shrink-0">
+          <form method="post" action="/announcements/{{ a.id }}/seen" class="w-100 flex-shrink-0" style="max-width:280px;">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <button type="submit" class="btn btn-success btn-sm">
-              <i class="bi bi-check2"></i> تأیید و علامت‌گذاری به‌عنوان دیده‌شده
-            </button>
+            <button type="submit" class="btn btn-success w-100"><i class="bi bi-check2-circle"></i> تأیید و علامت‌گذاری به‌عنوان دیده‌شده</button>
           </form>
         </div>
       </div>
-      {% endfor %}
-    </div>
+    </article>
+  </div>
+{% endfor %}
+</div>
+{% else %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body text-center py-5">
+    <div class="rounded-circle bg-success-subtle text-success d-inline-flex align-items-center justify-content-center mb-3" style="width:72px;height:72px;"><i class="bi bi-check2-circle fs-2"></i></div>
+    <h5 class="fw-bold">همه‌چیز بررسی شده است</h5>
+    <p class="text-muted mb-0">در حال حاضر اعلان خوانده‌نشده‌ای برای شما وجود ندارد.</p>
   </div>
 </div>
 {% endif %}
 
-<div class="card">
-  <div class="card-body">
-    <h6>تاریخچه اعلان‌های دیده‌شده</h6>
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-transparent border-0 pt-4 px-4">
+    <div class="d-flex justify-content-between align-items-center">
+      <div><h6 class="fw-bold mb-1"><i class="bi bi-clock-history"></i> تاریخچه مشاهده</h6><div class="text-muted small">اعلان‌هایی که قبلاً تأیید کرده‌اید</div></div>
+      {% if history %}<span class="badge bg-light text-dark border">{{ history|length }} مورد</span>{% endif %}
+    </div>
+  </div>
+  <div class="card-body px-4 pb-4">
     {% if history %}
-    <table class="table">
-      <thead>
-        <tr><th>عنوان</th><th>تاریخ مشاهده</th><th>وضعیت</th></tr>
-      </thead>
-      <tbody>
+    <div class="table-responsive">
+      <table class="table align-middle mb-0">
+        <thead><tr><th>اعلان</th><th>تاریخ مشاهده</th><th class="text-end">وضعیت</th></tr></thead>
+        <tbody>
         {% for h in history %}
-        <tr>
-          <td>{{ h.title }}</td>
-          <td>{{ h.seen_at.strftime('%Y/%m/%d %H:%M') if h.seen_at else '-' }}</td>
-          <td>{{ 'دیده' if h.seen_at else 'ندیده' }}</td>
-        </tr>
+          <tr>
+            <td><div class="fw-semibold">{{ h.title }}</div>{% if h.summary %}<div class="small text-muted">{{ h.summary }}</div>{% endif %}</td>
+            <td class="text-muted small">{{ h.seen_at.strftime('%Y/%m/%d %H:%M') if h.seen_at else '-' }}</td>
+            <td class="text-end"><span class="badge bg-success-subtle text-success"><i class="bi bi-check2"></i> تأیید شده</span></td>
+          </tr>
         {% endfor %}
-      </tbody>
-    </table>
-    {% else %}
-      <p class="text-muted">هیچ سابقه‌ای یافت نشد.</p>
-    {% endif %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}<div class="text-center text-muted py-4"><i class="bi bi-inbox fs-2 d-block mb-2"></i>هنوز سابقه‌ای برای نمایش وجود ندارد.</div>{% endif %}
   </div>
 </div>
+
+<style>
+  .announcement-content { white-space: pre-line; }
+</style>
 {% endblock %}
