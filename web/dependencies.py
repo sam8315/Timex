@@ -21,11 +21,9 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     session = get_session_from_request(request)
     if not session:
         raise HTTPException(status_code=307, headers={"Location": "/login"})
-
     user = db.query(User).filter(User.user_id == session["user_id"]).first()
     if not user or not user.web_enabled:
         raise HTTPException(status_code=307, headers={"Location": "/login"})
-
     employee = db.query(Employee).filter(Employee.user_id == user.user_id).first()
     user.display_name = employee.full_name if employee else (user.name or 'کاربر')
     return user
@@ -55,8 +53,6 @@ def check_password_change(
     """بررسی نیاز به تغییر رمز و نمایش تازه‌های جدید هنگام ورود به داشبورد."""
     if user.must_change_password and request.url.path != "/change-password":
         raise HTTPException(status_code=307, headers={"Location": "/change-password"})
-
     if request.url.path == "/dashboard" and get_unread_count(db, user.user_id) > 0:
-        return RedirectResponse(url="/announcements", status_code=303)
-
+        raise HTTPException(status_code=303, headers={"Location": "/announcements"})
     return user
