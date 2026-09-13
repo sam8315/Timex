@@ -5,32 +5,8 @@
   <div><h4><i class="bi bi-megaphone"></i> تازه‌های سیستم</h4><p class="text-muted mb-0">قابلیت‌ها، بهبودها و رفع اشکال‌های اخیر</p></div>
   <span class="badge bg-primary">{{ announcement_count }} جدید</span>
 </div>
-
 {% if unread_announcements %}
-<div class="row g-3 mb-4">
-{% for item in unread_announcements %}
-<div class="col-12">
-  <article class="card border-0 shadow-sm" id="announcement-{{ item.id }}">
-    <div class="card-body p-4">
-      <div class="d-flex justify-content-between gap-3">
-        <div><span class="badge bg-primary mb-2">{{ item.announcement_type }}</span><h5 class="mb-2">{{ item.title }}</h5>{% if item.summary %}<p class="text-muted">{{ item.summary }}</p>{% endif %}</div>
-        <small class="text-muted">{{ item.published_at.strftime('%Y/%m/%d') if item.published_at else '' }}</small>
-      </div>
-      <div class="border-top pt-3 mt-2" style="white-space: pre-line;">{{ item.content }}</div>
-      <div class="text-start mt-3">
-        <form method="post" action="/api/announcements/{{ item.id }}/seen">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <button class="btn btn-primary" type="submit"><i class="bi bi-check2"></i> متوجه شدم</button>
-        </form>
-      </div>
-    </div>
-  </article>
-</div>
-{% endfor %}
-</div>
-{% else %}
-<div class="card border-0 shadow-sm mb-4"><div class="card-body text-center py-5"><i class="bi bi-check-circle fs-1 text-success"></i><h5 class="mt-3">مورد جدیدی ندارید</h5><p class="text-muted mb-0">همه تازه‌های سیستم را دیده‌اید.</p></div></div>
-{% endif %}
-
+<div class="row g-3 mb-4">{% for item in unread_announcements %}<div class="col-12"><article class="card border-0 shadow-sm"><div class="card-body p-4"><div class="d-flex justify-content-between gap-3"><div><span class="badge bg-primary mb-2">{{ item.announcement_type }}</span><h5 class="mb-2">{{ item.title }}</h5>{% if item.summary %}<p class="text-muted">{{ item.summary }}</p>{% endif %}</div><small class="text-muted">{{ item.published_at.strftime('%Y/%m/%d') if item.published_at else '' }}</small></div><div class="border-top pt-3 mt-2" style="white-space: pre-line;">{{ item.content }}</div><div class="text-start mt-3"><form method="post" action="/announcements/{{ item.id }}/seen"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-primary" type="submit"><i class="bi bi-check2"></i> متوجه شدم</button></form></div></div></article></div>{% endfor %}</div>
+{% else %}<div class="card border-0 shadow-sm mb-4"><div class="card-body text-center py-5"><i class="bi bi-check-circle fs-1 text-success"></i><h5 class="mt-3">مورد جدیدی ندارید</h5><p class="text-muted mb-0">همه تازه‌های سیستم را دیده‌اید.</p></div></div>{% endif %}
 <div class="card border-0 shadow-sm"><div class="card-header bg-transparent"><h6 class="mb-0"><i class="bi bi-clock-history"></i> تاریخچه مشاهده‌شده</h6></div><div class="card-body p-0"><div class="table-responsive"><table class="table table-hover mb-0"><thead><tr><th>عنوان</th><th>نوع</th><th>تاریخ مشاهده</th></tr></thead><tbody>{% for item, seen_at in history %}<tr><td>{{ item.title }}</td><td>{{ item.announcement_type }}</td><td>{{ seen_at.strftime('%Y/%m/%d %H:%M') if seen_at else '-' }}</td></tr>{% else %}<tr><td colspan="3" class="text-center text-muted py-4">هنوز موردی مشاهده نشده است.</td></tr>{% endfor %}</tbody></table></div></div></div>
 {% endblock %}
