@@ -1,7 +1,7 @@
 """داشبورد کاربر"""
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Request, Depends
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
 from sqlalchemy.orm import Session
@@ -27,6 +27,10 @@ STATUS_NAMES = {'P': 'در انتظار', 'A': 'تایید شده', 'R': 'رد �
 
 @router.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request, user: User = Depends(check_password_change), db: Session = Depends(get_db)):
+    # New published announcements take priority on dashboard entry until acknowledged.
+    if get_unread_count(db, user.user_id) > 0:
+        return RedirectResponse(url="/announcements", status_code=303)
+
     today_j = jdatetime.date.today(); today_g = today_j.togregorian()
     employee = db.query(Employee).filter(Employee.user_id == user.user_id).first()
     today_status = db.query(DailyStatus).filter(and_(DailyStatus.user_id == user.user_id, DailyStatus.status_date == today_g)).first()
