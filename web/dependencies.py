@@ -1,11 +1,11 @@
 """Dependency‌های FastAPI"""
 from fastapi import Request, Depends, HTTPException
-from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from database.engine import SessionLocal
 from web.session import get_session_from_request
 from models.user import User
-from models.employee import Employee  # 🆕
+from models.employee import Employee
+from web.services.announcement_service import get_unread_count
 
 
 def get_db():
@@ -21,18 +21,11 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     session = get_session_from_request(request)
     if not session:
         raise HTTPException(status_code=307, headers={"Location": "/login"})
-
     user = db.query(User).filter(User.user_id == session["user_id"]).first()
     if not user or not user.web_enabled:
         raise HTTPException(status_code=307, headers={"Location": "/login"})
-        # 🆕 اضافه کردن نام کامل از جدول Employee
-    if user:
-        employee = db.query(Employee).filter(
-            Employee.user_id == user.user_id
-        ).first()
-        # ذخیره نام کامل به صورت ویژگی پویا
-        user.display_name = employee.full_name if employee else (user.name or 'کاربر')
-
+    employee = db.query(Employee).filter(Employee.user_id == user.user_id).first()
+    user.display_name = employee.full_name if employee else (user.name or 'کاربر')
     return user
 
 
@@ -43,6 +36,7 @@ def require_admin(request: Request, db: Session = Depends(get_db)) -> User:
         raise HTTPException(status_code=403, detail="دسترسی غیرمجاز")
     return user
 
+
 def require_super_admin(request: Request, db: Session = Depends(get_db)) -> User:
     """اجبار به نقش مدیر ارشد"""
     user = get_current_user(request, db)
@@ -51,15 +45,14 @@ def require_super_admin(request: Request, db: Session = Depends(get_db)) -> User
     return user
 
 
-def check_password_change(request: Request, user: User = Depends(get_current_user)):
-    """بررسی نیاز به تغییر رمز"""
+def check_password_change(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """بررسی نیاز به تغییر رمز و نمایش تازه‌های جدید هنگام ورود به داشبورد."""
     if user.must_change_password and request.url.path != "/change-password":
         raise HTTPException(status_code=307, headers={"Location": "/change-password"})
-        # 🆕 اگر از قبل اضافه نشده
-    if user and not hasattr(user, 'display_name'):
-        employee = db.query(Employee).filter(
-            Employee.user_id == user.user_id
-        ).first()
-        user.display_name = employee.full_name if employee else (user.name or 'کاربر')
-
+    if request.url.path == "/dashboard" and get_unread_count(db, user.user_id) > 0:
+        raise HTTPException(status_code=303, headers={"Location": "/announcements"})
     return user
