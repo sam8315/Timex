@@ -1,13 +1,14 @@
-{% extends "base.html" %}{% block title %}فرم اعلان{% endblock %}{% block content %}
-<h4><i class="bi bi-pencil"></i> {{ 'ویرایش' if item else 'ایجاد' }} اعلان</h4>
-<form method="post" action="{{ '/admin/announcements/' + item.id|string + '/update' if item else '/admin/announcements/create' }}">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-  <div class="mb-2"><label>عنوان</label><input type="text" name="title" class="form-control" value="{{ item.title if item else '' }}" required></div>
-  <div class="mb-2"><label>خلاصه</label><input type="text" name="summary" class="form-control" value="{{ item.summary if item else '' }}"></div>
-  <div class="mb-2"><label>محتوا</label><textarea name="content" class="form-control" rows="3">{{ item.content if item else '' }}</textarea></div>
-  <div class="mb-2"><label>نوع</label><input type="text" name="announcement_type" class="form-control" value="{{ item.announcement_type if item else 'general' }}"></div>
-  <div class="mb-2"><label>فعال</label><input type="checkbox" name="is_active" value="true" {{ 'checked' if (item and item.is_active) else ('checked' if not item else '') }}></div>
-  <button type="submit" class="btn btn-success">ذخیره</button>
-  <a href="/admin/announcements" class="btn btn-secondary">بازگشت</a>
-</form>
+{% extends "base.html" %}
+{% block title %}{{ 'ویرایش اعلان' if item else 'ایجاد اعلان' }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4"><h4>{{ 'ویرایش اعلان' if item else 'ایجاد اعلان جدید' }}</h4><a href="/admin/announcements" class="btn btn-outline-secondary btn-sm">بازگشت</a></div>
+<div class="card border-0 shadow-sm"><div class="card-body p-4"><form method="post" action="{{ '/admin/announcements/' + item.id|string + '/update' if item else '/admin/announcements/create' }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<div class="mb-3"><label for="title" class="form-label fw-semibold">عنوان اعلان</label><input id="title" type="text" name="title" class="form-control" value="{{ item.title if item else '' }}" maxlength="200" required></div>
+<div class="mb-3"><label for="summary" class="form-label fw-semibold">خلاصه</label><input id="summary" type="text" name="summary" class="form-control" value="{{ item.summary if item else '' }}" maxlength="500"></div>
+<div class="mb-3"><label for="content" class="form-label fw-semibold">متن اعلان</label><textarea id="content" name="content" class="form-control" rows="7">{{ item.content if item else '' }}</textarea></div>
+<div class="row g-3"><div class="col-md-6"><label for="announcement_type" class="form-label fw-semibold">نوع اعلان</label><select id="announcement_type" name="announcement_type" class="form-select">{% set t = item.announcement_type if item else 'general' %}<option value="general" {{ 'selected' if t == 'general' else '' }}>عمومی</option><option value="feature" {{ 'selected' if t == 'feature' else '' }}>قابلیت جدید</option><option value="fix" {{ 'selected' if t == 'fix' else '' }}>رفع اشکال</option><option value="security" {{ 'selected' if t == 'security' else '' }}>امنیتی</option><option value="maintenance" {{ 'selected' if t == 'maintenance' else '' }}>تعمیر و نگهداری</option></select></div>
+<div class="col-md-6"><label class="form-label fw-semibold d-block">وضعیت</label><div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="is_active" name="is_active" value="true" {{ 'checked' if (item and item.is_active) else ('checked' if not item else '') }}><label class="form-check-label" for="is_active">اعلان فعال باشد</label></div></div></div>
+<div class="d-flex justify-content-end gap-2 mt-4"><a href="/admin/announcements" class="btn btn-light border">انصراف</a><button type="submit" class="btn btn-success">ذخیره</button></div>
+</form></div></div>
 {% endblock %}
