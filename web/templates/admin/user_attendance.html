@@ -219,6 +219,36 @@
     </div>
 </div>
 
+<!-- 🆕 جستجوی کاربر برای تغییر کاربر -->
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-body py-3">
+        <form method="get" action="/admin/attendance/user/" class="d-flex flex-wrap gap-2 align-items-center" onsubmit="if(!targetChangeUserId.value){alert('لطفاً کاربر انتخاب کنید');return false;}let base=this.action+targetChangeUserId.value;this.action=base;return true;">
+            <span class="text-muted small fw-semibold">👤 کاربر:</span>
+            <div class="user-search-wrapper position-relative" style="min-width:220px;">
+                <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input type="text" class="form-control" id="userSearchInputChange" placeholder="جستجوی نام، کد پرسنلی یا عضویت..." autocomplete="off">
+                    <button type="button" class="btn btn-outline-secondary" id="clearUserBtnChange" style="display:none;"><i class="bi bi-x-lg"></i></button>
+                </div>
+                <input type="hidden" name="target_user_id" id="targetChangeUserId" value="">
+                <div class="user-search-results" id="userSearchResultsChange"></div>
+                <div class="selected-user-info mt-2" id="selectedUserInfoChange" style="display:none;">
+                    <div class="alert alert-success py-2 mb-0 d-flex justify-content-between align-items-center">
+                        <span><i class="bi bi-check-circle"></i> <strong id="selectedUserNameChange"></strong> <small class="text-muted ms-2" id="selectedUserDeptChange"></small></span>
+                        <button type="button" class="btn btn-sm btn-outline-danger" id="removeUserBtnChange"><i class="bi bi-x"></i></button>
+                    </div>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-sm btn-primary rounded-pill"><i class="bi bi-check-lg"></i> انتخاب کاربر</button>
+            <input type="hidden" name="year" value="{{ year }}">
+            <input type="hidden" name="month" value="{{ month }}">
+            {% if status_filter and status_filter != 'all' %}<input type="hidden" name="filter" value="{{ status_filter }}">{% endif %}
+            {% if from_date %}<input type="hidden" name="from_date" value="{{ from_date }}">{% endif %}
+            {% if to_date %}<input type="hidden" name="to_date" value="{{ to_date }}">{% endif %}
+        </form>
+    </div>
+</div>
+
 <!-- 🆕 فیلتر بازه تاریخ -->
 <div class="card border-0 shadow-sm mb-4">
     <div class="card-body py-3">

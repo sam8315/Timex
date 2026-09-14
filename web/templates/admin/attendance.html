@@ -23,7 +23,7 @@
                     روز بعد <i class="bi bi-chevron-left"></i>
                 </a>
                 {% if not is_today %}
-                <a href="/admin/attendance{{ user_id_query }}" class="btn btn-success btn-sm">
+                <a href="/admin/attendance?{% if department %}department={{ department }}&{% endif %}{% if user_id_for_nav %}user_id={{ user_id_for_nav }}{{ '&' }}{% endif %}date_str={{ date_str_input }}" class="btn btn-success btn-sm">
                     <i class="bi bi-calendar-today"></i> امروز
                 </a>
                 {% endif %}
@@ -31,6 +31,7 @@
 
             <!-- فرم انتخاب مستقیم -->
             <form method="get" action="/admin/attendance" class="d-flex align-items-center gap-2">
+                {% if selected_user_id %}<input type="hidden" name="user_id" value="{{ selected_user_id }}">{% endif %}
                 <input type="text" name="date_str" class="form-control jalali-date"
                        value="{{ date_str_input }}" placeholder="1405/05/19" style="width: 130px;" autocomplete="off">
 
@@ -49,7 +50,11 @@
 <div class="card mb-4">
     <div class="card-body">
         <form method="get" action="/admin/attendance" class="row g-3 align-items-end">
-            <input type="hidden" name="date_str" value="{{ date_str_input }}">
+            <div class="col-md-3">
+                <label class="form-label">📅 تاریخ</label>
+                <input type="text" name="date_str" class="form-control jalali-date" id="attendanceDate"
+                       placeholder="انتخاب تاریخ" autocomplete="off" value="{{ date_str_input }}">
+            </div>
             <div class="col-md-3">
                 <label class="form-label">👤 کاربر</label>
                 <div class="user-search-wrapper position-relative">
@@ -96,42 +101,6 @@
             <div class="col-md-2">
                 <button type="submit" class="btn btn-primary w-100">
                     <i class="bi bi-funnel"></i> اعمال فیلتر
-                </button>
-            </div>
-        </form>
-    </div>
-</div>
-
-<!-- فیلترها -->
-<div class="card mb-4">
-    <div class="card-body">
-        <form method="get" action="/admin/attendance" class="row g-3 align-items-end">
-            <div class="col-md-3">
-                <label class="form-label">📅 تاریخ (شمسی)</label>
-<input type="text"
-       name="date_str"
-       class="form-control jalali-date"
-       id="attendanceDate"
-       placeholder="انتخاب تاریخ"
-       autocomplete="off" value="{{ date_str_input }}">
-            </div>
-            <div class="col-md-3">
-                <label class="form-label">🏢 دپارتمان</label>
-                <select name="department" class="form-select">
-                    <option value="">همه دپارتمان‌ها</option>
-                    <option value="1" {% if department == '1' %}selected{% endif %}>رسمی</option>
-                    <option value="2" {% if department == '2' %}selected{% endif %}>وظیفه</option>
-                    <option value="3" {% if department == '3' %}selected{% endif %}>خریدخدمت</option>
-                    <option value="4" {% if department == '4' %}selected{% endif %}>قراردادی</option>
-                    <option value="5" {% if department == '5' %}selected{% endif %}>پزشک</option>
-                </select>
-            </div>
-            <div class="col-md-2">
-                {% if selected_user_id %}
-                <input type="hidden" name="user_id" value="{{ selected_user_id }}">
-                {% endif %}
-                <button type="submit" class="btn btn-primary w-100">
-                    <i class="bi bi-search"></i> نمایش
                 </button>
             </div>
         </form>
@@ -369,4 +338,5 @@ if (searchInput) {
     if (removeUserBtn) removeUserBtn.addEventListener('click', clearSelection);
 }
 document.addEventListener('click', function(e) { if (!e.target.closest('.user-search-wrapper')) { searchResults.classList.remove('show'); } });
+</script>
 {% endblock %}

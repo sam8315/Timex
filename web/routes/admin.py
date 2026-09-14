@@ -1466,6 +1466,19 @@ async def admin_user_attendance(
         {'num': 11, 'name': 'بهمن'}, {'num': 12, 'name': 'اسفند'},
     ]
 
+    # 🆕 داده جستجوی کاربر برای انتخاب کاربر دیگر
+    employees_for_search = db.query(Employee).filter(
+        Employee.is_active == True
+    ).order_by(Employee.first_name, Employee.last_name).all()
+    employees_data_search = [
+        {
+            'user_id': emp.user_id,
+            'full_name': emp.full_name,
+            'department': emp.department or '-',
+        }
+        for emp in employees_for_search
+    ]
+
     return templates.TemplateResponse(request, "admin/user_attendance.html", {
         "user": user,
         "target_user_id": target_user_id,
@@ -1534,6 +1547,7 @@ async def admin_user_attendance(
         "filter_error": filter_error or "",
         "from_date_display": from_date_display,
         "to_date_display": to_date_display,
+        "employees_data": employees_data_search,
     })
 
 from datetime import timedelta, date as date_type
