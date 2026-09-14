@@ -910,6 +910,8 @@ async def admin_user_attendance(
     year: Optional[int] = None,
     month: Optional[int] = None,
     status_filter: Optional[str] = Query(None, alias="filter"),
+    from_date: Optional[str] = Query(None, alias="from_date"),
+    to_date: Optional[str] = Query(None, alias="to_date"),
     user: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
@@ -936,15 +938,77 @@ async def admin_user_attendance(
     month_start_g = month_start_j.togregorian()
     month_end_g = month_end_j.togregorian()
 
-    # دریافت ترددها با حاشیه 1 روز (برای شیفت شب)
-    records = db.query(Attendance).filter(
-        and_(
-            Attendance.user_id == target_user_id,
-            Attendance.timestamp >= month_start_g - timedelta(days=1),
-            Attendance.timestamp <= month_end_g + timedelta(days=2),
-            Attendance.is_deleted == False
-        )
-    ).order_by(Attendance.timestamp).all()
+    # 🆕 فیلتر بازه تاریخ (در صورت اعمال) + محاسبات فقط بر پایه رکوردهای داخل بازه
+    filter_from_g = None
+    filter_to_g = None
+    filter_error = None
+    filter_applied = bool(from_date or to_date)
+    from_date_display = ""
+    to_date_display = ""
+
+    if filter_applied:
+        try:
+            if from_date and from_date.strip():
+                j_from = jdatetime.datetime.strptime(from_date.strip(), "%Y/%m/%d").date()
+                filter_from_g = j_from.togregorian()
+                from_date_display = j_from.strftime('%Y/%m/%d')
+            if to_date and to_date.strip():
+                j_to = jdatetime.datetime.strptime(to_date.strip(), "%Y/%m/%d").date()
+                filter_to_g = j_to.togregorian()
+                to_date_display = j_to.strftime('%Y/%m/%d')
+            if filter_from_g and filter_to_g and filter_from_g > filter_to_g:
+                filter_error = "تاریخ شروع نمی‌تواند بعد از تاریخ پایان باشد"
+        except Exception:
+            filter_error = filter_error or "فرمت تاریخ نامعتبر است (مثلاً 1404/06/10)"
+
+    # دریافت ترددها: اگر فیلتر دارای خطا است → رفتار بدون فیلتر + نمایش خطا (شفاف)
+    # اگر فیلتر معتبر است → فقط رکوردهای داخل بازه
+    if filter_applied and not filter_error:
+        # فیلتر معتبر: محدود به بازه
+        if filter_to_g:
+            to_day_end = filter_to_g + timedelta(days=1)
+            records = db.query(Attendance).filter(
+                and_(
+                    Attendance.user_id == target_user_id,
+                    Attendance.timestamp >= (filter_from_g if filter_from_g else month_start_g - timedelta(days=1)),
+                    Attendance.timestamp < to_day_end,
+                    Attendance.is_deleted == False
+                )
+            ).order_by(Attendance.timestamp).all()
+        elif filter_from_g:
+            records = db.query(Attendance).filter(
+                and_(
+                    Attendance.user_id == target_user_id,
+                    Attendance.timestamp >= filter_from_g,
+                    Attendance.timestamp <= month_end_g + timedelta(days=2),
+                    Attendance.is_deleted == False
+                )
+            ).order_by(Attendance.timestamp).all()
+        else:
+            # فقط to_date بدون from
+            to_day_end = filter_to_g + timedelta(days=1)
+            records = db.query(Attendance).filter(
+                and_(
+                    Attendance.user_id == target_user_id,
+                    Attendance.timestamp >= month_start_g - timedelta(days=1),
+                    Attendance.timestamp < to_day_end,
+                    Attendance.is_deleted == False
+                )
+            ).order_by(Attendance.timestamp).all()
+    else:
+        # بدون فیلتر یا با خطا → رفتار قبلی (کل ماه) برای جلوگیری از نتیای اشتباه
+        records = db.query(Attendance).filter(
+            and_(
+                Attendance.user_id == target_user_id,
+                Attendance.timestamp >= month_start_g - timedelta(days=1),
+                Attendance.timestamp <= month_end_g + timedelta(days=2),
+                Attendance.is_deleted == False
+            )
+        ).order_by(Attendance.timestamp).all()
+
+    # اگر فیلتر خطا دارد → فیلتر روی days_list اعمال نشود و خطا در template نمایش داده شود
+    # (filter_applied true + filter_error set → template badge نشان می‌دهد)
+    # (مانند status_filter که days_list را بعد از ساخت محدود می‌کند)
 
     # دریافت گروه کاربر (بر اساس دپارتمان)
     user_group = target_employee.department if target_employee else None
@@ -1081,6 +1145,19 @@ async def admin_user_attendance(
         days_list = [d for d in days_list if d['status']['main_status'] == STATUS_NO_ATTENDANCE]
     elif status_filter == 'leave':
         days_list = [d for d in days_list if d['status']['main_status'] == STATUS_LEAVE]
+
+    # 🆕 محدود کردن نمایش/محاسبات به بازه تاریخ در صورت اعمال فیلتر
+    if filter_applied and not filter_error:
+        range_start = filter_from_g if filter_from_g else month_start_g
+        range_end = filter_to_g if filter_to_g else month_end_g
+        # فقط روزهای داخل بازه (برای جدول و محاسبات)
+        days_list = [d for d in days_list if range_start <= d['date'] <= range_end]
+        # محاسبات بر اساس همین لیست فیلتر شده
+        total_work_hours_month = sum(d['work_hours'] for d in days_list)
+        total_records = sum(len(d['records']) for d in days_list)
+    else:
+        total_work_hours_month = sum(d['work_hours'] for d in days_list)
+        total_records = sum(len(d['records']) for d in days_list)
 
     MONTH_NAMES = {
         1: 'فروردین', 2: 'اردیبهشت', 3: 'خرداد', 4: 'تیر',
@@ -1405,6 +1482,14 @@ async def admin_user_attendance(
         "weekly_overtime_total_display": format_hours_hhmm(weekly_overtime_total),
         "weekly_deficit_total_display": format_hours_hhmm(weekly_deficit_total),
         "weeks_count": weeks_count,
+
+        # 🆕 فیلتر بازه تاریخ
+        "from_date": from_date or "",
+        "to_date": to_date or "",
+        "filter_applied": filter_applied,
+        "filter_error": filter_error or "",
+        "from_date_display": from_date_display,
+        "to_date_display": to_date_display,
     })
 
 from datetime import timedelta, date as date_type

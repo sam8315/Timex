@@ -219,6 +219,32 @@
     </div>
 </div>
 
+<!-- 🆕 فیلتر بازه تاریخ -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-body py-3">
+        <form method="get" action="/admin/attendance/user/{{ target_user_id }}" class="d-flex flex-wrap gap-2 align-items-center">
+            <span class="text-muted small fw-semibold">بازۀ تاریخ:</span>
+            <input type="text" name="from_date" class="form-control form-control-sm jalali-date" style="width:140px; direction:ltr;" placeholder="از (1404/06/01)"
+                   value="{{ from_date }}" autocomplete="off">
+            <input type="text" name="to_date" class="form-control form-control-sm jalali-date" style="width:140px; direction:ltr;" placeholder="تا (1404/06/10)"
+                   value="{{ to_date }}" autocomplete="off">
+            <button type="submit" class="btn btn-sm btn-primary rounded-pill"><i class="bi bi-search"></i> اعمال</button>
+            <a href="/admin/attendance/user/{{ target_user_id }}?year={{ year }}&month={{ month }}{% if status_filter and status_filter != 'all' %}&filter={{ status_filter }}{% endif %}"
+               class="btn btn-sm btn-outline-secondary rounded-pill">پاک کردن</a>
+            {% if filter_applied %}
+            <span class="badge bg-primary">از {{ from_date_display or from_date }} تا {{ to_date_display or to_date }}</span>
+            {% endif %}
+            {% if filter_error %}
+            <span class="badge bg-danger">{{ filter_error }}</span>
+            {% endif %}
+            <!-- حفظ مقادیر فعلی -->
+            <input type="hidden" name="year" value="{{ year }}">
+            <input type="hidden" name="month" value="{{ month }}">
+            {% if status_filter and status_filter != 'all' %}<input type="hidden" name="filter" value="{{ status_filter }}">{% endif %}
+        </form>
+    </div>
+</div>
+
 {% if days %}
 
 <!-- ============================================ -->
