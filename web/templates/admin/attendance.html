@@ -14,16 +14,16 @@
         <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
             <!-- دکمه‌های ناوبری -->
             <div class="d-flex align-items-center gap-2">
-                <a href="/admin/attendance?date_str={{ prev_date_str }}{% if department %}&department={{ department }}{% endif %}"
+                <a href="/admin/attendance?date_str={{ prev_date_str }}{% if department %}&department={{ department }}{% endif %}{{ user_id_query }}"
                    class="btn btn-outline-primary btn-sm">
                     <i class="bi bi-chevron-right"></i> روز قبل
                 </a>
-                <a href="/admin/attendance?date_str={{ next_date_str }}{% if department %}&department={{ department }}{% endif %}"
+                <a href="/admin/attendance?date_str={{ next_date_str }}{% if department %}&department={{ department }}{% endif %}{{ user_id_query }}"
                    class="btn btn-outline-primary btn-sm">
                     روز بعد <i class="bi bi-chevron-left"></i>
                 </a>
                 {% if not is_today %}
-                <a href="/admin/attendance" class="btn btn-success btn-sm">
+                <a href="/admin/attendance?date_str={{ date_str_input }}{% if department %}&department={{ department }}{% endif %}{{ user_id_query }}" class="btn btn-success btn-sm">
                     <i class="bi bi-calendar-today"></i> امروز
                 </a>
                 {% endif %}
@@ -31,6 +31,7 @@
 
             <!-- فرم انتخاب مستقیم -->
             <form method="get" action="/admin/attendance" class="d-flex align-items-center gap-2">
+                {% if selected_user_id %}<input type="hidden" name="user_id" value="{{ selected_user_id }}">{% endif %}
                 <input type="text" name="date_str" class="form-control jalali-date"
                        value="{{ date_str_input }}" placeholder="1405/05/19" style="width: 130px;" autocomplete="off">
 
@@ -49,7 +50,43 @@
 <div class="card mb-4">
     <div class="card-body">
         <form method="get" action="/admin/attendance" class="row g-3 align-items-end">
-            <input type="hidden" name="date_str" value="{{ date_str_input }}">
+            <div class="col-md-3">
+                <label class="form-label">📅 تاریخ</label>
+                <input type="text" name="date_str" class="form-control jalali-date" id="attendanceDate"
+                       placeholder="انتخاب تاریخ" autocomplete="off" value="{{ date_str_input }}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">👤 کاربر</label>
+                <div class="user-search-wrapper position-relative">
+                    <div class="input-group">
+                        <span class="input-group-text"><i class="bi bi-search"></i></span>
+                        <input type="text"
+                               class="form-control"
+                               id="userSearchInput"
+                               placeholder="جستجو بر اساس نام، کد پرسنلی یا عضویت..."
+                               autocomplete="off"
+                               {% if selected_user_id %}value="{{ selected_user_name or '' }}"{% endif %}>
+                        <button type="button" class="btn btn-outline-secondary" id="clearUserBtn"
+                                style="display:{% if selected_user_id %}block{% else %}none{% endif %};">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </div>
+                    <input type="hidden" name="user_id" id="targetUserId" value="{{ selected_user_id or '' }}">
+                    <div class="user-search-results" id="userSearchResults"></div>
+                    <div class="selected-user-info mt-2" id="selectedUserInfo" style="display:{% if selected_user_id %}block{% else %}none{% endif %};">
+                        <div class="alert alert-success py-2 mb-0 d-flex justify-content-between align-items-center">
+                            <span>
+                                <i class="bi bi-check-circle"></i>
+                                <strong id="selectedUserName">{{ selected_user_name or '' }}</strong>
+                                <small class="text-muted ms-2" id="selectedUserDept">({{ selected_user_id or '' }})</small>
+                            </span>
+                            <button type="button" class="btn btn-sm btn-outline-danger" id="removeUserBtn">
+                                <i class="bi bi-x"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
             <div class="col-md-3">
                 <label class="form-label">🏢 دپارتمان</label>
                 <select name="department" class="form-select">
@@ -64,39 +101,6 @@
             <div class="col-md-2">
                 <button type="submit" class="btn btn-primary w-100">
                     <i class="bi bi-funnel"></i> اعمال فیلتر
-                </button>
-            </div>
-        </form>
-    </div>
-</div>
-
-<!-- فیلترها -->
-<div class="card mb-4">
-    <div class="card-body">
-        <form method="get" action="/admin/attendance" class="row g-3 align-items-end">
-            <div class="col-md-3">
-                <label class="form-label">📅 تاریخ (شمسی)</label>
-<input type="text"
-       name="date_str"
-       class="form-control jalali-date"
-       id="attendanceDate"
-       placeholder="انتخاب تاریخ"
-       autocomplete="off">
-            </div>
-            <div class="col-md-3">
-                <label class="form-label">🏢 دپارتمان</label>
-                <select name="department" class="form-select">
-                    <option value="">همه دپارتمان‌ها</option>
-                    <option value="1" {% if department == '1' %}selected{% endif %}>رسمی</option>
-                    <option value="2" {% if department == '2' %}selected{% endif %}>وظیفه</option>
-                    <option value="3" {% if department == '3' %}selected{% endif %}>خریدخدمت</option>
-                    <option value="4" {% if department == '4' %}selected{% endif %}>قراردادی</option>
-                    <option value="5" {% if department == '5' %}selected{% endif %}>پزشک</option>
-                </select>
-            </div>
-            <div class="col-md-2">
-                <button type="submit" class="btn btn-primary w-100">
-                    <i class="bi bi-search"></i> نمایش
                 </button>
             </div>
         </form>
@@ -240,10 +244,99 @@
     </div>
 </div>
 {% endblock %}
+{% block extra_css %}
+<style>
+    .user-search-results { position: absolute; top: 100%; right: 0; left: 0; background: #fff; border: 1px solid #dee2e6; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); max-height: 300px; overflow-y: auto; z-index: 1050; display: none; margin-top: 4px; }
+    .user-search-results.show { display: block; }
+    .user-search-item { padding: 10px 15px; cursor: pointer; border-bottom: 1px solid #f0f0f0; transition: background 0.15s ease; display: flex; justify-content: space-between; align-items: center; }
+    .user-search-item:last-child { border-bottom: none; }
+    .user-search-item:hover, .user-search-item.highlighted { background: #e9ecef; }
+    .user-search-item .user-name { font-weight: 500; color: #212529; }
+    .user-search-item .user-id { font-size: 0.8rem; color: #6c757d; }
+    .user-search-item .user-dept { font-size: 0.75rem; background: #e9ecef; padding: 2px 8px; border-radius: 10px; color: #495057; }
+    .user-search-no-result { padding: 15px; text-align: center; color: #6c757d; }
+    .user-search-count { padding: 6px 15px; font-size: 0.75rem; color: #6c757d; background: #f8f9fa; border-bottom: 1px solid #dee2e6; }
+    #userSearchInput.user-selected { border-color: #198754; background-color: #f0fff4; }
+</style>
+{% endblock %}
 {% block extra_js %}
 <script>
 $(document).ready(function() {
     $('#attendanceDate').pDatepicker({ format: 'YYYY/MM/DD', autoClose: true });
 });
+
+// 🆕 User search (reused from leave_register.html)
+const employeesData = {{ employees_data | tojson }};
+let highlightedIndex = -1;
+let filteredEmployees = [];
+const searchInput = document.getElementById('userSearchInput');
+const searchResults = document.getElementById('userSearchResults');
+const targetUserId = document.getElementById('targetUserId');
+const selectedUserInfo = document.getElementById('selectedUserInfo');
+const selectedUserName = document.getElementById('selectedUserName');
+const selectedUserDept = document.getElementById('selectedUserDept');
+const clearUserBtn = document.getElementById('clearUserBtn');
+const removeUserBtn = document.getElementById('removeUserBtn');
+
+function searchEmployees(query) {
+    if (!query.trim()) return employeesData.slice(0, 50);
+    const q = query.trim().toLowerCase();
+    return employeesData.filter(emp => {
+        const fullName = (emp.full_name || '').toLowerCase();
+        const userId = (emp.user_id || '').toLowerCase();
+        const dept = (emp.department || '').toLowerCase();
+        return fullName.includes(q) || userId.includes(q) || dept.includes(q);
+    }).slice(0, 50);
+}
+function renderResults(employees) {
+    filteredEmployees = employees; highlightedIndex = -1;
+    if (employees.length === 0) {
+        searchResults.innerHTML = `<div class="user-search-no-result"><i class="bi bi-search"></i> کاربری یافت نشد</div>`;
+        searchResults.classList.add('show'); return;
+    }
+    let html = `<div class="user-search-count">${employees.length} کاربر یافت شد</div>`;
+    employees.forEach((emp, index) => {
+        html += `<div class="user-search-item" data-index="${index}" data-user-id="${emp.user_id}"><div><div class="user-name">${emp.full_name}</div><div class="user-id">${emp.user_id}</div></div><span class="user-dept">${emp.department}</span></div>`;
+    });
+    searchResults.innerHTML = html; searchResults.classList.add('show');
+    searchResults.querySelectorAll('.user-search-item').forEach(item => {
+        item.addEventListener('click', function() { selectEmployee(filteredEmployees[parseInt(this.dataset.index)]); });
+        item.addEventListener('mouseenter', function() { highlightItem(parseInt(this.dataset.index)); });
+    });
+}
+function highlightItem(index) {
+    const items = searchResults.querySelectorAll('.user-search-item');
+    items.forEach(item => item.classList.remove('highlighted'));
+    if (index >= 0 && index < items.length) { items[index].classList.add('highlighted'); items[index].scrollIntoView({ block: 'nearest' }); highlightedIndex = index; }
+}
+function selectEmployee(emp) {
+    targetUserId.value = emp.user_id;
+    searchInput.value = emp.full_name;
+    searchInput.classList.add('user-selected');
+    selectedUserName.textContent = emp.full_name;
+    selectedUserDept.textContent = `(${emp.user_id}) - ${emp.department}`;
+    selectedUserInfo.style.display = 'block';
+    clearUserBtn.style.display = 'block';
+    searchResults.classList.remove('show');
+    searchInput.blur();
+}
+function clearSelection() {
+    targetUserId.value = ''; searchInput.value = ''; searchInput.classList.remove('user-selected');
+    selectedUserInfo.style.display = 'none'; clearUserBtn.style.display = 'none'; searchInput.focus();
+}
+if (searchInput) {
+    searchInput.addEventListener('input', function() { if (targetUserId.value) { targetUserId.value = ''; selectedUserInfo.style.display = 'none'; searchInput.classList.remove('user-selected'); } const results = searchEmployees(this.value); renderResults(results); clearUserBtn.style.display = this.value ? 'block' : 'none'; });
+    searchInput.addEventListener('focus', function() { if (!targetUserId.value) { const results = searchEmployees(this.value); renderResults(results); } });
+    searchInput.addEventListener('keydown', function(e) {
+        const items = searchResults.querySelectorAll('.user-search-item');
+        if (e.key === 'ArrowDown') { e.preventDefault(); if (highlightedIndex < items.length - 1) highlightItem(highlightedIndex + 1); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); if (highlightedIndex > 0) highlightItem(highlightedIndex - 1); }
+        else if (e.key === 'Enter') { e.preventDefault(); if (highlightedIndex >= 0 && filteredEmployees[highlightedIndex]) selectEmployee(filteredEmployees[highlightedIndex]); else if (filteredEmployees.length > 0) selectEmployee(filteredEmployees[0]); }
+        else if (e.key === 'Escape') { searchResults.classList.remove('show'); }
+    });
+    if (clearUserBtn) clearUserBtn.addEventListener('click', clearSelection);
+    if (removeUserBtn) removeUserBtn.addEventListener('click', clearSelection);
+}
+document.addEventListener('click', function(e) { if (!e.target.closest('.user-search-wrapper')) { searchResults.classList.remove('show'); } });
 </script>
 {% endblock %}

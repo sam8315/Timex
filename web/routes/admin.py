@@ -710,6 +710,7 @@ async def admin_attendance(
     request: Request,
     date_str: Optional[str] = None,
     department: Optional[str] = None,
+    user_id: Optional[str] = None,
     user: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
@@ -727,10 +728,29 @@ async def admin_attendance(
 
     target_j = jdatetime.date.fromgregorian(date=target_date)
 
+    # اعتبارسنجی user_id فیلتر
+    filter_employee = None
+    if user_id and user_id.strip():
+        user_id = user_id.strip()
+        # اگر department هم انتخاب شده، کاربر باید با آن دپارتمان سازگار باشد
+        user_query = db.query(Employee).filter(
+            Employee.user_id == user_id,
+            Employee.is_active == True,
+        )
+        if department:
+            user_query = user_query.filter(Employee.department == department)
+        filter_employee = user_query.first()
+        # اگر کاربر یافت نشد یا inactive یا ناسازگار با department است → بدون فیلتر کاربر
+        if not filter_employee:
+            user_id = None
+            filter_employee = None
+
     # دریافت کارمندان فعال
     query = db.query(Employee).filter(Employee.is_active == True)
     if department:
         query = query.filter(Employee.department == department)
+    if filter_employee:
+        query = query.filter(Employee.user_id == filter_employee.user_id)
 
     # 🆕 مرتب‌سازی بر اساس عضویت، تاریخ استخدام، نام
     employees = query.order_by(
@@ -740,12 +760,15 @@ async def admin_attendance(
     ).all()
 
     # دریافت تردهای همه در این روز
-    attendances = db.query(Attendance).filter(
+    att_query = db.query(Attendance).filter(
         and_(
             func.date(Attendance.timestamp) == target_date,
             Attendance.is_deleted == False
         )
-    ).all()
+    )
+    if filter_employee:
+        att_query = att_query.filter(Attendance.user_id == filter_employee.user_id)
+    attendances = att_query.all()
 
     # گروه‌بندی بر اساس user_id
     att_by_user = {}
@@ -880,6 +903,23 @@ async def admin_attendance(
     next_date_j = jdatetime.date.fromgregorian(date=next_date)
     today_g = jdatetime.date.today().togregorian()
     is_today = (target_date == today_g)
+    user_id_for_nav = filter_employee.user_id if filter_employee else None
+    user_id_query = f"&user_id={user_id_for_nav}" if user_id_for_nav else ""
+
+    # لیست کارمندان فعال برای جستجوی User (الگوی leave_register)
+    employees_for_search = db.query(Employee).filter(
+        Employee.is_active == True
+    ).order_by(Employee.first_name, Employee.last_name).all()
+    employees_data = [
+        {
+            'user_id': emp.user_id,
+            'full_name': emp.full_name,
+            'department': emp.department or '-',
+        }
+        for emp in employees_for_search
+    ]
+
+    selected_user_name = filter_employee.full_name if filter_employee else None
 
     return templates.TemplateResponse(request, "admin/attendance.html", {
         "user": user,
@@ -887,6 +927,9 @@ async def admin_attendance(
         "date_str_input": target_j.strftime('%Y/%m/%d'),
         "results": results,
         "department": department,
+        "selected_user_id": filter_employee.user_id if filter_employee else None,
+        "selected_user_name": selected_user_name,
+        "employees_data": employees_data,
         "is_friday": is_friday,
         "is_holiday": holiday is not None,
         "holiday_title": holiday.title if holiday else None,
@@ -900,6 +943,7 @@ async def admin_attendance(
         "prev_date_str": prev_date_j.strftime('%Y/%m/%d'),
         "next_date_str": next_date_j.strftime('%Y/%m/%d'),
         "is_today": is_today,
+        "user_id_query": user_id_query,
     })
 
 
@@ -1422,6 +1466,19 @@ async def admin_user_attendance(
         {'num': 11, 'name': 'بهمن'}, {'num': 12, 'name': 'اسفند'},
     ]
 
+    # 🆕 داده جستجوی کاربر برای انتخاب کاربر دیگر
+    employees_for_search = db.query(Employee).filter(
+        Employee.is_active == True
+    ).order_by(Employee.first_name, Employee.last_name).all()
+    employees_data_search = [
+        {
+            'user_id': emp.user_id,
+            'full_name': emp.full_name,
+            'department': emp.department or '-',
+        }
+        for emp in employees_for_search
+    ]
+
     return templates.TemplateResponse(request, "admin/user_attendance.html", {
         "user": user,
         "target_user_id": target_user_id,
@@ -1490,6 +1547,7 @@ async def admin_user_attendance(
         "filter_error": filter_error or "",
         "from_date_display": from_date_display,
         "to_date_display": to_date_display,
+        "employees_data": employees_data_search,
     })
 
 from datetime import timedelta, date as date_type
