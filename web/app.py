@@ -4,31 +4,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 from pathlib import Path
 from starlette.middleware.sessions import SessionMiddleware
-from datetime import datetime
 
-from web.routes import auth, dashboard, attendance
-
-# جلوگیری از ساخت خروج ضمنی برای ورود بازِ روز جاری.
-# تاریخ جاری بر اساس timezone سرور محاسبه می‌شود.
-_original_calculate_work_hours = attendance.calculate_work_hours
-
-
-def _server_aware_calculate_work_hours(day_records, is_night_shift):
-    if day_records and is_night_shift:
-        server_today = datetime.now().date()
-        has_current_day_open_entry = any(
-            record.punch == 0 and record.timestamp.date() == server_today
-            for record in day_records
-        )
-        if has_current_day_open_entry:
-            return _original_calculate_work_hours(day_records, False)
-
-    return _original_calculate_work_hours(day_records, is_night_shift)
-
-
-attendance.calculate_work_hours = _server_aware_calculate_work_hours
-
-from web.routes import leave, admin, contract, profile, holidays, admin_contracts, admin_leave, admin_daily_status, carry_forward, education, phones, reports, admin_policy
+from web.routes import auth, dashboard, attendance, leave, admin, contract, profile, holidays, admin_contracts, admin_leave, admin_daily_status, carry_forward, education, phones, reports, admin_policy
 BASE_PATH = Path(__file__).parent
 from web.routes.admin_permissions import router as permissions_router
 from web.routes.admin_user_create import router as admin_user_create_router
@@ -63,8 +40,7 @@ app.include_router(phones.router)
 app.include_router(reports.router)
 app.include_router(admin_policy.router)
 # 🆕 ماژول مدیریت دسترسی‌ها
-aapp_include_permissions_router = permissions_router
-app.include_router(aapp_include_permissions_router)
+app.include_router(permissions_router)
 app.include_router(admin_user_create_router)
 
 @app.get("/")
