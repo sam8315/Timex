@@ -48,7 +48,9 @@ def test_filter_applied_shows_badge(client, db, make_user):
     )
     assert resp.status_code == 200
     html = resp.text
-    assert "از" in html or "بازۀ تاریخ" in html
+    # تأیید وجود بخش فیلتر و مقدار نگه‌داشته شده
+    assert 'from_date' in html and 'to_date' in html
+    assert '1404/06/01' in html or '1404/06/10' in html
 
 
 def test_filter_survives_pagination(client, db, make_user):
