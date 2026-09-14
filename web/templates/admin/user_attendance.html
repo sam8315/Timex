@@ -540,13 +540,24 @@
                         </td>
                         {% if is_super_admin %}
                         <td class="text-center">
-                            <button class="btn btn-sm btn-outline-warning"
-                                    data-bs-toggle="modal"
-                                    data-bs-target="#editDayModal"
-                                    data-date="{{ day.jalali_date }}"
-                                    title="ویرایش ترددهای {{ day.jalali_date }}">
-                                <i class="bi bi-pencil-square"></i>
-                            </button>
+                            <div class="btn-group btn-group-sm" role="group">
+                                <button class="btn btn-outline-success"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#addRecordModal"
+                                        data-date="{{ day.jalali_date }}"
+                                        data-user-id="{{ target_user_id }}"
+                                        title="افزودن تردد به {{ day.jalali_date }}">
+                                    <i class="bi bi-plus-circle"></i>
+                                </button>
+
+                                <button class="btn btn-outline-warning"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#editDayModal"
+                                        data-date="{{ day.jalali_date }}"
+                                        title="ویرایش ترددهای {{ day.jalali_date }}">
+                                    <i class="bi bi-pencil-square"></i>
+                                </button>
+                            </div>
                         </td>
                         {% endif %}
                     </tr>
@@ -618,17 +629,6 @@
                                         </tbody>
                                     </table>
 
-                                    {% if is_super_admin %}
-                                    <div class="mt-2 text-end">
-                                        <button class="btn btn-outline-success btn-sm"
-                                                data-bs-toggle="modal"
-                                                data-bs-target="#addRecordModal"
-                                                data-date="{{ day.jalali_date }}"
-                                                data-user-id="{{ target_user_id }}">
-                                            <i class="bi bi-plus-circle"></i> افزودن تردد به این روز
-                                        </button>
-                                    </div>
-                                    {% endif %}
                                 </div>
                             </div>
                         </td>
