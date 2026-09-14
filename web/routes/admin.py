@@ -961,9 +961,10 @@ async def admin_user_attendance(
         except Exception:
             filter_error = filter_error or "فرمت تاریخ نامعتبر است (مثلاً 1404/06/10)"
 
-    # دریافت ترددها: اگر فیلتر دارای خطا است، هیچ رکورد (یا حفظ رفتار قبلی) — در اینجا بدون فیلتر برای خطا
+    # دریافت ترددها: اگر فیلتر دارای خطا است → رفتار بدون فیلتر + نمایش خطا (شفاف)
+    # اگر فیلتر معتبر است → فقط رکوردهای داخل بازه
     if filter_applied and not filter_error:
-        # برای to_date کامل روز (تا انتهای روز)، از < روز بعد 00:00 استفاده می‌کنیم
+        # فیلتر معتبر: محدود به بازه
         if filter_to_g:
             to_day_end = filter_to_g + timedelta(days=1)
             records = db.query(Attendance).filter(
@@ -995,7 +996,7 @@ async def admin_user_attendance(
                 )
             ).order_by(Attendance.timestamp).all()
     else:
-        # دریافت ترددها با حاشیه 1 روز (برای شیفت شب) — رفتار قبلی
+        # بدون فیلتر یا با خطا → رفتار قبلی (کل ماه) برای جلوگیری از نتیای اشتباه
         records = db.query(Attendance).filter(
             and_(
                 Attendance.user_id == target_user_id,
@@ -1005,7 +1006,8 @@ async def admin_user_attendance(
             )
         ).order_by(Attendance.timestamp).all()
 
-    # اگر فیلتر اعمال شده و خطا ندارد، محدود کردن days_list به بازه فیلتر برای نمایش
+    # اگر فیلتر خطا دارد → فیلتر روی days_list اعمال نشود و خطا در template نمایش داده شود
+    # (filter_applied true + filter_error set → template badge نشان می‌دهد)
     # (مانند status_filter که days_list را بعد از ساخت محدود می‌کند)
 
     # دریافت گروه کاربر (بر اساس دپارتمان)
