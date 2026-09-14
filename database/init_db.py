@@ -158,3 +158,22 @@ if __name__ == "__main__":
     print("🔧 در حال ساخت جداول...")
     create_tables()
     check_tables()
+
+# Travel Leave bootstrap (idempotent)
+from sqlalchemy import text
+from database.engine import engine
+
+def bootstrap_travel_leave_policy():
+    with engine.begin() as conn:
+        r = conn.execute(text("SELECT id FROM policies WHERE category='travel_leave' AND name='Travel Leave Policy' LIMIT 1"))
+        row = r.fetchone()
+        if not row:
+            conn.execute(text("INSERT INTO policies (category,name,description,is_active,effective_from_year) VALUES ('travel_leave','Travel Leave Policy','Default travel leave policy',true,1405)"))
+            pid = conn.execute(text("SELECT id FROM policies WHERE category='travel_leave' AND name='Travel Leave Policy' LIMIT 1")).scalar()
+            for k,v in [('annual_max_usage','3'),('rule_200_500','1'),('rule_501_1500','2'),('rule_1501_plus','3')]:
+                conn.execute(text('INSERT INTO policy_values (policy_id,parameter_key,parameter_value,is_editable,notes) VALUES (:pid,:k,:v,true,:note)'), {'pid':pid,'k':k,'v':v,'note':'default'})
+            print('Travel Leave bootstrap complete (policy created)')
+        else:
+            print('Travel Leave bootstrap skipped (already exists)')
+
+bootstrap_travel_leave_policy()
