@@ -732,14 +732,18 @@ async def admin_attendance(
     filter_employee = None
     if user_id and user_id.strip():
         user_id = user_id.strip()
-        filter_employee = db.query(Employee).filter(
+        # اگر department هم انتخاب شده، کاربر باید با آن دپارتمان سازگار باشد
+        user_query = db.query(Employee).filter(
             Employee.user_id == user_id,
             Employee.is_active == True,
-        ).first()
+        )
+        if department:
+            user_query = user_query.filter(Employee.department == department)
+        filter_employee = user_query.first()
+        # اگر کاربر یافت نشد یا inactive یا ناسازگار با department است → بدون فیلتر کاربر
         if not filter_employee:
-            # user_id نامعتبر یا غیرفعال → بدون نتیجه
-            filter_employee = None
             user_id = None
+            filter_employee = None
 
     # دریافت کارمندان فعال
     query = db.query(Employee).filter(Employee.is_active == True)
