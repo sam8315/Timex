@@ -845,5 +845,24 @@ document.addEventListener('DOMContentLoaded', function() {
     <i class="bi bi-info-circle"></i> رکوردی برای نمایش وجود ندارد.
 </div>
 {% endif %}
-
+<script>
+const employeesDataChange = {{ employees_data | tojson }};
+let highlightedIndexChange = -1;
+let filteredEmployeesChange = [];
+const searchInputChange = document.getElementById('userSearchInputChange');
+const searchResultsChange = document.getElementById('userSearchResultsChange');
+const targetChangeUserId = document.getElementById('targetChangeUserId');
+const selectedUserInfoChange = document.getElementById('selectedUserInfoChange');
+const selectedUserNameChange = document.getElementById('selectedUserNameChange');
+const selectedUserDeptChange = document.getElementById('selectedUserDeptChange');
+const clearUserBtnChange = document.getElementById('clearUserBtnChange');
+const removeUserBtnChange = document.getElementById('removeUserBtnChange');
+function searchEmployeesChange(query){if(!query.trim())return employeesDataChange.slice(0,50);const q=query.trim().toLowerCase();return employeesDataChange.filter(emp=>{const fullName=(emp.full_name||'').toLowerCase();const userId=(emp.user_id||'').toLowerCase();const dept=(emp.department||'').toLowerCase();return fullName.includes(q)||userId.includes(q)||dept.includes(q);}).slice(0,50);}
+function renderResultsChange(employees){filteredEmployeesChange=employees;highlightedIndexChange=-1;if(employees.length===0){searchResultsChange.innerHTML='<div class="user-search-no-result"><i class="bi bi-search"></i> کاربری یافت نشد</div>';searchResultsChange.classList.add('show');return;}let html='<div class="user-search-count">'+employees.length+' کاربر یافت شد</div>';employees.forEach((emp,index)=>{html+='<div class="user-search-item" data-index="'+index+'" data-user-id="'+emp.user_id+'"><div><div class="user-name">'+emp.full_name+'</div><div class="user-id">'+emp.user_id+'</div></div><span class="user-dept">'+(emp.department||'-')+'</span></div>';});searchResultsChange.innerHTML=html;searchResultsChange.classList.add('show');searchResultsChange.querySelectorAll('.user-search-item').forEach(item=>{item.addEventListener('click',function(){selectEmployeeChange(filteredEmployeesChange[parseInt(this.dataset.index)]);});item.addEventListener('mouseenter',function(){highlightItemChange(parseInt(this.dataset.index));});});}
+function highlightItemChange(index){const items=searchResultsChange.querySelectorAll('.user-search-item');items.forEach(item=>item.classList.remove('highlighted'));if(index>=0&&index<items.length){items[index].classList.add('highlighted');items[index].scrollIntoView({block:'nearest'});highlightedIndexChange=index;}}
+function selectEmployeeChange(emp){targetChangeUserId.value=emp.user_id;searchInputChange.value=emp.full_name;searchInputChange.classList.add('user-selected');selectedUserNameChange.textContent=emp.full_name;selectedUserDeptChange.textContent='('+emp.user_id+') - '+(emp.department||'-');selectedUserInfoChange.style.display='block';clearUserBtnChange.style.display='block';searchResultsChange.classList.remove('show');searchInputChange.blur();}
+function clearSelectionChange(){targetChangeUserId.value='';searchInputChange.value='';searchInputChange.classList.remove('user-selected');selectedUserInfoChange.style.display='none';clearUserBtnChange.style.display='none';searchInputChange.focus();}
+if(searchInputChange){searchInputChange.addEventListener('input',function(){if(targetChangeUserId.value){targetChangeUserId.value='';selectedUserInfoChange.style.display='none';searchInputChange.classList.remove('user-selected');}const results=searchEmployeesChange(this.value);renderResultsChange(results);clearUserBtnChange.style.display=this.value?'block':'none';});searchInputChange.addEventListener('focus',function(){if(!targetChangeUserId.value){const results=searchEmployeesChange(this.value);renderResultsChange(results);}});searchInputChange.addEventListener('keydown',function(e){const items=searchResultsChange.querySelectorAll('.user-search-item');if(e.key==='ArrowDown'){e.preventDefault();if(highlightedIndexChange<items.length-1)highlightItemChange(highlightedIndexChange+1);}else if(e.key==='ArrowUp'){e.preventDefault();if(highlightedIndexChange>0)highlightItemChange(highlightedIndexChange-1);}else if(e.key==='Enter'){e.preventDefault();if(highlightedIndexChange>=0&&filteredEmployeesChange[highlightedIndexChange])selectEmployeeChange(filteredEmployeesChange[highlightedIndexChange]);else if(filteredEmployeesChange.length>0)selectEmployeeChange(filteredEmployeesChange[0]);}else if(e.key==='Escape'){searchResultsChange.classList.remove('show');}});if(clearUserBtnChange)clearUserBtnChange.addEventListener('click',clearSelectionChange);if(removeUserBtnChange)removeUserBtnChange.addEventListener('click',clearSelectionChange);}
+document.addEventListener('click',function(e){if(!e.target.closest('.user-search-wrapper')){searchResultsChange.classList.remove('show');}});
+</script>
 {% endblock %}

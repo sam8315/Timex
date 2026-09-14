@@ -23,7 +23,7 @@
                     روز بعد <i class="bi bi-chevron-left"></i>
                 </a>
                 {% if not is_today %}
-                <a href="/admin/attendance?{% if department %}department={{ department }}&{% endif %}{% if user_id_for_nav %}user_id={{ user_id_for_nav }}{{ '&' }}{% endif %}date_str={{ date_str_input }}" class="btn btn-success btn-sm">
+                <a href="/admin/attendance?date_str={{ date_str_input }}{% if department %}&department={{ department }}{% endif %}{{ user_id_query }}" class="btn btn-success btn-sm">
                     <i class="bi bi-calendar-today"></i> امروز
                 </a>
                 {% endif %}
