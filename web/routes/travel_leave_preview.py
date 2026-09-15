@@ -11,6 +11,7 @@ from web.services.travel_leave_service import (
     calculate_travel_days,
     check_quota,
     resolve_effective_service_location,
+    resolve_membership_code,
     resolve_policy,
     validate_destination_city,
 )
@@ -44,14 +45,15 @@ async def travel_leave_preview(
         from_j = jdatetime.datetime.strptime(from_date.strip(), "%Y/%m/%d").date()
         from_g = from_j.togregorian()
         policy, contract, employee = resolve_policy(db, user.user_id, from_g)
+        membership_code = resolve_membership_code(employee, contract)
 
         if not employee:
             return _preview_error("اطلاعات کارمند برای کاربر یافت نشد")
-        if not contract:
-            return _preview_error("عضویت/قرارداد مؤثر برای تاریخ انتخاب‌شده یافت نشد")
+        if not membership_code:
+            return _preview_error("عضویت مؤثر برای تاریخ انتخاب‌شده یافت نشد")
         if not policy:
             return _preview_error(
-                f"سیاست مرخصی توراهی برای نوع عضویت {contract.contract_type_code} تعریف نشده است"
+                f"سیاست مرخصی توراهی برای نوع عضویت {membership_code} تعریف نشده است"
             )
         if not policy.is_enabled:
             return _preview_error("مرخصی توراهی برای نوع عضویت شما غیرفعال است")
@@ -105,7 +107,7 @@ async def travel_leave_preview(
             "quota_allowed": allowed,
             "jalali_year": jalali_year,
             "distance_method": policy.distance_method,
-            "contract_type_code": contract.contract_type_code,
+            "contract_type_code": membership_code,
             "marital_status": employee.marital_status,
         }
     except Exception as exc:
