@@ -14,7 +14,7 @@ import os
 import re
 import sys
 import time
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import jdatetime
@@ -252,9 +252,6 @@ def _seed_travel_leave_data() -> None:
             ])
             session.commit()
 
-        # One policy per contract type is the canonical test baseline. This
-        # also exercises the membership/contract-type scoping introduced by
-        # the redesigned Travel Leave feature.
         for contract_type_code in CONTRACT_TYPES:
             policy = session.query(TravelLeavePolicy).filter(
                 TravelLeavePolicy.contract_type_code == contract_type_code
@@ -356,7 +353,6 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
         skipped = len(stats.get("skipped", []))
         failed_tests = [r.nodeid for r in stats.get("failed", [])]
         failed_tests += [r.nodeid for r in stats.get("error", [])]
-        # متن خطاها (مخصوصاً خطاهای setup) برای عیب‌یابی روی سرور ریموت
         error_details = []
         for r in stats.get("error", [])[:3]:
             try:
@@ -406,7 +402,6 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
         except OSError:
             pass
     except Exception:
-        # Never break the test suite because of status reporting.
         pass
 
 
@@ -514,7 +509,6 @@ def make_user(db):
             "national_code": national_code,
             "password": USER_PASSWORD,
             "role": role,
-            "contract_type_code": contract_type_code,
         }
 
     yield _make
