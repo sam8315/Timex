@@ -14,7 +14,7 @@ import os
 import re
 import sys
 import time
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import jdatetime
@@ -84,6 +84,7 @@ _ensure_test_database()
 from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
+
 test_engine = create_engine(TEST_DATABASE_URL, pool_pre_ping=True)
 TestingSessionLocal = sessionmaker(
     bind=test_engine, autoflush=False, autocommit=False
@@ -96,11 +97,10 @@ from sqlalchemy import text as _sql_text
 # ---------------------------------------------------------------------------
 # Legacy-schema migration (explicit, conditional)
 # ---------------------------------------------------------------------------
-# Prior branches (PR #14) created `travel_leave_details` with an incompatible
-# schema. `create_all` never alters existing tables, so a legacy table would
-# silently differ. We detect it by missing current columns and drop ONLY that
-# table; `create_all` below rebuilds it from the model. Fresh databases are
-# unaffected (the table doesn't exist yet).
+# `create_all` only creates missing tables; it does not add columns to tables
+# that already exist. Test databases may therefore contain schemas from an
+# older branch. Detect stale tables by required columns and rebuild only the
+# affected test-only tables before `create_all`.
 from sqlalchemy import inspect as _sa_inspect  # noqa: E402
 
 
@@ -110,28 +110,76 @@ def _column_names(conn, table: str) -> set:
     return {c["name"] for c in _sa_inspect(conn).get_columns(table)}
 
 
+def _drop_tables_if_exist(conn, *tables: str) -> None:
+    existing = set(_sa_inspect(conn).get_table_names())
+    for table in tables:
+        if table in existing:
+            conn.execute(_sql_text(f'DROP TABLE "{table}" CASCADE'))
+    conn.commit()
+
+
 with test_engine.connect() as _conn:
-    # PR-14 travel_leave_details → drop only when its schema is stale.
     tl_cols = _column_names(_conn, "travel_leave_details")
     current_tl = {
         "final_travel_days", "manual_override", "jalali_year",
         "destination_latitude_snapshot", "destination_longitude_snapshot",
     }
     if tl_cols and not current_tl.issubset(tl_cols):
-        _conn.execute(_sql_text("DROP TABLE travel_leave_details CASCADE"))
-        _conn.commit()
+        _drop_tables_if_exist(_conn, "travel_leave_details")
 
-    # Legacy cities table used `active` before the model renamed it to
-    # `is_active`; fix in place so the model and seeds agree.
     city_cols = _column_names(_conn, "cities")
-    if "active" in city_cols and "is_active" not in city_cols:
-        _conn.execute(_sql_text("ALTER TABLE cities RENAME COLUMN active TO is_active"))
-        _conn.commit()
+    city_required = {
+        "id", "name", "province", "latitude", "longitude",
+        "is_active", "created_at", "updated_at",
+    }
+    if city_cols:
+        if "active" in city_cols and "is_active" not in city_cols:
+            _conn.execute(_sql_text(
+                "ALTER TABLE cities RENAME COLUMN active TO is_active"
+            ))
+            _conn.commit()
+            city_cols = _column_names(_conn, "cities")
+
+        if not city_required.issubset(city_cols):
+            _drop_tables_if_exist(_conn, "cities", "employee_service_locations")
+
+    policy_cols = _column_names(_conn, "travel_leave_policies")
+    rule_cols = _column_names(_conn, "travel_leave_policy_rules")
+    quota_cols = _column_names(_conn, "travel_leave_quota_settings")
+
+    policy_required = {
+        "id", "contract_type_code", "is_enabled", "distance_method",
+        "description", "created_at", "updated_at",
+    }
+    rule_required = {
+        "id", "policy_id", "min_km", "max_km", "travel_days",
+        "description", "is_active", "created_at", "updated_at",
+    }
+    quota_required = {
+        "id", "policy_id", "marital_status", "annual_max_usage",
+        "description", "parameter_key", "parameter_value",
+        "created_at", "updated_at",
+    }
+
+    stale_policy_schema = (
+        policy_cols and not policy_required.issubset(policy_cols)
+    )
+    stale_rule_schema = (
+        rule_cols and not rule_required.issubset(rule_cols)
+    )
+    stale_quota_schema = (
+        quota_cols and not quota_required.issubset(quota_cols)
+    )
+    if stale_policy_schema or stale_rule_schema or stale_quota_schema:
+        _drop_tables_if_exist(
+            _conn,
+            "travel_leave_policy_rules",
+            "travel_leave_quota_settings",
+            "travel_leave_policies",
+        )
 
 Base.metadata.create_all(bind=test_engine)
 
-# Phase 7: HL columns on a pre-existing leave_requests table
-# (idempotent; fresh tables already carry these columns via the model)
 with test_engine.connect() as _conn:
     _conn.execute(_sql_text("""
         ALTER TABLE leave_requests
@@ -173,8 +221,10 @@ _seed_regions()
 
 
 def _seed_travel_leave_data() -> None:
-    """Seed cities and travel leave policy rules for tests (idempotent)."""
+    """Seed cities and contract-scoped travel leave policies (idempotent)."""
     from models.city import City
+    from models.contract import CONTRACT_TYPES
+    from models.travel_leave_policy import TravelLeavePolicy
     from models.travel_leave_policy_rules import (
         TravelLeavePolicyRule,
         TravelLeaveQuotaSetting,
@@ -192,27 +242,77 @@ def _seed_travel_leave_data() -> None:
             ])
             session.commit()
 
-        if session.query(TravelLeavePolicyRule).count() == 0:
-            session.add_all([
-                TravelLeavePolicyRule(min_km=0.0, max_km=199.99, travel_days=0,
-                                      description="Below 200 km", is_active=1),
-                TravelLeavePolicyRule(min_km=200.0, max_km=500.0, travel_days=1,
-                                      description="200-500 km", is_active=1),
-                TravelLeavePolicyRule(min_km=500.01, max_km=1500.0, travel_days=2,
-                                      description="501-1500 km", is_active=1),
-                TravelLeavePolicyRule(min_km=1500.01, max_km=99999.0, travel_days=3,
-                                      description="Above 1500 km", is_active=1),
-            ])
-            session.commit()
+        for contract_type_code in CONTRACT_TYPES:
+            policy = session.query(TravelLeavePolicy).filter(
+                TravelLeavePolicy.contract_type_code == contract_type_code
+            ).first()
+            if not policy:
+                policy = TravelLeavePolicy(
+                    contract_type_code=contract_type_code,
+                    is_enabled=True,
+                    distance_method="geographic",
+                    description="Test travel leave policy",
+                )
+                session.add(policy)
+                session.flush()
 
-        if session.query(TravelLeaveQuotaSetting).count() == 0:
-            session.add(TravelLeaveQuotaSetting(
-                annual_max_usage=3,
-                description="Max travel leave uses per Jalali year",
-                parameter_key="annual_max_usage",
-                parameter_value="3",
-            ))
-            session.commit()
+            if not policy.rules:
+                session.add_all([
+                    TravelLeavePolicyRule(
+                        policy_id=policy.id,
+                        min_km=0.0,
+                        max_km=199.99,
+                        travel_days=0,
+                        description="Below 200 km",
+                        is_active=1,
+                    ),
+                    TravelLeavePolicyRule(
+                        policy_id=policy.id,
+                        min_km=200.0,
+                        max_km=500.0,
+                        travel_days=1,
+                        description="200-500 km",
+                        is_active=1,
+                    ),
+                    TravelLeavePolicyRule(
+                        policy_id=policy.id,
+                        min_km=500.01,
+                        max_km=1500.0,
+                        travel_days=2,
+                        description="501-1500 km",
+                        is_active=1,
+                    ),
+                    TravelLeavePolicyRule(
+                        policy_id=policy.id,
+                        min_km=1500.01,
+                        max_km=99999.0,
+                        travel_days=3,
+                        description="Above 1500 km",
+                        is_active=1,
+                    ),
+                ])
+
+            if not policy.quota_settings:
+                session.add_all([
+                    TravelLeaveQuotaSetting(
+                        policy_id=policy.id,
+                        marital_status="S",
+                        annual_max_usage=3,
+                        description="Max travel leave uses per Jalali year",
+                        parameter_key="annual_max_usage",
+                        parameter_value="3",
+                    ),
+                    TravelLeaveQuotaSetting(
+                        policy_id=policy.id,
+                        marital_status="M",
+                        annual_max_usage=3,
+                        description="Max travel leave uses per Jalali year",
+                        parameter_key="annual_max_usage",
+                        parameter_value="3",
+                    ),
+                ])
+
+        session.commit()
     except Exception:
         session.rollback()
         raise
@@ -243,7 +343,6 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
         skipped = len(stats.get("skipped", []))
         failed_tests = [r.nodeid for r in stats.get("failed", [])]
         failed_tests += [r.nodeid for r in stats.get("error", [])]
-        # متن خطاها (مخصوصاً خطاهای setup) برای عیب‌یابی روی سرور ریموت
         error_details = []
         for r in stats.get("error", [])[:3]:
             try:
@@ -293,7 +392,6 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
         except OSError:
             pass
     except Exception:
-        # Never break the test suite because of status reporting.
         pass
 
 
@@ -339,7 +437,8 @@ def client():
 
 @pytest.fixture()
 def make_user(db):
-    """Factory creating isolated user+employee rows (cleaned up afterwards)."""
+    """Factory creating isolated user+employee+contract rows."""
+    from models.contract import Contract
     from models.employee import Employee
     from models.leave_balance import LeaveBalance
     from models.employee_region import EmployeeRegion
@@ -348,8 +447,15 @@ def make_user(db):
 
     created_uids = []
 
-    def _make(role="user", balance_al=30, department="4",
-              web_enabled=True, region_code="NORMAL"):
+    def _make(
+            role="user",
+            balance_al=30,
+            department="4",
+            web_enabled=True,
+            region_code="NORMAL",
+            contract_type_code="4",
+            create_employee=True,
+    ):
         n = next(_seq)
         user_id = f"TEST-{n}"
         national_code = str(9000000000 + (n % 99999999)).zfill(10)[-10:]
@@ -362,17 +468,36 @@ def make_user(db):
             web_enabled=web_enabled,
         )
         db.add(user)
+
+        # Attendance-policy tests create their own Employee row so they can
+        # control department/policy resolution. Other tests need the standard
+        # Employee fixture for authentication and Travel Leave integration.
+        if create_employee:
+            db.add(
+                Employee(
+                    user_id=user_id,
+                    national_code=national_code,
+                    first_name="تست",
+                    last_name=str(n),
+                    department=department,
+                    is_active=True,
+                    marital_status="S",
+                    region_code=region_code,
+                )
+            )
+
         db.add(
-            Employee(
+            Contract(
                 user_id=user_id,
-                national_code=national_code,
-                first_name="تست",
-                last_name=str(n),
-                department=department,
-                is_active=True,
-                region_code=region_code,
+                contract_type_code=contract_type_code,
+                start_date=date(2020, 1, 1),
+                end_date=None,
+                annual_leave_days=30,
+                sick_leave_days=0,
+                service_deduction_days=0,
             )
         )
+
         if balance_al is not None:
             year_j = jdatetime.date.today().year
             db.add(

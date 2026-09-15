@@ -111,24 +111,114 @@ def migrate_data_fixes(bind_engine=None) -> None:
 
 
 def seed_travel_leave_policy_rules() -> None:
+    """Seed contract-scoped Travel Leave policies, rules, and default quotas."""
     from sqlalchemy import text as _sql_text
-    with engine.connect() as conn:
-        # Idempotent: only insert if table exists and is empty
-        result = conn.execute(_sql_text(
-            "SELECT 1 FROM travel_leave_policy_rules LIMIT 1"
-        ))
-        if result.fetchone() is not None:
-            return
-        conn.execute(_sql_text("""
-            INSERT INTO travel_leave_policy_rules (min_km, max_km, travel_days, description, is_active)
-            VALUES
-                (0.0, 199.99, 0, 'Below 200 km — ineligible', 1),
-                (200.0, 500.0, 1, '200–500 km — 1 travel day', 1),
-                (500.01, 1500.0, 2, '501–1500 km — 2 travel days', 1),
-                (1500.01, 99999.0, 3, 'Above 1500 km — 3 travel days', 1)
-        """))
-        conn.commit()
-        print("  + travel_leave_policy_rules seeded")
+
+    contract_types = ("1", "2", "3", "4", "5", "6", "7")
+
+    with engine.begin() as conn:
+        for contract_type_code in contract_types:
+            # Ensure one policy exists for each contract type.
+            policy_result = conn.execute(
+                _sql_text(
+                    """
+                    INSERT INTO travel_leave_policies
+                        (contract_type_code, is_enabled, distance_method, description)
+                    VALUES
+                        (:code, TRUE, 'geographic', 'Default Travel Leave policy')
+                    ON CONFLICT (contract_type_code) DO NOTHING
+                    RETURNING id
+                    """
+                ),
+                {"code": contract_type_code},
+            )
+            policy_row = policy_result.fetchone()
+
+            if policy_row is not None:
+                policy_id = policy_row[0]
+            else:
+                policy_id = conn.execute(
+                    _sql_text(
+                        """
+                        SELECT id
+                        FROM travel_leave_policies
+                        WHERE contract_type_code = :code
+                        """
+                    ),
+                    {"code": contract_type_code},
+                ).scalar_one()
+
+            # Seed rules only when this policy has no rules.
+            rule_count = conn.execute(
+                _sql_text(
+                    """
+                    SELECT COUNT(*)
+                    FROM travel_leave_policy_rules
+                    WHERE policy_id = :policy_id
+                    """
+                ),
+                {"policy_id": policy_id},
+            ).scalar_one()
+
+            if rule_count == 0:
+                conn.execute(
+                    _sql_text(
+                        """
+                        INSERT INTO travel_leave_policy_rules
+                            (policy_id, min_km, max_km, travel_days, description, is_active)
+                        VALUES
+                            (:policy_id, 0.0, 199.99, 0,
+                             'Below 200 km — ineligible', 1),
+                            (:policy_id, 200.0, 500.0, 1,
+                             '200–500 km — 1 travel day', 1),
+                            (:policy_id, 500.01, 1500.0, 2,
+                             '501–1500 km — 2 travel days', 1),
+                            (:policy_id, 1500.01, 99999.0, 3,
+                             'Above 1500 km — 3 travel days', 1)
+                        """
+                    ),
+                    {"policy_id": policy_id},
+                )
+
+            # Seed one default annual quota per marital status when missing.
+            for marital_status in ("S", "M"):
+                quota_exists = conn.execute(
+                    _sql_text(
+                        """
+                        SELECT 1
+                        FROM travel_leave_quota_settings
+                        WHERE policy_id = :policy_id
+                          AND marital_status = :marital_status
+                        LIMIT 1
+                        """
+                    ),
+                    {
+                        "policy_id": policy_id,
+                        "marital_status": marital_status,
+                    },
+                ).scalar()
+
+                if quota_exists is None:
+                    conn.execute(
+                        _sql_text(
+                            """
+                            INSERT INTO travel_leave_quota_settings
+                                (policy_id, marital_status, annual_max_usage,
+                                 description, parameter_key, parameter_value)
+                            VALUES
+                                (:policy_id, :marital_status, 3,
+                                 'Max approved travel leave uses per Jalali year',
+                                 :parameter_key, '3')
+                            """
+                        ),
+                        {
+                            "policy_id": policy_id,
+                            "marital_status": marital_status,
+                            "parameter_key": f"annual_max_usage_{contract_type_code}_{marital_status}",
+                        },
+                    )
+
+        print("  + contract-scoped travel_leave policies/rules/quotas seeded")
 
 
 def create_tables() -> None:

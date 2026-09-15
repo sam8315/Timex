@@ -68,7 +68,11 @@ class TestResolvePolicy:
         from models.user import User
 
         # Create user
-        user = make_user(role='employee', balance_al=None)
+        user = make_user(
+            role='employee',
+            balance_al=None,
+            create_employee=False,
+        )
         user_id = user['user_id']
 
         # Create employee with department code '1'
@@ -143,7 +147,11 @@ class TestResolvePolicy:
         from models.employee import Employee
         from models.attendance import AttendancePolicy, AttendancePolicyDay
 
-        user = make_user(role='employee', balance_al=None)
+        user = make_user(
+            role='employee',
+            balance_al=None,
+            create_employee=False,
+        )
         user_id = user['user_id']
 
         emp = Employee(user_id=user_id, department='2', first_name='Test', last_name='User')
@@ -187,7 +195,11 @@ class TestResolvePolicy:
         """Should return None when no policy exists."""
         from models.employee import Employee
 
-        user = make_user(role='employee', balance_al=None)
+        user = make_user(
+            role='employee',
+            balance_al=None,
+            create_employee=False,
+        )
         user_id = user['user_id']
 
         emp = Employee(user_id=user_id, department='9', first_name='Test', last_name='User')
@@ -204,7 +216,11 @@ class TestResolvePolicy:
         from models.employee import Employee
         from models.attendance import AttendancePolicy, AttendancePolicyDay
 
-        user = make_user(role='employee', balance_al=None)
+        user = make_user(
+            role='employee',
+            balance_al=None,
+            create_employee=False,
+        )
         user_id = user['user_id']
 
         emp = Employee(user_id=user_id, department='1', first_name='Test', last_name='User')
@@ -261,7 +277,11 @@ class TestResolveRequiredMinutes:
         from models.employee import Employee
         from models.attendance import AttendancePolicy, AttendancePolicyDay
 
-        user = make_user(role='employee', balance_al=None)
+        user = make_user(
+            role='employee',
+            balance_al=None,
+            create_employee=False,
+        )
         user_id = user['user_id']
 
         emp = Employee(user_id=user_id, department='1', first_name='Test', last_name='User')
@@ -306,7 +326,11 @@ class TestResolveRequiredMinutes:
         from models.employee import Employee
         from models.attendance import AttendancePolicy, AttendancePolicyDay
 
-        user = make_user(role='employee', balance_al=None)
+        user = make_user(
+            role='employee',
+            balance_al=None,
+            create_employee=False,
+        )
         user_id = user['user_id']
 
         emp = Employee(user_id=user_id, department='1', first_name='Test', last_name='User')
