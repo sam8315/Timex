@@ -12,6 +12,7 @@ from web.services.travel_leave_service import (
     calculate_travel_days,
     check_quota,
     resolve_effective_service_location,
+    resolve_membership_code,
     resolve_policy,
     validate_destination_city,
 )
@@ -35,18 +36,16 @@ async def admin_travel_leave_preview(
         from_g = from_j.togregorian()
 
         policy, contract, employee = resolve_policy(db, target_user_id, from_g)
+        membership_code = resolve_membership_code(employee, contract)
+
         if not employee:
             return {"success": False, "message": "اطلاعات کارمند برای کاربر یافت نشد", "travel_days": 0}
-        if not contract:
-            return {
-                "success": False,
-                "message": "عضویت/قرارداد مؤثر برای کاربر در تاریخ انتخاب‌شده یافت نشد",
-                "travel_days": 0,
-            }
+        if not membership_code:
+            return {"success": False, "message": "عضویت مؤثر کاربر در تاریخ انتخاب‌شده یافت نشد", "travel_days": 0}
         if not policy:
             return {
                 "success": False,
-                "message": f"سیاست مرخصی توراهی برای نوع عضویت {contract.contract_type_code} تعریف نشده است",
+                "message": f"سیاست مرخصی توراهی برای نوع عضویت {membership_code} تعریف نشده است",
                 "travel_days": 0,
             }
         if not policy.is_enabled:
@@ -68,7 +67,11 @@ async def admin_travel_leave_preview(
             TravelLeavePolicyRule.policy_id == policy.id,
             TravelLeavePolicyRule.is_active == 1,
         ).all()
-        travel_days, _ = calculate_travel_days(distance_km, rules)
+
+        if not rules:
+            travel_days = 0
+        else:
+            travel_days, _ = calculate_travel_days(distance_km, rules)
 
         jalali_year = jdatetime.date.fromgregorian(date=from_g).year
         allowed, used, max_allowed = check_quota(
@@ -80,14 +83,15 @@ async def admin_travel_leave_preview(
             from_g,
         )
 
-        eligible = travel_days > 0 and allowed
-        message = None
+        eligible = travel_days > 0 and allowed and bool(rules)
         if not rules:
             message = "قواعد فاصله برای این نوع عضویت تعریف نشده است"
         elif travel_days <= 0:
             message = "مسافت انتخاب‌شده مشمول مرخصی توراهی نیست"
         elif not allowed:
             message = f"سهمیه سالانه تکمیل شده است ({used}/{max_allowed})"
+        else:
+            message = None
 
         return {
             "success": True,
@@ -103,7 +107,7 @@ async def admin_travel_leave_preview(
             "quota_allowed": allowed,
             "jalali_year": jalali_year,
             "distance_method": policy.distance_method,
-            "contract_type_code": contract.contract_type_code,
+            "contract_type_code": membership_code,
             "marital_status": employee.marital_status,
         }
     except Exception as exc:
