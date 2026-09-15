@@ -91,6 +91,16 @@ TestingSessionLocal = sessionmaker(
 
 import models  # noqa: F401,E402  (register every mapped table)
 from models import Base  # noqa: E402
+from sqlalchemy import text as _sql_text
+
+# Drop stale travel_leave_details table from old PR before create_all
+# (old schema is incompatible; create_all won't alter existing tables)
+with test_engine.connect() as _conn:
+    try:
+        _conn.execute(_sql_text("DROP TABLE IF EXISTS travel_leave_details CASCADE"))
+        _conn.commit()
+    except Exception:
+        pass
 
 Base.metadata.create_all(bind=test_engine)
 
@@ -106,6 +116,161 @@ with test_engine.connect() as _conn:
         _conn.commit()
     except Exception:
         pass  # Column might already exist
+
+# Travel Leave: ensure tables exist in test DB
+with test_engine.connect() as _conn:
+    # Create cities table
+    try:
+        _conn.execute(_sql_text("""
+            CREATE TABLE IF NOT EXISTS cities (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                province VARCHAR(100),
+                latitude FLOAT NOT NULL,
+                longitude FLOAT NOT NULL,
+                is_active BOOLEAN DEFAULT TRUE NOT NULL,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+            )
+        """))
+    except Exception:
+        pass
+
+    # Fix old schema: rename 'active' to 'is_active' if needed
+    try:
+        _conn.execute(_sql_text(
+            "ALTER TABLE cities RENAME COLUMN active TO is_active"
+        ))
+    except Exception:
+        pass
+
+    # Create employee_service_locations
+    try:
+        _conn.execute(_sql_text("""
+            CREATE TABLE IF NOT EXISTS employee_service_locations (
+                id SERIAL PRIMARY KEY,
+                user_id VARCHAR(50) NOT NULL,
+                city_id INTEGER NOT NULL,
+                address_text TEXT,
+                effective_from DATE NOT NULL,
+                effective_to DATE,
+                created_by VARCHAR(50),
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+            )
+        """))
+    except Exception:
+        pass
+
+    # Drop and recreate travel_leave_details with new schema
+    # (old PR may have created it with incompatible columns)
+    try:
+        _conn.execute(_sql_text("DROP TABLE IF EXISTS travel_leave_details CASCADE"))
+    except Exception:
+        pass
+
+    try:
+        _conn.execute(_sql_text("""
+            CREATE TABLE travel_leave_details (
+                id SERIAL PRIMARY KEY,
+                leave_request_id INTEGER NOT NULL UNIQUE,
+                origin_service_location_id INTEGER,
+                origin_city_id INTEGER,
+                origin_city_name_snapshot VARCHAR(100),
+                origin_latitude_snapshot FLOAT,
+                origin_longitude_snapshot FLOAT,
+                destination_city_id INTEGER NOT NULL,
+                destination_city_name_snapshot VARCHAR(100) NOT NULL,
+                destination_province_snapshot VARCHAR(100),
+                destination_latitude_snapshot FLOAT NOT NULL,
+                destination_longitude_snapshot FLOAT NOT NULL,
+                distance_km FLOAT NOT NULL,
+                calculated_travel_days INTEGER NOT NULL,
+                final_travel_days INTEGER NOT NULL,
+                manual_override BOOLEAN DEFAULT FALSE NOT NULL,
+                override_reason TEXT,
+                overridden_by VARCHAR(50),
+                overridden_at TIMESTAMP WITH TIME ZONE,
+                policy_id INTEGER,
+                policy_rule_id INTEGER,
+                annual_max_usage_snapshot INTEGER,
+                rule_min_km_snapshot FLOAT,
+                rule_max_km_snapshot FLOAT,
+                rule_travel_days_snapshot INTEGER,
+                jalali_year INTEGER NOT NULL DEFAULT 1404,
+                calculated_at TIMESTAMP WITH TIME ZONE,
+                approved_at TIMESTAMP WITH TIME ZONE,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+            )
+        """))
+    except Exception:
+        pass
+
+    # Add any missing columns for old schema compatibility (safety net)
+    _tl_cols_to_add = [
+        ("origin_service_location_id", "INTEGER"),
+        ("origin_city_id", "INTEGER"),
+        ("origin_city_name_snapshot", "VARCHAR(100)"),
+        ("origin_latitude_snapshot", "FLOAT"),
+        ("origin_longitude_snapshot", "FLOAT"),
+        ("destination_province_snapshot", "VARCHAR(100)"),
+        ("manual_override", "BOOLEAN DEFAULT FALSE"),
+        ("override_reason", "TEXT"),
+        ("overridden_by", "VARCHAR(50)"),
+        ("overridden_at", "TIMESTAMP WITH TIME ZONE"),
+        ("policy_id", "INTEGER"),
+        ("policy_rule_id", "INTEGER"),
+        ("annual_max_usage_snapshot", "INTEGER"),
+        ("rule_min_km_snapshot", "FLOAT"),
+        ("rule_max_km_snapshot", "FLOAT"),
+        ("rule_travel_days_snapshot", "INTEGER"),
+        ("jalali_year", "INTEGER"),
+        ("calculated_at", "TIMESTAMP WITH TIME ZONE"),
+        ("approved_at", "TIMESTAMP WITH TIME ZONE"),
+    ]
+    for col_name, col_type in _tl_cols_to_add:
+        try:
+            _conn.execute(_sql_text(
+                f"ALTER TABLE travel_leave_details ADD COLUMN {col_name} {col_type}"
+            ))
+        except Exception:
+            pass  # Column already exists
+
+    # Create travel_leave_policy_rules
+    try:
+        _conn.execute(_sql_text("""
+            CREATE TABLE IF NOT EXISTS travel_leave_policy_rules (
+                id SERIAL PRIMARY KEY,
+                min_km FLOAT NOT NULL,
+                max_km FLOAT NOT NULL,
+                travel_days INTEGER NOT NULL,
+                description TEXT,
+                is_active INTEGER DEFAULT 1 NOT NULL,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+            )
+        """))
+    except Exception:
+        pass
+
+    # Create travel_leave_quota_settings
+    try:
+        _conn.execute(_sql_text("""
+            CREATE TABLE IF NOT EXISTS travel_leave_quota_settings (
+                id SERIAL PRIMARY KEY,
+                annual_max_usage INTEGER DEFAULT 3 NOT NULL,
+                description TEXT,
+                parameter_key VARCHAR(100) NOT NULL UNIQUE,
+                parameter_value VARCHAR(50) NOT NULL,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+            )
+        """))
+    except Exception:
+        pass
+
+    _conn.commit()
 
 
 def _seed_regions() -> None:
@@ -137,6 +302,58 @@ def _seed_regions() -> None:
 
 
 _seed_regions()
+
+
+def _seed_travel_leave_data() -> None:
+    """Seed cities and travel leave policy rules for tests."""
+    session = TestingSessionLocal()
+    try:
+        # Use raw SQL to check seed data to handle schema differences
+        # from prior branch migrations
+        result = session.execute(_sql_text("SELECT COUNT(*) FROM cities"))
+        city_count = result.scalar() or 0
+
+        if city_count == 0:
+            session.execute(_sql_text(
+                "INSERT INTO cities (name, province, latitude, longitude, is_active) "
+                "VALUES ('Tehran', 'Tehran', 35.6892, 51.3890, true), "
+                "('Mashhad', 'Razavi Khorasan', 36.2972, 59.6067, true), "
+                "('Isfahan', 'Isfahan', 32.6546, 51.6680, true), "
+                "('Shiraz', 'Fars', 29.5918, 52.5836, true), "
+                "('Tabriz', 'East Azerbaijan', 38.0800, 46.2919, true)"
+            ))
+            session.commit()
+
+        result = session.execute(_sql_text("SELECT COUNT(*) FROM travel_leave_policy_rules"))
+        rule_count = result.scalar() or 0
+
+        if rule_count == 0:
+            session.execute(_sql_text(
+                "INSERT INTO travel_leave_policy_rules (min_km, max_km, travel_days, description, is_active) "
+                "VALUES (0.0, 199.99, 0, 'Below 200 km', 1), "
+                "(200.0, 500.0, 1, '200-500 km', 1), "
+                "(500.01, 1500.0, 2, '501-1500 km', 1), "
+                "(1500.01, 99999.0, 3, 'Above 1500 km', 1)"
+            ))
+            session.commit()
+
+        result = session.execute(_sql_text("SELECT COUNT(*) FROM travel_leave_quota_settings"))
+        quota_count = result.scalar() or 0
+
+        if quota_count == 0:
+            session.execute(_sql_text(
+                "INSERT INTO travel_leave_quota_settings "
+                "(annual_max_usage, description, parameter_key, parameter_value) "
+                "VALUES (3, 'Max travel leave uses per Jalali year', 'annual_max_usage', '3')"
+            ))
+            session.commit()
+    except Exception:
+        session.rollback()
+    finally:
+        session.close()
+
+
+_seed_travel_leave_data()
 
 
 # ---------------------------------------------------------------------------

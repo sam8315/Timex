@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_
 from datetime import time
 import jdatetime
-from typing import Optional
+from typing import Optional, List
 
 from web.dependencies import get_db, require_admin, require_super_admin
 from web.permissions import enforce_permission
@@ -21,17 +21,19 @@ from datetime import datetime
 from models.leave_request import LeaveRequest
 from models.contract import Contract, CONTRACT_TYPES
 from sqlalchemy import func
-from datetime import datetime, timedelta  # 🆕 timedelta
-from models.employee_phone import EmployeePhone  # 🆕
-from core.sms_service import SmsService          # 🆕
-from web.services.notification_service import is_sms_enabled  # 🆕 سوییچ پیامک
+from datetime import datetime, timedelta
+from models.employee_phone import EmployeePhone
+from core.sms_service import SmsService
+from web.services.notification_service import is_sms_enabled
 from web.services.hourly_leave_service import (
     approve_hourly_leave,
     reverse_hourly_leave,
     compute_requested_minutes,
     validate_hourly_leave_request,
 )
-import threading                                  # 🆕 برای ارسال async
+from models.travel_leave_detail import TravelLeaveDetail
+from web.services.travel_leave_service import override_travel_days
+import threading
 
 router = APIRouter(tags=["Admin Leave"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
@@ -526,6 +528,7 @@ async def leave_requests_page(
                 'hl_end_time': hl_end_time,
                 'hl_duration_minutes': hl_duration_minutes,
                 'hl_duration_display': hl_duration_display,
+                'travel_detail': r.travel_leave_detail if hasattr(r, 'travel_leave_detail') else None,
             })
         total_days = sum(item['request'].days_count for item in requests_data)
 
@@ -725,6 +728,15 @@ async def approve_leave_request(
             reference_id=leave_req.id
         )
         db.add(tx)
+
+        # ۴. Mark TravelLeaveDetail as approved if present
+        if leave_req.leave_type == 'AL':
+            tl_detail = db.query(TravelLeaveDetail).filter(
+                TravelLeaveDetail.leave_request_id == leave_req.id
+            ).first()
+            if tl_detail:
+                tl_detail.approved_at = datetime.now()
+
         db.commit()
 
         # 🆕 ۴. ارسال پیامک تایید (async - بدون کندی، فقط اگر فعال باشد)
@@ -1580,6 +1592,52 @@ async def edit_leave_request_submit(
     except Exception as e:
         return RedirectResponse(
             url=f"/admin/leave-requests/{request_id}/edit?error=خطا: {str(e)}",
+            status_code=302
+        )
+
+
+# ============================================
+# 🆕 Travel Leave — Admin Override
+# ============================================
+@router.post("/leave-requests/{request_id}/travel-leave-override")
+async def travel_leave_override(
+    request: Request,
+    request_id: int,
+    detail_id: int = Form(...),
+    final_travel_days: int = Form(...),
+    override_reason: str = Form(...),
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """Override final travel days for a pending Travel Leave request."""
+    enforce_permission(db, user, 'approve_leave')
+
+    referer = request.headers.get("referer", "/admin/leave-requests")
+    try:
+        override_travel_days(
+            db=db,
+            detail_id=detail_id,
+            new_final_days=final_travel_days,
+            admin_user_id=user.user_id,
+            reason=override_reason,
+        )
+        db.commit()
+        return RedirectResponse(
+            url=build_redirect_url(
+                referer, "success",
+                f"روزهای توراهی درخواست #{request_id} به {final_travel_days} روز تغییر کرد"
+            ),
+            status_code=302
+        )
+    except ValueError as e:
+        return RedirectResponse(
+            url=build_redirect_url(referer, "error", str(e)),
+            status_code=302
+        )
+    except Exception as e:
+        db.rollback()
+        return RedirectResponse(
+            url=build_redirect_url(referer, "error", f"خطا: {str(e)}"),
             status_code=302
         )
 

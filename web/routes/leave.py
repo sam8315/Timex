@@ -24,6 +24,17 @@ from web.services.hourly_leave_service import (
     validate_hourly_leave_request,
     compute_requested_minutes,
 )
+from web.services.travel_leave_service import (
+    get_active_cities,
+    resolve_effective_service_location,
+    validate_destination_city,
+    calculate_distance_km as calc_dist,
+    calculate_travel_days,
+    check_quota,
+    get_quota_setting,
+)
+from models.city import City
+from models.travel_leave_policy_rules import TravelLeavePolicyRule
 
 router = APIRouter(tags=["Leave"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
@@ -116,6 +127,13 @@ async def leave_page(request: Request, user: User = Depends(get_current_user), d
             req_data['start_time'] = req.start_time.strftime('%H:%M') if req.start_time else ''
             req_data['end_time'] = req.end_time.strftime('%H:%M') if req.end_time else ''
             req_data['minutes'] = compute_requested_minutes(req.start_time, req.end_time) if req.start_time and req.end_time else 0
+        tl = getattr(req, 'travel_leave_detail', None)
+        if tl:
+            req_data['has_travel_leave'] = True
+            req_data['tl_origin'] = tl.origin_city_name_snapshot or '-'
+            req_data['tl_destination'] = tl.destination_city_name_snapshot
+            req_data['tl_distance'] = tl.distance_km
+            req_data['tl_final_days'] = tl.final_travel_days
         recent_requests.append(req_data)
 
     pending_count = db.query(LeaveRequest).filter(
@@ -144,6 +162,22 @@ async def leave_page(request: Request, user: User = Depends(get_current_user), d
         except Exception:
             pass
 
+    # Travel Leave context
+    cities = get_active_cities(db)
+    cities_list = [{'id': c.id, 'name': c.name, 'province': c.province} for c in cities]
+
+    # Resolve effective service location for display
+    service_origin_city = None
+    esl = resolve_effective_service_location(db, user.user_id, date.today())
+    if esl:
+        origin_city = db.query(City).filter(City.id == esl.city_id).first()
+        if origin_city:
+            service_origin_city = origin_city.name
+
+    # Travel Leave quota
+    today_j_year = jdatetime.date.today().year
+    tl_allowed, tl_used, tl_max = check_quota(db, user.user_id, today_j_year)
+
     return templates.TemplateResponse(request, "leave.html", {
         "user": user,
         "today_j": today_j.strftime('%Y/%m/%d'),
@@ -161,11 +195,28 @@ async def leave_page(request: Request, user: User = Depends(get_current_user), d
         "is_admin": user.is_admin,
         "hl_granularity": hl_granularity,
         "hl_min_request": hl_min_request,
+        "cities": cities_list,
+        "service_origin_city": service_origin_city,
+        "tl_quota_allowed": tl_allowed,
+        "tl_quota_used": tl_used,
+        "tl_quota_max": tl_max,
     })
 
 
 @router.post("/leave/request")
-async def submit_leave_request(request: Request, leave_type: str = Form(...), from_date_str: str = Form(...), to_date_str: str = Form(...), start_time_str: str = Form(""), end_time_str: str = Form(""), reason: str = Form(""), user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def submit_leave_request(
+    request: Request,
+    leave_type: str = Form(...),
+    from_date_str: str = Form(...),
+    to_date_str: str = Form(...),
+    start_time_str: str = Form(""),
+    end_time_str: str = Form(""),
+    reason: str = Form(""),
+    travel_leave_enabled: str = Form("off"),
+    destination_city_id: str = Form(""),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     try:
         if leave_type not in LEAVE_TYPES:
             raise ValueError("نوع مرخصی نامعتبر است")
@@ -213,15 +264,52 @@ async def submit_leave_request(request: Request, leave_type: str = Form(...), fr
             if overlapping:
                 raise ValueError("در این بازه، درخواست مرخصی دیگری دارید")
 
-        new_request = LeaveRequest(user_id=user.user_id, leave_type=leave_type, from_date=from_date, to_date=to_date, days_count=days_count, reason=reason.strip() or None, status='P', start_time=hl_start_time, end_time=hl_end_time)
+        # Validate travel leave request
+        tl_enabled = travel_leave_enabled == "on" and leave_type == "AL"
+        tl_dest_city_id = None
+        if tl_enabled:
+            if not destination_city_id or not destination_city_id.strip():
+                raise ValueError("شهر مقصد برای مرخصی توراهی الزامی است")
+            try:
+                tl_dest_city_id = int(destination_city_id.strip())
+            except (ValueError, TypeError):
+                raise ValueError("شهر مقصد نامعتبر است")
+
+        new_request = LeaveRequest(
+            user_id=user.user_id,
+            leave_type=leave_type,
+            from_date=from_date,
+            to_date=to_date,
+            days_count=days_count,
+            reason=reason.strip() or None,
+            status='P',
+            start_time=hl_start_time,
+            end_time=hl_end_time,
+        )
         db.add(new_request)
+        db.flush()
+
+        # Create Travel Leave detail atomically
+        if tl_enabled:
+            from web.services.travel_leave_service import create_travel_leave_detail
+            try:
+                create_travel_leave_detail(db, new_request, tl_dest_city_id)
+            except ValueError as te:
+                db.rollback()
+                return RedirectResponse(
+                    url=build_redirect_url(request.headers.get("referer", "/leave"), "error", str(te)),
+                    status_code=302,
+                )
+
         db.commit()
         type_name = LEAVE_TYPES.get(leave_type, '')
         referer = request.headers.get("referer", "/leave")
         if leave_type == 'HL':
             minutes = compute_requested_minutes(hl_start_time, hl_end_time)
             return RedirectResponse(url=build_redirect_url(referer, "success", f"درخواست مرخصی {type_name} ({minutes // 60}:{minutes % 60:02d} ساعت) با موفقیت ثبت شد"), status_code=302)
-        return RedirectResponse(url=build_redirect_url(referer, "success", f"درخواست مرخصی {type_name} ({days_count} روز) با موفقیت ثبت شد"), status_code=302)
+
+        tl_msg = " + مرخصی توراهی" if tl_enabled else ""
+        return RedirectResponse(url=build_redirect_url(referer, "success", f"درخواست مرخصی {type_name} ({days_count} روز){tl_msg} با موفقیت ثبت شد"), status_code=302)
     except ValueError as e:
         return RedirectResponse(url=build_redirect_url(request.headers.get("referer", "/leave"), "error", str(e)), status_code=302)
     except Exception as e:
@@ -268,3 +356,59 @@ async def calculate_leave_days_api(from_date: str = Query(...), to_date: str = Q
         return {"success": True, "days_count": days_count}
     except Exception as e:
         return {"success": False, "days_count": 0, "message": str(e)}
+
+
+@router.get("/leave/travel-preview")
+async def travel_leave_preview(
+    from_date: str = Query(...),
+    destination_city_id: int = Query(...),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Advisory preview for Travel Leave. Not authoritative — submission recalculates."""
+    try:
+        from_j = jdatetime.datetime.strptime(from_date.strip(), "%Y/%m/%d").date()
+        from_g = from_j.togregorian()
+
+        # Resolve origin
+        esl = resolve_effective_service_location(db, user.user_id, from_g)
+        if not esl:
+            return {"success": False, "message": "محل خدمت مؤثر یافت نشد"}
+
+        origin_city = db.query(City).filter(City.id == esl.city_id).first()
+        if not origin_city:
+            return {"success": False, "message": "شهر محل خدمت یافت نشد"}
+
+        dest_city = validate_destination_city(db, destination_city_id)
+        if not dest_city:
+            return {"success": False, "message": "شهر مقصد نامعتبر است"}
+
+        distance_km = calc_dist(
+            (origin_city.latitude, origin_city.longitude),
+            (dest_city.latitude, dest_city.longitude),
+        )
+        distance_km = round(distance_km, 2)
+
+        rules = db.query(TravelLeavePolicyRule).filter(
+            TravelLeavePolicyRule.is_active == 1
+        ).all()
+        travel_days, matched_rule = calculate_travel_days(distance_km, rules)
+
+        jalali_year = jdatetime.date.fromgregorian(date=from_g).year
+        allowed, used, max_allowed = check_quota(db, user.user_id, jalali_year)
+
+        return {
+            "success": True,
+            "origin_city": origin_city.name,
+            "destination_city": dest_city.name,
+            "destination_province": dest_city.province or "",
+            "distance_km": distance_km,
+            "travel_days": travel_days,
+            "eligible": travel_days > 0,
+            "quota_used": used,
+            "quota_max": max_allowed,
+            "quota_allowed": allowed,
+            "jalali_year": jalali_year,
+        }
+    except Exception as e:
+        return {"success": False, "message": str(e)}

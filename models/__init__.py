@@ -10,7 +10,7 @@ from models.leave_transaction import LeaveTransaction
 from models.leave_request import LeaveRequest
 from models.holiday import Holiday
 from models.daily_status import DailyStatus
-from models.employee import Employee  # 🆕
+from models.employee import Employee
 from models.employee_phone import EmployeePhone
 from models.education import Education
 from models.leave_carry_forward_request import LeaveCarryForwardRequest
@@ -20,6 +20,10 @@ from models.region import Region
 from models.policy import Policy, PolicyValue, PolicyAuditLog
 from models.employee_region import EmployeeRegion
 from models import hourly_leave_policy_rules  # register hourly-leave policy normalization listeners
+from models.city import City
+from models.employee_service_location import EmployeeServiceLocation
+from models.travel_leave_detail import TravelLeaveDetail
+from models.travel_leave_policy_rules import TravelLeavePolicyRule, TravelLeaveQuotaSetting
 
 __all__ = [
     'Base', 'User', 'Attendance', 'AttendancePolicy', 'AttendancePolicyDay',
@@ -29,4 +33,6 @@ __all__ = [
     'EmployeePhone', 'Education', 'UserPermission', 'UserPermissionHistory', 'BaleUser',
     'Employee', 'Region', 'Policy', 'PolicyValue', 'PolicyAuditLog',
     'EmployeeRegion',
+    'City', 'EmployeeServiceLocation', 'TravelLeaveDetail',
+    'TravelLeavePolicyRule', 'TravelLeaveQuotaSetting',
 ]
