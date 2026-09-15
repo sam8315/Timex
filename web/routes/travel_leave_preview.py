@@ -48,21 +48,21 @@ async def travel_leave_preview(
         membership_code = resolve_membership_code(employee, contract)
 
         if not employee:
-            return _preview_error("اطلاعات کارمند برای کاربر یافت نشد")
+            return _preview_error("اطلاعات کارمند یافت نشد")
         if not membership_code:
-            return _preview_error("عضویت مؤثر برای تاریخ انتخاب‌شده یافت نشد")
+            return _preview_error("عضویت مؤثر یافت نشد")
         if not policy:
             return _preview_error(
-                f"سیاست مرخصی توراهی برای نوع عضویت {membership_code} تعریف نشده است"
+                f"سیاست عضویت {membership_code} تعریف نشده است"
             )
         if not policy.is_enabled:
-            return _preview_error("مرخصی توراهی برای نوع عضویت شما غیرفعال است")
+            return _preview_error("مرخصی توراهی برای این عضویت غیرفعال است")
         if employee.marital_status not in ("S", "M"):
-            return _preview_error("وضعیت تأهل کاربر معتبر نیست")
+            return _preview_error("وضعیت تأهل معتبر نیست")
 
         esl = resolve_effective_service_location(db, user.user_id, from_g)
         if not esl:
-            return _preview_error("محل خدمت مؤثر برای تاریخ انتخاب‌شده یافت نشد")
+            return _preview_error("محل خدمت مؤثر یافت نشد")
         origin_city = db.query(City).filter(City.id == esl.city_id).first()
         dest_city = validate_destination_city(db, destination_city_id)
         if not origin_city or not dest_city:
@@ -76,7 +76,7 @@ async def travel_leave_preview(
         ).all()
         if not rules:
             return _preview_error(
-                "قواعد فاصله برای این نوع عضویت تعریف نشده است",
+                "قواعد فاصله این عضویت تعریف نشده است",
                 origin_city=origin_city.name,
                 destination_city=dest_city.name,
                 distance_km=distance_km,
@@ -89,9 +89,9 @@ async def travel_leave_preview(
         )
         eligible = travel_days > 0 and allowed
         message = None if eligible else (
-            f"سهمیه سالانه تکمیل شده است ({used}/{max_allowed})"
+            f"سهمیه تکمیل شده ({used}/{max_allowed})"
             if travel_days > 0 and not allowed
-            else "مسافت انتخاب‌شده مشمول مرخصی توراهی نیست"
+            else "مسافت مجاز نیست"
         )
         return {
             "success": True,
@@ -111,4 +111,4 @@ async def travel_leave_preview(
             "marital_status": employee.marital_status,
         }
     except Exception as exc:
-        return _preview_error(f"خطا در محاسبه مرخصی توراهی: {exc}")
+        return _preview_error(f"خطای محاسبه: {exc}")
