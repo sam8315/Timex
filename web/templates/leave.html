@@ -5,218 +5,108 @@
 
 {% block extra_css %}
 <style>
-    /* 🎨 کارت‌های مانده */
-    .balance-card {
-        border: none;
-        border-radius: 16px;
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-        overflow: hidden;
-        position: relative;
-    }
-    .balance-card:hover {
-        transform: translateY(-4px);
-        box-shadow: 0 8px 20px rgba(0,0,0,0.1);
-    }
-    .balance-card .balance-icon {
-        width: 52px;
-        height: 52px;
-        border-radius: 14px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 1.5rem;
-    }
-    .balance-card .balance-value {
-        font-size: 2rem;
-        font-weight: 700;
-        line-height: 1;
-    }
-    .balance-card .balance-label {
-        font-size: 0.85rem;
-        opacity: 0.8;
-    }
-
-    /* 🎨 کارت فرم */
-    .form-card {
-        border: none;
-        border-radius: 16px;
-        box-shadow: 0 2px 12px rgba(0,0,0,0.06);
-    }
-
-    /* 🎨 نمایش تعداد روز */
-    .days-display {
-        background: linear-gradient(135deg, #10b981 0%, #34d399 100%);
-        color: white;
-        border-radius: 12px;
-        padding: 20px;
-        text-align: center;
-        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
-    }
-    .days-display .days-number {
-        font-size: 2.5rem;
-        font-weight: 700;
-        line-height: 1;
-    }
-    .days-display .days-label {
-        font-size: 0.85rem;
-        opacity: 0.9;
-        margin-top: 4px;
-    }
-    .days-display.warning {
-        background: linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%);
-        box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
-    }
-    .days-display.danger {
-        background: linear-gradient(135deg, #ef4444 0%, #f87171 100%);
-        box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
-    }
-
-    /* 🎨 جدول درخواست‌ها */
-    .requests-table {
-        font-size: 0.88rem;
-    }
-    .requests-table th {
-        background: #f8f9fa;
-        font-size: 0.78rem;
-        font-weight: 600;
-        color: #6b7280;
-        white-space: nowrap;
-        padding: 12px 10px;
-    }
-    .requests-table td {
-        vertical-align: middle;
-        padding: 10px;
-    }
-
-    /* 🎨 Badge وضعیت */
-    .status-badge {
-        font-size: 0.75rem;
-        padding: 4px 12px;
-        border-radius: 20px;
-        font-weight: 600;
-    }
-    .status-pending {
-        background: #fef3c7;
-        color: #92400e;
-    }
-    .status-approved {
-        background: #d1fae5;
-        color: #065f46;
-    }
-    .status-rejected {
-        background: #fee2e2;
-        color: #991b1b;
-    }
-    .status-deleted {
-        background: #e5e7eb;
-        color: #374151;
-    }
-
-    /* 🎨 نوع مرخصی Badge */
-    .leave-type-badge {
-        font-size: 0.75rem;
-        padding: 3px 10px;
-        border-radius: 10px;
-    }
+    .balance-card { border: none; border-radius: 16px; transition: transform 0.2s ease, box-shadow 0.2s ease; box-shadow: 0 2px 8px rgba(0,0,0,0.06); overflow: hidden; position: relative; }
+    .balance-card:hover { transform: translateY(-4px); box-shadow: 0 8px 20px rgba(0,0,0,0.1); }
+    .balance-card .balance-icon { width: 52px; height: 52px; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; }
+    .balance-card .balance-value { font-size: 2rem; font-weight: 700; line-height: 1; }
+    .balance-card .balance-label { font-size: 0.85rem; opacity: 0.8; }
+    .form-card { border: none; border-radius: 16px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
+    .days-display { background: linear-gradient(135deg, #10b981 0%, #34d399 100%); color: white; border-radius: 12px; padding: 20px; text-align: center; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3); }
+    .days-display .days-number { font-size: 2.5rem; font-weight: 700; line-height: 1; }
+    .days-display .days-label { font-size: 0.85rem; opacity: 0.9; margin-top: 4px; }
+    .days-display.warning { background: linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%); box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3); }
+    .days-display.danger { background: linear-gradient(135deg, #ef4444 0%, #f87171 100%); box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3); }
+    .requests-table { font-size: 0.88rem; }
+    .requests-table th { background: #f8f9fa; font-size: 0.78rem; font-weight: 600; color: #6b7280; white-space: nowrap; padding: 12px 10px; }
+    .requests-table td { vertical-align: middle; padding: 10px; }
+    .status-badge { font-size: 0.75rem; padding: 4px 12px; border-radius: 20px; font-weight: 600; }
+    .status-pending { background: #fef3c7; color: #92400e; }
+    .status-approved { background: #d1fae5; color: #065f46; }
+    .status-rejected { background: #fee2e2; color: #991b1b; }
+    .status-deleted { background: #e5e7eb; color: #374151; }
+    .leave-type-badge { font-size: 0.75rem; padding: 3px 10px; border-radius: 10px; }
     .leave-type-AL { background: #dbeafe; color: #1e40af; }
     .leave-type-SL { background: #fce7f3; color: #9f1239; }
     .leave-type-RL { background: #fef3c7; color: #92400e; }
     .leave-type-UL { background: #e5e7eb; color: #374151; }
     .leave-type-CW { background: #ddd6fe; color: #5b21b6; }
     .leave-type-HL { background: #ccfbf1; color: #0f766e; }
+    .hl-time-section { display: none; background: #f0fdfa; border: 1px solid #ccfbf1; border-radius: 12px; padding: 16px; }
+    .hl-time-section.visible { display: block; }
+    .tl-section { display: none; background: #f0f4ff; border: 1px solid #c7d2fe; border-radius: 12px; padding: 16px; }
+    .tl-section.visible { display: block; }
 
-    /* 🆕 فیلدهای مرخصی ساعتی */
-    .hl-time-section {
-        display: none;
-        background: #f0fdfa;
-        border: 1px solid #ccfbf1;
-        border-radius: 12px;
-        padding: 16px;
-    }
-    .hl-time-section.visible {
-        display: block;
-    }
-
-    /* 🆕 بخش مرخصی توراهی */
-    .tl-section {
-        display: none;
-        background: #f0f4ff;
-        border: 1px solid #c7d2fe;
-        border-radius: 12px;
-        padding: 16px;
-    }
-    .tl-section.visible {
-        display: block;
-    }
     .tl-preview-card {
-        background: white;
-        border-radius: 8px;
-        padding: 12px;
-        margin-top: 12px;
-        border: 1px solid #e0e7ff;
+        position: relative;
+        overflow: hidden;
+        background: #fff;
+        border: 1px solid #dbe3f3;
+        border-radius: 14px;
+        margin-top: 14px;
+        padding: 16px;
+        box-shadow: 0 4px 14px rgba(30, 64, 175, 0.06);
     }
-    .tl-eligible { color: #059669; font-weight: 600; }
-    .tl-ineligible { color: #dc2626; font-weight: 600; }
-    .tl-status {
+    .tl-preview-card::before {
+        content: "";
+        position: absolute;
+        inset: 0 0 auto 0;
+        height: 3px;
+        background: linear-gradient(90deg, #2563eb, #6366f1);
+    }
+    .tl-route {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 42px minmax(0, 1fr);
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 14px;
+    }
+    .tl-route-point { min-width: 0; }
+    .tl-route-label { display: block; font-size: 0.72rem; color: #6b7280; margin-bottom: 3px; }
+    .tl-route-city { display: block; font-size: 0.98rem; font-weight: 700; color: #1f2937; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tl-route-arrow {
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        margin: 0 auto;
         display: flex;
-        flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 2px;
-        min-height: 44px;
-        text-align: center;
+        background: #eef2ff;
+        color: #4f46e5;
+        font-size: 1rem;
     }
-    .tl-status-label {
-        font-weight: 600;
-        line-height: 1.2;
-        white-space: nowrap;
-    }
-    .tl-status-message {
-        max-width: 100%;
-        font-size: 0.72rem;
-        font-weight: 400;
-        line-height: 1.35;
-        color: #6b7280;
-        white-space: normal;
-    }
+    .tl-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid #eef2f7; border-radius: 12px; overflow: hidden; background: #f8fafc; }
+    .tl-metric { min-width: 0; padding: 11px 8px; text-align: center; border-left: 1px solid #eef2f7; }
+    .tl-metric:last-child { border-left: 0; }
+    .tl-metric-label { display: block; font-size: 0.7rem; color: #6b7280; margin-bottom: 3px; white-space: nowrap; }
+    .tl-metric-value { display: block; font-size: 1rem; font-weight: 800; line-height: 1.25; color: #111827; white-space: nowrap; }
+    .tl-result { margin-top: 14px; padding-top: 13px; border-top: 1px dashed #d9e0ea; text-align: center; }
+    .tl-status { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; min-width: 118px; }
+    .tl-status-label { display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-weight: 800; font-size: 0.9rem; line-height: 1.2; }
+    .tl-status-message { max-width: 100%; font-size: 0.72rem; font-weight: 400; line-height: 1.45; color: #6b7280; }
+    .tl-eligible { color: #047857; }
+    .tl-ineligible { color: #dc2626; }
+    .tl-loading { color: #4f46e5; }
+    .tl-loading .tl-status-label { font-weight: 700; }
+    .tl-loading .spinner-border { width: 0.85rem; height: 0.85rem; border-width: 0.14em; }
 
-    /* 🎨 فیلدهای تاریخ */
-    .date-input-wrapper {
-        position: relative;
-    }
-    .date-input-wrapper .clear-btn {
-        position: absolute;
-        left: 8px;
-        top: 50%;
-        transform: translateY(-50%);
-        background: transparent;
-        border: none;
-        color: #9ca3af;
-        cursor: pointer;
-        padding: 4px 8px;
-        font-size: 0.9rem;
-        z-index: 5;
-    }
-    .date-input-wrapper .clear-btn:hover {
-        color: #ef4444;
-    }
+    .date-input-wrapper { position: relative; }
+    .date-input-wrapper .clear-btn { position: absolute; left: 8px; top: 50%; transform: translateY(-50%); background: transparent; border: none; color: #9ca3af; cursor: pointer; padding: 4px 8px; font-size: 0.9rem; z-index: 5; }
+    .date-input-wrapper .clear-btn:hover { color: #ef4444; }
+    .rejection-reason { display: inline-block; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
 
-    /* 🎨 Tooltip دلیل رد */
-    .rejection-reason {
-        display: inline-block;
-        max-width: 150px;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        vertical-align: middle;
+    @media (max-width: 575.98px) {
+        .tl-preview-card { padding: 13px; }
+        .tl-route { grid-template-columns: minmax(0, 1fr) 34px minmax(0, 1fr); gap: 5px; }
+        .tl-route-city { font-size: 0.88rem; }
+        .tl-metric { padding: 10px 5px; }
+        .tl-metric-label { font-size: 0.65rem; }
+        .tl-metric-value { font-size: 0.88rem; }
     }
 </style>
 {% endblock %}
 
 {% block content %}
-
-<!-- پیام‌ها -->
 {% if request.query_params.get('success') %}
 <div class="alert alert-success alert-dismissible fade show shadow-sm border-0" role="alert">
     <i class="bi bi-check-circle-fill"></i> {{ request.query_params.get('success') }}
@@ -230,497 +120,112 @@
 </div>
 {% endif %}
 
-<!-- Header -->
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
-        <h4 class="mb-1 fw-bold">
-            <i class="bi bi-calendar-check text-primary"></i> درخواست مرخصی
-        </h4>
+        <h4 class="mb-1 fw-bold"><i class="bi bi-calendar-check text-primary"></i> درخواست مرخصی</h4>
         <small class="text-muted">ثبت درخواست مرخصی و مشاهده وضعیت</small>
     </div>
-    <a href="/dashboard" class="btn btn-outline-primary btn-sm rounded-pill">
-        <i class="bi bi-arrow-right"></i> بازگشت به داشبورد
-    </a>
+    <a href="/dashboard" class="btn btn-outline-primary btn-sm rounded-pill"><i class="bi bi-arrow-right"></i> بازگشت به داشبورد</a>
 </div>
 
-<!-- ============================================ -->
-<!-- 💰 کارت‌های مانده مرخصی -->
-<!-- ============================================ -->
 <div class="row g-3 mb-4">
-    <!-- مانده استحقاقی -->
-    <div class="col-lg-3 col-md-6 col-6">
-        <div class="card balance-card bg-primary bg-opacity-10">
-            <div class="card-body d-flex align-items-center gap-3">
-                <div class="balance-icon bg-primary bg-opacity-25 text-primary">
-                    <i class="bi bi-sun"></i>
-                </div>
-                <div>
-                    <div class="balance-value text-primary">{{ al_balance }}</div>
-                    <div class="balance-label text-primary">روز استحقاقی</div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- مانده استعلاجی -->
-    <div class="col-lg-3 col-md-6 col-6">
-        <div class="card balance-card bg-danger bg-opacity-10">
-            <div class="card-body d-flex align-items-center gap-3">
-                <div class="balance-icon bg-danger bg-opacity-25 text-danger">
-                    <i class="bi bi-heart-pulse"></i>
-                </div>
-                <div>
-                    <div class="balance-value text-danger">{{ sl_balance }}</div>
-                    <div class="balance-label text-danger">روز استعلاجی</div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    {% if rl_balance > 0 %}
-    <!-- مانده تشویقی -->
-    <div class="col-lg-3 col-md-6 col-6">
-        <div class="card balance-card bg-warning bg-opacity-10">
-            <div class="card-body d-flex align-items-center gap-3">
-                <div class="balance-icon bg-warning bg-opacity-25 text-warning">
-                    <i class="bi bi-gift"></i>
-                </div>
-                <div>
-                    <div class="balance-value text-warning">{{ rl_balance }}</div>
-                    <div class="balance-label text-warning">روز تشویقی</div>
-                </div>
-            </div>
-        </div>
-    </div>
-    {% endif %}
-
-    {% if cw_balance > 0 %}
-    <!-- ذخیره سال قبل -->
-    <div class="col-lg-3 col-md-6 col-6">
-        <div class="card balance-card bg-info bg-opacity-10">
-            <div class="card-body d-flex align-items-center gap-3">
-                <div class="balance-icon bg-info bg-opacity-25 text-info">
-                    <i class="bi bi-box-seam"></i>
-                </div>
-                <div>
-                    <div class="balance-value text-info">{{ cw_balance }}</div>
-                    <div class="balance-label text-info">ذخیره سال قبل</div>
-                </div>
-            </div>
-        </div>
-    </div>
-    {% endif %}
+    <div class="col-lg-3 col-md-6 col-6"><div class="card balance-card bg-primary bg-opacity-10"><div class="card-body d-flex align-items-center gap-3"><div class="balance-icon bg-primary bg-opacity-25 text-primary"><i class="bi bi-sun"></i></div><div><div class="balance-value text-primary">{{ al_balance }}</div><div class="balance-label text-primary">روز استحقاقی</div></div></div></div></div>
+    <div class="col-lg-3 col-md-6 col-6"><div class="card balance-card bg-danger bg-opacity-10"><div class="card-body d-flex align-items-center gap-3"><div class="balance-icon bg-danger bg-opacity-25 text-danger"><i class="bi bi-heart-pulse"></i></div><div><div class="balance-value text-danger">{{ sl_balance }}</div><div class="balance-label text-danger">روز استعلاجی</div></div></div></div></div>
+    {% if rl_balance > 0 %}<div class="col-lg-3 col-md-6 col-6"><div class="card balance-card bg-warning bg-opacity-10"><div class="card-body d-flex align-items-center gap-3"><div class="balance-icon bg-warning bg-opacity-25 text-warning"><i class="bi bi-gift"></i></div><div><div class="balance-value text-warning">{{ rl_balance }}</div><div class="balance-label text-warning">روز تشویقی</div></div></div></div></div>{% endif %}
+    {% if cw_balance > 0 %}<div class="col-lg-3 col-md-6 col-6"><div class="card balance-card bg-info bg-opacity-10"><div class="card-body d-flex align-items-center gap-3"><div class="balance-icon bg-info bg-opacity-25 text-info"><i class="bi bi-box-seam"></i></div><div><div class="balance-value text-info">{{ cw_balance }}</div><div class="balance-label text-info">ذخیره سال قبل</div></div></div></div></div>{% endif %}
 </div>
 
 <div class="row g-4">
     <div class="col-lg-7">
         <div class="card form-card">
-            <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
-                <h6 class="mb-0 fw-bold">
-                    <i class="bi bi-plus-circle text-primary"></i> درخواست جدید
-                </h6>
-                {% if pending_count > 0 %}
-                <span class="badge bg-warning text-dark rounded-pill">
-                    <i class="bi bi-hourglass-split"></i> {{ pending_count }} در انتظار
-                </span>
-                {% endif %}
-            </div>
+            <div class="card-header bg-white d-flex justify-content-between align-items-center py-3"><h6 class="mb-0 fw-bold"><i class="bi bi-plus-circle text-primary"></i> درخواست جدید</h6>{% if pending_count > 0 %}<span class="badge bg-warning text-dark rounded-pill"><i class="bi bi-hourglass-split"></i> {{ pending_count }} در انتظار</span>{% endif %}</div>
             <div class="card-body">
                 <form method="post" action="/leave/request" id="leaveForm">
                     <div class="row g-3">
                         <div class="col-12">
-                            <label class="form-label fw-bold">
-                                <i class="bi bi-tag text-primary"></i> نوع مرخصی <span class="text-danger">*</span>
-                            </label>
+                            <label class="form-label fw-bold"><i class="bi bi-tag text-primary"></i> نوع مرخصی <span class="text-danger">*</span></label>
                             <select name="leave_type" class="form-select" required id="leaveType">
-                                {% for code, name in leave_types.items() %}
-                                <option value="{{ code }}"
-                                        data-balance="{{ balances.get(code, 0) }}"
-                                        {% if code not in ['HL'] and (code not in balances or balances.get(code, 0) <= 0) %}disabled{% endif %}>
-                                    {{ name }}
-                                    {% if code in ['RL', 'CW', 'AL', 'SL'] %}
-                                    ({{ balances.get(code, 0) }} روز)
-                                    {% endif %}
-                                </option>
-                                {% endfor %}
+                                {% for code, name in leave_types.items() %}<option value="{{ code }}" data-balance="{{ balances.get(code, 0) }}" {% if code not in ['HL'] and (code not in balances or balances.get(code, 0) <= 0) %}disabled{% endif %}>{{ name }}{% if code in ['RL', 'CW', 'AL', 'SL'] %} ({{ balances.get(code, 0) }} روز){% endif %}</option>{% endfor %}
                             </select>
                             <small class="text-muted">مرخصی ساعتی محدودیت مانده ندارد</small>
                         </div>
 
-                        <div class="col-md-6">
-                            <label class="form-label fw-bold" id="fromDateLabel">
-                                <i class="bi bi-calendar-event text-success"></i> از تاریخ <span class="text-danger">*</span>
-                            </label>
-                            <div class="date-input-wrapper">
-                                <input type="text" name="from_date_str" id="fromDate"
-                                       class="form-control form-control-lg text-center"
-                                       placeholder="انتخاب تاریخ" autocomplete="off" required>
-                                <button type="button" class="clear-btn" onclick="clearDate('fromDate')" title="پاک کردن">
-                                    <i class="bi bi-x-circle"></i>
-                                </button>
-                            </div>
-                        </div>
+                        <div class="col-md-6"><label class="form-label fw-bold" id="fromDateLabel"><i class="bi bi-calendar-event text-success"></i> از تاریخ <span class="text-danger">*</span></label><div class="date-input-wrapper"><input type="text" name="from_date_str" id="fromDate" class="form-control form-control-lg text-center" placeholder="انتخاب تاریخ" autocomplete="off" required><button type="button" class="clear-btn" onclick="clearDate('fromDate')" title="پاک کردن"><i class="bi bi-x-circle"></i></button></div></div>
+                        <div class="col-md-6" id="toDateCol"><label class="form-label fw-bold"><i class="bi bi-calendar-check text-danger"></i> تا تاریخ <span class="text-danger">*</span></label><div class="date-input-wrapper"><input type="text" name="to_date_str" id="toDate" class="form-control form-control-lg text-center" placeholder="انتخاب تاریخ" autocomplete="off" required><button type="button" class="clear-btn" onclick="clearDate('toDate')" title="پاک کردن"><i class="bi bi-x-circle"></i></button></div></div>
 
-                        <div class="col-md-6" id="toDateCol">
-                            <label class="form-label fw-bold">
-                                <i class="bi bi-calendar-check text-danger"></i> تا تاریخ <span class="text-danger">*</span>
-                            </label>
-                            <div class="date-input-wrapper">
-                                <input type="text" name="to_date_str" id="toDate"
-                                       class="form-control form-control-lg text-center"
-                                       placeholder="انتخاب تاریخ" autocomplete="off" required>
-                                <button type="button" class="clear-btn" onclick="clearDate('toDate')" title="پاک کردن">
-                                    <i class="bi bi-x-circle"></i>
-                                </button>
-                            </div>
-                        </div>
-
-                        <div class="col-12">
-                            <div class="days-display" id="daysDisplay" style="display: none;">
-                                <div class="days-number" id="daysNumber">0</div>
-                                <div class="days-label">روز کاری (تعطیلات و جمعه‌ها کسر شده)</div>
-                            </div>
-                        </div>
+                        <div class="col-12"><div class="days-display" id="daysDisplay" style="display: none;"><div class="days-number" id="daysNumber">0</div><div class="days-label">روز کاری (تعطیلات و جمعه‌ها کسر شده)</div></div></div>
 
                         <div class="col-12">
                             <div class="hl-time-section" id="hlTimeSection" data-granularity="{{ hl_granularity if hl_granularity is defined else 15 }}">
                                 <div class="row g-3">
-                                    <div class="col-md-6">
-                                        <label class="form-label fw-bold">
-                                            <i class="bi bi-clock text-success"></i> ساعت شروع <span class="text-danger">*</span>
-                                        </label>
-                                        <input type="text" name="start_time_str" id="startTime"
-                                               class="form-control form-control-lg text-center"
-                                               placeholder="HH:MM" pattern="([01][0-9]|2[0-3]):([0-5][0-9])"
-                                               inputmode="numeric" maxlength="5" dir="ltr"
-                                               autocomplete="off" required data-time-input="true">
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label fw-bold">
-                                            <i class="bi bi-clock text-danger"></i> ساعت پایان <span class="text-danger">*</span>
-                                        </label>
-                                        <input type="text" name="end_time_str" id="endTime"
-                                               class="form-control form-control-lg text-center"
-                                               placeholder="HH:MM" pattern="([01][0-9]|2[0-3]):([0-5][0-9])"
-                                               inputmode="numeric" maxlength="5" dir="ltr"
-                                               autocomplete="off" required data-time-input="true">
-                                    </div>
+                                    <div class="col-md-6"><label class="form-label fw-bold"><i class="bi bi-clock text-success"></i> ساعت شروع <span class="text-danger">*</span></label><input type="text" name="start_time_str" id="startTime" class="form-control form-control-lg text-center" placeholder="HH:MM" pattern="([01][0-9]|2[0-3]):([0-5][0-9])" inputmode="numeric" maxlength="5" dir="ltr" autocomplete="off" required data-time-input="true"></div>
+                                    <div class="col-md-6"><label class="form-label fw-bold"><i class="bi bi-clock text-danger"></i> ساعت پایان <span class="text-danger">*</span></label><input type="text" name="end_time_str" id="endTime" class="form-control form-control-lg text-center" placeholder="HH:MM" pattern="([01][0-9]|2[0-3]):([0-5][0-9])" inputmode="numeric" maxlength="5" dir="ltr" autocomplete="off" required data-time-input="true"></div>
                                 </div>
-                                <div class="mt-2 small text-muted" id="hlHint">
-                                    <i class="bi bi-info-circle"></i>
-                                    <span id="hlHintText">زمان باید مضربی از ۱۵ دقیقه و در ساعات کاری روز باشد</span>
-                                </div>
-                                <div class="mt-2" id="hlDurationDisplay" style="display: none;">
-                                    <span class="badge bg-info fs-6" id="hlDurationText">0 دقیقه</span>
-                                </div>
+                                <div class="mt-2 small text-muted" id="hlHint"><i class="bi bi-info-circle"></i> <span id="hlHintText">زمان باید مضربی از ۱۵ دقیقه و در ساعات کاری روز باشد</span></div>
+                                <div class="mt-2" id="hlDurationDisplay" style="display: none;"><span class="badge bg-info fs-6" id="hlDurationText">0 دقیقه</span></div>
                             </div>
                         </div>
 
                         <div class="col-12">
                             <div class="tl-section" id="tlSection">
-                                <div class="d-flex justify-content-between align-items-center mb-3">
-                                    <h6 class="mb-0 fw-bold text-primary">
-                                        <i class="bi bi-airplane"></i> مرخصی توراهی
-                                    </h6>
-                                    <div class="form-check form-switch">
-                                        <input class="form-check-input" type="checkbox" id="tlToggle"
-                                               name="travel_leave_enabled" value="on">
-                                        <label class="form-check-label fw-bold" for="tlToggle">فعال</label>
-                                    </div>
-                                </div>
-
+                                <div class="d-flex justify-content-between align-items-center mb-3"><h6 class="mb-0 fw-bold text-primary"><i class="bi bi-airplane"></i> مرخصی توراهی</h6><div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="tlToggle" name="travel_leave_enabled" value="on"><label class="form-check-label fw-bold" for="tlToggle">فعال</label></div></div>
                                 <div id="tlContent" style="display: none;">
                                     <div class="row g-3">
-                                        <div class="col-md-6">
-                                            <label class="form-label fw-bold">
-                                                <i class="bi bi-geo-alt text-primary"></i> محل خدمت (مبدأ)
-                                            </label>
-                                            <input type="text" class="form-control" readonly
-                                                   value="{{ service_origin_city or 'تعیین نشده' }}"
-                                                   id="tlOriginDisplay">
-                                            {% if not service_origin_city %}
-                                            <small class="text-danger">
-                                                <i class="bi bi-exclamation-triangle"></i>
-                                                محل خدمت شما ثبت نشده است
-                                            </small>
-                                            {% endif %}
-                                        </div>
-
-                                        <div class="col-md-6">
-                                            <label class="form-label fw-bold">
-                                                <i class="bi bi-flag text-danger"></i> شهر مقصد <span class="text-danger">*</span>
-                                            </label>
-                                            <select class="form-select" id="tlDestinationSelect" name="destination_city_id"
-                                                    {% if not service_origin_city %}disabled{% endif %}>
-                                                <option value="">-- انتخاب شهر مقصد --</option>
-                                                {% for city in cities %}
-                                                <option value="{{ city.id }}" data-name="{{ city.name }}">
-                                                    {{ city.name }}{% if city.province %} ({{ city.province }}){% endif %}
-                                                </option>
-                                                {% endfor %}
-                                            </select>
-                                        </div>
+                                        <div class="col-md-6"><label class="form-label fw-bold"><i class="bi bi-geo-alt text-primary"></i> محل خدمت (مبدأ)</label><input type="text" class="form-control" readonly value="{{ service_origin_city or 'تعیین نشده' }}" id="tlOriginDisplay">{% if not service_origin_city %}<small class="text-danger"><i class="bi bi-exclamation-triangle"></i> محل خدمت شما ثبت نشده است</small>{% endif %}</div>
+                                        <div class="col-md-6"><label class="form-label fw-bold"><i class="bi bi-flag text-danger"></i> شهر مقصد <span class="text-danger">*</span></label><select class="form-select" id="tlDestinationSelect" name="destination_city_id" {% if not service_origin_city %}disabled{% endif %}><option value="">-- انتخاب شهر مقصد --</option>{% for city in cities %}<option value="{{ city.id }}" data-name="{{ city.name }}">{{ city.name }}{% if city.province %} ({{ city.province }}){% endif %}</option>{% endfor %}</select></div>
 
                                         <div class="col-12" id="tlPreviewContainer" style="display: none;">
                                             <div class="tl-preview-card">
-                                                <div class="row g-2">
-                                                    <div class="col-md-3">
-                                                        <small class="text-muted">مسافت</small>
-                                                        <div class="fw-bold" id="tlPreviewDistance">-</div>
-                                                    </div>
-                                                    <div class="col-md-3">
-                                                        <small class="text-muted">روز توراهی</small>
-                                                        <div class="fw-bold" id="tlPreviewDays">-</div>
-                                                    </div>
-                                                    <div class="col-md-3">
-                                                        <small class="text-muted">وضعیت</small>
-                                                        <div id="tlPreviewEligible">-</div>
-                                                    </div>
-                                                    <div class="col-md-3">
-                                                        <small class="text-muted">سهمیه سالانه</small>
-                                                        <div class="fw-bold" id="tlPreviewQuota">-</div>
-                                                    </div>
+                                                <div class="tl-route">
+                                                    <div class="tl-route-point"><span class="tl-route-label">مبدأ</span><span class="tl-route-city" id="tlPreviewOrigin">{{ service_origin_city or 'تعیین نشده' }}</span></div>
+                                                    <div class="tl-route-arrow"><i class="bi bi-arrow-left"></i></div>
+                                                    <div class="tl-route-point text-end"><span class="tl-route-label">مقصد</span><span class="tl-route-city" id="tlPreviewDestination">-</span></div>
                                                 </div>
+                                                <div class="tl-metrics">
+                                                    <div class="tl-metric"><span class="tl-metric-label">مسافت</span><span class="tl-metric-value" id="tlPreviewDistance">-</span></div>
+                                                    <div class="tl-metric"><span class="tl-metric-label">روز توراهی</span><span class="tl-metric-value" id="tlPreviewDays">-</span></div>
+                                                    <div class="tl-metric"><span class="tl-metric-label">سهمیه سالانه</span><span class="tl-metric-value" id="tlPreviewQuota">-</span></div>
+                                                </div>
+                                                <div class="tl-result" id="tlPreviewEligible"><div class="tl-status tl-loading"><span class="tl-status-label"><span class="spinner-border" role="status" aria-hidden="true"></span> در حال محاسبه...</span></div></div>
                                             </div>
                                         </div>
                                     </div>
-
-                                    <div class="mt-2 small text-muted">
-                                        <i class="bi bi-info-circle"></i>
-                                        مرخصی توراهی به مانده مرخصی استحقاقی اضافه نمی‌شود.
-                                        روزهای توراهی بر اساس فاصله مبدأ تا مقصد محاسبه می‌شوند.
-                                    </div>
+                                    <div class="mt-2 small text-muted"><i class="bi bi-info-circle"></i> مرخصی توراهی به مانده مرخصی استحقاقی اضافه نمی‌شود. روزهای توراهی بر اساس فاصله مبدأ تا مقصد محاسبه می‌شوند.</div>
                                 </div>
                             </div>
                         </div>
 
-                        <div class="col-12">
-                            <label class="form-label fw-bold">
-                                <i class="bi bi-chat-text text-secondary"></i> دلیل (اختیاری)
-                            </label>
-                            <textarea name="reason" class="form-control" rows="3"
-                                      placeholder="دلیل درخواست مرخصی را بنویسید..."></textarea>
-                        </div>
-
-                        <div class="col-12">
-                            <button type="submit" class="btn btn-primary btn-lg w-100" id="submitBtn">
-                                <i class="bi bi-send-fill"></i> ثبت درخواست مرخصی
-                            </button>
-                        </div>
+                        <div class="col-12"><label class="form-label fw-bold"><i class="bi bi-chat-text text-secondary"></i> دلیل (اختیاری)</label><textarea name="reason" class="form-control" rows="3" placeholder="دلیل درخواست مرخصی را بنویسید..."></textarea></div>
+                        <div class="col-12"><button type="submit" class="btn btn-primary btn-lg w-100" id="submitBtn"><i class="bi bi-send-fill"></i> ثبت درخواست مرخصی</button></div>
                     </div>
                 </form>
-
-                <div class="alert alert-info mt-3 mb-0 small">
-                    <i class="bi bi-info-circle"></i>
-                    تعطیلات رسمی و جمعه‌ها به صورت خودکار از تعداد روزهای مرخصی کسر می‌شوند.
-                </div>
+                <div class="alert alert-info mt-3 mb-0 small"><i class="bi bi-info-circle"></i> تعطیلات رسمی و جمعه‌ها به صورت خودکار از تعداد روزهای مرخصی کسر می‌شوند.</div>
             </div>
         </div>
     </div>
 
     <div class="col-lg-5">
-        <div class="card form-card mb-4">
-            <div class="card-header bg-white py-3">
-                <h6 class="mb-0 fw-bold">
-                    <i class="bi bi-info-circle text-primary"></i> راهنمای مرخصی
-                </h6>
-            </div>
-            <div class="card-body">
-                <ul class="list-unstyled mb-0">
-                    <li class="mb-3">
-                        <div class="d-flex align-items-start gap-2">
-                            <i class="bi bi-check-circle-fill text-success mt-1"></i>
-                            <div>
-                                <strong>مرخصی استحقاقی</strong>
-                                <div class="small text-muted">بر اساس نوع قرارداد و مدت قرارداد محاسبه می شود</div>
-                            </div>
-                        </div>
-                    </li>
-                    <li class="mb-3">
-                        <div class="d-flex align-items-start gap-2">
-                            <i class="bi bi-heart-pulse-fill text-danger mt-1"></i>
-                            <div>
-                                <strong>مرخصی استعلاجی</strong>
-                                <div class="small text-muted">با ارائه گواهی پزشکی</div>
-                            </div>
-                        </div>
-                    </li>
-                    <li class="mb-3">
-                        <div class="d-flex align-items-start gap-2">
-                            <i class="bi bi-gift-fill text-warning mt-1"></i>
-                            <div>
-                                <strong>مرخصی تشویقی</strong>
-                                <div class="small text-muted">اعطا شده توسط مدیریت</div>
-                            </div>
-                        </div>
-                    </li>
-                    <li class="mb-0">
-                        <div class="d-flex align-items-start gap-2">
-                            <i class="bi bi-clock-fill text-info mt-1"></i>
-                            <div>
-                                <strong>زمان بررسی</strong>
-                                <div class="small text-muted">درخواست‌ها معمولاً در ۲۴ ساعت بررسی می‌شوند</div>
-                            </div>
-                        </div>
-                    </li>
-                </ul>
-            </div>
-        </div>
-
-        <div class="card form-card">
-            <div class="card-body text-center py-4">
-                <i class="bi bi-headset display-5 text-primary mb-2"></i>
-                <h6 class="fw-bold">نیاز به کمک دارید؟</h6>
-                <p class="small text-muted mb-2">برای سوالات یا مشکلات با واحد منابع انسانی تماس بگیرید</p>
-                <a href="mailto:hr@company.com" class="btn btn-outline-primary btn-sm rounded-pill">
-                    <i class="bi bi-envelope"></i> hr@company.com
-                </a>
-            </div>
-        </div>
+        <div class="card form-card mb-4"><div class="card-header bg-white py-3"><h6 class="mb-0 fw-bold"><i class="bi bi-info-circle text-primary"></i> راهنمای مرخصی</h6></div><div class="card-body"><ul class="list-unstyled mb-0">
+            <li class="mb-3"><div class="d-flex align-items-start gap-2"><i class="bi bi-check-circle-fill text-success mt-1"></i><div><strong>مرخصی استحقاقی</strong><div class="small text-muted">بر اساس نوع قرارداد و مدت قرارداد محاسبه می شود</div></div></div></li>
+            <li class="mb-3"><div class="d-flex align-items-start gap-2"><i class="bi bi-heart-pulse-fill text-danger mt-1"></i><div><strong>مرخصی استعلاجی</strong><div class="small text-muted">با ارائه گواهی پزشکی</div></div></div></li>
+            <li class="mb-3"><div class="d-flex align-items-start gap-2"><i class="bi bi-gift-fill text-warning mt-1"></i><div><strong>مرخصی تشویقی</strong><div class="small text-muted">اعطا شده توسط مدیریت</div></div></div></li>
+            <li class="mb-0"><div class="d-flex align-items-start gap-2"><i class="bi bi-clock-fill text-info mt-1"></i><div><strong>زمان بررسی</strong><div class="small text-muted">درخواست‌ها معمولاً در ۲۴ ساعت بررسی می‌شوند</div></div></div></li>
+        </ul></div></div>
+        <div class="card form-card"><div class="card-body text-center py-4"><i class="bi bi-headset display-5 text-primary mb-2"></i><h6 class="fw-bold">نیاز به کمک دارید؟</h6><p class="small text-muted mb-2">برای سوالات یا مشکلات با واحد منابع انسانی تماس بگیرید</p><a href="mailto:hr@company.com" class="btn btn-outline-primary btn-sm rounded-pill"><i class="bi bi-envelope"></i> hr@company.com</a></div></div>
     </div>
 </div>
 
-<div class="card form-card mt-4">
-    <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
-        <h6 class="mb-0 fw-bold">
-            <i class="bi bi-clock-history text-primary"></i> درخواست‌های اخیر
-        </h6>
-        <span class="badge bg-secondary rounded-pill">{{ recent_requests|length }} مورد</span>
-    </div>
-    <div class="card-body p-0">
-        {% if recent_requests %}
-        <div class="table-responsive">
-            <table class="table table-hover requests-table mb-0">
-                <thead>
-                    <tr class="text-center">
-                        <th style="width: 50px;">#</th>
-                        <th>نوع</th>
-                        <th>از تاریخ</th>
-                        <th>تا تاریخ</th>
-                        <th class="text-center">روزها/زمان</th>
-                        <th>دلیل</th>
-                        <th class="text-center">وضعیت</th>
-                        <th class="text-center">عملیات</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for req in recent_requests %}
-                    <tr>
-                        <td class="text-center text-muted">{{ loop.index }}</td>
-                        <td>
-                            <span class="leave-type-badge leave-type-{{ req.leave_type }}">
-                                {% if req.leave_type == 'AL' %}
-                                <i class="bi bi-sun"></i> استحقاقی
-                                {% elif req.leave_type == 'SL' %}
-                                <i class="bi bi-heart-pulse"></i> استعلاجی
-                                {% elif req.leave_type == 'RL' %}
-                                <i class="bi bi-gift"></i> تشویقی
-                                {% elif req.leave_type == 'CW' %}
-                                <i class="bi bi-box-seam"></i> ذخیره
-                                {% elif req.leave_type == 'HL' %}
-                                <i class="bi bi-clock"></i> ساعتی
-                                {% else %}
-                                {{ req.leave_type }}
-                                {% endif %}
-                            </span>
-                        </td>
-                        <td class="text-center">
-                            <span class="badge bg-light text-dark border">{{ req.from_date_j }}</span>
-                        </td>
-                        <td class="text-center">
-                            <span class="badge bg-light text-dark border">{{ req.to_date_j }}</span>
-                        </td>
-                        <td class="text-center">
-                            {% if req.leave_type == 'HL' %}
-                            <div class="small">
-                                <span class="badge bg-info mb-1">
-                                    {{ req.start_time }} - {{ req.end_time }}
-                                </span>
-                                <div class="text-muted">{{ req.minutes }} دقیقه</div>
-                            </div>
-                            {% else %}
-                            <strong>{{ req.days_count }}</strong>
-                            {% if req.has_travel_leave %}
-                            <div class="small text-primary mt-1">
-                                <i class="bi bi-airplane"></i>
-                                {{ req.tl_final_days }} روز توراهی
-                                <span class="text-muted">({{ req.tl_distance }} km)</span>
-                            </div>
-                            {% endif %}
-                            {% endif %}
-                        </td>
-                        <td>
-                            {% if req.reason %}
-                            <span class="text-muted small">{{ req.reason }}</span>
-                            {% else %}
-                            <span class="text-muted">-</span>
-                            {% endif %}
-                            {% if req.status == 'R' and req.rejection_reason %}
-                            <div class="small text-danger mt-1">
-                                <i class="bi bi-x-circle"></i>
-                                <span class="rejection-reason" title="{{ req.rejection_reason }}">
-                                    {{ req.rejection_reason }}
-                                </span>
-                            </div>
-                            {% endif %}
-                        </td>
-                        <td class="text-center">
-                            {% if req.status == 'P' %}
-                            <span class="status-badge status-pending">
-                                <i class="bi bi-hourglass-split"></i> در انتظار
-                            </span>
-                            {% elif req.status == 'A' %}
-                            <span class="status-badge status-approved">
-                                <i class="bi bi-check-circle"></i> تایید شده
-                            </span>
-                            {% elif req.status == 'R' %}
-                            <span class="status-badge status-rejected">
-                                <i class="bi bi-x-circle"></i> رد شده
-                            </span>
-                            {% elif req.status == 'D' %}
-                            <span class="status-badge status-deleted">
-                                <i class="bi bi-trash"></i> حذف شده
-                            </span>
-                            {% endif %}
-                        </td>
-                        <td class="text-center">
-                            {% if req.status == 'P' %}
-                            <form method="post" action="/leave/request/{{ req.id }}/cancel"
-                                  class="d-inline"
-                                  onsubmit="return confirm('آیا از لغو این درخواست مطمئن هستید؟');">
-                                <button type="submit" class="btn btn-outline-danger btn-sm" title="لغو درخواست">
-                                    <i class="bi bi-x-lg"></i>
-                                </button>
-                            </form>
-                            {% else %}
-                            <span class="text-muted">-</span>
-                            {% endif %}
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        {% else %}
-        <div class="text-center py-5 text-muted">
-            <i class="bi bi-inbox display-4"></i>
-            <p class="mt-3 mb-0">هنوز درخواستی ثبت نکرده‌اید</p>
-        </div>
-        {% endif %}
-    </div>
-</div>
+<div class="card form-card mt-4"><div class="card-header bg-white d-flex justify-content-between align-items-center py-3"><h6 class="mb-0 fw-bold"><i class="bi bi-clock-history text-primary"></i> درخواست‌های اخیر</h6><span class="badge bg-secondary rounded-pill">{{ recent_requests|length }} مورد</span></div><div class="card-body p-0">{% if recent_requests %}<div class="table-responsive"><table class="table table-hover requests-table mb-0"><thead><tr class="text-center"><th style="width: 50px;">#</th><th>نوع</th><th>از تاریخ</th><th>تا تاریخ</th><th class="text-center">روزها/زمان</th><th>دلیل</th><th class="text-center">وضعیت</th><th class="text-center">عملیات</th></tr></thead><tbody>{% for req in recent_requests %}<tr>
+    <td class="text-center text-muted">{{ loop.index }}</td>
+    <td><span class="leave-type-badge leave-type-{{ req.leave_type }}">{% if req.leave_type == 'AL' %}<i class="bi bi-sun"></i> استحقاقی{% elif req.leave_type == 'SL' %}<i class="bi bi-heart-pulse"></i> استعلاجی{% elif req.leave_type == 'RL' %}<i class="bi bi-gift"></i> تشویقی{% elif req.leave_type == 'CW' %}<i class="bi bi-box-seam"></i> ذخیره{% elif req.leave_type == 'HL' %}<i class="bi bi-clock"></i> ساعتی{% else %}{{ req.leave_type }}{% endif %}</span></td>
+    <td class="text-center"><span class="badge bg-light text-dark border">{{ req.from_date_j }}</span></td><td class="text-center"><span class="badge bg-light text-dark border">{{ req.to_date_j }}</span></td>
+    <td class="text-center">{% if req.leave_type == 'HL' %}<div class="small"><span class="badge bg-info mb-1">{{ req.start_time }} - {{ req.end_time }}</span><div class="text-muted">{{ req.minutes }} دقیقه</div></div>{% else %}<strong>{{ req.days_count }}</strong>{% if req.has_travel_leave %}<div class="small text-primary mt-1"><i class="bi bi-airplane"></i> {{ req.tl_final_days }} روز توراهی <span class="text-muted">({{ req.tl_distance }} km)</span></div>{% endif %}{% endif %}</td>
+    <td>{% if req.reason %}<span class="text-muted small">{{ req.reason }}</span>{% else %}<span class="text-muted">-</span>{% endif %}{% if req.status == 'R' and req.rejection_reason %}<div class="small text-danger mt-1"><i class="bi bi-x-circle"></i><span class="rejection-reason" title="{{ req.rejection_reason }}">{{ req.rejection_reason }}</span></div>{% endif %}</td>
+    <td class="text-center">{% if req.status == 'P' %}<span class="status-badge status-pending"><i class="bi bi-hourglass-split"></i> در انتظار</span>{% elif req.status == 'A' %}<span class="status-badge status-approved"><i class="bi bi-check-circle"></i> تایید شده</span>{% elif req.status == 'R' %}<span class="status-badge status-rejected"><i class="bi bi-x-circle"></i> رد شده</span>{% elif req.status == 'D' %}<span class="status-badge status-deleted"><i class="bi bi-trash"></i> حذف شده</span>{% endif %}</td>
+    <td class="text-center">{% if req.status == 'P' %}<form method="post" action="/leave/request/{{ req.id }}/cancel" class="d-inline" onsubmit="return confirm('آیا از لغو این درخواست مطمئن هستید؟');"><button type="submit" class="btn btn-outline-danger btn-sm" title="لغو درخواست"><i class="bi bi-x-lg"></i></button></form>{% else %}<span class="text-muted">-</span>{% endif %}</td>
+</tr>{% endfor %}</tbody></table></div>{% else %}<div class="text-center py-5 text-muted"><i class="bi bi-inbox display-4"></i><p class="mt-3 mb-0">هنوز درخواستی ثبت نکرده‌اید</p></div>{% endif %}</div></div>
 
-<div class="card form-card mt-3">
-    <div class="card-body py-3">
-        <div class="d-flex gap-4 flex-wrap align-items-center small">
-            <strong class="text-muted"><i class="bi bi-palette"></i> راهنمای وضعیت:</strong>
-            <span><span class="status-badge status-pending">در انتظار</span> در حال بررسی</span>
-            <span><span class="status-badge status-approved">تایید شده</span> از مانده کسر شد</span>
-            <span><span class="status-badge status-rejected">رد شده</span> تایید نشد</span>
-            <span><span class="status-badge status-deleted">حذف شده</span> لغو توسط کاربر</span>
-        </div>
-    </div>
-</div>
+<div class="card form-card mt-3"><div class="card-body py-3"><div class="d-flex gap-4 flex-wrap align-items-center small"><strong class="text-muted"><i class="bi bi-palette"></i> راهنمای وضعیت:</strong><span><span class="status-badge status-pending">در انتظار</span> در حال بررسی</span><span><span class="status-badge status-approved">تایید شده</span> از مانده کسر شد</span><span><span class="status-badge status-rejected">رد شده</span> تایید نشد</span><span><span class="status-badge status-deleted">حذف شده</span> لغو توسط کاربر</span></div></div></div>
 
 {% endblock %}
 
@@ -731,322 +236,114 @@ function clearDate(inputId) {
     document.getElementById('daysDisplay').style.display = 'none';
     if (inputId === 'fromDate') {
         const leaveType = document.getElementById('leaveType');
-        if (leaveType && leaveType.value === 'HL') {
-            $('#toDate').val('');
-        }
+        if (leaveType && leaveType.value === 'HL') $('#toDate').val('');
     }
 }
 
 $(document).ready(function() {
     function createPicker(selector, onChangeCallback) {
         $(selector).pDatepicker({
-            format: 'YYYY/MM/DD',
-            initialValue: false,
-            persianDigit: false,
-            autoClose: true,
-            calendar: {
-                persian: {
-                    locale: 'fa',
-                    showHint: true,
-                    leapYearMode: 'astronomical'
-                }
-            },
-            navigator: {
-                enabled: true,
-                scroll: { enabled: true },
-                text: {
-                    btnNextText: '❮',
-                    btnPrevText: '❯'
-                }
-            },
-            toolbox: {
-                calendarSwitch: { enabled: true },
-                todayButton: {
-                    enabled: true,
-                    text: { fa: 'امروز' }
-                }
-            },
-            onSelect: function(unix) {
-                if (onChangeCallback) {
-                    setTimeout(onChangeCallback, 100);
-                }
-            }
+            format: 'YYYY/MM/DD', initialValue: false, persianDigit: false, autoClose: true,
+            calendar: { persian: { locale: 'fa', showHint: true, leapYearMode: 'astronomical' } },
+            navigator: { enabled: true, scroll: { enabled: true }, text: { btnNextText: '❮', btnPrevText: '❯' } },
+            toolbox: { calendarSwitch: { enabled: true }, todayButton: { enabled: true, text: { fa: 'امروز' } } },
+            onSelect: function(unix) { if (onChangeCallback) setTimeout(onChangeCallback, 100); }
         });
     }
-
-    createPicker('#fromDate', function() {
-        console.log('از تاریخ انتخاب شد:', $('#fromDate').val());
-        calculateDays();
-        if ($('#tlToggle').is(':checked')) {
-            fetchTravelPreview();
-        }
-    });
-
-    createPicker('#toDate', function() {
-        console.log('تا تاریخ انتخاب شد:', $('#toDate').val());
-        calculateDays();
-        if ($('#tlToggle').is(':checked')) {
-            fetchTravelPreview();
-        }
-    });
-
-    console.log('✅ تقویم‌های شمسی راه‌اندازی شدند');
+    createPicker('#fromDate', function() { calculateDays(); if ($('#tlToggle').is(':checked')) fetchTravelPreview(); });
+    createPicker('#toDate', function() { calculateDays(); if ($('#tlToggle').is(':checked')) fetchTravelPreview(); });
 });
 
 window.calculateDays = async function() {
-    const fromDate = $('#fromDate').val();
-    const toDate = $('#toDate').val();
-    const daysDisplay = document.getElementById('daysDisplay');
-    const daysNumber = document.getElementById('daysNumber');
-    const leaveType = document.getElementById('leaveType');
-
-    if (leaveType && leaveType.value === 'HL') {
-        if (daysDisplay) daysDisplay.style.display = 'none';
-        if (fromDate) $('#toDate').val(fromDate);
-        return;
-    }
-
-    if (!fromDate || !toDate) {
-        daysDisplay.style.display = 'none';
-        return;
-    }
-
+    const fromDate = $('#fromDate').val(); const toDate = $('#toDate').val();
+    const daysDisplay = document.getElementById('daysDisplay'); const daysNumber = document.getElementById('daysNumber'); const leaveType = document.getElementById('leaveType');
+    if (leaveType && leaveType.value === 'HL') { if (daysDisplay) daysDisplay.style.display = 'none'; if (fromDate) $('#toDate').val(fromDate); return; }
+    if (!fromDate || !toDate) { daysDisplay.style.display = 'none'; return; }
     try {
         const response = await fetch(`/leave/calculate-days?from_date=${encodeURIComponent(fromDate)}&to_date=${encodeURIComponent(toDate)}`);
         const data = await response.json();
-
         if (data.success) {
-            daysDisplay.style.display = 'block';
-            daysNumber.textContent = data.days_count;
-            daysDisplay.className = 'days-display';
-            if (data.days_count > 14) {
-                daysDisplay.classList.add('danger');
-            } else if (data.days_count > 7) {
-                daysDisplay.classList.add('warning');
-            }
-        } else {
-            daysDisplay.style.display = 'block';
-            daysNumber.textContent = '0';
-            daysDisplay.classList.add('danger');
-        }
-    } catch (error) {
-        console.error('خطا در محاسبه روزها:', error);
-        daysDisplay.style.display = 'none';
-    }
+            daysDisplay.style.display = 'block'; daysNumber.textContent = data.days_count; daysDisplay.className = 'days-display';
+            if (data.days_count > 14) daysDisplay.classList.add('danger'); else if (data.days_count > 7) daysDisplay.classList.add('warning');
+        } else { daysDisplay.style.display = 'block'; daysNumber.textContent = '0'; daysDisplay.classList.add('danger'); }
+    } catch (error) { console.error('خطا در محاسبه روزها:', error); daysDisplay.style.display = 'none'; }
 };
 
 function toggleHLTimeSection() {
-    const leaveType = document.getElementById('leaveType');
-    const hlSection = document.getElementById('hlTimeSection');
-    const daysDisplay = document.getElementById('daysDisplay');
-    const toDateCol = document.getElementById('toDateCol');
-    const fromDateLabel = document.getElementById('fromDateLabel');
-    const fromDate = document.getElementById('fromDate');
-    const toDate = document.getElementById('toDate');
-    const startTime = document.getElementById('startTime');
-    const endTime = document.getElementById('endTime');
-
+    const leaveType = document.getElementById('leaveType'); const hlSection = document.getElementById('hlTimeSection'); const daysDisplay = document.getElementById('daysDisplay'); const toDateCol = document.getElementById('toDateCol'); const fromDateLabel = document.getElementById('fromDateLabel'); const fromDate = document.getElementById('fromDate'); const startTime = document.getElementById('startTime'); const endTime = document.getElementById('endTime');
     if (!leaveType || !hlSection) return;
-
     if (leaveType.value === 'HL') {
-        hlSection.classList.add('visible');
-        if (startTime) startTime.required = true;
-        if (endTime) endTime.required = true;
-        if (daysDisplay) daysDisplay.style.display = 'none';
-        if (toDateCol) toDateCol.style.display = 'none';
-        if (fromDateLabel) {
-            fromDateLabel.innerHTML = '<i class="bi bi-calendar-event text-success"></i> تاریخ <span class="text-danger">*</span>';
-        }
-        if (fromDate && fromDate.value) {
-            $('#toDate').val(fromDate.value);
-        }
+        hlSection.classList.add('visible'); if (startTime) startTime.required = true; if (endTime) endTime.required = true; if (daysDisplay) daysDisplay.style.display = 'none'; if (toDateCol) toDateCol.style.display = 'none';
+        if (fromDateLabel) fromDateLabel.innerHTML = '<i class="bi bi-calendar-event text-success"></i> تاریخ <span class="text-danger">*</span>'; if (fromDate && fromDate.value) $('#toDate').val(fromDate.value);
     } else {
-        hlSection.classList.remove('visible');
-        if (startTime) {
-            startTime.required = false;
-            startTime.value = '';
-        }
-        if (endTime) {
-            endTime.required = false;
-            endTime.value = '';
-        }
-        if (toDateCol) toDateCol.style.display = '';
-        if (fromDateLabel) {
-            fromDateLabel.innerHTML = '<i class="bi bi-calendar-event text-success"></i> از تاریخ <span class="text-danger">*</span>';
-        }
-        if (daysDisplay) calculateDays();
+        hlSection.classList.remove('visible'); if (startTime) { startTime.required = false; startTime.value = ''; } if (endTime) { endTime.required = false; endTime.value = ''; } if (toDateCol) toDateCol.style.display = '';
+        if (fromDateLabel) fromDateLabel.innerHTML = '<i class="bi bi-calendar-event text-success"></i> از تاریخ <span class="text-danger">*</span>'; if (daysDisplay) calculateDays();
     }
 }
 
 function calculateHLDuration() {
-    const startInput = document.getElementById('startTime');
-    const endInput = document.getElementById('endTime');
-    const durationDisplay = document.getElementById('hlDurationDisplay');
-    const durationText = document.getElementById('hlDurationText');
-
+    const startInput = document.getElementById('startTime'); const endInput = document.getElementById('endTime'); const durationDisplay = document.getElementById('hlDurationDisplay'); const durationText = document.getElementById('hlDurationText');
     if (!startInput || !endInput || !durationDisplay || !durationText) return;
-
-    const startVal = startInput.value.trim();
-    const endVal = endInput.value.trim();
-
-    if (!startVal || !endVal) {
-        durationDisplay.style.display = 'none';
-        return;
-    }
-    if (!window.isValidTimeValue(startVal) || !window.isValidTimeValue(endVal)) {
-        durationText.textContent = 'فرمت ساعت باید HH:MM باشد';
-        durationDisplay.style.display = 'block';
-        return;
-    }
-
-    const [startHour, startMinute] = startVal.split(':').map(Number);
-    const [endHour, endMinute] = endVal.split(':').map(Number);
-
-    const startTotal = startHour * 60 + startMinute;
-    const endTotal = endHour * 60 + endMinute;
-    let minutes = endTotal - startTotal;
-
-    if (minutes <= 0) {
-        durationText.textContent = 'زمان پایان باید بعد از شروع باشد';
-        durationDisplay.style.display = 'block';
-        return;
-    }
-
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    const parts = [];
-    if (hours > 0) parts.push(hours + ' ساعت');
-    if (mins > 0) parts.push(mins + ' دقیقه');
-    durationText.textContent = 'مدت مرخصی: ' + parts.join(' و ')
-        + (' (' + minutes + ' دقیقه)');
-    durationDisplay.style.display = 'block';
+    const startVal = startInput.value.trim(); const endVal = endInput.value.trim();
+    if (!startVal || !endVal) { durationDisplay.style.display = 'none'; return; }
+    if (!window.isValidTimeValue(startVal) || !window.isValidTimeValue(endVal)) { durationText.textContent = 'فرمت ساعت باید HH:MM باشد'; durationDisplay.style.display = 'block'; return; }
+    const [startHour, startMinute] = startVal.split(':').map(Number); const [endHour, endMinute] = endVal.split(':').map(Number); const startTotal = startHour * 60 + startMinute; const endTotal = endHour * 60 + endMinute; const minutes = endTotal - startTotal;
+    if (minutes <= 0) { durationText.textContent = 'زمان پایان باید بعد از شروع باشد'; durationDisplay.style.display = 'block'; return; }
+    const hours = Math.floor(minutes / 60); const mins = minutes % 60; const parts = []; if (hours > 0) parts.push(hours + ' ساعت'); if (mins > 0) parts.push(mins + ' دقیقه'); durationText.textContent = 'مدت مرخصی: ' + parts.join(' و ') + ' (' + minutes + ' دقیقه)'; durationDisplay.style.display = 'block';
 }
 
 function toggleTLSection() {
-    const leaveType = document.getElementById('leaveType');
-    const tlSection = document.getElementById('tlSection');
-    const tlToggle = document.getElementById('tlToggle');
-    const tlContent = document.getElementById('tlContent');
-
+    const leaveType = document.getElementById('leaveType'); const tlSection = document.getElementById('tlSection'); const tlToggle = document.getElementById('tlToggle'); const tlContent = document.getElementById('tlContent');
     if (!leaveType || !tlSection) return;
+    if (leaveType.value === 'AL') tlSection.classList.add('visible'); else { tlSection.classList.remove('visible'); if (tlToggle) tlToggle.checked = false; if (tlContent) tlContent.style.display = 'none'; const previewContainer = document.getElementById('tlPreviewContainer'); if (previewContainer) previewContainer.style.display = 'none'; }
+}
 
-    if (leaveType.value === 'AL') {
-        tlSection.classList.add('visible');
-    } else {
-        tlSection.classList.remove('visible');
-        if (tlToggle) tlToggle.checked = false;
-        if (tlContent) tlContent.style.display = 'none';
-        const previewContainer = document.getElementById('tlPreviewContainer');
-        if (previewContainer) previewContainer.style.display = 'none';
-    }
+function setTravelPreviewLoading(destinationName) {
+    const previewContainer = document.getElementById('tlPreviewContainer'); if (!previewContainer) return;
+    const selected = destinationName || '-'; document.getElementById('tlPreviewDestination').textContent = selected;
+    document.getElementById('tlPreviewDistance').textContent = '...'; document.getElementById('tlPreviewDays').textContent = '...'; document.getElementById('tlPreviewQuota').textContent = '...';
+    document.getElementById('tlPreviewEligible').innerHTML = '<div class="tl-status tl-loading"><span class="tl-status-label"><span class="spinner-border" role="status" aria-hidden="true"></span> در حال محاسبه...</span></div>';
+    previewContainer.style.display = 'block';
 }
 
 async function fetchTravelPreview() {
-    const fromDate = $('#fromDate').val();
-    const destSelect = document.getElementById('tlDestinationSelect');
-    const previewContainer = document.getElementById('tlPreviewContainer');
-    const previewDistance = document.getElementById('tlPreviewDistance');
-    const previewDays = document.getElementById('tlPreviewDays');
-    const previewEligible = document.getElementById('tlPreviewEligible');
-    const previewQuota = document.getElementById('tlPreviewQuota');
-
-    if (!fromDate || !destSelect || !destSelect.value) {
-        if (previewContainer) previewContainer.style.display = 'none';
-        return;
-    }
-
+    const fromDate = $('#fromDate').val(); const destSelect = document.getElementById('tlDestinationSelect'); const previewContainer = document.getElementById('tlPreviewContainer');
+    if (!fromDate || !destSelect || !destSelect.value) { if (previewContainer) previewContainer.style.display = 'none'; return; }
+    const selectedOption = destSelect.options[destSelect.selectedIndex]; const destinationName = selectedOption ? selectedOption.textContent.trim() : '-'; setTravelPreviewLoading(destinationName);
     try {
         const url = `/leave/travel-preview?from_date=${encodeURIComponent(fromDate)}&destination_city_id=${destSelect.value}`;
-        const response = await fetch(url);
-        const data = await response.json();
-
+        const response = await fetch(url); const data = await response.json();
         if (data.success && previewContainer) {
-            previewContainer.style.display = 'block';
-            previewDistance.textContent = data.distance_km + ' km';
-            previewDays.textContent = data.travel_days + ' روز';
+            document.getElementById('tlPreviewDestination').textContent = destinationName;
+            document.getElementById('tlPreviewDistance').textContent = data.distance_km + ' km';
+            document.getElementById('tlPreviewDays').textContent = data.travel_days + ' روز';
+            document.getElementById('tlPreviewQuota').textContent = data.quota_used + ' / ' + data.quota_max;
             if (data.eligible) {
-                previewEligible.innerHTML = '<div class="tl-status tl-eligible">' +
-                    '<span class="tl-status-label"><i class="bi bi-check-circle"></i> واجد شرایط</span>' +
-                    '</div>';
+                document.getElementById('tlPreviewEligible').innerHTML = '<div class="tl-status tl-eligible"><span class="tl-status-label"><i class="bi bi-check-circle-fill"></i> مجاز</span><span class="tl-status-message">این مسیر مشمول مرخصی توراهی است.</span></div>';
             } else {
-                previewEligible.innerHTML = '<div class="tl-status tl-ineligible">' +
-                    '<span class="tl-status-label"><i class="bi bi-x-circle"></i> واجد شرایط نیست</span>' +
-                    '<span class="tl-status-message">' + (data.message || 'مرخصی توراهی برای این مسیر قابل استفاده نیست.') + '</span>' +
-                    '</div>';
+                document.getElementById('tlPreviewEligible').innerHTML = '<div class="tl-status tl-ineligible"><span class="tl-status-label"><i class="bi bi-x-circle-fill"></i> غیرمجاز</span><span class="tl-status-message">' + (data.message || 'این مسیر مشمول مرخصی توراهی نیست.') + '</span></div>';
             }
-            previewQuota.textContent = data.quota_used + ' / ' + data.quota_max;
         } else if (previewContainer) {
-            previewContainer.style.display = 'none';
+            document.getElementById('tlPreviewEligible').innerHTML = '<div class="tl-status tl-ineligible"><span class="tl-status-label"><i class="bi bi-exclamation-circle-fill"></i> نامشخص</span><span class="tl-status-message">امکان محاسبه پیش‌نمایش وجود ندارد.</span></div>';
         }
     } catch (error) {
         console.error('خطا در پیش‌نمایش مرخصی توراهی:', error);
-        if (previewContainer) previewContainer.style.display = 'none';
+        if (previewContainer) document.getElementById('tlPreviewEligible').innerHTML = '<div class="tl-status tl-ineligible"><span class="tl-status-label"><i class="bi bi-exclamation-circle-fill"></i> خطا</span><span class="tl-status-message">خطا در محاسبه مسیر.</span></div>';
     }
 }
 
 document.addEventListener('DOMContentLoaded', function() {
     function updateHLHint() {
-        var hintText = document.getElementById('hlHintText');
-        if (!hintText) return;
-        var section = document.getElementById('hlTimeSection');
-        var gran = section ? (section.getAttribute('data-granularity') || '15') : '15';
-        var val = parseInt(gran, 10);
-        if (isNaN(val) || val < 1) val = 15;
-        if (val === 1) {
-            hintText.textContent = 'زمان می‌تواند با دقت ۱ دقیقه و در ساعات کاری روز وارد شود';
-        } else {
-            hintText.textContent = 'زمان باید مضربی از ' + val + ' دقیقه و در ساعات کاری روز باشد';
-        }
+        var hintText = document.getElementById('hlHintText'); if (!hintText) return; var section = document.getElementById('hlTimeSection'); var gran = section ? (section.getAttribute('data-granularity') || '15') : '15'; var val = parseInt(gran, 10); if (isNaN(val) || val < 1) val = 15;
+        hintText.textContent = val === 1 ? 'زمان می‌تواند با دقت ۱ دقیقه و در ساعات کاری روز وارد شود' : 'زمان باید مضربی از ' + val + ' دقیقه و در ساعات کاری روز باشد';
     }
     updateHLHint();
-
-    const leaveType = document.getElementById('leaveType');
-    const startTime = document.getElementById('startTime');
-    const endTime = document.getElementById('endTime');
-
-    if (leaveType) {
-        leaveType.addEventListener('change', toggleHLTimeSection);
-        leaveType.addEventListener('change', toggleTLSection);
-        toggleHLTimeSection();
-        toggleTLSection();
-    }
-
+    const leaveType = document.getElementById('leaveType'); const startTime = document.getElementById('startTime'); const endTime = document.getElementById('endTime');
+    if (leaveType) { leaveType.addEventListener('change', toggleHLTimeSection); leaveType.addEventListener('change', toggleTLSection); toggleHLTimeSection(); toggleTLSection(); }
     const tlToggle = document.getElementById('tlToggle');
-    if (tlToggle) {
-        tlToggle.addEventListener('change', function() {
-            const tlContent = document.getElementById('tlContent');
-            const destSelect = document.getElementById('tlDestinationSelect');
-
-            if (tlContent) {
-                tlContent.style.display = this.checked ? 'block' : 'none';
-            }
-
-            if (destSelect) {
-                destSelect.required = this.checked;
-            }
-
-            if (this.checked) {
-                fetchTravelPreview();
-            } else {
-                const previewContainer = document.getElementById('tlPreviewContainer');
-                if (previewContainer) {
-                    previewContainer.style.display = 'none';
-                }
-            }
-        });
-    }
-
-    const tlDestSelect = document.getElementById('tlDestinationSelect');
-    if (tlDestSelect) {
-        tlDestSelect.addEventListener('change', fetchTravelPreview);
-    }
-
-    if (startTime) {
-        startTime.addEventListener('input', calculateHLDuration);
-    }
-    if (endTime) {
-        endTime.addEventListener('input', calculateHLDuration);
-    }
+    if (tlToggle) tlToggle.addEventListener('change', function() { const tlContent = document.getElementById('tlContent'); const destSelect = document.getElementById('tlDestinationSelect'); if (tlContent) tlContent.style.display = this.checked ? 'block' : 'none'; if (destSelect) destSelect.required = this.checked; if (this.checked) fetchTravelPreview(); else { const previewContainer = document.getElementById('tlPreviewContainer'); if (previewContainer) previewContainer.style.display = 'none'; } });
+    const tlDestSelect = document.getElementById('tlDestinationSelect'); if (tlDestSelect) tlDestSelect.addEventListener('change', fetchTravelPreview);
+    if (startTime) startTime.addEventListener('input', calculateHLDuration); if (endTime) endTime.addEventListener('input', calculateHLDuration);
 });
 </script>
 {% endblock %}
