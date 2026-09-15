@@ -158,6 +158,28 @@
     }
     .tl-eligible { color: #059669; font-weight: 600; }
     .tl-ineligible { color: #dc2626; font-weight: 600; }
+    .tl-status {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 2px;
+        min-height: 44px;
+        text-align: center;
+    }
+    .tl-status-label {
+        font-weight: 600;
+        line-height: 1.2;
+        white-space: nowrap;
+    }
+    .tl-status-message {
+        max-width: 100%;
+        font-size: 0.72rem;
+        font-weight: 400;
+        line-height: 1.35;
+        color: #6b7280;
+        white-space: normal;
+    }
 
     /* 🎨 فیلدهای تاریخ */
     .date-input-wrapper {
@@ -942,9 +964,16 @@ async function fetchTravelPreview() {
             previewContainer.style.display = 'block';
             previewDistance.textContent = data.distance_km + ' km';
             previewDays.textContent = data.travel_days + ' روز';
-            previewEligible.innerHTML = data.eligible
-                ? '<span class="tl-eligible"><i class="bi bi-check-circle"></i> واجد شرایط</span>'
-                : '<span class="tl-ineligible"><i class="bi bi-x-circle"></i> واجد شرایط نیست — ' + (data.message || 'مرخصی توراهی برای این مسیر قابل استفاده نیست.') + '</span>';
+            if (data.eligible) {
+                previewEligible.innerHTML = '<div class="tl-status tl-eligible">' +
+                    '<span class="tl-status-label"><i class="bi bi-check-circle"></i> واجد شرایط</span>' +
+                    '</div>';
+            } else {
+                previewEligible.innerHTML = '<div class="tl-status tl-ineligible">' +
+                    '<span class="tl-status-label"><i class="bi bi-x-circle"></i> واجد شرایط نیست</span>' +
+                    '<span class="tl-status-message">' + (data.message || 'مرخصی توراهی برای این مسیر قابل استفاده نیست.') + '</span>' +
+                    '</div>';
+            }
             previewQuota.textContent = data.quota_used + ' / ' + data.quota_max;
         } else if (previewContainer) {
             previewContainer.style.display = 'none';
