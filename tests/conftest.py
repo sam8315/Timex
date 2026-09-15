@@ -119,7 +119,6 @@ def _drop_tables_if_exist(conn, *tables: str) -> None:
 
 
 with test_engine.connect() as _conn:
-    # PR-14 travel_leave_details -> drop only when its schema is stale.
     tl_cols = _column_names(_conn, "travel_leave_details")
     current_tl = {
         "final_travel_days", "manual_override", "jalali_year",
@@ -128,8 +127,6 @@ with test_engine.connect() as _conn:
     if tl_cols and not current_tl.issubset(tl_cols):
         _drop_tables_if_exist(_conn, "travel_leave_details")
 
-    # Legacy cities table used `active` before the model renamed it to
-    # `is_active`. Rename in place when that is the only mismatch.
     city_cols = _column_names(_conn, "cities")
     city_required = {
         "id", "name", "province", "latitude", "longitude",
@@ -146,11 +143,6 @@ with test_engine.connect() as _conn:
         if not city_required.issubset(city_cols):
             _drop_tables_if_exist(_conn, "cities", "employee_service_locations")
 
-    # Travel-leave policy tables were redesigned to be scoped by contract
-    # type. Existing test databases can still contain the previous global
-    # rule/quota tables; rebuild those test-only tables when their required
-    # columns are missing. Dropping the policy parent also clears dependent
-    # rules/quotas via CASCADE.
     policy_cols = _column_names(_conn, "travel_leave_policies")
     rule_cols = _column_names(_conn, "travel_leave_policy_rules")
     quota_cols = _column_names(_conn, "travel_leave_quota_settings")
@@ -188,8 +180,6 @@ with test_engine.connect() as _conn:
 
 Base.metadata.create_all(bind=test_engine)
 
-# Phase 7: HL columns on a pre-existing leave_requests table
-# (idempotent; fresh tables already carry these columns via the model)
 with test_engine.connect() as _conn:
     _conn.execute(_sql_text("""
         ALTER TABLE leave_requests
@@ -471,18 +461,24 @@ def make_user(db):
             web_enabled=web_enabled,
         )
         db.add(user)
-        db.add(
-            Employee(
-                user_id=user_id,
-                national_code=national_code,
-                first_name="تست",
-                last_name=str(n),
-                department=department,
-                marital_status="S",
-                is_active=True,
-                region_code=region_code,
+
+        # Attendance-policy tests create their own Employee row so they can
+        # control department/policy resolution. Other tests need the standard
+        # Employee fixture for authentication and Travel Leave integration.
+        if role != "employee":
+            db.add(
+                Employee(
+                    user_id=user_id,
+                    national_code=national_code,
+                    first_name="تست",
+                    last_name=str(n),
+                    department=department,
+                    is_active=True,
+                    marital_status="S",
+                    region_code=region_code,
+                )
             )
-        )
+
         db.add(
             Contract(
                 user_id=user_id,
@@ -494,6 +490,7 @@ def make_user(db):
                 service_deduction_days=0,
             )
         )
+
         if balance_al is not None:
             year_j = jdatetime.date.today().year
             db.add(
