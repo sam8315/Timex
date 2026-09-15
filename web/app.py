@@ -6,7 +6,7 @@ from pathlib import Path
 from starlette.middleware.sessions import SessionMiddleware
 
 from web.routes import auth, dashboard, attendance, leave, admin, contract, profile, holidays, admin_contracts, admin_leave, admin_daily_status, carry_forward, education, phones, reports, admin_policy
-from web.routes import admin_cities, admin_service_locations, admin_travel_leave_policy, travel_leave_preview
+from web.routes import admin_cities, admin_service_locations, admin_travel_leave_policy, travel_leave_preview, admin_travel_leave_preview
 BASE_PATH = Path(__file__).parent
 from web.routes.admin_permissions import router as permissions_router
 from web.routes.admin_user_create import router as admin_user_create_router
@@ -21,6 +21,7 @@ app.include_router(auth.router)
 app.include_router(dashboard.router)
 app.include_router(attendance.router)
 app.include_router(travel_leave_preview.router)
+app.include_router(admin_travel_leave_preview.router)
 app.include_router(leave.router)
 app.include_router(admin.router)
 app.include_router(contract.router)
