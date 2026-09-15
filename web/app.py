@@ -6,24 +6,17 @@ from pathlib import Path
 from starlette.middleware.sessions import SessionMiddleware
 
 from web.routes import auth, dashboard, attendance, leave, admin, contract, profile, holidays, admin_contracts, admin_leave, admin_daily_status, carry_forward, education, phones, reports, admin_policy
-from web.routes import admin_cities, admin_service_locations
+from web.routes import admin_cities, admin_service_locations, admin_travel_leave_policy
 BASE_PATH = Path(__file__).parent
 from web.routes.admin_permissions import router as permissions_router
 from web.routes.admin_user_create import router as admin_user_create_router
 from web.error_handlers import register_exception_handlers
 
 app = FastAPI(title="Timex - سامانه حضور و غیاب", version="1.0.0")
-
-# 🆕 اضافه کردن SessionMiddleware برای ذخیره session
 app.add_middleware(SessionMiddleware, secret_key="timex-web-secret-key-2024-change-in-production")
-
-# 🆕 هندلر متمرکز خطاهای HTTP (403 → صفحه HTML برای مرورگر، JSON برای API)
 register_exception_handlers(app)
-
-# Static files
 app.mount("/static", StaticFiles(directory=str(BASE_PATH / "static")), name="static")
 
-# Routes
 app.include_router(auth.router)
 app.include_router(dashboard.router)
 app.include_router(attendance.router)
@@ -42,7 +35,7 @@ app.include_router(education.router)
 app.include_router(phones.router)
 app.include_router(reports.router)
 app.include_router(admin_policy.router)
-# 🆕 ماژول مدیریت دسترسی‌ها
+app.include_router(admin_travel_leave_policy.router)
 app.include_router(permissions_router)
 app.include_router(admin_user_create_router)
 
