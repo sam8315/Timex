@@ -21,6 +21,12 @@ app.include_router(auth.router)
 app.include_router(dashboard.router)
 app.include_router(attendance.router)
 app.include_router(travel_leave_preview.router)
+
+# The Travel Leave preview endpoint in admin_travel_leave_preview.py is the
+# single source of truth for admin preview calculations. admin_leave.py still
+# contains a legacy endpoint at the same effective URL; remove that cloned
+# route after inclusion so FastAPI cannot dispatch the old contract-dependent
+# implementation by mistake.
 app.include_router(admin_travel_leave_preview.router)
 app.include_router(leave.router)
 app.include_router(admin.router)
@@ -29,6 +35,15 @@ app.include_router(profile.router)
 app.include_router(holidays.router, prefix="/admin")
 app.include_router(admin_contracts.router, prefix="/admin")
 app.include_router(admin_leave.router, prefix="/admin")
+app.router.routes = [
+    route
+    for route in app.router.routes
+    if not (
+        getattr(route, "path", None) == "/admin/leave-requests/travel-preview"
+        and getattr(getattr(route, "endpoint", None), "__module__", "") == "web.routes.admin_leave"
+        and getattr(getattr(route, "endpoint", None), "__name__", "") == "admin_travel_leave_preview"
+    )
+]
 app.include_router(admin_daily_status.router, prefix="/admin")
 app.include_router(admin_cities.router, prefix="/admin")
 app.include_router(admin_service_locations.router, prefix="/admin")
