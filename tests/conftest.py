@@ -452,7 +452,8 @@ def client():
 
 @pytest.fixture()
 def make_user(db):
-    """Factory creating isolated user+employee rows (cleaned up afterwards)."""
+    """Factory creating isolated user+employee+contract rows."""
+    from models.contract import Contract
     from models.employee import Employee
     from models.leave_balance import LeaveBalance
     from models.employee_region import EmployeeRegion
@@ -462,7 +463,7 @@ def make_user(db):
     created_uids = []
 
     def _make(role="user", balance_al=30, department="4",
-              web_enabled=True, region_code="NORMAL"):
+              web_enabled=True, region_code="NORMAL", contract_type_code="4"):
         n = next(_seq)
         user_id = f"TEST-{n}"
         national_code = str(9000000000 + (n % 99999999)).zfill(10)[-10:]
@@ -482,8 +483,20 @@ def make_user(db):
                 first_name="تست",
                 last_name=str(n),
                 department=department,
+                marital_status="S",
                 is_active=True,
                 region_code=region_code,
+            )
+        )
+        db.add(
+            Contract(
+                user_id=user_id,
+                contract_type_code=contract_type_code,
+                start_date=date(2020, 1, 1),
+                end_date=None,
+                annual_leave_days=30,
+                sick_leave_days=0,
+                service_deduction_days=0,
             )
         )
         if balance_al is not None:
@@ -501,6 +514,7 @@ def make_user(db):
             "national_code": national_code,
             "password": USER_PASSWORD,
             "role": role,
+            "contract_type_code": contract_type_code,
         }
 
     yield _make
