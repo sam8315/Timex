@@ -63,19 +63,8 @@
     .tl-route-point { min-width: 0; }
     .tl-route-label { display: block; font-size: 0.72rem; color: #6b7280; margin-bottom: 3px; }
     .tl-route-city { display: block; font-size: 0.98rem; font-weight: 700; color: #1f2937; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .tl-route-arrow {
-        width: 34px;
-        height: 34px;
-        border-radius: 50%;
-        margin: 0 auto;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: #eef2ff;
-        color: #4f46e5;
-        font-size: 1rem;
-    }
-    .tl-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid #eef2f7; border-radius: 12px; overflow: hidden; background: #f8fafc; }
+    .tl-route-arrow { width: 34px; height: 34px; border-radius: 50%; margin: 0 auto; display: flex; align-items: center; justify-content: center; background: #eef2ff; color: #4f46e5; font-size: 1rem; }
+    .tl-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid #eef2f7; border-radius: 12px; overflow: hidden; background: #f8fafc; }
     .tl-metric { min-width: 0; padding: 11px 8px; text-align: center; border-left: 1px solid #eef2f7; }
     .tl-metric:last-child { border-left: 0; }
     .tl-metric-label { display: block; font-size: 0.7rem; color: #6b7280; margin-bottom: 3px; white-space: nowrap; }
@@ -99,6 +88,7 @@
         .tl-preview-card { padding: 13px; }
         .tl-route { grid-template-columns: minmax(0, 1fr) 34px minmax(0, 1fr); gap: 5px; }
         .tl-route-city { font-size: 0.88rem; }
+        .tl-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         .tl-metric { padding: 10px 5px; }
         .tl-metric-label { font-size: 0.65rem; }
         .tl-metric-value { font-size: 0.88rem; }
@@ -185,6 +175,7 @@
                                                     <div class="tl-metric"><span class="tl-metric-label">مسافت</span><span class="tl-metric-value" id="tlPreviewDistance">-</span></div>
                                                     <div class="tl-metric"><span class="tl-metric-label">روز توراهی</span><span class="tl-metric-value" id="tlPreviewDays">-</span></div>
                                                     <div class="tl-metric"><span class="tl-metric-label">سهمیه سالانه</span><span class="tl-metric-value" id="tlPreviewQuota">-</span></div>
+                                                    <div class="tl-metric"><span class="tl-metric-label">روش محاسبه</span><span class="tl-metric-value" id="tlPreviewMethod">-</span></div>
                                                 </div>
                                                 <div class="tl-result" id="tlPreviewEligible"><div class="tl-status tl-loading"><span class="tl-status-label"><span class="spinner-border" role="status" aria-hidden="true"></span> در حال محاسبه...</span></div></div>
                                             </div>
@@ -301,9 +292,14 @@ function toggleTLSection() {
 function setTravelPreviewLoading(destinationName) {
     const previewContainer = document.getElementById('tlPreviewContainer'); if (!previewContainer) return;
     const selected = destinationName || '-'; document.getElementById('tlPreviewDestination').textContent = selected;
-    document.getElementById('tlPreviewDistance').textContent = '...'; document.getElementById('tlPreviewDays').textContent = '...'; document.getElementById('tlPreviewQuota').textContent = '...';
+    document.getElementById('tlPreviewDistance').textContent = '...'; document.getElementById('tlPreviewDays').textContent = '...'; document.getElementById('tlPreviewQuota').textContent = '...'; document.getElementById('tlPreviewMethod').textContent = '...';
     document.getElementById('tlPreviewEligible').innerHTML = '<div class="tl-status tl-loading"><span class="tl-status-label"><span class="spinner-border" role="status" aria-hidden="true"></span> در حال محاسبه...</span></div>';
     previewContainer.style.display = 'block';
+}
+
+function getTravelDistanceMethodLabel(method) {
+    const labels = { geographic: 'جغرافیایی' };
+    return labels[method] || method || '-';
 }
 
 async function fetchTravelPreview() {
@@ -315,9 +311,10 @@ async function fetchTravelPreview() {
         const response = await fetch(url); const data = await response.json();
         if (data.success && previewContainer) {
             document.getElementById('tlPreviewDestination').textContent = destinationName;
-            document.getElementById('tlPreviewDistance').textContent = data.distance_km + ' km';
+            document.getElementById('tlPreviewDistance').textContent = data.distance_km + ' کیلومتر';
             document.getElementById('tlPreviewDays').textContent = data.travel_days + ' روز';
             document.getElementById('tlPreviewQuota').textContent = data.quota_used + ' / ' + data.quota_max;
+            document.getElementById('tlPreviewMethod').textContent = getTravelDistanceMethodLabel(data.distance_method);
             if (data.eligible) {
                 document.getElementById('tlPreviewEligible').innerHTML = '<div class="tl-status tl-eligible"><span class="tl-status-label"><i class="bi bi-check-circle-fill"></i> مجاز</span><span class="tl-status-message">این مسیر مشمول مرخصی توراهی است.</span></div>';
             } else {
