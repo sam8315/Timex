@@ -20,6 +20,15 @@ CREATE TABLE IF NOT EXISTS cities (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 
+-- Existing installations may already have a legacy `cities` table.
+-- Check/add required columns before any ORM query or index/seed depends on them.
+ALTER TABLE cities ADD COLUMN IF NOT EXISTS province VARCHAR(100);
+ALTER TABLE cities ADD COLUMN IF NOT EXISTS latitude FLOAT;
+ALTER TABLE cities ADD COLUMN IF NOT EXISTS longitude FLOAT;
+ALTER TABLE cities ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+ALTER TABLE cities ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE cities ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+
 CREATE INDEX IF NOT EXISTS idx_cities_name ON cities(name);
 CREATE INDEX IF NOT EXISTS idx_cities_active ON cities(is_active);
 
