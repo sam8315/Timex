@@ -6,7 +6,7 @@ from typing import Optional, Tuple
 import jdatetime
 from sqlalchemy.orm import Session
 
-from core.distance_engine import calculate_distance_km
+from core.distance_engine import calculate_distance_km as _calculate_distance_km
 from models.city import City
 from models.contract import Contract
 from models.employee import Employee
@@ -80,7 +80,6 @@ def calculate_travel_days(distance_km: float, rules: list) -> Tuple[int, Optiona
 
 
 def get_quota_setting(db: Session, policy: Optional[TravelLeavePolicy] = None, marital_status: Optional[str] = None, user_id: Optional[str] = None, effective_date: Optional[date] = None) -> Optional[TravelLeaveQuotaSetting]:
-    """Get quota for policy/status; legacy callers are resolved against today's effective policy."""
     if policy is None and user_id:
         policy, _, employee = resolve_policy(db, user_id, effective_date or date.today())
         marital_status = marital_status or (employee.marital_status if employee else None)
@@ -93,9 +92,7 @@ def get_quota_setting(db: Session, policy: Optional[TravelLeavePolicy] = None, m
 
 
 def count_approved_travel_leaves_in_year(db: Session, user_id: str, jalali_year: int) -> int:
-    return db.query(TravelLeaveDetail).join(
-        LeaveRequest, LeaveRequest.id == TravelLeaveDetail.leave_request_id
-    ).filter(
+    return db.query(TravelLeaveDetail).join(LeaveRequest, LeaveRequest.id == TravelLeaveDetail.leave_request_id).filter(
         LeaveRequest.user_id == user_id,
         LeaveRequest.status == "A",
         TravelLeaveDetail.jalali_year == jalali_year,
@@ -103,7 +100,6 @@ def count_approved_travel_leaves_in_year(db: Session, user_id: str, jalali_year:
 
 
 def check_quota(db: Session, user_id: str, jalali_year: int, policy: Optional[TravelLeavePolicy] = None, marital_status: Optional[str] = None, effective_date: Optional[date] = None) -> Tuple[bool, int, int]:
-    """Check quota. Legacy calls resolve the user's policy for effective_date/today."""
     if policy is None:
         policy, _, employee = resolve_policy(db, user_id, effective_date or date.today())
         marital_status = marital_status or (employee.marital_status if employee else None)
@@ -117,10 +113,15 @@ def check_quota(db: Session, user_id: str, jalali_year: int, policy: Optional[Tr
 def calculate_distance(policy: TravelLeavePolicy, origin_city: City, destination_city: City) -> float:
     if policy.distance_method != "geographic":
         raise ValueError("روش محاسبه فاصله انتخاب‌شده هنوز در سامانه پیاده‌سازی نشده است")
-    return round(calculate_distance_km(
+    return round(_calculate_distance_km(
         (origin_city.latitude, origin_city.longitude),
         (destination_city.latitude, destination_city.longitude),
     ), 2)
+
+
+def calculate_distance_km(origin: tuple, destination: tuple) -> float:
+    """Backward-compatible direct geographic distance helper."""
+    return round(_calculate_distance_km(origin, destination), 2)
 
 
 def create_travel_leave_detail(db: Session, leave_request: LeaveRequest, destination_city_id: int) -> TravelLeaveDetail:
@@ -212,8 +213,3 @@ def override_travel_days(db: Session, detail_id: int, new_final_days: int, admin
 
 def get_active_cities(db: Session):
     return db.query(City).filter(City.is_active == True).order_by(City.name).all()
-
-
-# Backward-compatible name used by the legacy preview route.
-def calculate_distance_km(origin: tuple, destination: tuple) -> float:
-    return round(calculate_distance_km.__wrapped__(origin, destination), 2) if hasattr(calculate_distance_km, "__wrapped__") else round(__import__("core.distance_engine", fromlist=["calculate_distance_km"]).calculate_distance_km(origin, destination), 2)
