@@ -95,7 +95,12 @@ class TestAcceptancePolicyBasedRequiredMinutes:
 
     def test_single_day_policy_07_00_to_13_00(self, db, make_user):
         """Monday with policy 07:00-13:00 → 360 required minutes, not 440."""
-        user = make_user(role="employee", balance_al=None, department="1")
+        user = make_user(
+            role="employee",
+            balance_al=None,
+            department="1",
+            create_employee=True,
+        )
         emp = db.query(Employee).filter(Employee.user_id == user["user_id"]).first()
         _seed_policy(db, emp, POLICY_START, POLICY_END, [
             (0, time(7, 0), time(13, 0), 360),  # Mon only
@@ -113,7 +118,12 @@ class TestAcceptancePolicyBasedRequiredMinutes:
 
     def test_four_workdays_sum(self, db, make_user):
         """Mon-Thu policy 07:00-13:00 (360min each) → 4×360 = 1440."""
-        user = make_user(role="employee", balance_al=None, department="1")
+        user = make_user(
+            role="employee",
+            balance_al=None,
+            department="1",
+            create_employee=True,
+        )
         emp = db.query(Employee).filter(Employee.user_id == user["user_id"]).first()
         _seed_policy(db, emp, POLICY_START, POLICY_END, [
             (0, time(7, 0), time(13, 0), 360),
@@ -135,7 +145,12 @@ class TestAcceptancePolicyBasedRequiredMinutes:
 
     def test_holiday_reduces_required(self, db, make_user):
         """Holiday on Wednesday → only 3 workdays contribute 360 each = 1080."""
-        user = make_user(role="employee", balance_al=None, department="1")
+        user = make_user(
+            role="employee",
+            balance_al=None,
+            department="1",
+            create_employee=True,
+        )
         emp = db.query(Employee).filter(Employee.user_id == user["user_id"]).first()
         _seed_policy(db, emp, POLICY_START, POLICY_END, [
             (0, time(7, 0), time(13, 0), 360),
@@ -159,7 +174,12 @@ class TestAcceptancePolicyBasedRequiredMinutes:
 
     def test_leave_reduces_required(self, db, make_user):
         """Leave on Tuesday → only 3 workdays contribute = 1080."""
-        user = make_user(role="employee", balance_al=None, department="1")
+        user = make_user(
+            role="employee",
+            balance_al=None,
+            department="1",
+            create_employee=True,
+        )
         emp = db.query(Employee).filter(Employee.user_id == user["user_id"]).first()
         _seed_policy(db, emp, POLICY_START, POLICY_END, [
             (0, time(7, 0), time(13, 0), 360),
@@ -208,7 +228,12 @@ class TestAcceptancePolicyBasedRequiredMinutes:
 
     def test_different_policy_different_minutes(self, db, make_user):
         """Different employment type has different required minutes."""
-        user = make_user(role="employee", balance_al=None, department="2")
+        user = make_user(
+            role="employee",
+            balance_al=None,
+            department="2",
+            create_employee=True,
+        )
         emp = db.query(Employee).filter(Employee.user_id == user["user_id"]).first()
 
         # Dept 2: Mon 08:00-16:40 (520 min)

@@ -447,8 +447,15 @@ def make_user(db):
 
     created_uids = []
 
-    def _make(role="user", balance_al=30, department="4",
-              web_enabled=True, region_code="NORMAL", contract_type_code="4"):
+    def _make(
+            role="user",
+            balance_al=30,
+            department="4",
+            web_enabled=True,
+            region_code="NORMAL",
+            contract_type_code="4",
+            create_employee=True,
+    ):
         n = next(_seq)
         user_id = f"TEST-{n}"
         national_code = str(9000000000 + (n % 99999999)).zfill(10)[-10:]
@@ -465,7 +472,7 @@ def make_user(db):
         # Attendance-policy tests create their own Employee row so they can
         # control department/policy resolution. Other tests need the standard
         # Employee fixture for authentication and Travel Leave integration.
-        if role != "employee":
+        if create_employee:
             db.add(
                 Employee(
                     user_id=user_id,
