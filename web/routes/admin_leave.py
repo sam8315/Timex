@@ -673,9 +673,23 @@ async def approve_leave_request(
         LeaveBalance.leave_type == leave_req.leave_type
     ).first()
 
+    tl_detail = None
+    deduct_days = leave_req.days_count
+
+    if leave_req.leave_type == 'AL':
+        tl_detail = db.query(TravelLeaveDetail).filter(
+            TravelLeaveDetail.leave_request_id == leave_req.id
+        ).first()
+
+        if tl_detail:
+            deduct_days = max(
+                0,
+                leave_req.days_count - tl_detail.final_travel_days
+            )
+
     current_balance = balance.balance if balance else 0
     forced_negative = False
-    if current_balance < leave_req.days_count:
+    if current_balance < deduct_days:
         # مدیر ارشد می‌تواند با مانده منفی تایید کند (با تاییدیه جداگانه)
         if user.is_super_admin and allow_negative in ("on", "true", "1"):
             forced_negative = True
@@ -707,7 +721,7 @@ async def approve_leave_request(
 
         # ۲. کسر از مانده
         if balance:
-            balance.balance -= leave_req.days_count
+            balance.balance -= deduct_days
         else:
             balance = LeaveBalance(
                 user_id=leave_req.user_id,
@@ -725,7 +739,7 @@ async def approve_leave_request(
             user_id=leave_req.user_id,
             year=year_j,
             leave_type=leave_req.leave_type,
-            amount=leave_req.days_count,
+            amount=deduct_days,
             transaction_type='USE',
             description=tx_description,
             reference_id=leave_req.id
@@ -902,7 +916,20 @@ async def delete_leave_request(
             LeaveBalance.year == year_j,
             LeaveBalance.leave_type == leave_req.leave_type
         ).first()
+        deduct_days = leave_req.days_count
 
+        if leave_req.leave_type == 'AL':
+            tl_detail = db.query(TravelLeaveDetail).filter(
+                TravelLeaveDetail.leave_request_id == leave_req.id
+            ).first()
+
+            if tl_detail:
+                deduct_days = max(
+                    0,
+                    leave_req.days_count - tl_detail.final_travel_days
+                )
+        balance.balance += deduct_days
+        amount = deduct_days
         # ۲. برگرداندن روزها به مانده
         if balance:
             balance.balance += leave_req.days_count
@@ -1485,6 +1512,27 @@ async def edit_leave_request_form(
         Employee.user_id == leave_request.user_id
     ).first()
 
+    # Travel Leave context
+    travel_detail = leave_request.travel_leave_detail
+    cities = get_active_cities(db)
+
+    service_origin_city = None
+
+    if travel_detail:
+        service_origin_city = travel_detail.origin_city_name_snapshot
+    else:
+        esl = resolve_effective_service_location(
+            db,
+            leave_request.user_id,
+            leave_request.from_date
+        )
+        if esl:
+            origin_city = db.query(City).filter(
+                City.id == esl.city_id
+            ).first()
+            if origin_city:
+                service_origin_city = origin_city.name
+
     return templates.TemplateResponse(request, "admin/leave_request_edit.html", {
         "user": user,
         "leave_request": leave_request,
@@ -1500,6 +1548,10 @@ async def edit_leave_request_form(
         },
         "is_admin": True,
         "is_hl": leave_request.leave_type == 'HL',
+        "travel_detail": travel_detail,
+        "cities": cities,
+        "service_origin_city": service_origin_city,
+        "is_travel_leave": travel_detail is not None,
         "hl_start_time": leave_request.start_time.strftime('%H:%M') if leave_request.start_time else '',
         "hl_end_time": leave_request.end_time.strftime('%H:%M') if leave_request.end_time else '',
     })
@@ -1517,6 +1569,8 @@ async def edit_leave_request_submit(
         status: str = Form('P'),
         start_time_str: str = Form(""),
         end_time_str: str = Form(""),
+        travel_leave_enabled: str = Form("off"),
+        destination_city_id: str = Form(""),
         user: User = Depends(require_admin),
         db: Session = Depends(get_db)
 ):
@@ -1567,6 +1621,18 @@ async def edit_leave_request_submit(
 
         if days_count <= 0:
             raise ValueError("در بازه انتخابی، هیچ روز کاری وجود ندارد (همه تعطیل هستند)")
+        # Travel Leave
+        tl_enabled = travel_leave_enabled == "on" and leave_type == "AL"
+        tl_dest_city_id = None
+
+        if tl_enabled:
+            if not destination_city_id or not destination_city_id.strip():
+                raise ValueError("شهر مقصد برای مرخصی توراهی الزامی است")
+
+            try:
+                tl_dest_city_id = int(destination_city_id.strip())
+            except (ValueError, TypeError):
+                raise ValueError("شهر مقصد نامعتبر است")
 
         # بررسی همپوشانی (به جز درخواست فعلی)
         overlapping = db.query(LeaveRequest).filter(
@@ -1581,6 +1647,9 @@ async def edit_leave_request_submit(
 
         if overlapping:
             raise ValueError("کاربر در این بازه، درخواست مرخصی دیگری دارد")
+        old_travel_detail = db.query(TravelLeaveDetail).filter(
+            TravelLeaveDetail.leave_request_id == request_id
+        ).first()
 
         # مرحله ۱: اگر درخواست قبلاً تایید شده، کسر قبلی را برمی‌گردانیم
         if old_status == 'A':
@@ -1612,6 +1681,26 @@ async def edit_leave_request_submit(
         leave_request.days_count = days_count
         leave_request.reason = reason.strip()
         leave_request.status = status
+        # Travel Leave detail
+        if leave_type == 'AL' and tl_enabled:
+            # برای درخواست جدید/در انتظار، محاسبه و snapshot از ابتدا انجام می‌شود.
+            if old_status != 'A':
+                if old_travel_detail:
+                    db.delete(old_travel_detail)
+                    db.flush()
+
+                create_travel_leave_detail(
+                    db,
+                    leave_request,
+                    tl_dest_city_id
+                )
+
+        elif old_travel_detail:
+            # اگر Travel Leave غیرفعال شده یا نوع مرخصی AL نیست
+            # جزئیات توراهی حذف می‌شود.
+            if old_status != 'A':
+                db.delete(old_travel_detail)
+                db.flush()
 
         # 🆕 به‌روزرسانی فیلدهای مرخصی ساعتی
         if leave_type == 'HL' and start_time_str and end_time_str:

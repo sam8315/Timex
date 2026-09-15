@@ -870,23 +870,49 @@ function toggleHLTimeSection() {
     const fromDateLabel = document.getElementById('fromDateLabel');
     const fromDate = document.getElementById('fromDate');
     const toDate = document.getElementById('toDate');
+    const startTime = document.getElementById('startTime');
+    const endTime = document.getElementById('endTime');
 
     if (!leaveType || !hlSection) return;
 
     if (leaveType.value === 'HL') {
         hlSection.classList.add('visible');
+
+        if (startTime) startTime.required = true;
+        if (endTime) endTime.required = true;
+
         if (daysDisplay) daysDisplay.style.display = 'none';
-        // HL تک‌روزه است؛ فیلد «تا تاریخ» مخفی می‌شود و برچسب «از تاریخ» به «تاریخ» تغییر می‌کند
+
         if (toDateCol) toDateCol.style.display = 'none';
-        if (fromDateLabel) fromDateLabel.innerHTML = '<i class="bi bi-calendar-event text-success"></i> تاریخ <span class="text-danger">*</span>';
-        // اگر تاریخی انتخاب شده، همان را در toDate (مخفی) نیز قرار بده
-        if (fromDate && fromDate.value) $('#toDate').val(fromDate.value);
+
+        if (fromDateLabel) {
+            fromDateLabel.innerHTML =
+                '<i class="bi bi-calendar-event text-success"></i> تاریخ <span class="text-danger">*</span>';
+        }
+
+        if (fromDate && fromDate.value) {
+            $('#toDate').val(fromDate.value);
+        }
     } else {
         hlSection.classList.remove('visible');
-        // بازگشت به مرخصی روزانه: فیلد «تا تاریخ» و برچسب اصلی دوباره نمایش داده می‌شوند
+
+        if (startTime) {
+            startTime.required = false;
+            startTime.value = '';
+        }
+
+        if (endTime) {
+            endTime.required = false;
+            endTime.value = '';
+        }
+
         if (toDateCol) toDateCol.style.display = '';
-        if (fromDateLabel) fromDateLabel.innerHTML = '<i class="bi bi-calendar-event text-success"></i> از تاریخ <span class="text-danger">*</span>';
-        // محاسبه روز کاری را دوباره فعال کن
+
+        if (fromDateLabel) {
+            fromDateLabel.innerHTML =
+                '<i class="bi bi-calendar-event text-success"></i> از تاریخ <span class="text-danger">*</span>';
+        }
+
         if (daysDisplay) calculateDays();
     }
 }
@@ -1011,6 +1037,8 @@ document.addEventListener('DOMContentLoaded', function() {
     updateHLHint();
 
     const leaveType = document.getElementById('leaveType');
+    const startTime = document.getElementById('startTime');
+    const endTime = document.getElementById('endTime');
 
     if (leaveType) {
         leaveType.addEventListener('change', toggleHLTimeSection);
@@ -1024,12 +1052,21 @@ document.addEventListener('DOMContentLoaded', function() {
     if (tlToggle) {
         tlToggle.addEventListener('change', function() {
             const tlContent = document.getElementById('tlContent');
+            const destSelect = document.getElementById('tlDestinationSelect');
+
             if (tlContent) {
                 tlContent.style.display = this.checked ? 'block' : 'none';
             }
+
+            if (destSelect) {
+                destSelect.required = this.checked;
+            }
+
             if (!this.checked) {
                 const previewContainer = document.getElementById('tlPreviewContainer');
-                if (previewContainer) previewContainer.style.display = 'none';
+                if (previewContainer) {
+                    previewContainer.style.display = 'none';
+                }
             }
         });
     }

@@ -73,8 +73,7 @@ def calculate_leave_days(db: Session, user_id: str, from_date: date, to_date: da
         is_holiday_for_user = False
         if holiday and (holiday.group_id is None or holiday.group_id == user_group):
             is_holiday_for_user = True
-        j_date = jdatetime.date.fromgregorian(date=current)
-        is_friday = j_date.weekday() == 4
+        is_friday = current.weekday() == 4
         if not is_holiday_for_user and not is_friday:
             days += 1
         current += timedelta(days=1)
