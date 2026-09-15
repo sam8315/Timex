@@ -75,6 +75,33 @@ def resolve_effective_service_location(
     return locations[0]
 
 
+def service_location_overlaps(
+    db: Session, user_id: str, from_date: date, to_date: Optional[date],
+    exclude_id: Optional[int] = None,
+) -> Optional[EmployeeServiceLocation]:
+    """Return an existing service location overlapping [from_date, to_date].
+
+    A period [a, b) with b=None means "open-ended" (b = +infinity). Two
+    half-open intervals [f1, t1) and [f2, t2) overlap iff f1 < t2 AND f2 < t1
+    (None treated as +infinity). Used by the admin panel to reject
+    overlapping assignments server-side.
+    """
+    locations = (
+        db.query(EmployeeServiceLocation)
+        .filter(EmployeeServiceLocation.user_id == user_id)
+        .all()
+    )
+    for loc in locations:
+        if exclude_id is not None and loc.id == exclude_id:
+            continue
+        loc_to = loc.effective_to  # exclusive upper bound; None = open
+        old_from_before_new_end = to_date is None or loc.effective_from < to_date
+        new_from_before_old_end = loc_to is None or from_date < loc_to
+        if old_from_before_new_end and new_from_before_old_end:
+            return loc
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Destination validation
 # ---------------------------------------------------------------------------
