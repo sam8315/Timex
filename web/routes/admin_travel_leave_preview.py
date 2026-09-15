@@ -91,7 +91,7 @@ async def admin_travel_leave_preview(
         elif not allowed:
             message = f"سهمیه سالانه تکمیل شده است ({used}/{max_allowed})"
         else:
-            message = None
+            message = f"مرخصی توراهی قابل استفاده است ({travel_days} روز)"
 
         return {
             "success": True,
