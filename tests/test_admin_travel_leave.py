@@ -452,3 +452,74 @@ class TestAdminTravelLeaveRegister:
         assert "distance_km" in data
         assert "travel_days" in data
         assert data["origin_city"] == origin_city.name
+
+
+class TestAdminEditApprovedTravelLeaveOverride:
+    def test_approved_travel_leave_edit_preserves_override(self, client, db, make_user):
+        """Regression: approved Travel Leave with manual override -> edit keeps override."""
+        admin = make_user(role="super_admin", balance_al=None)
+        user = make_user(role="user", balance_al=30)
+        from web.services.travel_leave_service import create_travel_leave_detail
+        from models.leave_request import LeaveRequest
+        from models.travel_leave_detail import TravelLeaveDetail
+        from models.employee_service_location import EmployeeServiceLocation
+        from models.city import City
+        import jdatetime
+        from datetime import timedelta
+
+        cities = db.query(City).filter(City.is_active == True).all()
+        if len(cities) < 2:
+            pytest.skip("Need 2 cities")
+        origin = cities[0]
+        dest = cities[1]
+        from_g = jdatetime.date.today().togregorian() + timedelta(days=5)
+        db.add(EmployeeServiceLocation(
+            user_id=user["user_id"], city_id=origin.id, effective_from=from_g,
+        ))
+        db.commit()
+
+        from_j = from_g.strftime("%Y/%m/%d")
+        to_j = (from_g + timedelta(days=2)).strftime("%Y/%m/%d")
+        lr = LeaveRequest(
+            user_id=user["user_id"], leave_type="AL",
+            from_date=from_g, to_date=from_g + timedelta(days=2),
+            days_count=2, status="A", approved_by=admin["user_id"],
+        )
+        db.add(lr)
+        db.flush()
+
+        detail = create_travel_leave_detail(db, lr, dest.id)
+        detail.manual_override = True
+        detail.final_travel_days = 2
+        detail.override_reason = "test override"
+        detail.overridden_by = admin["user_id"]
+        db.commit()
+        db.refresh(detail)
+        assert detail.manual_override is True
+        assert detail.final_travel_days == 2
+
+        login_as(client, admin["national_code"])
+        resp = client.post(
+            f"/admin/leave-requests/{lr.id}/edit",
+            data={
+                "target_user_id": user["user_id"],
+                "leave_type": "AL",
+                "from_date_str": from_j,
+                "to_date_str": to_j,
+                "reason": "edited",
+                "status": "A",
+                "travel_leave_enabled": "on",
+                "destination_city_id": str(dest.id),
+            },
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+        db.expire_all()
+        updated = db.query(TravelLeaveDetail).filter(
+            TravelLeaveDetail.leave_request_id == lr.id
+        ).first()
+        assert updated is not None
+        assert updated.manual_override is True, "manual_override lost on edit"
+        assert updated.final_travel_days == 2, "final_travel_days lost on edit"
+        assert updated.override_reason == "test override", "override_reason lost"
+        assert updated.overridden_by == admin["user_id"], "overridden_by lost"

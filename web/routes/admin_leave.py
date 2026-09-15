@@ -697,7 +697,7 @@ async def approve_leave_request(
             referer = request.headers.get("referer", "/admin/leave-requests")
             url = build_redirect_url(
                 referer, "error",
-                f"مانده کافی نیست! مانده: {current_balance} روز، درخواست: {leave_req.days_count} روز"
+                f"مانده کافی نیست! مانده: {current_balance} روز، درخواست: {deduct_days} روز"
             )
             return RedirectResponse(
                 url=f"{url}&confirm_negative={request_id}",
@@ -708,7 +708,7 @@ async def approve_leave_request(
             return RedirectResponse(
                 url=build_redirect_url(
                     referer, "error",
-                    f"مانده کافی نیست! مانده: {current_balance} روز، درخواست: {leave_req.days_count} روز"
+                    f"مانده کافی نیست! مانده: {current_balance} روز، درخواست: {deduct_days} روز"
                 ),
                 status_code=302
             )
@@ -727,7 +727,7 @@ async def approve_leave_request(
                 user_id=leave_req.user_id,
                 year=year_j,
                 leave_type=leave_req.leave_type,
-                balance=-leave_req.days_count
+                balance=-deduct_days
             )
             db.add(balance)
 
@@ -778,10 +778,10 @@ async def approve_leave_request(
         type_name = LEAVE_TYPES.get(leave_req.leave_type, '')
         referer = request.headers.get("referer", "/admin/leave-requests")
         success_msg = (
-            f"درخواست تایید شد | {leave_req.days_count} روز مرخصی {type_name} کسر شد"
+            f"درخواست تایید شد | {deduct_days} روز مرخصی {type_name} کسر شد"
         )
         if forced_negative:
-            resulting = current_balance - leave_req.days_count
+            resulting = current_balance - deduct_days
             success_msg += f" | ⚠️ مانده منفی شد: {resulting} روز"
         success_msg += (" | پیامک ارسال شد 📱" if sms_sent else "")
         return RedirectResponse(
@@ -928,17 +928,16 @@ async def delete_leave_request(
                     0,
                     leave_req.days_count - tl_detail.final_travel_days
                 )
-        balance.balance += deduct_days
-        amount = deduct_days
-        # ۲. برگرداندن روزها به مانده
+
+        # ۲. برگرداندن فقط مقدار واقعی کسرشده
         if balance:
-            balance.balance += leave_req.days_count
+            balance.balance += deduct_days
         else:
             balance = LeaveBalance(
                 user_id=leave_req.user_id,
                 year=year_j,
                 leave_type=leave_req.leave_type,
-                balance=leave_req.days_count
+                balance=deduct_days
             )
             db.add(balance)
 
@@ -947,7 +946,7 @@ async def delete_leave_request(
             user_id=leave_req.user_id,
             year=year_j,
             leave_type=leave_req.leave_type,
-            amount=leave_req.days_count,
+            amount=deduct_days,
             transaction_type='REVERSE',
             description=f"حذف مرخصی تایید شده - درخواست #{request_id}",
             reference_id=leave_req.id
@@ -963,7 +962,7 @@ async def delete_leave_request(
         return RedirectResponse(
             url=build_redirect_url(
                 referer, "success",
-                f"مرخصی حذف شد | {leave_req.days_count} روز مرخصی {type_name} به مانده برگشت"
+                f"مرخصی حذف شد | {deduct_days} روز مرخصی {type_name} به مانده برگشت"
             ),
             status_code=302
         )
@@ -1650,9 +1649,13 @@ async def edit_leave_request_submit(
         old_travel_detail = db.query(TravelLeaveDetail).filter(
             TravelLeaveDetail.leave_request_id == request_id
         ).first()
+        old_final_travel_days = old_travel_detail.final_travel_days if old_travel_detail else 0
 
         # مرحله ۱: اگر درخواست قبلاً تایید شده، کسر قبلی را برمی‌گردانیم
         if old_status == 'A':
+            # مقدار واقعی کسر شده از سالانه = کل روزها منهای روز توراهی
+            old_deduct_days = max(0, old_days_count - old_final_travel_days)
+
             balance = db.query(LeaveBalance).filter(
                 and_(
                     LeaveBalance.user_id == old_user_id,
@@ -1661,7 +1664,15 @@ async def edit_leave_request_submit(
                 )
             ).first()
             if balance:
-                balance.balance += old_days_count
+                balance.balance += old_deduct_days
+            else:
+                balance = LeaveBalance(
+                    user_id=old_user_id,
+                    year=old_year_j,
+                    leave_type=old_leave_type,
+                    balance=old_deduct_days
+                )
+                db.add(balance)
 
             # حذف تراکنش USE قبلی مرتبط با این درخواست
             old_tx = db.query(LeaveTransaction).filter(
@@ -1681,26 +1692,38 @@ async def edit_leave_request_submit(
         leave_request.days_count = days_count
         leave_request.reason = reason.strip()
         leave_request.status = status
-        # Travel Leave detail
+
+        # Travel Leave detail — rebuild/replace when AL and enabled; preserve override if appropriate
         if leave_type == 'AL' and tl_enabled:
-            # برای درخواست جدید/در انتظار، محاسبه و snapshot از ابتدا انجام می‌شود.
-            if old_status != 'A':
-                if old_travel_detail:
-                    db.delete(old_travel_detail)
-                    db.flush()
+            if old_travel_detail:
+                # Preserve manual override metadata
+                old_override = old_travel_detail.manual_override
+                old_final_days = old_travel_detail.final_travel_days
+                old_override_reason = old_travel_detail.override_reason
+                old_overridden_by = old_travel_detail.overridden_by
+                old_overridden_at = old_travel_detail.overridden_at
 
-                create_travel_leave_detail(
-                    db,
-                    leave_request,
-                    tl_dest_city_id
-                )
-
-        elif old_travel_detail:
-            # اگر Travel Leave غیرفعال شده یا نوع مرخصی AL نیست
-            # جزئیات توراهی حذف می‌شود.
-            if old_status != 'A':
+                # Delete old detail, recreate with server-side snapshots
                 db.delete(old_travel_detail)
                 db.flush()
+
+                new_detail = create_travel_leave_detail(db, leave_request, tl_dest_city_id)
+
+                # If there was a manual override, preserve the final value and metadata
+                if old_override:
+                    new_detail.manual_override = True
+                    new_detail.final_travel_days = old_final_days
+                    new_detail.override_reason = old_override_reason
+                    new_detail.overridden_by = old_overridden_by
+                    new_detail.overridden_at = old_overridden_at
+                    db.flush()
+            else:
+                create_travel_leave_detail(db, leave_request, tl_dest_city_id)
+
+        elif old_travel_detail:
+            # Travel Leave disabled or leave type changed away from AL
+            db.delete(old_travel_detail)
+            db.flush()
 
         # 🆕 به‌روزرسانی فیلدهای مرخصی ساعتی
         if leave_type == 'HL' and start_time_str and end_time_str:
@@ -1724,6 +1747,13 @@ async def edit_leave_request_submit(
         # مرحله ۳: اگر وضعیت جدید "تایید شده" است، کسر جدید اعمال شود
         if status == 'A':
             new_year_j = from_j.year
+            # محاسبه روز توراهی از جزئیات تازه ساخته شده (در صورت وجود)
+            new_tl = db.query(TravelLeaveDetail).filter(
+                TravelLeaveDetail.leave_request_id == request_id
+            ).first()
+            new_final_travel_days = new_tl.final_travel_days if new_tl else 0
+            new_deduct_days = max(0, days_count - new_final_travel_days)
+
             balance = db.query(LeaveBalance).filter(
                 and_(
                     LeaveBalance.user_id == target_user_id,
@@ -1732,22 +1762,22 @@ async def edit_leave_request_submit(
                 )
             ).first()
             if balance:
-                balance.balance -= days_count
+                balance.balance -= new_deduct_days
             else:
                 new_balance = LeaveBalance(
                     user_id=target_user_id,
                     year=new_year_j,
                     leave_type=leave_type,
-                    balance=-days_count
+                    balance=-new_deduct_days
                 )
                 db.add(new_balance)
 
-            # ثبت تراکنش USE جدید
+            # ثبت تراکنش USE جدید با مقدار واقعی کسر شده
             new_tx = LeaveTransaction(
                 user_id=target_user_id,
                 year=new_year_j,
                 leave_type=leave_type,
-                amount=days_count,
+                amount=new_deduct_days,
                 transaction_type='USE',
                 description=f"مرخصی ویرایش شده (درخواست #{request_id})",
                 reference_id=request_id
