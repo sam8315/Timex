@@ -111,7 +111,7 @@ def migrate_data_fixes(bind_engine=None) -> None:
 
 
 def seed_travel_leave_policy_rules() -> None:
-    """Seed contract-scoped Travel Leave policies and their default rules."""
+    """Seed contract-scoped Travel Leave policies, rules, and default quotas."""
     from sqlalchemy import text as _sql_text
 
     contract_types = ("1", "2", "3", "4", "5", "6", "7")
@@ -180,7 +180,46 @@ def seed_travel_leave_policy_rules() -> None:
                     {"policy_id": policy_id},
                 )
 
-        print("  + contract-scoped travel_leave policies/rules seeded")
+            # Seed one default annual quota per marital status when missing.
+            for marital_status in ("S", "M"):
+                quota_exists = conn.execute(
+                    _sql_text(
+                        """
+                        SELECT 1
+                        FROM travel_leave_quota_settings
+                        WHERE policy_id = :policy_id
+                          AND marital_status = :marital_status
+                        LIMIT 1
+                        """
+                    ),
+                    {
+                        "policy_id": policy_id,
+                        "marital_status": marital_status,
+                    },
+                ).scalar()
+
+                if quota_exists is None:
+                    conn.execute(
+                        _sql_text(
+                            """
+                            INSERT INTO travel_leave_quota_settings
+                                (policy_id, marital_status, annual_max_usage,
+                                 description, parameter_key, parameter_value)
+                            VALUES
+                                (:policy_id, :marital_status, 3,
+                                 'Max approved travel leave uses per Jalali year',
+                                 :parameter_key, '3')
+                            """
+                        ),
+                        {
+                            "policy_id": policy_id,
+                            "marital_status": marital_status,
+                            "parameter_key": f"annual_max_usage_{contract_type_code}_{marital_status}",
+                        },
+                    )
+
+        print("  + contract-scoped travel_leave policies/rules/quotas seeded")
+
 
 def create_tables() -> None:
     """
