@@ -23,6 +23,7 @@ from models import hourly_leave_policy_rules  # register hourly-leave policy nor
 from models.city import City
 from models.employee_service_location import EmployeeServiceLocation
 from models.travel_leave_detail import TravelLeaveDetail
+from models.travel_leave_policy import TravelLeavePolicy
 from models.travel_leave_policy_rules import TravelLeavePolicyRule, TravelLeaveQuotaSetting
 
 __all__ = [
@@ -33,6 +34,6 @@ __all__ = [
     'EmployeePhone', 'Education', 'UserPermission', 'UserPermissionHistory', 'BaleUser',
     'Employee', 'Region', 'Policy', 'PolicyValue', 'PolicyAuditLog',
     'EmployeeRegion',
-    'City', 'EmployeeServiceLocation', 'TravelLeaveDetail',
+    'City', 'EmployeeServiceLocation', 'TravelLeaveDetail', 'TravelLeavePolicy',
     'TravelLeavePolicyRule', 'TravelLeaveQuotaSetting',
 ]
