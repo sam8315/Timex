@@ -208,6 +208,52 @@
                     </div>
                 </div>
 
+                <!-- 🆕 مرخصی توراهی (فقط مرخصی استحقاقی) -->
+                <div class="col-12 d-none" id="tlSection">
+                    <div class="card border-primary">
+                        <div class="card-header bg-white py-2">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="tlToggle"
+                                       name="travel_leave_enabled" value="on">
+                                <label class="form-check-label fw-bold" for="tlToggle">
+                                    🌍 افزودن مرخصی توراهی (Travel Leave)
+                                </label>
+                            </div>
+                            <small class="text-muted">
+                                محاسبه مسافت و روزهای توراهی فقط سمت سرور انجام می‌شود.
+                            </small>
+                        </div>
+                        <div class="card-body d-none" id="tlContent">
+                            <div class="row g-3">
+                                <div class="col-md-4">
+                                    <label class="form-label">📍 مبدأ (محل خدمت)</label>
+                                    <input type="text" class="form-control" id="tlOrigin" readonly
+                                           placeholder="تعیین نشده">
+                                    <small class="text-muted">بر اساس محل خدمت مؤثر در تاریخ شروع</small>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">🎯 شهر مقصد <span class="text-danger">*</span></label>
+                                    <select name="destination_city_id" id="destinationCity" class="form-select">
+                                        <option value="">انتخاب شهر مقصد...</option>
+                                        {% for c in cities %}
+                                        <option value="{{ c.id }}">{{ c.name }}{% if c.province %} ({{ c.province }}){% endif %}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">⚖️ سهمیه سال جاری</label>
+                                    <div class="alert alert-secondary py-2 mb-0" id="tlQuota">-</div>
+                                </div>
+                                <div class="col-12">
+                                    <div class="alert alert-info py-2 mb-0 d-none" id="tlPreview">
+                                        <i class="bi bi-info-circle"></i> <span id="tlPreviewText"></span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- دلیل -->
                 <div class="col-12">
                     <label class="form-label">📝 دلیل (اختیاری)</label>
@@ -343,6 +389,7 @@
 
         searchResults.classList.remove('show');
         searchInput.blur();
+        fetchTravelPreview();
     }
 
     // پاک کردن انتخاب
@@ -476,7 +523,9 @@ function calculateHLDuration() {
 
 if (leaveTypeSelect) {
     leaveTypeSelect.addEventListener('change', toggleHLFields);
+    leaveTypeSelect.addEventListener('change', toggleTLSection);
     toggleHLFields();
+    toggleTLSection();
 
     if (hlStartTime) hlStartTime.addEventListener('input', calculateHLDuration);
     if (hlEndTime) hlEndTime.addEventListener('input', calculateHLDuration);
@@ -512,6 +561,105 @@ if (leaveTypeSelect) {
         }
     }
     updateHLHintAdmin();
+
+    // 🆕 مرخصی توراهی
+    const tlSection = document.getElementById('tlSection');
+    const tlToggle = document.getElementById('tlToggle');
+    const tlContent = document.getElementById('tlContent');
+    const destinationCity = document.getElementById('destinationCity');
+    const tlOrigin = document.getElementById('tlOrigin');
+    const tlQuota = document.getElementById('tlQuota');
+    const tlPreview = document.getElementById('tlPreview');
+    const tlPreviewText = document.getElementById('tlPreviewText');
+
+    function toggleTLSection() {
+        const isAL = leaveTypeSelect.value === 'AL';
+        if (isAL) {
+            tlSection.classList.remove('d-none');
+        } else {
+            tlSection.classList.add('d-none');
+            tlToggle.checked = false;
+            tlContent.classList.add('d-none');
+            clearTLPreview();
+        }
+    }
+
+    function clearTLPreview() {
+        tlPreview.classList.add('d-none');
+        tlQuota.textContent = '-';
+        tlOrigin.value = 'تعیین نشده';
+    }
+
+    function toggleTLContent() {
+        if (tlToggle.checked) {
+            tlContent.classList.remove('d-none');
+        } else {
+            tlContent.classList.add('d-none');
+            clearTLPreview();
+        }
+    }
+
+    async function fetchTravelPreview() {
+        const userId = targetUserId.value;
+        const fromDate = document.getElementById('fromDate').value;
+        const destId = destinationCity.value;
+        if (!userId || !fromDate || !destId) {
+            tlPreview.classList.add('d-none');
+            return;
+        }
+
+        try {
+            const url = `/admin/leave-requests/travel-preview?target_user_id=${encodeURIComponent(userId)}&from_date=${encodeURIComponent(fromDate)}&destination_city_id=${encodeURIComponent(destId)}`;
+            const resp = await fetch(url);
+            const data = await resp.json();
+
+            tlQuota.textContent = (data.success && data.quota_max)
+                ? `${data.quota_used} از ${data.quota_max} استفاده`
+                : '-';
+
+            if (!data.success) {
+                tlPreviewText.textContent = data.message || 'خطا در دریافت پیش‌نمایش';
+                tlPreview.classList.remove('alert-info');
+                tlPreview.classList.add('alert-danger');
+                tlPreview.classList.remove('d-none');
+                return;
+            }
+
+            tlOrigin.value = data.origin_city;
+            tlPreview.classList.remove('alert-danger');
+
+            if (data.eligible) {
+                tlPreviewText.textContent = `فاصله: ${data.distance_km} کیلومتر | ` +
+                    `روزهای توراهی: ${data.travel_days} روز | ` +
+                    `مقصد: ${data.destination_city}`;
+                tlPreview.classList.add('alert-info');
+            } else {
+                tlPreviewText.textContent = data.distance_km
+                    ? `فاصله ${data.distance_km} کیلومتر است و کمتر از ۲۰۰ کیلومتر می‌باشد. مرخصی توراهی برای این مسیر قابل استفاده نیست.`
+                    : data.message || 'مرخصی توراهی برای این مسیر قابل استفاده نیست.';
+                tlPreview.classList.add('alert-danger');
+            }
+            tlPreview.classList.remove('d-none');
+        } catch (e) {
+            tlPreviewText.textContent = 'خطا در دریافت پیش‌نمایش';
+            tlPreview.classList.add('alert-danger');
+            tlPreview.classList.remove('alert-info');
+            tlPreview.classList.remove('d-none');
+        }
+    }
+
+    if (tlToggle) {
+        tlToggle.addEventListener('change', toggleTLContent);
+        destinationCity.addEventListener('change', fetchTravelPreview);
+
+        document.getElementById('fromDate').addEventListener('change', fetchTravelPreview);
+        targetUserId.addEventListener('change', fetchTravelPreview);
+        document.addEventListener('change', function(e) {
+            if (e.target && e.target.id === 'fromDate') {
+                fetchTravelPreview();
+            }
+        });
+    }
 
     // اعتبارسنجی فرم قبل از ارسال
     document.getElementById('registerLeaveForm').addEventListener('submit', function(e) {

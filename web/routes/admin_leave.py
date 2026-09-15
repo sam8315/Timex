@@ -32,7 +32,10 @@ from web.services.hourly_leave_service import (
     validate_hourly_leave_request,
 )
 from models.travel_leave_detail import TravelLeaveDetail
-from web.services.travel_leave_service import override_travel_days
+from web.services.travel_leave_service import override_travel_days, resolve_effective_service_location, validate_destination_city, calculate_travel_days, check_quota, create_travel_leave_detail, get_active_cities
+from models.city import City
+from models.travel_leave_policy_rules import TravelLeavePolicyRule
+from core.distance_engine import calculate_distance_km
 import threading
 
 router = APIRouter(tags=["Admin Leave"])
@@ -1190,12 +1193,15 @@ async def register_leave_form(
     except Exception:
         pass
 
+    cities = get_active_cities(db)
+
     return templates.TemplateResponse(request, "admin/leave_register.html", {
         "user": user,
         "employees": employees_list,
         "leave_types": LEAVE_TYPES,
         "is_admin": True,
         "hl_granularity": hl_granularity,
+        "cities": cities,
     })
 
 
@@ -1209,6 +1215,8 @@ async def register_leave_for_user(
         start_time_str: str = Form(""),
         end_time_str: str = Form(""),
         reason: str = Form(""),
+        travel_leave_enabled: str = Form("off"),
+        destination_city_id: str = Form(""),
         user: User = Depends(require_admin),
         db: Session = Depends(get_db)
 ):
@@ -1304,7 +1312,7 @@ async def register_leave_for_user(
             days_count = calculate_leave_days_admin(db, target_user_id, from_date, to_date)
             if days_count <= 0:
                 raise ValueError("در بازه انتخابی، هیچ روز کاری وجود ندارد (همه تعطیل هستند)")
-            overlapping = db.query(LeaveRequest).filter(
+            overlaps = db.query(LeaveRequest).filter(
                 and_(
                     LeaveRequest.user_id == target_user_id,
                     LeaveRequest.status.in_(['P', 'A']),
@@ -1312,8 +1320,20 @@ async def register_leave_for_user(
                     LeaveRequest.to_date >= from_date,
                 )
             ).first()
-            if overlapping:
+            if overlaps:
                 raise ValueError("کاربر در این بازه، درخواست مرخصی دیگری دارد")
+
+            # مرخصی توراهی فقط با مرخصی استحقاقی (AL)
+            tl_enabled = travel_leave_enabled == "on" and leave_type == "AL"
+            tl_dest_city_id = None
+            if tl_enabled:
+                if not destination_city_id or not destination_city_id.strip():
+                    raise ValueError("شهر مقصد برای مرخصی توراهی الزامی است")
+                try:
+                    tl_dest_city_id = int(destination_city_id.strip())
+                except (ValueError, TypeError):
+                    raise ValueError("شهر مقصد نامعتبر است")
+
             new_request = LeaveRequest(
                 user_id=target_user_id,
                 leave_type=leave_type,
@@ -1324,11 +1344,27 @@ async def register_leave_for_user(
                 status='P',
             )
             db.add(new_request)
+            db.flush()
+
+            # ثبت جزئیات مرخصی توراهی به‌صورت اتمیک
+            if tl_enabled:
+                try:
+                    create_travel_leave_detail(db, new_request, tl_dest_city_id)
+                except ValueError as te:
+                    db.rollback()
+                    return RedirectResponse(
+                        url=build_redirect_url(
+                            request.headers.get("referer", "/admin/leave-requests/register"),
+                            "error", str(te),
+                        ),
+                        status_code=302,
+                    )
             db.commit()
             type_name = LEAVE_TYPES.get(leave_type, '')
             target_name = target_employee.full_name
+            tl_msg = " + مرخصی توراهی" if tl_enabled else ""
             return RedirectResponse(
-                url=f"/admin/leave-requests/register?success=درخواست مرخصی {type_name} ({days_count} روز) برای {target_name} در حالت در انتظار بررسی ثبت شد",
+                url=f"/admin/leave-requests/register?success=درخواست مرخصی {type_name} ({days_count} روز){tl_msg} برای {target_name} در حالت در انتظار بررسی ثبت شد",
                 status_code=302
             )
     except ValueError as e:
@@ -1341,6 +1377,62 @@ async def register_leave_for_user(
             url=f"/admin/leave-requests/register?error=خطا: {str(e)}",
             status_code=302
         )
+
+
+@router.get("/leave-requests/travel-preview")
+async def admin_travel_leave_preview(
+    target_user_id: str = Query(...),
+    from_date: str = Query(...),
+    destination_city_id: int = Query(...),
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """پیش‌نمایش مشاوره‌ای مرخصی توراهی برای ثبت توسط مدیر (محاسبه مجدد سمت سرور)."""
+    enforce_permission(db, user, 'approve_leave')
+    try:
+        from_j = jdatetime.datetime.strptime(from_date.strip(), "%Y/%m/%d").date()
+        from_g = from_j.togregorian()
+
+        esl = resolve_effective_service_location(db, target_user_id, from_g)
+        if not esl:
+            return {"success": False, "message": "محل خدمت مؤثر در تاریخ شروع یافت نشد"}
+
+        origin_city = db.query(City).filter(City.id == esl.city_id).first()
+        if not origin_city:
+            return {"success": False, "message": "شهر محل خدمت یافت نشد"}
+
+        dest_city = validate_destination_city(db, destination_city_id)
+        if not dest_city:
+            return {"success": False, "message": "شهر مقصد نامعتبر است"}
+
+        distance_km = round(calculate_distance_km(
+            (origin_city.latitude, origin_city.longitude),
+            (dest_city.latitude, dest_city.longitude),
+        ), 2)
+
+        rules = db.query(TravelLeavePolicyRule).filter(
+            TravelLeavePolicyRule.is_active == 1
+        ).all()
+        travel_days, _ = calculate_travel_days(distance_km, rules)
+
+        jalali_year = jdatetime.date.fromgregorian(date=from_g).year
+        allowed, used, max_allowed = check_quota(db, target_user_id, jalali_year)
+
+        return {
+            "success": True,
+            "origin_city": origin_city.name,
+            "destination_city": dest_city.name,
+            "destination_province": dest_city.province or "",
+            "distance_km": distance_km,
+            "travel_days": travel_days,
+            "eligible": travel_days > 0,
+            "quota_used": used,
+            "quota_max": max_allowed,
+            "quota_allowed": allowed,
+            "jalali_year": jalali_year,
+        }
+    except Exception as e:
+        return {"success": False, "message": str(e)}
 
 
 # ============================================
