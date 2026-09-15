@@ -291,9 +291,6 @@
 </div>
 
 <div class="row g-4">
-    <!-- ============================================ -->
-    <!-- 📝 فرم درخواست مرخصی -->
-    <!-- ============================================ -->
     <div class="col-lg-7">
         <div class="card form-card">
             <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
@@ -309,7 +306,6 @@
             <div class="card-body">
                 <form method="post" action="/leave/request" id="leaveForm">
                     <div class="row g-3">
-                        <!-- نوع مرخصی -->
                         <div class="col-12">
                             <label class="form-label fw-bold">
                                 <i class="bi bi-tag text-primary"></i> نوع مرخصی <span class="text-danger">*</span>
@@ -329,45 +325,34 @@
                             <small class="text-muted">مرخصی ساعتی محدودیت مانده ندارد</small>
                         </div>
 
-                        <!-- از تاریخ -->
                         <div class="col-md-6">
                             <label class="form-label fw-bold" id="fromDateLabel">
                                 <i class="bi bi-calendar-event text-success"></i> از تاریخ <span class="text-danger">*</span>
                             </label>
                             <div class="date-input-wrapper">
-                                <input type="text"
-                                       name="from_date_str"
-                                       id="fromDate"
+                                <input type="text" name="from_date_str" id="fromDate"
                                        class="form-control form-control-lg text-center"
-                                       placeholder="انتخاب تاریخ"
-                                       autocomplete="off"
-                                       required>
+                                       placeholder="انتخاب تاریخ" autocomplete="off" required>
                                 <button type="button" class="clear-btn" onclick="clearDate('fromDate')" title="پاک کردن">
                                     <i class="bi bi-x-circle"></i>
                                 </button>
                             </div>
                         </div>
 
-                        <!-- تا تاریخ (برای HL مخفی می‌شود) -->
                         <div class="col-md-6" id="toDateCol">
                             <label class="form-label fw-bold">
                                 <i class="bi bi-calendar-check text-danger"></i> تا تاریخ <span class="text-danger">*</span>
                             </label>
                             <div class="date-input-wrapper">
-                                <input type="text"
-                                       name="to_date_str"
-                                       id="toDate"
+                                <input type="text" name="to_date_str" id="toDate"
                                        class="form-control form-control-lg text-center"
-                                       placeholder="انتخاب تاریخ"
-                                       autocomplete="off"
-                                       required>
+                                       placeholder="انتخاب تاریخ" autocomplete="off" required>
                                 <button type="button" class="clear-btn" onclick="clearDate('toDate')" title="پاک کردن">
                                     <i class="bi bi-x-circle"></i>
                                 </button>
                             </div>
                         </div>
 
-                        <!-- نمایش تعداد روز -->
                         <div class="col-12">
                             <div class="days-display" id="daysDisplay" style="display: none;">
                                 <div class="days-number" id="daysNumber">0</div>
@@ -375,7 +360,6 @@
                             </div>
                         </div>
 
-                        <!-- 🆕 بخش مرخصی ساعتی (فقط برای HL نمایش داده شود) -->
                         <div class="col-12">
                             <div class="hl-time-section" id="hlTimeSection" data-granularity="{{ hl_granularity if hl_granularity is defined else 15 }}">
                                 <div class="row g-3">
@@ -410,7 +394,6 @@
                             </div>
                         </div>
 
-                        <!-- 🆕 بخش مرخصی توراهی (فقط برای AL نمایش داده شود) -->
                         <div class="col-12">
                             <div class="tl-section" id="tlSection">
                                 <div class="d-flex justify-content-between align-items-center mb-3">
@@ -426,7 +409,6 @@
 
                                 <div id="tlContent" style="display: none;">
                                     <div class="row g-3">
-                                        <!-- محل خدمت (فقط خواندنی) -->
                                         <div class="col-md-6">
                                             <label class="form-label fw-bold">
                                                 <i class="bi bi-geo-alt text-primary"></i> محل خدمت (مبدأ)
@@ -442,7 +424,6 @@
                                             {% endif %}
                                         </div>
 
-                                        <!-- شهر مقصد -->
                                         <div class="col-md-6">
                                             <label class="form-label fw-bold">
                                                 <i class="bi bi-flag text-danger"></i> شهر مقصد <span class="text-danger">*</span>
@@ -458,7 +439,6 @@
                                             </select>
                                         </div>
 
-                                        <!-- پیش‌نمایش -->
                                         <div class="col-12" id="tlPreviewContainer" style="display: none;">
                                             <div class="tl-preview-card">
                                                 <div class="row g-2">
@@ -492,7 +472,6 @@
                             </div>
                         </div>
 
-                        <!-- دلیل -->
                         <div class="col-12">
                             <label class="form-label fw-bold">
                                 <i class="bi bi-chat-text text-secondary"></i> دلیل (اختیاری)
@@ -501,7 +480,6 @@
                                       placeholder="دلیل درخواست مرخصی را بنویسید..."></textarea>
                         </div>
 
-                        <!-- دکمه ثبت -->
                         <div class="col-12">
                             <button type="submit" class="btn btn-primary btn-lg w-100" id="submitBtn">
                                 <i class="bi bi-send-fill"></i> ثبت درخواست مرخصی
@@ -518,9 +496,6 @@
         </div>
     </div>
 
-    <!-- ============================================ -->
-    <!-- 📊 خلاصه وضعیت -->
-    <!-- ============================================ -->
     <div class="col-lg-5">
         <div class="card form-card mb-4">
             <div class="card-header bg-white py-3">
@@ -570,7 +545,6 @@
             </div>
         </div>
 
-        <!-- تماس با پشتیبانی -->
         <div class="card form-card">
             <div class="card-body text-center py-4">
                 <i class="bi bi-headset display-5 text-primary mb-2"></i>
@@ -584,9 +558,6 @@
     </div>
 </div>
 
-<!-- ============================================ -->
-<!-- 📋 درخواست‌های اخیر -->
-<!-- ============================================ -->
 <div class="card form-card mt-4">
     <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
         <h6 class="mb-0 fw-bold">
@@ -717,7 +688,6 @@
     </div>
 </div>
 
-<!-- راهنمای رنگ‌ها -->
 <div class="card form-card mt-3">
     <div class="card-body py-3">
         <div class="d-flex gap-4 flex-wrap align-items-center small">
@@ -734,14 +704,9 @@
 
 {% block extra_js %}
 <script>
-// ============================================
-// 🗑️ پاک کردن تاریخ
-// ============================================
 function clearDate(inputId) {
     document.getElementById(inputId).value = '';
     document.getElementById('daysDisplay').style.display = 'none';
-    // در حالت HL: from_date و to_date باید همیشه یکسان باشند،
-    // پس اگر «از تاریخ» پاک شود، toDate (مخفی) نیز پاک می‌شود.
     if (inputId === 'fromDate') {
         const leaveType = document.getElementById('leaveType');
         if (leaveType && leaveType.value === 'HL') {
@@ -750,12 +715,7 @@ function clearDate(inputId) {
     }
 }
 
-// ============================================
-// 📅 راه‌اندازی تقویم شمسی (persian-datepicker)
-// ============================================
 $(document).ready(function() {
-
-    // تنظیمات مشترک تقویم
     function createPicker(selector, onChangeCallback) {
         $(selector).pDatepicker({
             format: 'YYYY/MM/DD',
@@ -769,14 +729,14 @@ $(document).ready(function() {
                     leapYearMode: 'astronomical'
                 }
             },
-navigator: {
-    enabled: true,
-    scroll: { enabled: true },
-    text: {
-        btnNextText: '❮',    // ✅ فلش چپ یونیکد
-        btnPrevText: '❯'     // ✅ فلش راست یونیکد
-    }
-},
+            navigator: {
+                enabled: true,
+                scroll: { enabled: true },
+                text: {
+                    btnNextText: '❮',
+                    btnPrevText: '❯'
+                }
+            },
             toolbox: {
                 calendarSwitch: { enabled: true },
                 todayButton: {
@@ -785,7 +745,6 @@ navigator: {
                 }
             },
             onSelect: function(unix) {
-                // اجرای کال‌بک بعد از انتخاب
                 if (onChangeCallback) {
                     setTimeout(onChangeCallback, 100);
                 }
@@ -793,24 +752,25 @@ navigator: {
         });
     }
 
-    // تقویم "از تاریخ"
     createPicker('#fromDate', function() {
         console.log('از تاریخ انتخاب شد:', $('#fromDate').val());
         calculateDays();
+        if ($('#tlToggle').is(':checked')) {
+            fetchTravelPreview();
+        }
     });
 
-    // تقویم "تا تاریخ"
     createPicker('#toDate', function() {
         console.log('تا تاریخ انتخاب شد:', $('#toDate').val());
         calculateDays();
+        if ($('#tlToggle').is(':checked')) {
+            fetchTravelPreview();
+        }
     });
 
     console.log('✅ تقویم‌های شمسی راه‌اندازی شدند');
 });
 
-// ============================================
-// 📊 محاسبه تعداد روزهای کاری
-// ============================================
 window.calculateDays = async function() {
     const fromDate = $('#fromDate').val();
     const toDate = $('#toDate').val();
@@ -818,13 +778,8 @@ window.calculateDays = async function() {
     const daysNumber = document.getElementById('daysNumber');
     const leaveType = document.getElementById('leaveType');
 
-    // مرخصی ساعتی (HL) تک‌روزه است و مدت آن بر اساس ساعت شروع/پایان
-    // محاسبه می‌شود نه تعداد روز کاری. پس برای HL هرگز نمایش روز کاری
-    // فعال نمی‌شود (حتی اگر تاریخ انتخاب یا تغییر کند).
     if (leaveType && leaveType.value === 'HL') {
         if (daysDisplay) daysDisplay.style.display = 'none';
-        // HL فقط یک روز است؛ همان تاریخ در toDate (مخفی) نیز قرار می‌گیرد
-        // تا backend همچنان هم from_date و هم to_date را دریافت کند.
         if (fromDate) $('#toDate').val(fromDate);
         return;
     }
@@ -841,7 +796,6 @@ window.calculateDays = async function() {
         if (data.success) {
             daysDisplay.style.display = 'block';
             daysNumber.textContent = data.days_count;
-
             daysDisplay.className = 'days-display';
             if (data.days_count > 14) {
                 daysDisplay.classList.add('danger');
@@ -859,9 +813,6 @@ window.calculateDays = async function() {
     }
 };
 
-// ============================================
-// ⏰ مرخصی ساعتی (HL) toggle و محاسبه مدت
-// ============================================
 function toggleHLTimeSection() {
     const leaveType = document.getElementById('leaveType');
     const hlSection = document.getElementById('hlTimeSection');
@@ -877,42 +828,30 @@ function toggleHLTimeSection() {
 
     if (leaveType.value === 'HL') {
         hlSection.classList.add('visible');
-
         if (startTime) startTime.required = true;
         if (endTime) endTime.required = true;
-
         if (daysDisplay) daysDisplay.style.display = 'none';
-
         if (toDateCol) toDateCol.style.display = 'none';
-
         if (fromDateLabel) {
-            fromDateLabel.innerHTML =
-                '<i class="bi bi-calendar-event text-success"></i> تاریخ <span class="text-danger">*</span>';
+            fromDateLabel.innerHTML = '<i class="bi bi-calendar-event text-success"></i> تاریخ <span class="text-danger">*</span>';
         }
-
         if (fromDate && fromDate.value) {
             $('#toDate').val(fromDate.value);
         }
     } else {
         hlSection.classList.remove('visible');
-
         if (startTime) {
             startTime.required = false;
             startTime.value = '';
         }
-
         if (endTime) {
             endTime.required = false;
             endTime.value = '';
         }
-
         if (toDateCol) toDateCol.style.display = '';
-
         if (fromDateLabel) {
-            fromDateLabel.innerHTML =
-                '<i class="bi bi-calendar-event text-success"></i> از تاریخ <span class="text-danger">*</span>';
+            fromDateLabel.innerHTML = '<i class="bi bi-calendar-event text-success"></i> از تاریخ <span class="text-danger">*</span>';
         }
-
         if (daysDisplay) calculateDays();
     }
 }
@@ -961,9 +900,6 @@ function calculateHLDuration() {
     durationDisplay.style.display = 'block';
 }
 
-// ============================================
-// 🆕 مرخصی توراهی — toggle و پیش‌نمایش
-// ============================================
 function toggleTLSection() {
     const leaveType = document.getElementById('leaveType');
     const tlSection = document.getElementById('tlSection');
@@ -1020,7 +956,6 @@ async function fetchTravelPreview() {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-    // Dynamic hourly-leave policy hint
     function updateHLHint() {
         var hintText = document.getElementById('hlHintText');
         if (!hintText) return;
@@ -1047,7 +982,6 @@ document.addEventListener('DOMContentLoaded', function() {
         toggleTLSection();
     }
 
-    // Travel Leave toggle
     const tlToggle = document.getElementById('tlToggle');
     if (tlToggle) {
         tlToggle.addEventListener('change', function() {
@@ -1062,7 +996,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 destSelect.required = this.checked;
             }
 
-            if (!this.checked) {
+            if (this.checked) {
+                fetchTravelPreview();
+            } else {
                 const previewContainer = document.getElementById('tlPreviewContainer');
                 if (previewContainer) {
                     previewContainer.style.display = 'none';
@@ -1071,7 +1007,6 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Travel Leave destination change -> preview
     const tlDestSelect = document.getElementById('tlDestinationSelect');
     if (tlDestSelect) {
         tlDestSelect.addEventListener('change', fetchTravelPreview);
