@@ -165,13 +165,17 @@ async def leave_page(request: Request, user: User = Depends(get_current_user), d
     cities = get_active_cities(db)
     cities_list = [{'id': c.id, 'name': c.name, 'province': c.province} for c in cities]
 
-    # Resolve effective service location for display
+    # Resolve effective service location for display.
+    # This value is only a display/enablement hint; the authoritative preview resolves
+    # the service location again using the selected leave date.
     service_origin_city = None
     esl = resolve_effective_service_location(db, user.user_id, date.today())
     if esl:
         origin_city = db.query(City).filter(City.id == esl.city_id).first()
         if origin_city:
             service_origin_city = origin_city.name
+    if not service_origin_city:
+        service_origin_city = "برای تاریخ انتخابی بررسی می‌شود"
 
     # Travel Leave quota
     today_j_year = jdatetime.date.today().year
