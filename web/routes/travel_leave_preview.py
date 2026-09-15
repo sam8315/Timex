@@ -18,6 +18,21 @@ from web.services.travel_leave_service import (
 router = APIRouter(tags=["Leave"])
 
 
+def _preview_error(message: str, **extra):
+    return {
+        "success": True,
+        "origin_city": extra.get("origin_city", "-"),
+        "destination_city": extra.get("destination_city", "-"),
+        "distance_km": extra.get("distance_km", 0),
+        "travel_days": 0,
+        "eligible": False,
+        "message": message,
+        "quota_used": extra.get("quota_used", 0),
+        "quota_max": extra.get("quota_max", 0),
+        "quota_allowed": False,
+    }
+
+
 @router.get("/leave/travel-preview")
 async def travel_leave_preview(
     from_date: str = Query(...),
@@ -29,20 +44,27 @@ async def travel_leave_preview(
         from_j = jdatetime.datetime.strptime(from_date.strip(), "%Y/%m/%d").date()
         from_g = from_j.togregorian()
         policy, contract, employee = resolve_policy(db, user.user_id, from_g)
-        if not policy or not contract or not employee:
-            return {"success": False, "message": "سیاست مرخصی توراهی برای عضویت مؤثر یافت نشد", "travel_days": 0}
+
+        if not employee:
+            return _preview_error("اطلاعات کارمند برای کاربر یافت نشد")
+        if not contract:
+            return _preview_error("عضویت/قرارداد مؤثر برای تاریخ انتخاب‌شده یافت نشد")
+        if not policy:
+            return _preview_error(
+                f"سیاست مرخصی توراهی برای نوع عضویت {contract.contract_type_code} تعریف نشده است"
+            )
         if not policy.is_enabled:
-            return {"success": False, "message": "مرخصی توراهی برای عضویت شما فعال نیست", "travel_days": 0}
+            return _preview_error("مرخصی توراهی برای نوع عضویت شما غیرفعال است")
         if employee.marital_status not in ("S", "M"):
-            return {"success": False, "message": "وضعیت تأهل کاربر معتبر نیست", "travel_days": 0}
+            return _preview_error("وضعیت تأهل کاربر معتبر نیست")
 
         esl = resolve_effective_service_location(db, user.user_id, from_g)
         if not esl:
-            return {"success": False, "message": "محل خدمت مؤثر برای تاریخ انتخاب‌شده یافت نشد", "travel_days": 0}
+            return _preview_error("محل خدمت مؤثر برای تاریخ انتخاب‌شده یافت نشد")
         origin_city = db.query(City).filter(City.id == esl.city_id).first()
         dest_city = validate_destination_city(db, destination_city_id)
         if not origin_city or not dest_city:
-            return {"success": False, "message": "شهر مبدأ یا مقصد نامعتبر است", "travel_days": 0}
+            return _preview_error("شهر مبدأ یا مقصد نامعتبر است")
 
         distance_km = calculate_distance(policy, origin_city, dest_city)
         from models.travel_leave_policy_rules import TravelLeavePolicyRule
@@ -50,13 +72,25 @@ async def travel_leave_preview(
             TravelLeavePolicyRule.policy_id == policy.id,
             TravelLeavePolicyRule.is_active == 1,
         ).all()
+        if not rules:
+            return _preview_error(
+                "قواعد فاصله برای این نوع عضویت تعریف نشده است",
+                origin_city=origin_city.name,
+                destination_city=dest_city.name,
+                distance_km=distance_km,
+            )
+
         travel_days, _ = calculate_travel_days(distance_km, rules)
         jalali_year = jdatetime.date.fromgregorian(date=from_g).year
         allowed, used, max_allowed = check_quota(
             db, user.user_id, jalali_year, policy, employee.marital_status, from_g
         )
-        eligible = policy.is_enabled and travel_days > 0 and allowed
-        message = None if eligible else "مسافت انتخاب‌شده مشمول مرخصی توراهی نیست یا سهمیه سالانه تکمیل شده است"
+        eligible = travel_days > 0 and allowed
+        message = None if eligible else (
+            f"سهمیه سالانه تکمیل شده است ({used}/{max_allowed})"
+            if travel_days > 0 and not allowed
+            else "مسافت انتخاب‌شده مشمول مرخصی توراهی نیست"
+        )
         return {
             "success": True,
             "origin_city": origin_city.name,
@@ -75,4 +109,4 @@ async def travel_leave_preview(
             "marital_status": employee.marital_status,
         }
     except Exception as exc:
-        return {"success": False, "message": f"خطا در محاسبه مرخصی توراهی: {exc}", "travel_days": 0}
+        return _preview_error(f"خطا در محاسبه مرخصی توراهی: {exc}")
