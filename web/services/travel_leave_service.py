@@ -19,6 +19,30 @@ from models.travel_leave_policy_rules import TravelLeavePolicyRule, TravelLeaveQ
 logger = logging.getLogger(__name__)
 
 
+# Temporary compatibility rule: until Employee gets a dedicated membership field,
+# رسمی/وظیفه are read from Employee.department and do not require a Contract row.
+_DEPARTMENT_MEMBERSHIP_CODES = {
+    "رسمی": "1",
+    "وظیفه": "2",
+    "وظيفه": "2",
+    "1": "1",
+    "2": "2",
+}
+
+
+def _normalize_department(value: Optional[str]) -> str:
+    if not value:
+        return ""
+    return " ".join(value.strip().replace("ي", "ی").replace("ك", "ک").split())
+
+
+def resolve_department_membership_code(employee: Optional[Employee]) -> Optional[str]:
+    if not employee:
+        return None
+    department = _normalize_department(employee.department)
+    return _DEPARTMENT_MEMBERSHIP_CODES.get(department)
+
+
 def resolve_effective_service_location(db: Session, user_id: str, effective_date: date) -> Optional[EmployeeServiceLocation]:
     locations = db.query(EmployeeServiceLocation).filter(
         EmployeeServiceLocation.user_id == user_id,
@@ -64,12 +88,32 @@ def resolve_effective_contract(db: Session, user_id: str, effective_date: date) 
 
 
 def resolve_policy(db: Session, user_id: str, effective_date: date) -> Tuple[Optional[TravelLeavePolicy], Optional[Contract], Optional[Employee]]:
-    contract = resolve_effective_contract(db, user_id, effective_date)
     employee = db.query(Employee).filter(Employee.user_id == user_id).first()
-    if not contract or not employee:
-        return None, contract, employee
-    policy = db.query(TravelLeavePolicy).filter(TravelLeavePolicy.contract_type_code == contract.contract_type_code).first()
+    if not employee:
+        return None, None, None
+
+    department_membership_code = resolve_department_membership_code(employee)
+    if department_membership_code in {"1", "2"}:
+        policy = db.query(TravelLeavePolicy).filter(
+            TravelLeavePolicy.contract_type_code == department_membership_code
+        ).first()
+        return policy, None, employee
+
+    contract = resolve_effective_contract(db, user_id, effective_date)
+    if not contract:
+        return None, None, employee
+
+    policy = db.query(TravelLeavePolicy).filter(
+        TravelLeavePolicy.contract_type_code == contract.contract_type_code
+    ).first()
     return policy, contract, employee
+
+
+def resolve_membership_code(employee: Optional[Employee], contract: Optional[Contract]) -> Optional[str]:
+    department_membership_code = resolve_department_membership_code(employee)
+    if department_membership_code in {"1", "2"}:
+        return department_membership_code
+    return contract.contract_type_code if contract else None
 
 
 def calculate_travel_days(distance_km: float, rules: list) -> Tuple[int, Optional[TravelLeavePolicyRule]]:
@@ -128,7 +172,8 @@ def create_travel_leave_detail(db: Session, leave_request: LeaveRequest, destina
     if leave_request.leave_type != "AL":
         raise ValueError("Travel Leave is only available for Annual Leave (AL)")
     policy, contract, employee = resolve_policy(db, leave_request.user_id, leave_request.from_date)
-    if not policy or not contract or not employee:
+    membership_code = resolve_membership_code(employee, contract)
+    if not policy or not employee or not membership_code:
         raise ValueError("سیاست مرخصی توراهی برای عضویت مؤثر کاربر یافت نشد")
     if not policy.is_enabled:
         raise ValueError("مرخصی توراهی برای عضویت شما فعال نیست")
@@ -152,7 +197,7 @@ def create_travel_leave_detail(db: Session, leave_request: LeaveRequest, destina
         raise ValueError("قواعد فاصله مرخصی توراهی برای این عضویت تنظیم نشده است")
     calculated_days, matched_rule = calculate_travel_days(distance_km, rules)
     jalali_year = jdatetime.date.fromgregorian(date=leave_request.from_date).year
-    allowed, used, max_allowed = check_quota(db, leave_request.user_id, jalali_year, policy, employee.marital_status)
+    allowed, used, max_allowed = check_quota(db, leave_request.user_id, jalali_year, policy, employee.marital_status, leave_request.from_date)
     if not allowed:
         raise ValueError(f"سهمیه مرخصی توراهی سال {jalali_year} به اتمام رسیده ({used}/{max_allowed} استفاده شده)")
     if calculated_days == 0:
@@ -176,7 +221,7 @@ def create_travel_leave_detail(db: Session, leave_request: LeaveRequest, destina
         manual_override=False,
         policy_id=policy.id,
         policy_rule_id=matched_rule.id if matched_rule else None,
-        membership_code_snapshot=contract.contract_type_code,
+        membership_code_snapshot=membership_code,
         marital_status_snapshot=employee.marital_status,
         distance_method_snapshot=policy.distance_method,
         annual_max_usage_snapshot=quota.annual_max_usage if quota else None,
