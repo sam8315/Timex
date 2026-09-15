@@ -405,6 +405,13 @@ async def travel_leave_preview(
             "distance_km": distance_km,
             "travel_days": travel_days,
             "eligible": travel_days > 0,
+            "message": (
+                f"فاصله {distance_km} کیلومتر — {travel_days} روز توراهی"
+                if travel_days > 0 else
+                (f"فاصله {distance_km} کیلومتر است. مرخصی توراهی برای این مسیر قابل استفاده نیست (کمتر از ۲۰۰ کیلومتر)."
+                 if distance_km < 200 else
+                 f"فاصله {distance_km} کیلومتر — مرخصی توراهی برای این مسیر قابل استفاده نیست (خارج از محدوده مجاز).")
+            ),
             "quota_used": used,
             "quota_max": max_allowed,
             "quota_allowed": allowed,

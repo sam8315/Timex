@@ -145,7 +145,7 @@ SELECT * FROM (VALUES
 ) AS v(name, province, latitude, longitude, is_active)
 WHERE NOT EXISTS (SELECT 1 FROM cities LIMIT 1);
 
--- Seed default distance-band rules (idempotent)
+-- Seed default distance-band rules (idempotent: only if table empty)
 INSERT INTO travel_leave_policy_rules (min_km, max_km, travel_days, description, is_active)
 SELECT * FROM (VALUES
     (0.0, 199.99, 0, 'Below 200 km — ineligible', 1),

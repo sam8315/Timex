@@ -982,7 +982,7 @@ async function fetchTravelPreview() {
             previewDays.textContent = data.travel_days + ' روز';
             previewEligible.innerHTML = data.eligible
                 ? '<span class="tl-eligible"><i class="bi bi-check-circle"></i> واجد شرایط</span>'
-                : '<span class="tl-ineligible"><i class="bi bi-x-circle"></i> واجد شرایط نیست</span>';
+                : '<span class="tl-ineligible"><i class="bi bi-x-circle"></i> واجد شرایط نیست — ' + (data.message || 'مرخصی توراهی برای این مسیر قابل استفاده نیست.') + '</span>';
             previewQuota.textContent = data.quota_used + ' / ' + data.quota_max;
         } else if (previewContainer) {
             previewContainer.style.display = 'none';

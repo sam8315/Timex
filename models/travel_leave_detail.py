@@ -83,4 +83,4 @@ class TravelLeaveDetail(TimestampMixin, Base):
     )
 
     # --- Relationship ---
-    leave_request = relationship("LeaveRequest", backref="travel_leave_detail")
+    leave_request = relationship("LeaveRequest", back_populates="travel_leave_detail")

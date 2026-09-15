@@ -462,6 +462,17 @@
     });
 
 const leaveTypeSelect = document.querySelector('select[name="leave_type"]');
+
+// 🆕 مرخصی توراهی — declare references BEFORE any use
+const tlSection = document.getElementById('tlSection');
+const tlToggle = document.getElementById('tlToggle');
+const tlContent = document.getElementById('tlContent');
+const destinationCity = document.getElementById('destinationCity');
+const tlOrigin = document.getElementById('tlOrigin');
+const tlQuota = document.getElementById('tlQuota');
+const tlPreview = document.getElementById('tlPreview');
+const tlPreviewText = document.getElementById('tlPreviewText');
+
 const toDateContainer = document.getElementById('toDateContainer');
 const toDateInput = document.getElementById('toDate');
 const hlTimeContainer = document.getElementById('hlTimeContainer');
@@ -562,16 +573,6 @@ if (leaveTypeSelect) {
     }
     updateHLHintAdmin();
 
-    // 🆕 مرخصی توراهی
-    const tlSection = document.getElementById('tlSection');
-    const tlToggle = document.getElementById('tlToggle');
-    const tlContent = document.getElementById('tlContent');
-    const destinationCity = document.getElementById('destinationCity');
-    const tlOrigin = document.getElementById('tlOrigin');
-    const tlQuota = document.getElementById('tlQuota');
-    const tlPreview = document.getElementById('tlPreview');
-    const tlPreviewText = document.getElementById('tlPreviewText');
-
     function toggleTLSection() {
         const isAL = leaveTypeSelect.value === 'AL';
         if (isAL) {
@@ -634,9 +635,11 @@ if (leaveTypeSelect) {
                     `مقصد: ${data.destination_city}`;
                 tlPreview.classList.add('alert-info');
             } else {
-                tlPreviewText.textContent = data.distance_km
-                    ? `فاصله ${data.distance_km} کیلومتر است و کمتر از ۲۰۰ کیلومتر می‌باشد. مرخصی توراهی برای این مسیر قابل استفاده نیست.`
-                    : data.message || 'مرخصی توراهی برای این مسیر قابل استفاده نیست.';
+                tlPreviewText.textContent = (data.message && data.message.trim())
+                    ? data.message
+                    : (data.distance_km
+                        ? `فاصله ${data.distance_km} کیلومتر — مرخصی توراهی برای این مسیر قابل استفاده نیست.`
+                        : 'مرخصی توراهی برای این مسیر قابل استفاده نیست.');
                 tlPreview.classList.add('alert-danger');
             }
             tlPreview.classList.remove('d-none');
