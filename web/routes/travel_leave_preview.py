@@ -30,19 +30,19 @@ async def travel_leave_preview(
         from_g = from_j.togregorian()
         policy, contract, employee = resolve_policy(db, user.user_id, from_g)
         if not policy or not contract or not employee:
-            return {"success": False, "message": "سیاست مرخصی توراهی برای عضویت مؤثر یافت نشد"}
+            return {"success": False, "message": "سیاست مرخصی توراهی برای عضویت مؤثر یافت نشد", "travel_days": 0}
         if not policy.is_enabled:
-            return {"success": False, "message": "مرخصی توراهی برای عضویت شما فعال نیست"}
+            return {"success": False, "message": "مرخصی توراهی برای عضویت شما فعال نیست", "travel_days": 0}
         if employee.marital_status not in ("S", "M"):
-            return {"success": False, "message": "وضعیت تأهل کاربر معتبر نیست"}
+            return {"success": False, "message": "وضعیت تأهل کاربر معتبر نیست", "travel_days": 0}
 
         esl = resolve_effective_service_location(db, user.user_id, from_g)
         if not esl:
-            return {"success": False, "message": "محل خدمت مؤثر یافت نشد"}
+            return {"success": False, "message": "محل خدمت مؤثر برای تاریخ انتخاب‌شده یافت نشد", "travel_days": 0}
         origin_city = db.query(City).filter(City.id == esl.city_id).first()
         dest_city = validate_destination_city(db, destination_city_id)
         if not origin_city or not dest_city:
-            return {"success": False, "message": "شهر مبدأ یا مقصد نامعتبر است"}
+            return {"success": False, "message": "شهر مبدأ یا مقصد نامعتبر است", "travel_days": 0}
 
         distance_km = calculate_distance(policy, origin_city, dest_city)
         from models.travel_leave_policy_rules import TravelLeavePolicyRule
@@ -55,6 +55,8 @@ async def travel_leave_preview(
         allowed, used, max_allowed = check_quota(
             db, user.user_id, jalali_year, policy, employee.marital_status, from_g
         )
+        eligible = policy.is_enabled and travel_days > 0 and allowed
+        message = None if eligible else "مسافت انتخاب‌شده مشمول مرخصی توراهی نیست یا سهمیه سالانه تکمیل شده است"
         return {
             "success": True,
             "origin_city": origin_city.name,
@@ -62,7 +64,8 @@ async def travel_leave_preview(
             "destination_province": dest_city.province or "",
             "distance_km": distance_km,
             "travel_days": travel_days,
-            "eligible": policy.is_enabled and travel_days > 0 and allowed,
+            "eligible": eligible,
+            "message": message,
             "quota_used": used,
             "quota_max": max_allowed,
             "quota_allowed": allowed,
@@ -72,4 +75,4 @@ async def travel_leave_preview(
             "marital_status": employee.marital_status,
         }
     except Exception as exc:
-        return {"success": False, "message": str(exc)}
+        return {"success": False, "message": f"خطا در محاسبه مرخصی توراهی: {exc}", "travel_days": 0}
