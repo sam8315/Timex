@@ -950,6 +950,14 @@
                 <i class="bi bi-box-arrow-in-down"></i> ورود مرخصی سال قبل
             </a>
             {% endif %}
+            <a href="/admin/cities"
+               class="sidebar-link {% if '/admin/cities' in request.url.path %}active{% endif %}">
+                <i class="bi bi-building"></i> شهرهای مرجع
+            </a>
+            <a href="/admin/service-locations"
+               class="sidebar-link {% if '/admin/service-locations' in request.url.path %}active{% endif %}">
+                <i class="bi bi-geo-alt"></i> محل خدمت
+            </a>
         </div>
     </div>
     {% endif %}

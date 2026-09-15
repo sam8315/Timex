@@ -411,6 +411,11 @@
                     <td class="text-center">
                         {% if item.request.leave_type == 'AL' %}
                         <span class="badge bg-success">استحقاقی</span>
+                        {% if item.travel_detail %}
+                        <br><span class="badge bg-primary mt-1" style="font-size:0.65rem;">
+                            <i class="bi bi-airplane"></i> توراهی
+                        </span>
+                        {% endif %}
                         {% elif item.request.leave_type == 'SL' %}
                         <span class="badge bg-info text-dark">استعلاجی</span>
                         {% elif item.request.leave_type == 'UL' %}
@@ -512,6 +517,37 @@
                         </div>
                     </td>
                 </tr>
+                {% if item.travel_detail %}
+                <tr class="table-light">
+                    <td colspan="12" class="py-2">
+                        <div class="d-flex align-items-center gap-3 flex-wrap small">
+                            <span class="badge bg-primary"><i class="bi bi-airplane"></i> مرخصی توراهی</span>
+                            <span><strong>مبدأ:</strong> {{ item.travel_detail.origin_city_name_snapshot or '-' }}</span>
+                            <span><strong>مقصد:</strong> {{ item.travel_detail.destination_city_name_snapshot }}</span>
+                            <span><strong>مسافت:</strong> {{ item.travel_detail.distance_km }} km</span>
+                            <span><strong>روز محاسبه:</strong> {{ item.travel_detail.calculated_travel_days }}</span>
+                            <span><strong>روز نهایی:</strong>
+                                {% if item.travel_detail.manual_override %}
+                                <span class="text-warning fw-bold">{{ item.travel_detail.final_travel_days }} (تغییر دستی)</span>
+                                {% else %}
+                                {{ item.travel_detail.final_travel_days }}
+                                {% endif %}
+                            </span>
+                            <span><strong>سال شمسی:</strong> {{ item.travel_detail.jalali_year }}</span>
+                            {% if item.travel_detail.manual_override %}
+                            <span class="text-muted"><i class="bi bi-person"></i> {{ item.travel_detail.overridden_by }}
+                                — {{ item.travel_detail.override_reason or '' }}</span>
+                            {% endif %}
+                            {% if item.request.status == 'P' and item.travel_detail %}
+                            <button type="button" class="btn btn-outline-warning btn-sm" data-bs-toggle="modal"
+                                    data-bs-target="#tlOverrideModal{{ item.request.id }}">
+                                <i class="bi bi-pencil-square"></i> تغییر روز توراهی
+                            </button>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% endif %}
                 {% endfor %}
                 </tbody>
             </table>
@@ -573,6 +609,56 @@
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
                     <button type="submit" class="btn btn-danger">
                         <i class="bi bi-x-lg"></i> رد درخواست
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endfor %}
+
+<!-- ===== مودال‌های تغییر روز توراهی ===== -->
+{% for item in requests %}
+{% if item.request.status == 'P' and item.travel_detail %}
+<div class="modal fade" id="tlOverrideModal{{ item.request.id }}" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="/admin/leave-requests/{{ item.request.id }}/travel-leave-override">
+                <div class="modal-header bg-warning">
+                    <h5 class="modal-title">
+                        <i class="bi bi-airplane"></i> تغییر روزهای توراهی
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-secondary">
+                        <strong>{{ item.full_name }}</strong> — درخواست #{{ item.request.id }}
+                        <br>
+                        <small>مسافت: {{ item.travel_detail.distance_km }} km |
+                               روز محاسبه: {{ item.travel_detail.calculated_travel_days }} |
+                               روز نهایی فعلی: {{ item.travel_detail.final_travel_days }}</small>
+                    </div>
+
+                    <input type="hidden" name="detail_id" value="{{ item.travel_detail.id }}">
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">روز نهایی توراهی (0–3)</label>
+                        <input type="number" name="final_travel_days" class="form-control"
+                               min="0" max="3" required
+                               value="{{ item.travel_detail.final_travel_days }}">
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">دلیل تغییر <span class="text-danger">*</span></label>
+                        <textarea name="override_reason" class="form-control" rows="3"
+                                  placeholder="دلیل تغییر را وارد کنید..." required></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
+                    <button type="submit" class="btn btn-warning">
+                        <i class="bi bi-check-lg"></i> اعمال تغییر
                     </button>
                 </div>
             </form>

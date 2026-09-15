@@ -30,6 +30,8 @@ ALL_PERMISSIONS = {
     'view_incomplete':      {'label': 'مشاهده ترددهای ناقص',       'admin': True,  'super_admin': True},
     'view_contracts':       {'label': 'مشاهده قراردادها',          'admin': True,  'super_admin': True},
     'view_leave_balances':  {'label': 'مشاهده مانده مرخصی',        'admin': True,  'super_admin': True},
+    'manage_cities':        {'label': 'مدیریت شهرها',              'admin': True,  'super_admin': True},
+    'manage_service_locations': {'label': 'مدیریت محل خدمت',       'admin': True,  'super_admin': True},
 }
 
 

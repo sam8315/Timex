@@ -56,6 +56,13 @@ class LeaveRequest(TimestampMixin, Base):
 
     # Relationships
     user = relationship("User", backref="leave_requests")
+    travel_leave_detail = relationship(
+        "TravelLeaveDetail",
+        back_populates="leave_request",
+        uselist=False,
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
     # 🆕 حذف daily_statuses (چون DailyStatus دیگر leave_request_id ندارد)
 
     def __repr__(self) -> str:

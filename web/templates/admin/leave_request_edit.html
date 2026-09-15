@@ -129,6 +129,149 @@
                     </div>
                 </div>
 
+                <!-- 🆕 بخش مرخصی توراهی -->
+<div class="col-12 {% if leave_request.leave_type != 'AL' %}d-none{% endif %}" id="travelLeaveContainer">
+
+    <div class="card border-primary border-opacity-25 bg-light">
+        <div class="card-body">
+
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <label class="form-label fw-bold mb-0">
+                    <i class="bi bi-airplane text-primary"></i>
+                    مرخصی توراهی
+                </label>
+
+                <div class="form-check form-switch">
+                    <input
+                        class="form-check-input"
+                        type="checkbox"
+                        id="travelLeaveEnabled"
+                        name="travel_leave_enabled"
+                        value="on"
+                        {% if is_travel_leave %}checked{% endif %}
+                    >
+                    <label class="form-check-label fw-bold" for="travelLeaveEnabled">
+                        فعال
+                    </label>
+                </div>
+            </div>
+
+            <div id="travelLeaveContent"
+                 class="{% if not is_travel_leave %}d-none{% endif %}">
+
+                <div class="row g-3">
+
+                    <!-- مبدأ -->
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">
+                            <i class="bi bi-geo-alt text-primary"></i>
+                            محل خدمت (مبدأ)
+                        </label>
+
+                        <input
+                            type="text"
+                            class="form-control"
+                            value="{{ service_origin_city or 'تعیین نشده' }}"
+                            readonly
+                        >
+                    </div>
+
+                    <!-- مقصد -->
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">
+                            <i class="bi bi-flag text-danger"></i>
+                            شهر مقصد
+                            <span class="text-danger">*</span>
+                        </label>
+
+                        <select
+                            class="form-select"
+                            name="destination_city_id"
+                            id="travelDestinationCity"
+                        >
+                            <option value="">-- انتخاب شهر مقصد --</option>
+
+                            {% for city in cities %}
+                            <option
+                                value="{{ city.id }}"
+                                {% if travel_detail and travel_detail.destination_city_id == city.id %}selected{% endif %}
+                            >
+                                {{ city.name }}
+                                {% if city.province %}
+                                    ({{ city.province }})
+                                {% endif %}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    {% if travel_detail %}
+                    <!-- اطلاعات فعلی -->
+                    <div class="col-12">
+                        <div class="alert alert-info mb-0">
+
+                            <div class="row g-2">
+
+                                <div class="col-md-3">
+                                    <small class="text-muted d-block">
+                                        فاصله
+                                    </small>
+<strong>
+    <span id="travelDistance">
+        {{ travel_detail.distance_km }}
+    </span>
+    کیلومتر
+</strong>
+                                </div>
+
+                                <div class="col-md-3">
+                                    <small class="text-muted d-block">
+                                        روز محاسبه‌شده
+                                    </small>
+<strong>
+    <span id="travelCalculatedDays">
+        {{ travel_detail.calculated_travel_days }}
+    </span>
+</strong>
+                                </div>
+
+                                <div class="col-md-3">
+                                    <small class="text-muted d-block">
+                                        روز نهایی
+                                    </small>
+<strong>
+    <span id="travelFinalDays">
+        {{ travel_detail.final_travel_days }}
+    </span>
+</strong>
+                                </div>
+
+                                <div class="col-md-3">
+                                    <small class="text-muted d-block">
+                                        مبدأ ثبت‌شده
+                                    </small>
+                                    <strong>
+                                        {{ travel_detail.origin_city_name_snapshot }}
+                                    </strong>
+                                </div>
+
+                            </div>
+
+                        </div>
+                    </div>
+                    {% endif %}
+
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="col-12">
+    <div id="travelPreviewMessage" class="alert alert-secondary d-none mb-0">
+        <i class="bi bi-arrow-repeat"></i>
+        <span id="travelPreviewText"></span>
+    </div>
+</div>
                 <!-- دلیل -->
                 <div class="col-12">
                     <label class="form-label">📝 دلیل</label>
@@ -387,6 +530,157 @@ function calculateHLDuration() {
 leaveTypeSelect.addEventListener('change', toggleHLFields);
 hlStartTime.addEventListener('change', calculateHLDuration);
 hlEndTime.addEventListener('change', calculateHLDuration);
+const travelLeaveContainer = document.getElementById('travelLeaveContainer');
+const travelLeaveEnabled = document.getElementById('travelLeaveEnabled');
+const travelLeaveContent = document.getElementById('travelLeaveContent');
+const travelDestinationCity = document.getElementById('travelDestinationCity');
+
+function toggleTravelLeaveFields() {
+    const isAL = leaveTypeSelect.value === 'AL';
+
+    if (travelLeaveContainer) {
+        travelLeaveContainer.classList.toggle('d-none', !isAL);
+    }
+
+    if (!isAL) {
+        if (travelLeaveEnabled) {
+            travelLeaveEnabled.checked = false;
+        }
+
+        if (travelLeaveContent) {
+            travelLeaveContent.classList.add('d-none');
+        }
+
+        if (travelDestinationCity) {
+            travelDestinationCity.removeAttribute('required');
+            travelDestinationCity.value = '';
+        }
+
+        return;
+    }
+
+    if (travelLeaveEnabled && travelLeaveContent) {
+        travelLeaveContent.classList.toggle(
+            'd-none',
+            !travelLeaveEnabled.checked
+        );
+    }
+
+    if (travelDestinationCity) {
+        if (travelLeaveEnabled && travelLeaveEnabled.checked) {
+            travelDestinationCity.setAttribute('required', 'required');
+        } else {
+            travelDestinationCity.removeAttribute('required');
+        }
+    }
+
+    if (
+        travelLeaveEnabled &&
+        travelLeaveEnabled.checked &&
+        travelDestinationCity &&
+        travelDestinationCity.value
+    ) {
+        updateTravelLeavePreview();
+    }
+}
+
+if (travelLeaveEnabled) {
+    travelLeaveEnabled.addEventListener('change', toggleTravelLeaveFields);
+}
+if (travelDestinationCity) {
+    travelDestinationCity.addEventListener(
+        'change',
+        updateTravelLeavePreview
+    );
+}
+
+leaveTypeSelect.addEventListener('change', toggleTravelLeaveFields);
+
+toggleTravelLeaveFields();
+
+async function updateTravelLeavePreview() {
+    if (!leaveTypeSelect || leaveTypeSelect.value !== 'AL') {
+        return;
+    }
+
+    if (!travelLeaveEnabled || !travelLeaveEnabled.checked) {
+        return;
+    }
+
+    if (!travelDestinationCity || !travelDestinationCity.value) {
+        return;
+    }
+
+    const userId = document.getElementById('targetUserId')?.value;
+    const fromDate = document.getElementById('fromDate')?.value;
+
+    if (!userId || !fromDate) {
+        return;
+    }
+
+    const messageBox = document.getElementById('travelPreviewMessage');
+    const messageText = document.getElementById('travelPreviewText');
+
+    if (messageBox && messageText) {
+        messageBox.className = 'alert alert-secondary mb-0';
+        messageBox.classList.remove('d-none');
+        messageText.textContent = 'در حال محاسبه مجدد...';
+    }
+
+    try {
+        const url =
+            `/admin/leave-requests/travel-preview` +
+            `?target_user_id=${encodeURIComponent(userId)}` +
+            `&from_date=${encodeURIComponent(fromDate)}` +
+            `&destination_city_id=${encodeURIComponent(travelDestinationCity.value)}`;
+
+        const response = await fetch(url);
+        const data = await response.json();
+
+        if (!data.success) {
+            throw new Error(data.message || 'خطا در محاسبه');
+        }
+
+        const distanceEl = document.getElementById('travelDistance');
+        const calculatedDaysEl = document.getElementById('travelCalculatedDays');
+        const finalDaysEl = document.getElementById('travelFinalDays');
+
+        if (distanceEl) {
+            distanceEl.textContent = data.distance_km;
+        }
+
+        if (calculatedDaysEl) {
+            calculatedDaysEl.textContent = data.travel_days;
+        }
+
+        // تا زمانی که override جدیدی انجام نشده،
+        // مقدار نهایی preview برابر مقدار محاسبه‌شده است.
+        if (finalDaysEl) {
+            finalDaysEl.textContent = data.travel_days;
+        }
+
+        if (messageBox && messageText) {
+            messageBox.className =
+                data.eligible
+                    ? 'alert alert-success mb-0'
+                    : 'alert alert-danger mb-0';
+
+            messageBox.classList.remove('d-none');
+
+            messageText.textContent = data.message || '';
+        }
+
+    } catch (error) {
+        console.error('Travel Leave preview error:', error);
+
+        if (messageBox && messageText) {
+            messageBox.className = 'alert alert-danger mb-0';
+            messageBox.classList.remove('d-none');
+            messageText.textContent =
+                error.message || 'خطا در محاسبه مرخصی توراهی';
+        }
+    }
+}
 
 // اعمال در بارگذاری اولیه
 toggleHLFields();

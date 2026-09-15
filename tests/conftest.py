@@ -91,21 +91,54 @@ TestingSessionLocal = sessionmaker(
 
 import models  # noqa: F401,E402  (register every mapped table)
 from models import Base  # noqa: E402
+from sqlalchemy import text as _sql_text
+
+# ---------------------------------------------------------------------------
+# Legacy-schema migration (explicit, conditional)
+# ---------------------------------------------------------------------------
+# Prior branches (PR #14) created `travel_leave_details` with an incompatible
+# schema. `create_all` never alters existing tables, so a legacy table would
+# silently differ. We detect it by missing current columns and drop ONLY that
+# table; `create_all` below rebuilds it from the model. Fresh databases are
+# unaffected (the table doesn't exist yet).
+from sqlalchemy import inspect as _sa_inspect  # noqa: E402
+
+
+def _column_names(conn, table: str) -> set:
+    if table not in _sa_inspect(conn).get_table_names():
+        return set()
+    return {c["name"] for c in _sa_inspect(conn).get_columns(table)}
+
+
+with test_engine.connect() as _conn:
+    # PR-14 travel_leave_details → drop only when its schema is stale.
+    tl_cols = _column_names(_conn, "travel_leave_details")
+    current_tl = {
+        "final_travel_days", "manual_override", "jalali_year",
+        "destination_latitude_snapshot", "destination_longitude_snapshot",
+    }
+    if tl_cols and not current_tl.issubset(tl_cols):
+        _conn.execute(_sql_text("DROP TABLE travel_leave_details CASCADE"))
+        _conn.commit()
+
+    # Legacy cities table used `active` before the model renamed it to
+    # `is_active`; fix in place so the model and seeds agree.
+    city_cols = _column_names(_conn, "cities")
+    if "active" in city_cols and "is_active" not in city_cols:
+        _conn.execute(_sql_text("ALTER TABLE cities RENAME COLUMN active TO is_active"))
+        _conn.commit()
 
 Base.metadata.create_all(bind=test_engine)
 
-# Phase 7: Ensure HL columns exist in test DB (created before migration)
-from sqlalchemy import text as _sql_text
+# Phase 7: HL columns on a pre-existing leave_requests table
+# (idempotent; fresh tables already carry these columns via the model)
 with test_engine.connect() as _conn:
-    try:
-        _conn.execute(_sql_text("""
-            ALTER TABLE leave_requests
-            ADD COLUMN IF NOT EXISTS start_time TIME,
-            ADD COLUMN IF NOT EXISTS end_time TIME
-        """))
-        _conn.commit()
-    except Exception:
-        pass  # Column might already exist
+    _conn.execute(_sql_text("""
+        ALTER TABLE leave_requests
+        ADD COLUMN IF NOT EXISTS start_time TIME,
+        ADD COLUMN IF NOT EXISTS end_time TIME
+    """))
+    _conn.commit()
 
 
 def _seed_regions() -> None:
@@ -137,6 +170,57 @@ def _seed_regions() -> None:
 
 
 _seed_regions()
+
+
+def _seed_travel_leave_data() -> None:
+    """Seed cities and travel leave policy rules for tests (idempotent)."""
+    from models.city import City
+    from models.travel_leave_policy_rules import (
+        TravelLeavePolicyRule,
+        TravelLeaveQuotaSetting,
+    )
+
+    session = TestingSessionLocal()
+    try:
+        if session.query(City).count() == 0:
+            session.add_all([
+                City(name="Tehran", province="Tehran", latitude=35.6892, longitude=51.3890),
+                City(name="Mashhad", province="Razavi Khorasan", latitude=36.2972, longitude=59.6067),
+                City(name="Isfahan", province="Isfahan", latitude=32.6546, longitude=51.6680),
+                City(name="Shiraz", province="Fars", latitude=29.5918, longitude=52.5836),
+                City(name="Tabriz", province="East Azerbaijan", latitude=38.0800, longitude=46.2919),
+            ])
+            session.commit()
+
+        if session.query(TravelLeavePolicyRule).count() == 0:
+            session.add_all([
+                TravelLeavePolicyRule(min_km=0.0, max_km=199.99, travel_days=0,
+                                      description="Below 200 km", is_active=1),
+                TravelLeavePolicyRule(min_km=200.0, max_km=500.0, travel_days=1,
+                                      description="200-500 km", is_active=1),
+                TravelLeavePolicyRule(min_km=500.01, max_km=1500.0, travel_days=2,
+                                      description="501-1500 km", is_active=1),
+                TravelLeavePolicyRule(min_km=1500.01, max_km=99999.0, travel_days=3,
+                                      description="Above 1500 km", is_active=1),
+            ])
+            session.commit()
+
+        if session.query(TravelLeaveQuotaSetting).count() == 0:
+            session.add(TravelLeaveQuotaSetting(
+                annual_max_usage=3,
+                description="Max travel leave uses per Jalali year",
+                parameter_key="annual_max_usage",
+                parameter_value="3",
+            ))
+            session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+_seed_travel_leave_data()
 
 
 # ---------------------------------------------------------------------------

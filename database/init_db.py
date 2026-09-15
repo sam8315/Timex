@@ -110,6 +110,27 @@ def migrate_data_fixes(bind_engine=None) -> None:
             print(f"  + trimmed status_code on {result.rowcount} daily_statuses row(s)")
 
 
+def seed_travel_leave_policy_rules() -> None:
+    from sqlalchemy import text as _sql_text
+    with engine.connect() as conn:
+        # Idempotent: only insert if table exists and is empty
+        result = conn.execute(_sql_text(
+            "SELECT 1 FROM travel_leave_policy_rules LIMIT 1"
+        ))
+        if result.fetchone() is not None:
+            return
+        conn.execute(_sql_text("""
+            INSERT INTO travel_leave_policy_rules (min_km, max_km, travel_days, description, is_active)
+            VALUES
+                (0.0, 199.99, 0, 'Below 200 km — ineligible', 1),
+                (200.0, 500.0, 1, '200–500 km — 1 travel day', 1),
+                (500.01, 1500.0, 2, '501–1500 km — 2 travel days', 1),
+                (1500.01, 99999.0, 3, 'Above 1500 km — 3 travel days', 1)
+        """))
+        conn.commit()
+        print("  + travel_leave_policy_rules seeded")
+
+
 def create_tables() -> None:
     """
     ساخت تمام جداول تعریف شده در مدل‌ها
@@ -120,6 +141,7 @@ def create_tables() -> None:
         Base.metadata.create_all(bind=engine)
         migrate_time_columns()
         migrate_data_fixes()
+        seed_travel_leave_policy_rules()
         print("✅ جداول دیتابیس با موفقیت ساخته/بررسی شدند")
     except Exception as e:
         print(f"❌ خطا در ساخت جداول: {e}")
