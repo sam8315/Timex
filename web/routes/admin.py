@@ -1105,6 +1105,17 @@ async def admin_user_attendance(
         start_date=month_start_g, end_date=month_end_g
     )
 
+    # 🆕 دریافت وضعیت‌های روزانه (مأموریت و استراحت)
+    daily_statuses = db.query(DailyStatus).filter(
+        and_(
+            DailyStatus.user_id == target_user_id,
+            DailyStatus.status_date >= month_start_g,
+            DailyStatus.status_date <= month_end_g,
+        )
+    ).all()
+    rest_dates = {ds.status_date for ds in daily_statuses if ds.status_code == 'R'}
+    mission_dates = {ds.status_date for ds in daily_statuses if ds.status_code == 'M'}
+
     # گروه‌بندی بر اساس روز
     days_dict = {}
     for record in records:
@@ -1165,8 +1176,10 @@ async def admin_user_attendance(
             'is_friday': is_friday,
             'is_holiday': holiday_title is not None,
             'holiday_title': holiday_title,
-            'status': status_info,
-            # 🕐 HL تایید شده برای نمایش (بدون تاثیر روی وضعیت اصلی/محاسبات)
+             'status': status_info,
+             'is_mission': current in mission_dates,
+             'is_rest': current in rest_dates,
+             # 🕐 HL تایید شده برای نمایش (بدون تاثیر روی وضعیت اصلی/محاسبات)
             'hourly_leave_minutes': hourly_leave_minutes_by_date.get(current, 0),
             'hourly_leave_display': format_hl_display(hourly_leave_minutes_by_date.get(current, 0)),
         })
@@ -1213,21 +1226,11 @@ async def admin_user_attendance(
     # ============================================
     # 🆕 محاسبات موظفی و اضافه/کسر کار
     # ============================================
-    # دریافت روزهای استراحت از DailyStatus
-    daily_statuses = db.query(DailyStatus).filter(
-        and_(
-            DailyStatus.user_id == target_user_id,
-            DailyStatus.status_date >= month_start_g,
-            DailyStatus.status_date <= month_end_g,
-            DailyStatus.status_code == 'R'
-        )
-    ).all()
-    rest_dates = {ds.status_date for ds in daily_statuses}
-
     # ---------- ۱. موظفی ماهانه ----------
     work_days_in_month = 0
     leave_days_in_month = 0
     rest_days_in_month = 0
+    mission_days_in_month = 0
     current_calc = month_start_g
     while current_calc <= month_end_g:
         is_friday = current_calc.weekday() == 4
@@ -1239,15 +1242,18 @@ async def admin_user_attendance(
                 leave_days_in_month += 1
             elif current_calc in rest_dates:
                 rest_days_in_month += 1
+            elif current_calc in mission_dates:
+                mission_days_in_month += 1
         current_calc += timedelta(days=1)
 
-    duty_days_month = work_days_in_month - leave_days_in_month - rest_days_in_month
+    duty_days_month = work_days_in_month - leave_days_in_month - rest_days_in_month - mission_days_in_month
     monthly_required_minutes = compute_required_minutes_for_range(
         db=db, employee=target_employee,
         start_date=month_start_g, end_date=month_end_g,
         rest_dates=rest_dates, holiday_dates=holiday_dates,
         leaves_by_date=leaves_by_date,
         hourly_leave_minutes_by_date=hourly_leave_minutes_by_date,
+        mission_dates=mission_dates,
     )
     monthly_duty_hours = monthly_required_minutes / 60
 
@@ -1274,7 +1280,8 @@ async def admin_user_attendance(
             is_day_off = day['is_friday'] or day['is_holiday']
             is_leave = day['status']['main_status'] == STATUS_LEAVE
             is_rest = day['date'] in rest_dates
-            if not is_day_off and not is_leave and not is_rest:
+            is_mission = day['date'] in mission_dates
+            if not is_day_off and not is_leave and not is_rest and not is_mission:
                 duty_days_until_ref += 1
             work_hours_until_ref += day['work_hours']
 
@@ -1284,6 +1291,7 @@ async def admin_user_attendance(
         rest_dates=rest_dates, holiday_dates=holiday_dates,
         leaves_by_date=leaves_by_date,
         hourly_leave_minutes_by_date=hourly_leave_minutes_by_date,
+        mission_dates=mission_dates,
     )
     instant_duty_hours = instant_required_minutes / 60
 
@@ -1337,11 +1345,12 @@ async def admin_user_attendance(
             if day['work_hours'] > 0:
                 this_week_days += 1  # روزهایی که کارکرد دارند (شامل جمعه‌کاری)
 
-            # روزهای موظفی (فقط روزهای کاری غیر جمعه و غیر تعطیل)
+            # روزهای موظفی (فقط روزهای کاری غیر جمعه، غیر تعطیل، غیر استراحت و غیر مأموریت)
             if not day['is_friday'] and not day['is_holiday']:
                 is_leave = day['status']['main_status'] == STATUS_LEAVE
                 is_rest = day['date'] in rest_dates
-                if not is_leave and not is_rest:
+                is_mission = day['date'] in mission_dates
+                if not is_leave and not is_rest and not is_mission:
                     this_week_work_days += 1
 
     this_week_required = compute_required_minutes_for_range(
@@ -1350,6 +1359,7 @@ async def admin_user_attendance(
         rest_dates=rest_dates, holiday_dates=holiday_dates,
         leaves_by_date=leaves_by_date,
         hourly_leave_minutes_by_date=hourly_leave_minutes_by_date,
+        mission_dates=mission_dates,
     )
     this_week_duty_hours = this_week_required / 60
     this_week_progress = min(100, round((this_week_hours / this_week_duty_hours) * 100,
@@ -1368,11 +1378,12 @@ async def admin_user_attendance(
             if day['work_hours'] > 0:
                 prev_week_days += 1  # روزهایی که کارکرد دارند (شامل جمعه‌کاری)
 
-            # روزهای موظفی (فصل روزهای کاری غیر جمعه و غیر تعطیل)
+            # روزهای موظفی (فقط روزهای کاری غیر جمعه، غیر تعطیل، غیر استراحت و غیر مأموریت)
             if not day['is_friday'] and not day['is_holiday']:
                 is_leave = day['status']['main_status'] == STATUS_LEAVE
                 is_rest = day['date'] in rest_dates
-                if not is_leave and not is_rest:
+                is_mission = day['date'] in mission_dates
+                if not is_leave and not is_rest and not is_mission:
                     prev_week_work_days += 1
 
     prev_week_required = compute_required_minutes_for_range(
@@ -1381,6 +1392,7 @@ async def admin_user_attendance(
         rest_dates=rest_dates, holiday_dates=holiday_dates,
         leaves_by_date=leaves_by_date,
         hourly_leave_minutes_by_date=hourly_leave_minutes_by_date,
+        mission_dates=mission_dates,
     )
     prev_week_duty_hours = prev_week_required / 60
     prev_week_progress = min(100, round((prev_week_hours / prev_week_duty_hours) * 100,
@@ -1418,11 +1430,12 @@ async def admin_user_attendance(
                     # 🆕 کارکرد همه روزها (شامل جمعه و تعطیل)
                     week_hours += day['work_hours']
 
-                    # روزهای موظفی (فقط روزهای کاری غیر جمعه و غیر تعطیل)
+                    # روزهای موظفی (فقط روزهای کاری غیر جمعه، غیر تعطیل، غیر استراحت و غیر مأموریت)
                     if not day['is_friday'] and not day['is_holiday']:
                         is_leave = day['status']['main_status'] == STATUS_LEAVE
                         is_rest = day['date'] in rest_dates
-                        if not is_leave and not is_rest:
+                        is_mission = day['date'] in mission_dates
+                        if not is_leave and not is_rest and not is_mission:
                             week_duty_days += 1
 
             week_required = compute_required_minutes_for_range(
@@ -1431,6 +1444,7 @@ async def admin_user_attendance(
                 rest_dates=rest_dates, holiday_dates=holiday_dates,
                 leaves_by_date=leaves_by_date,
                 hourly_leave_minutes_by_date=hourly_leave_minutes_by_date,
+                mission_dates=mission_dates,
             )
             week_duty_hours = week_required / 60
             week_balance = week_hours - week_duty_hours
@@ -1503,9 +1517,12 @@ async def admin_user_attendance(
         "is_current_month": is_current_month,
 
         # موظفی و اضافه/کسر کار
-        "monthly_duty_display": format_hours_hhmm(monthly_duty_hours),
-        "duty_days_month": duty_days_month,
-        "instant_duty_display": format_hours_hhmm(instant_duty_hours),
+         "monthly_duty_display": format_hours_hhmm(monthly_duty_hours),
+         "duty_days_month": duty_days_month,
+         "mission_days_month": mission_days_in_month,
+         "rest_days_month": rest_days_in_month,
+         "leave_days_month": leave_days_in_month,
+         "instant_duty_display": format_hours_hhmm(instant_duty_hours),
         "duty_days_until_ref": duty_days_until_ref,
         "reference_date_display": reference_date_display,
         "monthly_balance": monthly_balance,

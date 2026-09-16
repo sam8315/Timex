@@ -351,6 +351,8 @@ def compute_required_minutes_for_range(
     """
     if hourly_leave_minutes_by_date is None:
         hourly_leave_minutes_by_date = {}
+    if mission_dates is None:
+        mission_dates = set()
 
     if mission_dates is None:
         mission_dates = set()
