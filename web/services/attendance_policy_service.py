@@ -332,6 +332,7 @@ def compute_required_minutes_for_range(
     holiday_dates: dict,
     leaves_by_date: dict,
     hourly_leave_minutes_by_date: dict = None,
+    mission_dates: set = None,
 ) -> int:
     """
     مجموع دقایق موظفی برای یک بازه تاریخی (بر اساس Policy)
@@ -347,6 +348,8 @@ def compute_required_minutes_for_range(
     """
     if hourly_leave_minutes_by_date is None:
         hourly_leave_minutes_by_date = {}
+    if mission_dates is None:
+        mission_dates = set()
 
     total = 0
     current = start_date
@@ -357,6 +360,7 @@ def compute_required_minutes_for_range(
             target_date=current,
             is_holiday=current in holiday_dates,
             is_leave=current in leaves_by_date,
+            is_mission=current in mission_dates,
             is_rest=current in rest_dates,
             is_friday=current.weekday() == 4,
         )

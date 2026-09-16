@@ -349,7 +349,7 @@
                         <div class="stat-icon"><i class="bi bi-briefcase"></i></div>
                         <div>
                             <div class="stat-value">{{ monthly_duty_display }}</div>
-                            <div class="stat-label">موظفی ماهانه ({{ duty_days_month }} روز)</div>
+                            <div class="stat-label">موظفی ماهانه ({{ duty_days_month }} روز{% if mission_days_month %}، {{ mission_days_month }} مأموریت{% endif %}{% if leave_days_month %}، {{ leave_days_month }} مرخصی{% endif %}{% if rest_days_month %}، {{ rest_days_month }} استراحت{% endif %})</div>
                         </div>
                     </div>
                 </div>
@@ -590,6 +590,12 @@
                             </span>
                         </td>
                         <td class="text-center">
+                            {% if day.is_mission %}
+                            <span class="badge bg-primary mb-1">🚗 مأموریت</span><br>
+                            {% endif %}
+                            {% if day.is_rest %}
+                            <span class="badge bg-info mb-1">😴 استراحت</span><br>
+                            {% endif %}
                             <span class="badge bg-{{ day.status.main_color }}">{{ day.status.main_label }}</span>
                             {% for w in day.status.warnings %}
                             <br><span class="badge bg-{{ w.color }} mt-1">{{ w.label }}</span>
@@ -727,6 +733,8 @@
             <span class="badge bg-danger">❌ خطای ترتیب</span>
             <span class="badge bg-warning">⚠️ عدم تعادل</span>
             <span class="badge bg-secondary">⚪ بدون تردد</span>
+            <span class="badge bg-primary">🚗 مأموریت</span>
+            <span class="badge bg-info">😴 استراحت</span>
             <span class="badge bg-info">🌴 مرخصی</span>
         </div>
         <div class="d-flex flex-wrap gap-2 small text-muted align-items-center">
