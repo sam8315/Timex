@@ -307,7 +307,7 @@
                         </div>
                         <div>
                             <div class="stat-value">{{ monthly_duty_display }}</div>
-                            <div class="stat-label">موظفی ماهانه ({{ duty_days_month }} روز)</div>
+                            <div class="stat-label">موظفی ماهانه ({{ duty_days_month }} روز{% if mission_days_month %}، {{ mission_days_month }} مأموریت{% endif %}{% if leave_days_month %}، {{ leave_days_month }} مرخصی{% endif %}{% if rest_days_month %}، {{ rest_days_month }} استراحت{% endif %})</div>
                         </div>
                     </div>
                 </div>
@@ -432,11 +432,11 @@
                     {% for day in days %}
                     <tr class="{% if day.is_friday %}table-warning{% elif day.is_holiday %}table-danger{% endif %}">
                         <td>{{ day.jalali_date }}</td>
-                        <td>
-                            {{ day.day_name }}
-                            {% if day.is_friday %}<span class="badge bg-warning text-dark">جمعه</span>{% endif %}
-                            {% if day.is_holiday %}<span class="badge bg-danger">تعطیل</span>{% endif %}
-                        </td>
+                         <td>
+                             {{ day.day_name }}
+                             {% if day.is_friday %}<span class="badge bg-warning text-dark">جمعه</span>{% endif %}
+                             {% if day.is_holiday %}<span class="badge bg-danger">تعطیل</span>{% endif %}
+                         </td>
                         <td>
                             {% if day.first_enter %}
                             <span class="badge bg-success">{{ day.first_enter.strftime('%H:%M') }}</span>
@@ -454,6 +454,12 @@
                             </span>
                         </td>
                         <td class="text-center">
+                            {% if day.is_mission %}
+                            <span class="badge bg-primary mb-1">🚗 مأموریت</span><br>
+                            {% endif %}
+                            {% if day.is_rest %}
+                            <span class="badge bg-info mb-1">😴 استراحت</span><br>
+                            {% endif %}
                             <span class="badge bg-{{ day.status.main_color }}">{{ day.status.main_label }}</span>
                             {% for w in day.status.warnings %}
                             <br><span class="badge bg-{{ w.color }} mt-1">{{ w.label }}</span>
@@ -535,9 +541,9 @@
 <div class="card mt-3">
     <div class="card-body py-2">
         <small class="text-muted">
-            <strong>راهنمای وضعیت‌ها:</strong>
-            ✅ کامل | 🌙 شیفت شب | ⬅️ ورود بدون خروج | ➡️ خروج بدون ورود |
-            ❌ خطای ترتیب | ⚠️ عدم تعادل | ⚪ بدون تردد
+             <strong>راهنمای وضعیت‌ها:</strong>
+             ✅ کامل | 🌙 شیفت شب | ⬅️ ورود بدون خروج | ➡️ خروج بدون ورود |
+             ❌ خطای ترتیب | ⚠️ عدم تعادل | ⚪ بدون تردد | 🚗 مأموریت | 😴 استراحت
             <br>
             <strong>هشدارها:</strong>
             ⏱️ فاصله غیرعادی | 🔁 تردد تکراری | 🕐 ساعت غیرعادی | 🔢 تعداد زیاد | 🟡 جمعه‌کاری | 🔴 تعطیل‌کاری
