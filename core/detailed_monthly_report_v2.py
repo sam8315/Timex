@@ -163,6 +163,7 @@ class DetailedMonthlyReportGeneratorV2:
                 target_date=current,
                 is_holiday=is_holiday,
                 is_leave=person_status['code'] == 'L',
+                is_mission=person_status['code'] == 'M',
                 is_rest=person_status['code'] == 'R',
                 is_friday=is_friday,
             )

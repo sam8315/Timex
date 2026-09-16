@@ -842,8 +842,11 @@ async def admin_attendance(
                 status_label = f'🌴 مرخصی {type_name}'
                 status_color = 'info'
             elif daily_status == 'M':
-                status_label = '💼 ماموریت'
+                status_label = '🟦 مأموریت'
                 status_color = 'primary'
+            elif daily_status == 'R':
+                status_label = '🟣 استراحت'
+                status_color = 'secondary'
             elif daily_status == 'A':
                 status_label = '❌ غیبت'
                 status_color = 'danger'
