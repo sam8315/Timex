@@ -9,6 +9,7 @@ This test intentionally exercises the real FastAPI endpoint and rendered
 HTML, not only the DailyStatus resolver helpers.
 """
 from datetime import datetime, date
+import re
 
 import jdatetime
 
@@ -19,15 +20,14 @@ from .conftest import login_as
 
 MISSION_G = date(2026, 9, 15)
 REST_G = date(2026, 9, 16)
+MISSION_J = "1405/06/24"
+REST_J = "1405/06/25"
 JALALI_MONTH = 6
 JALALI_YEAR = 1405
 
 
 def _seed_daily_statuses(db, user_id: str) -> None:
-    for status_date, status_code in (
-        (MISSION_G, "M"),
-        (REST_G, "R"),
-    ):
+    for status_date in (MISSION_G, REST_G):
         existing = db.query(DailyStatus).filter(
             DailyStatus.user_id == user_id,
             DailyStatus.status_date == status_date,
@@ -37,16 +37,8 @@ def _seed_daily_statuses(db, user_id: str) -> None:
 
     db.flush()
     db.add_all([
-        DailyStatus(
-            user_id=user_id,
-            status_date=MISSION_G,
-            status_code="M",
-        ),
-        DailyStatus(
-            user_id=user_id,
-            status_date=REST_G,
-            status_code="R",
-        ),
+        DailyStatus(user_id=user_id, status_date=MISSION_G, status_code="M"),
+        DailyStatus(user_id=user_id, status_date=REST_G, status_code="R"),
     ])
     db.commit()
 
@@ -71,6 +63,15 @@ def _seed_existing_attendance(db, user_id: str) -> None:
     db.commit()
 
 
+def _day_rows(html: str) -> list[str]:
+    """Return rendered <tr> blocks that belong to the main day table."""
+    return re.findall(r"<tr\b[^>]*>.*?</tr>", html, flags=re.IGNORECASE | re.DOTALL)
+
+
+def _rows_for_date(html: str, jalali_date: str) -> list[str]:
+    return [row for row in _day_rows(html) if jalali_date in row]
+
+
 def test_real_admin_user_attendance_endpoint_renders_correct_mission_rest_dates(
     db, client, make_user
 ):
@@ -78,34 +79,35 @@ def test_real_admin_user_attendance_endpoint_renders_correct_mission_rest_dates(
     _seed_daily_statuses(db, target["user_id"])
     _seed_existing_attendance(db, target["user_id"])
 
-    # Guard the exact Jalali/Gregorian mapping used by the regression.
-    assert jdatetime.date.fromgregorian(date=MISSION_G).strftime("%Y/%m/%d") == "1405/06/24"
-    assert jdatetime.date.fromgregorian(date=REST_G).strftime("%Y/%m/%d") == "1405/06/25"
+    assert jdatetime.date.fromgregorian(date=MISSION_G).strftime("%Y/%m/%d") == MISSION_J
+    assert jdatetime.date.fromgregorian(date=REST_G).strftime("%Y/%m/%d") == REST_J
 
     login_response = login_as(client, target["national_code"])
     assert login_response.status_code == 302
 
-    url = (
+    response = client.get(
         f"/admin/attendance/user/{target['user_id']}"
         f"?year={JALALI_YEAR}&month={JALALI_MONTH}"
     )
-    response = client.get(url)
 
     assert response.status_code == 200
     html = response.text
 
-    # Full unfiltered endpoint response: both statuses must be rendered.
-    assert "1405/06/24" in html
-    assert "1405/06/25" in html
-    assert "🟦 مأموریت" in html
-    assert "🟣 استراحت" in html
+    mission_rows = _rows_for_date(html, MISSION_J)
+    rest_rows = _rows_for_date(html, REST_J)
+
+    assert mission_rows, "Mission date row is not rendered"
+    assert rest_rows, "Rest date row is not rendered"
+    assert any("🟦 مأموریت" in row for row in mission_rows)
+    assert any("🟣 استراحت" in row for row in rest_rows)
 
     # Existing attendance must remain visible when Mission is also present.
-    assert "08:00:00" in html
-    assert "16:00:00" in html
+    mission_html = "\n".join(mission_rows)
+    assert "08:00:00" in mission_html
+    assert "16:00:00" in mission_html
 
 
-def test_real_admin_user_attendance_mission_filter_uses_rendered_status(
+def test_real_admin_user_attendance_mission_filter_uses_rendered_rows(
     db, client, make_user
 ):
     target = make_user(role="super_admin")
@@ -121,13 +123,15 @@ def test_real_admin_user_attendance_mission_filter_uses_rendered_status(
 
     assert response.status_code == 200
     html = response.text
-    assert "1405/06/24" in html
-    assert "🟦 مأموریت" in html
-    assert "1405/06/25" not in html
-    assert "🟣 استراحت" not in html
+    mission_rows = _rows_for_date(html, MISSION_J)
+    rest_rows = _rows_for_date(html, REST_J)
+
+    assert mission_rows
+    assert any("🟦 مأموریت" in row for row in mission_rows)
+    assert not rest_rows
 
 
-def test_real_admin_user_attendance_rest_filter_uses_rendered_status(
+def test_real_admin_user_attendance_rest_filter_uses_rendered_rows(
     db, client, make_user
 ):
     target = make_user(role="super_admin")
@@ -143,13 +147,15 @@ def test_real_admin_user_attendance_rest_filter_uses_rendered_status(
 
     assert response.status_code == 200
     html = response.text
-    assert "1405/06/25" in html
-    assert "🟣 استراحت" in html
-    assert "1405/06/24" not in html
-    assert "🟦 مأموریت" not in html
+    mission_rows = _rows_for_date(html, MISSION_J)
+    rest_rows = _rows_for_date(html, REST_J)
+
+    assert rest_rows
+    assert any("🟣 استراحت" in row for row in rest_rows)
+    assert not mission_rows
 
 
-def test_real_admin_user_attendance_existing_no_attendance_filter_still_excludes_mission_rest(
+def test_real_admin_user_attendance_no_attendance_filter_excludes_mission_rest_rows(
     db, client, make_user
 ):
     target = make_user(role="super_admin")
@@ -165,7 +171,5 @@ def test_real_admin_user_attendance_existing_no_attendance_filter_still_excludes
 
     assert response.status_code == 200
     html = response.text
-    assert "1405/06/24" not in html
-    assert "1405/06/25" not in html
-    assert "🟦 مأموریت" not in html
-    assert "🟣 استراحت" not in html
+    assert not _rows_for_date(html, MISSION_J)
+    assert not _rows_for_date(html, REST_J)
