@@ -419,6 +419,8 @@
                         <span class="badge bg-danger status-badge">غایب</span>
                         {% elif day.person_status == 'R' %}
                         <span class="badge bg-secondary status-badge">استراحت</span>
+                        {% elif day.person_status == 'M' %}
+                        <span class="badge bg-info status-badge">مأموریت</span>
                         {% elif day.person_status == 'H' %}
                         <span class="badge bg-warning text-dark status-badge">تعطیل</span>
                         {% endif %}

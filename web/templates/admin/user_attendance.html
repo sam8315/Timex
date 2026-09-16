@@ -227,6 +227,10 @@
                class="btn btn-sm {% if status_filter == 'no_attendance' %}btn-secondary{% else %}btn-outline-secondary{% endif %} rounded-pill">⚪ بدون تردد</a>
             <a href="/admin/attendance/user/{{ target_user_id }}?year={{ year }}&month={{ month }}&filter=leave"
                class="btn btn-sm {% if status_filter == 'leave' %}btn-info{% else %}btn-outline-info{% endif %} rounded-pill">🌴 مرخصی</a>
+            <a href="/admin/attendance/user/{{ target_user_id }}?year={{ year }}&month={{ month }}&filter=mission"
+               class="btn btn-sm {% if status_filter == 'mission' %}btn-primary{% else %}btn-outline-primary{% endif %} rounded-pill">🟦 مأموریت</a>
+            <a href="/admin/attendance/user/{{ target_user_id }}?year={{ year }}&month={{ month }}&filter=rest"
+               class="btn btn-sm {% if status_filter == 'rest' %}btn-secondary{% else %}btn-outline-secondary{% endif %} rounded-pill">🟣 استراحت</a>
         </div>
     </div>
 </div>

@@ -302,6 +302,8 @@
                             <span class="badge bg-danger status-pill">غایب</span>
                             {% elif day.person_status == 'R' %}
                             <span class="badge bg-secondary status-pill">استراحت</span>
+                            {% elif day.person_status == 'M' %}
+                            <span class="badge bg-info status-pill">مأموریت</span>
                             {% elif day.person_status == 'H' %}
                             <span class="badge bg-warning text-dark status-pill">تعطیل</span>
                             {% endif %}
@@ -388,6 +390,10 @@
             <div class="summary-item">
                 <span>😴 استراحت:</span>
                 <span class="value">{{ report.summary.rest_days }}</span>
+            </div>
+            <div class="summary-item">
+                <span>💼 مأموریت:</span>
+                <span class="value">{{ report.summary.mission_days }}</span>
             </div>
             <div class="summary-item">
                 <span>🏖️ تعطیل:</span>

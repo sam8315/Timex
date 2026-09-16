@@ -246,6 +246,8 @@ class DetailedMonthlyReportGeneratorV2:
             # ✅ بررسی انواع مرخصی
             if status_code in ['AL', 'SL', 'RL', 'UL', 'L']:
                 return {'code': 'L', 'name': 'مرخصی'}
+            elif status_code == 'M':
+                return {'code': 'M', 'name': 'مأموریت'}
             elif status_code == 'R':
                 return {'code': 'R', 'name': 'استراحت'}
             elif status_code == 'A':
@@ -435,8 +437,8 @@ class DetailedMonthlyReportGeneratorV2:
         if is_day_off and person_status['code'] == 'P':
             return work_hours, 0.0
 
-        # اگر مرخصی یا استراحت است
-        if person_status['code'] in ['L', 'R']:
+        # اگر مرخصی یا استراحت یا مأموریت است
+        if person_status['code'] in ['L', 'R', 'M']:
             if work_hours > 0:
                 return work_hours, 0.0
             return 0.0, 0.0
@@ -469,6 +471,7 @@ class DetailedMonthlyReportGeneratorV2:
         leave_days = sum(1 for d in days if d['person_status'] == 'L')
         absent_days = sum(1 for d in days if d['person_status'] == 'A')
         rest_days = sum(1 for d in days if d['person_status'] == 'R')
+        mission_days = sum(1 for d in days if d['person_status'] == 'M')
         holiday_days = sum(1 for d in days if d['person_status'] == 'H')
 
         # محاسبه موظفی
@@ -515,6 +518,7 @@ class DetailedMonthlyReportGeneratorV2:
             'leave_days': leave_days,
             'absent_days': absent_days,
             'rest_days': rest_days,
+            'mission_days': mission_days,
             'holiday_days': holiday_days,
             'friday_work_days': friday_work_days,
             'holiday_work_days': holiday_work_days,  # ✅ اضافه شد

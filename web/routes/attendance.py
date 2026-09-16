@@ -520,6 +520,14 @@ async def attendance_page(
             days_dict[day] = []
         days_dict[day].append(record)
 
+    # 🆕 دریافت وضعیت‌های روزانه (مأموریت و استراحت) از DailyStatus
+    from core.day_status_resolver import (
+        build_daily_status_map, build_mission_dates, build_rest_dates,
+    )
+    daily_status_map = build_daily_status_map(db, user.user_id, month_start_g, month_end_g)
+    mission_dates = build_mission_dates(daily_status_map)
+    rest_dates_set = build_rest_dates(daily_status_map)
+
     # ساخت لیست روزها
     days_list = []
     current = month_start_g
@@ -549,6 +557,17 @@ async def attendance_page(
             status_info['main_status'] = STATUS_LEAVE
             status_info['main_label'] = f'🌴 مرخصی {type_name}'
             status_info['main_color'] = 'info'
+        # 🆕 بررسی وضعیت روزانه (مأموریت / استراحت) — فقط اگر تعطیل/مرخصی نباشد
+        elif not is_friday and holiday_title is None:
+            daily_code = daily_status_map.get(current)
+            if daily_code == 'M':
+                status_info['main_status'] = 'mission'
+                status_info['main_label'] = '🟦 مأموریت'
+                status_info['main_color'] = 'primary'
+            elif daily_code == 'R':
+                status_info['main_status'] = 'rest'
+                status_info['main_label'] = '🟣 استراحت'
+                status_info['main_color'] = 'secondary'
 
         # 🆕 محاسبه کارکرد با در نظر گرفتن شیفت شب
         work_hours, first_enter, last_exit = calculate_work_hours(
@@ -590,30 +609,23 @@ async def attendance_page(
         days_list = [d for d in days_list if d['status']['is_friday'] or d['status']['is_holiday']]
     elif status_filter == 'no_attendance':
         days_list = [d for d in days_list if d['status']['main_status'] == STATUS_NO_ATTENDANCE]
-    elif status_filter == 'leave':  # 🆕
+    elif status_filter == 'leave':
         days_list = [d for d in days_list if d['status']['main_status'] == STATUS_LEAVE]
+    elif status_filter == 'mission':
+        days_list = [d for d in days_list if d['status']['main_status'] == 'mission']
+    elif status_filter == 'rest':
+        days_list = [d for d in days_list if d['status']['main_status'] == 'rest']
     # 'all' یا None → بدون فیلتر
 
     # ============================================
     # 🆕 محاسبات موظفی و اضافه/کسر کار
     # ============================================
-    from models.daily_status import DailyStatus
-
-    # دریافت روزهای استراحت از DailyStatus
-    daily_statuses = db.query(DailyStatus).filter(
-        and_(
-            DailyStatus.user_id == user.user_id,
-            DailyStatus.status_date >= month_start_g,
-            DailyStatus.status_date <= month_end_g,
-            DailyStatus.status_code == 'R'
-        )
-    ).all()
-    rest_dates = {ds.status_date for ds in daily_statuses}
 
     # ---------- ۱. موظفی ماهانه ----------
     work_days_in_month = 0  # روزهای کاری (غیر تعطیل و غیر جمعه)
     leave_days_in_month = 0  # روزهای مرخصی در روز کاری
     rest_days_in_month = 0  # روزهای استراحت در روز کاری
+    mission_days_in_month = 0  # روزهای مأموریت در روز کاری
 
     current = month_start_g
     while current <= month_end_g:
@@ -625,19 +637,22 @@ async def attendance_page(
             work_days_in_month += 1
             if current in leaves_by_date:
                 leave_days_in_month += 1
-            elif current in rest_dates:
+            elif current in mission_dates:
+                mission_days_in_month += 1
+            elif current in rest_dates_set:
                 rest_days_in_month += 1
         current += timedelta(days=1)
 
-    # روزهای موظفی = روزهای کاری - مرخصی - استراحت
-    duty_days_month = work_days_in_month - leave_days_in_month - rest_days_in_month
+    # روزهای موظفی = روزهای کاری - مرخصی - استراحت - مأموریت
+    duty_days_month = work_days_in_month - leave_days_in_month - rest_days_in_month - mission_days_in_month
     # محاسبه موظفی ماهانه بر اساس Policy (نه ضرب ساده)
     monthly_required_minutes = compute_required_minutes_for_range(
         db=db, employee=emp,
         start_date=month_start_g, end_date=month_end_g,
-        rest_dates=rest_dates, holiday_dates=holiday_dates,
+        rest_dates=rest_dates_set, holiday_dates=holiday_dates,
         leaves_by_date=leaves_by_date,
         hourly_leave_minutes_by_date=hourly_leave_minutes_by_date,
+        mission_dates=mission_dates,
     )
     monthly_duty_hours = monthly_required_minutes / 60
 
@@ -671,9 +686,10 @@ async def attendance_page(
         if day['date'] <= reference_date:
             is_day_off = day['is_friday'] or day['is_holiday']
             is_leave = day['status']['main_status'] == STATUS_LEAVE
-            is_rest = day['date'] in rest_dates
+            is_rest = day['date'] in rest_dates_set
+            is_mission = day['date'] in mission_dates
 
-            if not is_day_off and not is_leave and not is_rest:
+            if not is_day_off and not is_leave and not is_rest and not is_mission:
                 duty_days_until_ref += 1
 
             work_hours_until_ref += day['work_hours']
@@ -682,9 +698,10 @@ async def attendance_page(
     instant_required_minutes = compute_required_minutes_for_range(
         db=db, employee=emp,
         start_date=month_start_g, end_date=reference_date,
-        rest_dates=rest_dates, holiday_dates=holiday_dates,
+        rest_dates=rest_dates_set, holiday_dates=holiday_dates,
         leaves_by_date=leaves_by_date,
         hourly_leave_minutes_by_date=hourly_leave_minutes_by_date,
+        mission_dates=mission_dates,
     )
     instant_duty_hours = instant_required_minutes / 60
 
