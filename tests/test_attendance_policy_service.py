@@ -379,6 +379,16 @@ class TestResolveRequiredMinutes:
         required = resolve_required_minutes(None, date(2026, 6, 1), is_leave=True)
         assert required == 0
 
+    def test_mission_returns_zero(self):
+        """Mission day should return 0."""
+        required = resolve_required_minutes(None, date(2026, 6, 1), is_mission=True)
+        assert required == 0
+
+    def test_rest_returns_zero(self):
+        """Rest day should return 0."""
+        required = resolve_required_minutes(None, date(2026, 6, 1), is_rest=True)
+        assert required == 0
+
     def test_no_policy_returns_default(self):
         """Without policy, should return DEFAULT_REQUIRED_MINUTES."""
         required = resolve_required_minutes(None, date(2026, 6, 1))

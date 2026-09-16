@@ -604,3 +604,108 @@ class TestHLWithFullDayLeave:
         assert '🌴 مرخصی استحقاقی' in html
         # HL badge also present as a separate add-on
         assert 'مرخصی ساعتی 2:00' in html
+
+
+# ---------------------------------------------------------------------------
+# Test 9: Mission / Rest badges appear in وضعیت column, not in date/روز column
+# ---------------------------------------------------------------------------
+class TestMissionRestDisplayPlacement:
+    """Mission (M) and Rest (R) status badges must be shown in the وضعیت column,
+    not next to the day name / date.  The date column must contain only the date."""
+
+    def _seed_user_on_workday(self, db, make_user, status_code):
+        """Create a user with attendance policy, punches, and optional DailyStatus."""
+        from models.daily_status import DailyStatus
+
+        user = make_user(role="user", balance_al=None, department="1")
+        emp = db.query(Employee).filter(
+            Employee.user_id == user["user_id"]
+        ).first()
+
+        workday = _workday_in_current_month()
+        g_start = workday.togregorian()
+
+        _seed_attendance_policy(db, emp,
+                                start=g_start - timedelta(days=30),
+                                end=g_start + timedelta(days=30))
+        _seed_day_punches(db, emp, g_start)
+
+        if status_code:
+            db.add(DailyStatus(
+                user_id=emp.user_id,
+                status_date=g_start,
+                status_code=status_code,
+            ))
+            db.commit()
+
+        return user, emp, workday
+
+
+    def test_mission_badge_visible(self, db, client, make_user):
+        """Mission badge '🚗 مأموریت' must appear in the page."""
+        user, emp, workday = self._seed_user_on_workday(db, make_user, "M")
+
+        jy, jm = _current_jalali_month()
+        login_as(client, user["national_code"])
+        resp = client.get(f"/attendance?year={jy}&month={jm}")
+        assert resp.status_code == 200
+        html = resp.text
+
+        assert "🚗 مأموریت" in html
+
+
+    def test_mission_badge_not_in_date_cell(self, db, client, make_user):
+        """The date <td> must NOT contain the mission badge."""
+        user, emp, workday = self._seed_user_on_workday(db, make_user, "M")
+        j_date = workday.strftime("%Y/%m/%d")
+
+        jy, jm = _current_jalali_month()
+        login_as(client, user["national_code"])
+        resp = client.get(f"/attendance?year={jy}&month={jm}")
+        assert resp.status_code == 200
+        html = resp.text
+
+        row = _html_row_containing(html, j_date)
+        assert row, f"Could not find row for date {j_date}"
+
+        # The date cell is the first <td>...</td>
+        td_start = row.find("<td")
+        td_end = row.find("</td>")
+        date_cell = row[td_start:td_end]
+
+        assert "مأموریت" not in date_cell
+        assert "bg-primary" not in date_cell
+
+
+    def test_rest_badge_visible(self, db, client, make_user):
+        """Rest badge must appear in the page."""
+        user, emp, workday = self._seed_user_on_workday(db, make_user, "R")
+
+        jy, jm = _current_jalali_month()
+        login_as(client, user["national_code"])
+        resp = client.get(f"/attendance?year={jy}&month={jm}")
+        assert resp.status_code == 200
+        html = resp.text
+
+        assert "استراحت" in html
+
+
+    def test_rest_badge_not_in_date_cell(self, db, client, make_user):
+        """The date <td> must NOT contain the rest badge."""
+        user, emp, workday = self._seed_user_on_workday(db, make_user, "R")
+        j_date = workday.strftime("%Y/%m/%d")
+
+        jy, jm = _current_jalali_month()
+        login_as(client, user["national_code"])
+        resp = client.get(f"/attendance?year={jy}&month={jm}")
+        assert resp.status_code == 200
+        html = resp.text
+
+        row = _html_row_containing(html, j_date)
+        assert row, f"Could not find row for date {j_date}"
+
+        td_start = row.find("<td")
+        td_end = row.find("</td>")
+        date_cell = row[td_start:td_end]
+
+        assert "استراحت" not in date_cell

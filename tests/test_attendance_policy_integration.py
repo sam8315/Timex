@@ -251,3 +251,125 @@ class TestAcceptancePolicyBasedRequiredMinutes:
         assert result != 440
 
         _cleanup_policy(db, emp)
+
+
+# ---------------------------------------------------------------------------
+# Mission (DailyStatus 'M') tests
+# ---------------------------------------------------------------------------
+class TestMissionReducesRequired:
+    """Mission days (DailyStatus status_code='M') should reduce required minutes
+    just like rest days."""
+
+    def test_mission_day_reduces_required(self, db, make_user):
+        """Monday with mission status → 0 required for that day."""
+        user = make_user(
+            role="employee",
+            balance_al=None,
+            department="1",
+            create_employee=True,
+        )
+        emp = db.query(Employee).filter(Employee.user_id == user["user_id"]).first()
+        _seed_policy(db, emp, POLICY_START, POLICY_END, [
+            (0, time(7, 0), time(13, 0), 360),
+            (1, time(7, 0), time(13, 0), 360),
+            (2, time(7, 0), time(13, 0), 360),
+            (3, time(7, 0), time(13, 0), 360),
+        ])
+
+        # Monday is a mission day
+        result = compute_required_minutes_for_range(
+            db=db, employee=emp,
+            start_date=WEEK_START, end_date=THURSDAY,
+            rest_dates=set(), holiday_dates={},
+            leaves_by_date={}, mission_dates={MONDAY},
+        )
+
+        # Only Tue, Wed, Thu contribute: 3 × 360 = 1080
+        expected = 3 * 360
+        assert result == expected, f"Mission day should be 0, got {result}"
+
+        _cleanup_policy(db, emp)
+
+    def test_mission_equals_rest_reduction(self, db, make_user):
+        """A mission day should reduce required minutes the same as a rest day."""
+        user = make_user(
+            role="employee",
+            balance_al=None,
+            department="1",
+            create_employee=True,
+        )
+        emp = db.query(Employee).filter(Employee.user_id == user["user_id"]).first()
+        _seed_policy(db, emp, POLICY_START, POLICY_END, [
+            (0, time(7, 0), time(13, 0), 360),
+            (1, time(7, 0), time(13, 0), 360),
+            (2, time(7, 0), time(13, 0), 360),
+            (3, time(7, 0), time(13, 0), 360),
+        ])
+
+        base = compute_required_minutes_for_range(
+            db=db, employee=emp,
+            start_date=WEEK_START, end_date=THURSDAY,
+            rest_dates=set(), holiday_dates={},
+            leaves_by_date={}, mission_dates=set(),
+        )
+
+        with_mission = compute_required_minutes_for_range(
+            db=db, employee=emp,
+            start_date=WEEK_START, end_date=THURSDAY,
+            rest_dates={MONDAY}, holiday_dates={},
+            leaves_by_date={}, mission_dates=set(),
+        )
+
+        with_mission_alt = compute_required_minutes_for_range(
+            db=db, employee=emp,
+            start_date=WEEK_START, end_date=THURSDAY,
+            rest_dates=set(), holiday_dates={},
+            leaves_by_date={}, mission_dates={MONDAY},
+        )
+
+        assert with_mission == with_mission_alt, \
+            "Mission day and rest day should reduce required by the same amount"
+        assert with_mission == base - 360, \
+            "Should reduce exactly by one day's required minutes"
+
+        _cleanup_policy(db, emp)
+
+    def test_mission_no_policy_fallback(self, db, make_user):
+        """Mission day without policy → 0 required (same as rest)."""
+        user = make_user(role="employee", balance_al=None, department="9")
+        emp = db.query(Employee).filter(Employee.user_id == user["user_id"]).first()
+
+        result = compute_required_minutes_for_range(
+            db=db, employee=emp,
+            start_date=MONDAY, end_date=MONDAY,
+            rest_dates=set(), holiday_dates={},
+            leaves_by_date={}, mission_dates={MONDAY},
+        )
+
+        assert result == 0, f"Mission day without policy should be 0, got {result}"
+
+    def test_no_mission_all_contribute(self, db, make_user):
+        """Without mission dates, all workdays contribute."""
+        user = make_user(
+            role="employee",
+            balance_al=None,
+            department="1",
+            create_employee=True,
+        )
+        emp = db.query(Employee).filter(Employee.user_id == user["user_id"]).first()
+        _seed_policy(db, emp, POLICY_START, POLICY_END, [
+            (0, time(7, 0), time(13, 0), 360),
+            (1, time(7, 0), time(13, 0), 360),
+            (2, time(7, 0), time(13, 0), 360),
+            (3, time(7, 0), time(13, 0), 360),
+        ])
+
+        result = compute_required_minutes_for_range(
+            db=db, employee=emp,
+            start_date=WEEK_START, end_date=THURSDAY,
+            rest_dates=set(), holiday_dates={},
+            leaves_by_date={}, mission_dates=set(),
+        )
+
+        assert result == 4 * 360
+        _cleanup_policy(db, emp)
