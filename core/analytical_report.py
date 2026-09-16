@@ -1,0 +1,274 @@
+"""
+ماژول گزارش تحلیلی ماهانه
+"""
+from datetime import date, timedelta
+from typing import List, Dict, Optional
+from sqlalchemy import and_, func, or_
+from sqlalchemy.orm import Session
+import jdatetime
+
+from database.engine import SessionLocal
+from models.user import User
+from models.employee import Employee
+from models.attendance import Attendance
+from models.daily_status import DailyStatus
+from models.leave_request import LeaveRequest
+from models.holiday import Holiday
+from core.time_calculator import calculate_shift_hours
+
+
+class AnalyticalReportGenerator:
+    """تولید گزارش تحلیلی ماهانه"""
+
+# 🆕 Phase 5: این مقادیر باید از Attendance Policy Service خوانده شود
+    # فعلاً برای سازگاری با داده‌های قبلی نگه داشته شده
+    # ساعات موظفی روزانه بر اساس گروه
+    DAILY_REQUIRED_HOURS = {
+        '0': 7.33,  # بدون گروه (7:20)
+        '1': 7.33,  # رسمی (7:20) - بعداً تغییر می‌کند
+        '2': 7.33,  # وظیفه (7:20) - بعداً تغییر می‌کند
+        '3': 7.33,  # خریدخدمت (7:20) - بعداً تغییر می‌کند
+        '4': 7.33,  # قراردادی (7:20)
+        '5': 7.33,  # پزشک (7:20) - بعداً تغییر می‌کند
+    }
+
+    # کدهای مرخصی
+    LEAVE_CODES = ['AL', 'SL', 'RL', 'UL']
+
+    def __init__(self):
+        self.db: Session = SessionLocal()
+
+    def close(self):
+        if self.db:
+            self.db.close()
+
+    def get_month_days_info(self, year: int, month: int, user_group_id: Optional[str] = None) -> Dict:
+        """
+        دریافت اطلاعات روزهای ماه
+
+        Args:
+            year: سال شمسی
+            month: ماه شمسی
+            user_group_id: گروه کاربر (اختیاری)
+        """
+        j_month_start = jdatetime.date(year, month, 1)
+        if month == 12:
+            try:
+                j_month_end = jdatetime.date(year, 12, 30)
+            except ValueError:
+                j_month_end = jdatetime.date(year, 12, 29)
+        else:
+            j_month_end = jdatetime.date(year, month + 1, 1) - timedelta(days=1)
+
+        g_start = j_month_start.togregorian()
+        g_end = j_month_end.togregorian()
+
+        # شمارش جمعه‌ها
+        fridays = 0
+        current = g_start
+        while current <= g_end:
+            if current.weekday() == 4:
+                fridays += 1
+            current += timedelta(days=1)
+
+        # ✅ دریافت تعطیلات ثبت شده (ملی + گروهی)
+        holidays = self.db.query(Holiday).filter(
+            and_(
+                Holiday.holiday_date >= g_start,
+                Holiday.holiday_date <= g_end,
+                or_(
+                    Holiday.group_id == None,  # تعطیلات ملی
+                    Holiday.group_id == user_group_id  # تعطیلات گروهی کاربر
+                )
+            )
+        ).count()
+
+        total_days = (g_end - g_start).days + 1
+        working_days = total_days - fridays - holidays
+
+        return {
+            'total_days': total_days,
+            'fridays': fridays,
+            'holidays': holidays,
+            'working_days': working_days,
+            'start_date': g_start,
+            'end_date': g_end
+        }
+
+    def generate_monthly_report(
+            self,
+            year: int,
+            month: int,
+            group_id: Optional[int] = None
+    ) -> Dict:
+        """تولید گزارش تحلیلی ماهانه - فقط از employee"""
+        month_info = self.get_month_days_info(year, month)
+        g_start = month_info['start_date']
+        g_end = month_info['end_date']
+
+        # ✅ دریافت فقط کارمندان فعال از employee
+        employees_query = self.db.query(Employee).filter(Employee.is_active == True)
+
+        # فیلتر بر اساس department
+        if group_id is not None:
+            employees_query = employees_query.filter(Employee.department == str(group_id))
+
+        employees = employees_query.all()
+
+        groups = {}
+
+        for emp in employees:
+            # ✅ استفاده از department به عنوان گروه
+            department = emp.department or 'بدون گروه'
+
+            # دریافت تمام رکوردهای تردد ماه
+            attendances = self.db.query(Attendance).filter(
+                and_(
+                    Attendance.user_id == emp.user_id,
+                    func.date(Attendance.timestamp) >= g_start,
+                    func.date(Attendance.timestamp) <= g_end,
+                    Attendance.is_deleted == False
+                )
+            ).order_by(Attendance.timestamp).all()
+
+            # دریافت وضعیت‌های روزانه ماه
+            daily_statuses = self.db.query(DailyStatus).filter(
+                and_(
+                    DailyStatus.user_id == emp.user_id,
+                    DailyStatus.status_date >= g_start,
+                    DailyStatus.status_date <= g_end
+                )
+            ).all()
+
+            statuses_by_date = {ds.status_date: ds.status_code for ds in daily_statuses}
+
+            # گروه‌بندی تردد بر اساس روز
+            attendances_by_day = {}
+            for att in attendances:
+                day = att.timestamp.date()
+                if day not in attendances_by_day:
+                    attendances_by_day[day] = []
+                attendances_by_day[day].append(att)
+
+            # شمارش وضعیت‌ها
+            status_counts = {
+                'P': 0, 'A': 0, 'H': 0, 'AL': 0, 'SL': 0,
+                'RL': 0, 'UL': 0, 'M': 0, 'LP': 0, 'S': 0
+            }
+
+            current = g_start
+            while current <= g_end:
+                if current in statuses_by_date:
+                    code = statuses_by_date[current]
+                    if code in status_counts:
+                        status_counts[code] += 1
+                elif current.weekday() == 4:
+                    status_counts['H'] += 1
+                elif self._is_holiday(current):
+                    status_counts['H'] += 1
+                elif current in attendances_by_day:
+                    status_counts['P'] += 1
+                else:
+                    status_counts['A'] += 1
+
+                current += timedelta(days=1)
+
+            present_days = status_counts['P'] + status_counts['M'] + status_counts['LP']
+            absent_days = status_counts['A']
+            total_leave = sum(status_counts[code] for code in self.LEAVE_CODES)
+
+            if not attendances and present_days == 0:
+                continue
+
+            # محاسبه ساعات کاری تفکیکی
+            total_morning = 0.0
+            total_evening = 0.0
+            total_night = 0.0
+            total_work = 0.0
+
+            for day, day_attendances in attendances_by_day.items():
+                enters = [a for a in day_attendances if a.punch == 0]
+                exits = [a for a in day_attendances if a.punch == 1]
+
+                if enters and exits:
+                    first_in = min(e.timestamp for e in enters)
+                    last_out = max(e.timestamp for e in exits)
+
+                    if last_out > first_in:
+                        shift_hours = calculate_shift_hours(first_in, last_out)
+                        total_morning += shift_hours['morning']
+                        total_evening += shift_hours['evening']
+                        total_night += shift_hours['night']
+                        total_work += shift_hours['total']
+
+            # محاسبه موظفی
+            required_days = month_info['working_days'] - total_leave
+            if required_days < 0:
+                required_days = 0
+            daily_required = self.DAILY_REQUIRED_HOURS.get(department, 7.33)
+            required_hours = required_days * daily_required
+
+            difference = total_work - required_hours
+
+            user_record = {
+                'user_id': emp.user_id,
+                'full_name': emp.full_name,  # ✅ از employee
+                'department': department,  # ✅ از employee
+                'present_days': present_days,
+                'absent_days': absent_days,
+                'leave_days': total_leave,
+                'holiday_days': status_counts['H'],
+                'required_days': required_days,
+                'required_hours': round(required_hours, 2),
+                'morning_hours': round(total_morning, 2),
+                'evening_hours': round(total_evening, 2),
+                'night_hours': round(total_night, 2),
+                'total_hours': round(total_work, 2),
+                'difference': round(difference, 2)
+            }
+
+            if department not in groups:
+                groups[department] = []
+            groups[department].append(user_record)
+
+        for dept in groups:
+            groups[dept].sort(key=lambda x: x['full_name'])
+
+        return {
+            'year': year,
+            'month': month,
+            'month_name': self._get_jalali_month_name(month),
+            'month_info': month_info,
+            'groups': groups
+        }
+
+
+    def _is_holiday(self, target_date: date) -> bool:
+        """بررسی تعطیل بودن یک تاریخ"""
+        from models.holiday import Holiday
+        holiday = self.db.query(Holiday).filter(
+            Holiday.holiday_date == target_date
+        ).first()
+        return holiday is not None
+
+    def _get_group_name(self, group_id: str) -> str:
+        """دریافت نام گروه"""
+        group_names = {
+            '0': 'بدون گروه',
+            '1': 'رسمی',
+            '2': 'وظیفه',
+            '3': 'خریدخدمت',
+            '4': 'قراردادی',
+            '5': 'پزشک'
+        }
+        return group_names.get(group_id, f'گروه {group_id}')
+
+    def _get_jalali_month_name(self, month: int) -> str:
+        """دریافت نام ماه شمسی"""
+        names = {
+            1: 'فروردین', 2: 'اردیبهشت', 3: 'خرداد',
+            4: 'تیر', 5: 'مرداد', 6: 'شهریور',
+            7: 'مهر', 8: 'آبان', 9: 'آذر',
+            10: 'دی', 11: 'بهمن', 12: 'اسفند'
+        }
+        return names.get(month, '')

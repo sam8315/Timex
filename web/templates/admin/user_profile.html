@@ -1,0 +1,504 @@
+{% extends "base.html" %}
+{% block title %}پروفایل {{ employee.full_name if employee else target_user.name }} | مدیریت{% endblock %}
+{% block content %}
+
+<!-- پیام‌های موفقیت -->
+{% if request.query_params.get('created') %}
+<div class="alert alert-success alert-dismissible fade show">
+    <i class="bi bi-person-plus"></i> کاربر با موفقیت ایجاد شد.
+    رمز اولیه کد ملی است و در اولین ورود باید تغییر کند.
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+{% if request.query_params.get('saved') %}
+<div class="alert alert-success alert-dismissible fade show">
+    <i class="bi bi-check-circle"></i> اطلاعات با موفقیت ذخیره شد
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+{% if request.query_params.get('password_reset') %}
+<div class="alert alert-info alert-dismissible fade show">
+    <i class="bi bi-key"></i> رمز عبور به کد ملی ریست شد. کاربر در ورود بعدی باید رمز را تغییر دهد.
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+{% if request.query_params.get('role_changed') %}
+<div class="alert alert-success alert-dismissible fade show">
+    <i class="bi bi-shield-check"></i> نقش کاربر تغییر کرد
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+{% if request.query_params.get('web_toggled') %}
+<div class="alert alert-success alert-dismissible fade show">
+    <i class="bi bi-toggle-on"></i> وضعیت دسترسی وب تغییر کرد
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+<!-- پیام‌های خطا -->
+{% if request.query_params.get('error') == 'no-national-code' %}
+<div class="alert alert-danger alert-dismissible fade show">
+    <i class="bi bi-exclamation-triangle"></i>
+    <strong>خطا:</strong> این کاربر کد ملی ندارد.
+    برای ریست رمز عبور، ابتدا
+    <a href="/admin/profile/{{ target_user.user_id }}/edit" class="alert-link">کد ملی را ثبت کنید</a>.
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+{% if request.query_params.get('error') == 'no-profile' %}
+<div class="alert alert-danger alert-dismissible fade show">
+    <i class="bi bi-exclamation-triangle"></i>
+    <strong>خطا:</strong> این کاربر پروفایل (جدول Employee) ندارد.
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+{% if request.query_params.get('photo_uploaded') %}
+<div class="alert alert-success alert-dismissible fade show">
+    <i class="bi bi-camera"></i> عکس پروفایل با موفقیت آپلود شد
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+{% if request.query_params.get('photo_deleted') %}
+<div class="alert alert-info alert-dismissible fade show">
+    <i class="bi bi-trash"></i> عکس پروفایل حذف شد
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+{% if request.query_params.get('error') %}
+<div class="alert alert-danger alert-dismissible fade show">
+    <i class="bi bi-exclamation-triangle"></i> {{ request.query_params.get('error') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+<!-- هدر -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4>
+        <i class="bi bi-person-badge"></i>
+        پروفایل: {{ employee.full_name if employee else target_user.name }}
+        <small class="text-muted">({{ target_user.user_id }})</small>
+    </h4>
+    <div>
+        {% if is_super_admin and employee %}
+        <a href="/admin/profile/{{ target_user.user_id }}/edit" class="btn btn-warning btn-sm">
+            <i class="bi bi-pencil"></i> ویرایش اطلاعات
+        </a>
+        {% endif %}
+        <a href="/admin/attendance/user/{{ target_user.user_id }}" class="btn btn-outline-primary btn-sm">
+            <i class="bi bi-calendar-check"></i> تردد
+        </a>
+        <a href="/admin/users" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-arrow-right"></i> بازگشت
+        </a>
+    </div>
+</div>
+
+<!-- هدر پروفایل -->
+<div class="card mb-4 overflow-hidden">
+    <div class="card-body p-0">
+        <div style="height: 120px; background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);"></div>
+        <div class="px-4 pb-4">
+            <div class="d-flex flex-wrap align-items-end justify-content-between" >
+                <div class="d-flex align-items-end">
+                    <!-- 🆕 آواتار با عکس یا حروف اول -->
+                    {% if employee and employee.photo_path %}
+                    <img src="{{ employee.photo_path }}?v={{ employee.updated_at.timestamp() | int }}"
+                         class="rounded-circle border border-4 border-white shadow"
+                         style="width: 20%; height: 20%; object-fit: cover;margin-top: -50px; object-position: center; display: block;"
+                         alt="{{ employee.full_name }}">
+                    {% else %}
+                    <img src="/static/uploads/avatars/image.png"
+                         class="rounded-circle border border-4 border-white shadow"
+                         style="width: 20%; height: 20%; object-fit: cover;margin-top: -50px; object-position: center; display: block;"
+                         alt="{{ employee.full_name }}">
+                    {% endif %}
+                    <div class="ms-3 mb-2">
+                        <h3 class="mb-1">
+                            {{ employee.full_name if employee else target_user.name }}
+                            {% if employee and not employee.is_active %}
+                            <span class="badge bg-danger fs-6">غیرفعال</span>
+                            {% endif %}
+                        </h3>
+                        <div class="text-muted">
+                            <i class="bi bi-person-badge"></i> {{ target_user.user_id }}
+                            {% if employee and employee.position %}
+                            | <i class="bi bi-briefcase"></i> {{ employee.position }}
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                <div class="mb-2 d-flex gap-2">
+                    {% if target_user.role == 'super_admin' %}
+                    <span class="badge bg-danger px-3 py-2"><i class="bi bi-shield-fill"></i> مدیر ارشد</span>
+                    {% elif target_user.role == 'admin' %}
+                    <span class="badge bg-warning text-dark px-3 py-2"><i class="bi bi-shield"></i> مدیر</span>
+                    {% else %}
+                    <span class="badge bg-secondary px-3 py-2"><i class="bi bi-person"></i> کاربر</span>
+                    {% endif %}
+
+                    {% if target_user.web_enabled %}
+                    <span class="badge bg-success px-3 py-2"><i class="bi bi-globe"></i> وب فعال</span>
+                    {% else %}
+                    <span class="badge bg-danger px-3 py-2"><i class="bi bi-globe"></i> وب غیرفعال</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- آمار -->
+<div class="row g-4 mb-4">
+    <div class="col-md-4">
+        <div class="card stat-card bg-primary text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6>سابقه کار</h6>
+                        {% if service %}
+                        <h2>{{ service.years }} سال و {{ service.months }} ماه</h2>
+                        {% else %}<h2>-</h2>{% endif %}
+                    </div>
+                    <i class="bi bi-briefcase fs-1 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card stat-card bg-info text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6>سن</h6>
+                        {% if age is not none %}<h2>{{ age }} سال</h2>{% else %}<h2>-</h2>{% endif %}
+                    </div>
+                    <i class="bi bi-cake fs-1 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card stat-card {% if employee and employee.is_active %}bg-success{% else %}bg-danger{% endif %} text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6>وضعیت</h6>
+                        <h2>{% if employee and employee.is_active %}فعال{% else %}غیرفعال{% endif %}</h2>
+                    </div>
+                    <i class="bi bi-person-check fs-1 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if employee %}
+<div class="row g-4">
+    <!-- اطلاعات هویتی -->
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header bg-white">
+                <h6><i class="bi bi-person-vcard text-primary"></i> اطلاعات هویتی</h6>
+            </div>
+            <div class="card-body">
+                <div class="list-group list-group-flush">
+                    <div class="list-group-item d-flex justify-content-between px-0">
+                        <span class="text-muted">کد ملی</span>
+                        <span class="fw-bold">{{ employee.national_code or '-' }}</span>
+                    </div>
+                    <div class="list-group-item d-flex justify-content-between px-0">
+                        <span class="text-muted">نام پدر</span>
+                        <span class="fw-bold">{{ employee.father_name or '-' }}</span>
+                    </div>
+                    <div class="list-group-item d-flex justify-content-between px-0">
+                        <span class="text-muted">تاریخ تولد</span>
+                        <span class="fw-bold">{{ birth_j_display or '-' }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- اطلاعات شخصی -->
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header bg-white">
+                <h6><i class="bi bi-heart text-danger"></i> اطلاعات شخصی</h6>
+            </div>
+            <div class="card-body">
+                <div class="list-group list-group-flush">
+                    <div class="list-group-item d-flex justify-content-between px-0">
+                        <span class="text-muted">جنسیت</span>
+                        <span>
+                            {% if employee.gender == 'M' %}<span class="badge bg-primary">مرد</span>
+                            {% elif employee.gender == 'F' %}<span class="badge bg-danger">زن</span>
+                            {% else %}<span class="badge bg-secondary">نامشخص</span>{% endif %}
+                        </span>
+                    </div>
+                    <div class="list-group-item d-flex justify-content-between px-0">
+                        <span class="text-muted">وضعیت تاهل</span>
+                        <span>
+                            {% if employee.marital_status == 'S' %}<span class="badge bg-info">مجرد</span>
+                            {% elif employee.marital_status == 'M' %}<span class="badge bg-success">متاهل</span>
+                            {% else %}<span class="badge bg-secondary">نامشخص</span>{% endif %}
+                        </span>
+                    </div>
+                    <div class="list-group-item d-flex justify-content-between px-0">
+                        <span class="text-muted">ایمیل</span>
+                        <span class="fw-bold">{{ employee.email or '-' }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- اطلاعات شغلی -->
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header bg-white">
+                <h6><i class="bi bi-briefcase text-warning"></i> اطلاعات شغلی</h6>
+            </div>
+            <div class="card-body">
+                <div class="list-group list-group-flush">
+                    <div class="list-group-item d-flex justify-content-between px-0">
+                        <span class="text-muted">تاریخ استخدام</span>
+                        <span class="fw-bold">{{ hire_j_display or '-' }}</span>
+                    </div>
+                    <div class="list-group-item d-flex justify-content-between px-0">
+                        <span class="text-muted">دپارتمان</span>
+                        <span>
+                            {% if employee.department == '1' %}<span class="badge bg-primary">رسمی</span>
+                            {% elif employee.department == '2' %}<span class="badge bg-info">وظیفه</span>
+                            {% elif employee.department == '3' %}<span class="badge bg-warning text-dark">خریدخدمت</span>
+                            {% elif employee.department == '4' %}<span class="badge bg-success">قراردادی</span>
+                            {% elif employee.department == '5' %}<span class="badge bg-danger">پزشک</span>
+                            {% else %}<span class="badge bg-secondary">-</span>{% endif %}
+                        </span>
+                    </div>
+                    <div class="list-group-item d-flex justify-content-between px-0">
+                        <span class="text-muted">سمت</span>
+                        <span class="fw-bold">{{ employee.position or '-' }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+        <!-- 🔧 عملیات مدیریتی (فقط super_admin) -->
+    <div class="col-md-6">
+        <div class="card h-100 border-dark">
+            <div class="card-header bg-dark text-white">
+                <h6><i class="bi bi-tools"></i> عملیات مدیریتی (مدیر ارشد)</h6>
+            </div>
+            <div class="card-body">
+                {% if is_super_admin %}
+                <div class="d-grid gap-2">
+                                        <!-- 🆕 آپلود عکس پروفایل -->
+                    <form method="post" action="/admin/profile/{{ target_user.user_id }}/upload-photo"
+                          enctype="multipart/form-data" class="mb-2">
+                        <div class="input-group">
+                            <input type="file" name="file" class="form-control" accept=".jpg,.jpeg,.png,.webp" required>
+                            <button type="submit" class="btn btn-success">
+                                <i class="bi bi-camera"></i> آپلود عکس
+                            </button>
+                        </div>
+                        <small class="text-muted d-block mt-1">
+                            <i class="bi bi-info-circle"></i>
+                            JPG, PNG, WEBP - حداکثر 2MB
+                        </small>
+                    </form>
+
+                    <!-- حذف عکس -->
+                    {% if employee and employee.photo_path %}
+                    <form method="post" action="/admin/profile/{{ target_user.user_id }}/delete-photo"
+                          onsubmit="return confirm('آیا مطمئن هستید که می‌خواهید عکس پروفایل را حذف کنید؟');">
+                        <button type="submit" class="btn btn-outline-danger w-100 mb-2">
+                            <i class="bi bi-trash"></i> حذف عکس پروفایل
+                        </button>
+                    </form>
+                    {% endif %}
+                    <!-- ویرایش -->
+                    <a href="/admin/profile/{{ target_user.user_id }}/edit" class="btn btn-warning">
+                        <i class="bi bi-pencil"></i> ویرایش اطلاعات کارمند
+                    </a>
+
+                    <!-- ریست رمز -->
+                    {% if employee and employee.national_code %}
+                    <form method="post" action="/admin/users/{{ target_user.user_id }}/reset-password"
+                          onsubmit="return confirm('آیا مطمئن هستید؟ رمز عبور به کد ملی ({{ employee.national_code }}) ریست می‌شود.');">
+                        <button type="submit" class="btn btn-info w-100">
+                            <i class="bi bi-key"></i> ریست رمز عبور به کد ملی
+                        </button>
+                    </form>
+                    {% else %}
+                    <div class="alert alert-warning mb-0 py-2">
+                        <small>
+                            <i class="bi bi-exclamation-triangle"></i>
+                            کد ملی ثبت نشده - امکان ریست رمز وجود ندارد.
+                            <br>
+                            <a href="/admin/profile/{{ target_user.user_id }}/edit" class="alert-link">
+                                <i class="bi bi-pencil"></i> ثبت کد ملی
+                            </a>
+                        </small>
+                    </div>
+                    {% endif %}
+
+                    <!-- تغییر نقش -->
+                    <form method="post" action="/admin/users/{{ target_user.user_id }}/change-role"
+                          {% if target_user.user_id == user.user_id %}
+                          style="display: none;"
+                          {% else %}
+                          onsubmit="return confirm('آیا از تغییر نقش مطمئن هستید؟');"
+                          {% endif %}>
+                        <div class="input-group">
+                            <select name="new_role" class="form-select">
+                                <option value="user" {% if target_user.role == 'user' %}selected{% endif %}>کاربر عادی</option>
+                                <option value="admin" {% if target_user.role == 'admin' %}selected{% endif %}>مدیر</option>
+                                <option value="super_admin" {% if target_user.role == 'super_admin' %}selected{% endif %}>مدیر ارشد</option>
+                            </select>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-shield-check"></i> تغییر نقش
+                            </button>
+                        </div>
+                    </form>
+
+{% if target_user.user_id == user.user_id %}
+<div class="alert alert-secondary mb-0 py-2">
+    <small><i class="bi bi-info-circle"></i> امکان تغییر نقش خود وجود ندارد</small>
+</div>
+{% endif %}
+
+                    <!-- فعال/غیرفعال وب -->
+                    <form method="post" action="/admin/users/{{ target_user.user_id }}/toggle-web">
+                        <button type="submit" class="btn {% if target_user.web_enabled %}btn-danger{% else %}btn-success{% endif %} w-100"
+                                {% if target_user.user_id == user.user_id %}disabled{% endif %}>
+                            {% if target_user.web_enabled %}
+                            <i class="bi bi-toggle-on"></i> غیرفعال کردن دسترسی وب
+                            {% else %}
+                            <i class="bi bi-toggle-off"></i> فعال کردن دسترسی وب
+                            {% endif %}
+                        </button>
+                    </form>
+                </div>
+
+                {% if target_user.last_login %}
+                <hr>
+                <small class="text-muted">
+                    <i class="bi bi-clock-history"></i>
+                    آخرین ورود: {{ target_user.last_login.strftime('%Y/%m/%d %H:%M') }}
+                </small>
+                {% endif %}
+
+                {% else %}
+                <div class="alert alert-secondary mb-0">
+                    <i class="bi bi-info-circle"></i>
+                    این بخش فقط برای مدیر ارشد قابل دسترسی است.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- 🆕 بخش شماره‌های تماس (پنل ادمین) -->
+    <div class="card mb-4">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h6 class="mb-0"><i class="bi bi-telephone"></i> شماره‌های تماس</h6>
+        <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#adminAddPhoneModal">
+            <i class="bi bi-plus-circle"></i> افزودن شماره
+        </button>
+    </div>
+    <div class="card-body">
+        {% if target_phones %}
+        <div class="list-group">
+            {% for phone in target_phones %}
+            <div class="list-group-item d-flex justify-content-between align-items-center">
+                <div>
+                    <i class="bi bi-phone text-primary"></i>
+                    <strong class="ms-2">{{ phone.phone_number }}</strong>
+                    <span class="badge bg-secondary ms-2">{{ phone.label }}</span>
+                    {% if phone.is_default %}
+                    <span class="badge bg-primary ms-1">⭐ پیش‌فرض</span>
+                    {% endif %}
+                </div>
+                <div class="btn-group btn-group-sm">
+                    {% if not phone.is_default %}
+                    <form method="post" action="/admin/profile/{{ target_user.user_id }}/phones/{{ phone.id }}/set-default" class="d-inline">
+                        <button type="submit" class="btn btn-outline-primary" title="تنظیم به عنوان پیش‌فرض">
+                            <i class="bi bi-star"></i>
+                        </button>
+                    </form>
+                    {% endif %}
+                    <form method="post" action="/admin/profile/{{ target_user.user_id }}/phones/{{ phone.id }}/delete" class="d-inline"
+                          onsubmit="return confirm('آیا مطمئن هستید؟ این شماره حذف می‌شود.');">
+                        <button type="submit" class="btn btn-outline-danger" title="حذف">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </form>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-center py-4">
+            <i class="bi bi-phone display-6 text-muted"></i>
+            <p class="text-muted mt-2 mb-0">هیچ شماره تلفنی ثبت نشده است</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+    <!-- 🆕 مودال افزودن شماره (پنل ادمین) -->
+    <div class="modal fade" id="adminAddPhoneModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="/admin/profile/{{ target_user.user_id }}/phones/add">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-plus-circle"></i> افزودن شماره تلفن</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">شماره موبایل <span class="text-danger">*</span></label>
+                        <input type="text" name="phone_number" class="form-control"
+                               placeholder="09121234567" required
+                               pattern="09[0-9]{9}" maxlength="11">
+                        <small class="text-muted">مثال: 09121234567</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">برچسب</label>
+                        <select name="label" class="form-select">
+                            <option value="همراه" selected>📱 همراه</option>
+                            <option value="منزل">🏠 منزل</option>
+                            <option value="اضطراری">🚨 اضطراری</option>
+                        </select>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="is_default" id="adminIsDefault">
+                        <label class="form-check-label" for="adminIsDefault">
+                            ⭐ به عنوان شماره پیش‌فرض
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="bi bi-plus-circle"></i> افزودن
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+
+</div>
+{% else %}
+<div class="alert alert-warning">
+    <i class="bi bi-exclamation-triangle"></i>
+    اطلاعات تکمیلی این کاربر ثبت نشده است.
+    {% if is_super_admin %}
+    <a href="/admin/profile/{{ target_user.user_id }}/edit" class="alert-link">ایجاد اطلاعات</a>
+    {% endif %}
+</div>
+{% endif %}
+
+{% endblock %}

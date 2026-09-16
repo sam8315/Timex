@@ -1,0 +1,609 @@
+{% extends "base.html" %}
+{% block title %}دسترسی‌های کاربر | پنل مدیریت{% endblock %}
+
+{# ────────────────────────────────────────────────────────────────────────────
+   اطلاعات لازم همیشه از Context روت Backend می‌آیند:
+   permissions_list (۱۸ مورد با code/label/role_default/is_active/source/override)
+   effective_count ، history_list ، target_user ، target_employee ، csrf_token
+   هیچ عددی در اینجا hard-code نشده است. «سایر» فقط برای دسترسی‌هایی است که
+   در دسته‌بندی بالا قرار نگرفته باشند — هرگز هیچ دسترسیای مخفی نمی‌شود.
+#}
+
+{% macro perm_row(p, csrf, target_id) %}
+<tr data-perm-code="{{ p.code }}">
+    <td data-label="دسترسی">
+        <strong>{{ p.label }}</strong>
+        <div><small class="text-muted" dir="ltr">{{ p.code }}</small></div>
+        {% if p.override and p.override.reason %}
+        <div class="mt-1"><small class="text-muted"><i class="bi bi-chat-left-text"></i> {{ p.override.reason }}</small></div>
+        {% endif %}
+    </td>
+    <td data-label="پیش‌فرض نقش">
+        {% if p.role_default %}
+        <span class="state-badge badge-role"><i class="bi bi-check-circle"></i> مجاز — از نقش</span>
+        {% else %}
+        <span class="state-badge badge-role"><i class="bi bi-x-circle"></i> غیرمجاز — از نقش</span>
+        {% endif %}
+    </td>
+    <td data-label="Override کاربر">
+        {% if p.source == 'grant' %}
+        <span class="state-badge badge-granted"><i class="bi bi-plus-circle"></i> اعطا شده</span>
+        {% elif p.source == 'revoke' %}
+        <span class="state-badge badge-revoked"><i class="bi bi-x-circle"></i> سلب شده</span>
+        {% else %}
+        <span class="text-muted">ندارد</span>
+        {% endif %}
+    </td>
+    <td data-label="دسترسی مؤثر">
+        {% if p.is_active %}
+        <span class="state-badge badge-allowed"><i class="bi bi-check-circle"></i> مجاز</span>
+        {% else %}
+        <span class="state-badge badge-denied"><i class="bi bi-x-circle"></i> غیرمجاز</span>
+        {% endif %}
+    </td>
+    <td data-label="منبع">
+        {% if p.source == 'role' %}
+        <span class="source-tag"><i class="bi bi-person-badge"></i> نقش</span>
+        {% else %}
+        <span class="source-tag source-override"><i class="bi bi-sliders"></i> Override کاربر</span>
+        {% endif %}
+    </td>
+    <td data-label="عملیات" class="perm-actions-cell">
+        <form method="post" action="/admin/permissions/{{ target_id }}/toggle"
+              class="perm-form d-flex flex-wrap gap-1 align-items-center justify-content-center">
+            <input type="hidden" name="permission" value="{{ p.code }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf }}">
+            <input type="text" name="reason" class="form-control form-control-sm perm-reason"
+                   maxlength="200" placeholder="دلیل (اختیاری)"
+                   value="{{ p.override.reason if (p.override and p.override.reason) else '' }}"
+                   aria-label="دلیل برای {{ p.label }}" title="دلیل (اختیاری)">
+            <button type="submit" name="action" value="grant" class="btn btn-sm btn-outline-success perm-btn"
+                    data-action="grant" data-perm-label="{{ p.label }}"
+                    {% if p.source == 'grant' %}disabled{% endif %}>
+                <i class="bi bi-plus-circle"></i> اعطا
+            </button>
+            <button type="submit" name="action" value="revoke" class="btn btn-sm btn-outline-danger perm-btn"
+                    data-action="revoke" data-perm-label="{{ p.label }}"
+                    {% if p.source == 'revoke' %}disabled{% endif %}>
+                <i class="bi bi-x-circle"></i> سلب
+            </button>
+            <button type="submit" name="action" value="reset" class="btn btn-sm btn-outline-warning perm-btn"
+                    data-action="reset" data-perm-label="{{ p.label }}"
+                    {% if p.source == 'role' %}disabled{% endif %}>
+                <i class="bi bi-arrow-counterclockwise"></i> بازنشانی
+            </button>
+        </form>
+    </td>
+</tr>
+{% endmacro %}
+
+{% block extra_css %}
+<style>
+    /* آواتار بزرگ — هماهنگ با .user-avatar موجود در base.html */
+    .avatar-lg {
+        width: 58px; height: 58px;
+        border-radius: 16px;
+        font-size: 1.45rem;
+        flex-shrink: 0;
+    }
+
+    /* نشان چهار حالت — همیشه آیکون + متن + رنگ (رنگ تنها شاخص نیست) */
+    .state-badge {
+        display: inline-flex; align-items: center; gap: .35rem;
+        padding: .28rem .6rem; border-radius: 50rem;
+        font-size: .78rem; font-weight: 600; line-height: 1;
+        white-space: nowrap; border: 1px solid transparent;
+    }
+    .badge-role    { background: #e9ecf2; color: #44506b; border-color: #d3d9e4; }
+    .badge-granted { background: #d9f2e3; color: #0f6a33; border-color: #95d5a8; }
+    .badge-revoked { background: #f8dddd; color: #a01919; border-color: #f0b4b4; }
+    .badge-allowed { background: #e3f4ff; color: #0a5e8c; border-color: #a9d6ef; }
+    .badge-denied  { background: #fbe8df; color: #9c3d12; border-color: #f2c4ab; }
+    [data-theme="dark"] .badge-role    { background: #2b303c; color: #c6cbd9; border-color: #3a4050; }
+    [data-theme="dark"] .badge-granted { background: #1e3a2f; color: #a3e6c1; border-color: #2a4d3e; }
+    [data-theme="dark"] .badge-revoked { background: #3d2121; color: #f5a3a3; border-color: #4d2a2a; }
+    [data-theme="dark"] .badge-allowed { background: #1c3346; color: #9fd7f5; border-color: #27495f; }
+    [data-theme="dark"] .badge-denied  { background: #3d2b1d; color: #f3b48c; border-color: #4d3a26; }
+
+    /* نشان منبع (نقش / Override کاربر) */
+    .source-tag {
+        display: inline-flex; align-items: center; gap: .3rem;
+        padding: .2rem .5rem; border-radius: 50rem;
+        font-size: .75rem; font-weight: 600; color: #667085;
+        background: #f2f4f7; border: 1px solid #e4e7ec;
+        white-space: nowrap;
+    }
+    .source-tag.source-override { color: #8a6d00; background: #fff4d6; border-color: #f1d98a; }
+    [data-theme="dark"] .source-tag { color: #a6aec0; background: #2b303c; border-color: #3a4050; }
+    [data-theme="dark"] .source-tag.source-override { color: #ffdb85; background: #3d3521; border-color: #4a4229; }
+
+    /* فیلد دلیل — عرض مناسب داخل سلول عملیات */
+    .perm-reason { min-width: 110px; max-width: 150px; }
+
+    /* آکاردئون — هماهنگ با dark mode (Bootstrap پیش‌فرض روشن است) */
+    [data-theme="dark"] .accordion-item  { background: var(--bg-card); border-color: var(--border-color); }
+    [data-theme="dark"] .accordion-button { background: var(--bg-card); color: var(--text-primary); }
+    [data-theme="dark"] .accordion-button:not(.collapsed) { background: var(--bg-hover); color: var(--text-primary); box-shadow: none; }
+    [data-theme="dark"] .accordion-button::after { filter: invert(1); }
+    [data-theme="dark"] .table-light, [data-theme="dark"] .table-light th { background-color: var(--bg-hover); color: var(--text-primary); }
+
+    /* تاریخچه */
+    .hist-icon {
+        width: 30px; height: 30px; border-radius: 50%;
+        display: inline-flex; align-items: center; justify-content: center;
+        font-size: .95rem; flex-shrink: 0;
+    }
+    .hist-grant  { background: #d9f2e3; color: #0f6a33; }
+    .hist-revoke { background: #f8dddd; color: #a01919; }
+    .hist-reset  { background: #fff4d6; color: #8a6d00; }
+    [data-theme="dark"] .hist-grant  { background: #1e3a2f; color: #a3e6c1; }
+    [data-theme="dark"] .hist-revoke { background: #3d2121; color: #f5a3a3; }
+    [data-theme="dark"] .hist-reset  { background: #3d3521; color: #ffdb85; }
+
+    /* تمرکز کانونی قابل‌دیدن برای ناوبری صفحه‌کلید */
+    .perm-actions .perm-btn:focus-visible,
+    a:focus-visible { outline: 3px solid rgba(13, 110, 253, .35); outline-offset: 2px; }
+
+    /* Toast زیر توپبار ثابت قرار گیرد */
+    #permToastWrap { margin-top: 72px; z-index: 1095; }
+
+    /* ── موبایل (<768px): جدول → کارت؛ بدون تکرار markup، با data-label ── */
+    @media (max-width: 767.98px) {
+        .perm-table thead { display: none; }
+        .perm-table, .perm-table tbody, .perm-table tr, .perm-table td { display: block; width: 100%; }
+        .perm-table tr {
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: .6rem .9rem;
+            margin-bottom: .9rem;
+            background: var(--bg-card);
+        }
+        .perm-table td {
+            display: flex; flex-wrap: wrap;
+            align-items: center; justify-content: space-between;
+            gap: .4rem .75rem;
+            border: none; padding: .5rem 0;
+        }
+        .perm-table td::before {
+            content: attr(data-label);
+            font-size: .72rem; font-weight: 700;
+            color: var(--text-muted);
+            flex-shrink: 0;
+        }
+        .perm-table td .perm-form { justify-content: flex-start; }
+        .perm-reason { min-width: 100%; max-width: 100%; }
+        .main-perm-col { padding-inline-end: 0; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+{# ── نشانهٔ نام کاربر برای پیام‌های JS (از Context واقعی) ── #}
+{% set target_display = (target_employee.full_name if target_employee and target_employee.full_name else target_user.name) or target_user.user_id %}
+{% set target_initial = target_display.strip()[0] %}
+<span id="permTargetName" hidden>{{ target_display }}</span>
+
+{# ── شمارش‌های نمای کلی — همگی از permissions_list واقعی محاسبه شده‌اند ── #}
+{% set ov = namespace(total=permissions_list|length, role=0, granted=0, revoked=0, override=0) %}
+{% for _p in permissions_list %}
+    {% if _p.role_default %}{% set ov.role = ov.role + 1 %}{% endif %}
+    {% if _p.source == 'grant' %}{% set ov.granted = ov.granted + 1 %}{% endif %}
+    {% if _p.source == 'revoke' %}{% set ov.revoked = ov.revoked + 1 %}{% endif %}
+{% endfor %}
+{% set ov.override = ov.granted + ov.revoked %}
+
+{# ── دسته‌بندی دسترسی‌ها بر اساس ALL_PERMISSIONS واقعی (۱۸ مورد)؛ «سایر» به‌عنوان تکیه‌گاه امنی ── #}
+{% set categories = [
+    ('کاربران و نقش‌ها', ['manage_users', 'change_role', 'toggle_web']),
+    ('حضور و غیاب', ['view_all_attendance', 'view_user_attendance', 'approve_leave', 'add_attendance', 'edit_attendance', 'delete_attendance', 'change_punch']),
+    ('گزارش‌ها', ['view_reports', 'view_incomplete', 'view_contracts', 'view_leave_balances']),
+    ('تنظیمات', ['reset_password', 'upload_photo', 'edit_profile']),
+    ('داشبورد', ['view_dashboard']),
+] %}
+{% set _flat = namespace(codes=[]) %}
+{% for _c in categories %}{% set _flat.codes = _flat.codes + _c[1] %}{% endfor %}
+
+<!-- ══════════ سربرگ کاربر ══════════ -->
+<div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-3">
+    <div class="d-flex align-items-center gap-3">
+        <div class="user-avatar avatar-lg" aria-hidden="true">{{ target_initial }}</div>
+        <div>
+            <h4 class="fw-bold mb-1">{{ target_display }}</h4>
+            <div class="d-flex align-items-center gap-2 flex-wrap text-muted small">
+                <span class="d-inline-flex align-items-center gap-1">
+                    <i class="bi bi-shield"></i> نقش:
+                    {% if target_user.role == 'super_admin' %}<span class="badge bg-danger"><i class="bi bi-shield-lock"></i> مدیر ارشد</span>
+                    {% elif target_user.role == 'admin' %}<span class="badge bg-primary"><i class="bi bi-shield"></i> مدیر</span>
+                    {% else %}<span class="badge bg-secondary"><i class="bi bi-person"></i> کاربر</span>{% endif %}
+                </span>
+                <span><code dir="ltr">{{ target_user.user_id }}</code></span>
+                <span class="d-inline-flex align-items-center gap-1">
+                    <i class="bi bi-check2-circle"></i> {{ effective_count }} از {{ permissions_list|length }} دسترسی فعال
+                </span>
+            </div>
+        </div>
+    </div>
+    <a href="/admin/permissions" class="btn btn-outline-primary btn-sm rounded-pill">
+        <i class="bi bi-arrow-right"></i> برگشت
+    </a>
+</div>
+
+<!-- ══════════ نمای کلی (اعداد واقعی، نه ساختگی) ══════════ -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white">
+        <h6 class="mb-0 fw-bold"><i class="bi bi-grid-3x3-gap text-primary"></i> نمای کلی دسترسی</h6>
+    </div>
+    <div class="card-body py-3">
+        <div class="row g-3 text-center">
+            <div class="col-6 col-md">
+                <div class="fs-4 fw-bold">{{ effective_count }}</div>
+                <small class="text-muted">از {{ ov.total }} دسترسی مؤثر</small>
+            </div>
+            <div class="col-6 col-md">
+                <div class="fs-4 fw-bold">{{ ov.role }}</div>
+                <small class="text-muted">پیش‌فرض نقش</small>
+            </div>
+            <div class="col-6 col-md">
+                <div class="fs-4 fw-bold">{{ ov.override }}</div>
+                <small class="text-muted">Override اختصاصی</small>
+            </div>
+            <div class="col-6 col-md">
+                <div class="fs-4 fw-bold text-success">{{ ov.granted }}</div>
+                <small class="text-muted">اعطا شده</small>
+            </div>
+            <div class="col-6 col-md">
+                <div class="fs-4 fw-bold text-danger">{{ ov.revoked }}</div>
+                <small class="text-muted">سلب شده</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# ── پیام بدون JS (ریدایرکت Backend با ?msg) ── #}
+{% if request.query_params.get('msg') %}
+<div class="alert alert-info d-flex align-items-center gap-2 fade show" role="alert">
+    <i class="bi bi-info-circle"></i>
+    <span>{{ request.query_params.get('msg') }}</span>
+</div>
+{% endif %}
+
+<div class="row g-4">
+    <!-- ══════════ دسته‌بندی دسترسی‌ها ══════════ -->
+    <div class="col-lg-8 main-perm-col">
+        <div class="accordion" id="permAccordion">
+            {% for cat_label, cat_codes in categories %}
+            {% set cat_perms = permissions_list | selectattr('code', 'in', cat_codes) | list %}
+            {% if cat_perms %}
+            <div class="accordion-item mb-3 border-0 shadow-sm rounded-4 overflow-hidden">
+                <h2 class="accordion-header" id="permCatHead-{{ loop.index }}">
+                    <button class="accordion-button {% if not loop.first %}collapsed{% endif %} fw-bold"
+                            type="button" data-bs-toggle="collapse"
+                            data-bs-target="#permCat-{{ loop.index }}"
+                            aria-expanded="{% if loop.first %}true{% else %}false{% endif %}"
+                            aria-controls="permCat-{{ loop.index }}">
+                        <span class="d-inline-flex align-items-center gap-2">
+                            <i class="bi bi-folder2-open text-primary"></i> {{ cat_label }}
+                            <span class="badge bg-light text-primary border ms-1">{{ cat_perms|length }}</span>
+                        </span>
+                    </button>
+                </h2>
+                <div id="permCat-{{ loop.index }}" class="accordion-collapse collapse {% if loop.first %}show{% endif %}"
+                     data-bs-parent="#permAccordion" role="region"
+                     aria-labelledby="permCatHead-{{ loop.index }}">
+                    <div class="accordion-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle mb-0 perm-table">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th scope="col">دسترسی</th>
+                                        <th scope="col" class="text-center">پیش‌فرض نقش</th>
+                                        <th scope="col" class="text-center">Override کاربر</th>
+                                        <th scope="col" class="text-center">دسترسی مؤثر</th>
+                                        <th scope="col" class="text-center">منبع</th>
+                                        <th scope="col" class="text-center">عملیات</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for p in cat_perms %}{{ perm_row(p, csrf_token, target_user.user_id) }}{% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            {% endfor %}
+
+            {# سطل «سایر» — فقط اگر دسترسی‌ای خارج از دسته‌های بالا باشد #}
+            {% set other_perms = permissions_list | rejectattr('code', 'in', _flat.codes) | list %}
+            {% if other_perms %}
+            <div class="accordion-item mb-3 border-0 shadow-sm rounded-4 overflow-hidden">
+                <h2 class="accordion-header" id="permCatHead-other">
+                    <button class="accordion-button collapsed fw-bold" type="button"
+                            data-bs-toggle="collapse" data-bs-target="#permCat-other"
+                            aria-expanded="false" aria-controls="permCat-other">
+                        <span class="d-inline-flex align-items-center gap-2">
+                            <i class="bi bi-three-dots text-primary"></i> سایر
+                            <span class="badge bg-light text-primary border ms-1">{{ other_perms|length }}</span>
+                        </span>
+                    </button>
+                </h2>
+                <div id="permCat-other" class="accordion-collapse collapse" data-bs-parent="#permAccordion"
+                     role="region" aria-labelledby="permCatHead-other">
+                    <div class="accordion-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle mb-0 perm-table">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th scope="col">دسترسی</th>
+                                        <th scope="col" class="text-center">پیش‌فرض نقش</th>
+                                        <th scope="col" class="text-center">Override کاربر</th>
+                                        <th scope="col" class="text-center">دسترسی مؤثر</th>
+                                        <th scope="col" class="text-center">منبع</th>
+                                        <th scope="col" class="text-center">عملیات</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for p in other_perms %}{{ perm_row(p, csrf_token, target_user.user_id) }}{% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+
+        <p class="text-muted small mt-1 mb-0">
+            <i class="bi bi-info-circle"></i>
+            برای تغییر دسترسی، دکمهٔ «اعطا»، «سلب» یا «بازنشانی» را بزنید و در صورت لزوم دلیل را وارد کنید.
+            «بازنشانی» (فقط وقتی Override وجود دارد) دسترسی را به مقدار پیش‌فرض نقش برمی‌گرداند.
+        </p>
+    </div>
+
+    <!-- ══════════ تاریخچه تغییرات ══════════ -->
+    <div class="col-lg-4">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white d-flex align-items-center gap-2">
+                <i class="bi bi-clock-history text-primary"></i>
+                <h6 class="mb-0 fw-bold">تاریخچه تغییرات</h6>
+                {% if history_list %}
+                <span class="badge bg-light text-secondary ms-auto">آخرین {{ [history_list|length, 20]|min }} تغییر</span>
+                {% endif %}
+            </div>
+            <div class="card-body p-0">
+                {% if history_list %}
+                <ul class="list-group list-group-flush" style="max-height: 540px; overflow-y: auto;">
+                    {% for h in history_list[:20] %}
+                    <li class="list-group-item border-0 border-bottom">
+                        <div class="d-flex justify-content-between align-items-start gap-2">
+                            <div class="d-flex gap-2 align-items-center">
+                                {% if h.action == 'reset' %}
+                                <span class="hist-icon hist-reset" aria-hidden="true"><i class="bi bi-arrow-counterclockwise"></i></span>
+                                {% elif h.granted %}
+                                <span class="hist-icon hist-grant" aria-hidden="true"><i class="bi bi-plus-circle"></i></span>
+                                {% else %}
+                                <span class="hist-icon hist-revoke" aria-hidden="true"><i class="bi bi-x-circle"></i></span>
+                                {% endif %}
+                                <div>
+                                    <strong class="d-block small">{{ h.permission_label }}</strong>
+                                    {% if h.action == 'reset' %}
+                                    <span class="badge text-bg-warning">بازنشانی</span>
+                                    {% elif h.granted %}
+                                    <span class="badge text-bg-success">اعطا</span>
+                                    {% else %}
+                                    <span class="badge text-bg-danger">سلب</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <small class="text-muted text-nowrap">{{ h.created_at_j }}</small>
+                        </div>
+                        {% if h.reason %}
+                        <small class="text-muted d-block mt-1"><i class="bi bi-chat-left-text"></i> {{ h.reason }}</small>
+                        {% endif %}
+                        {% if h.created_by %}
+                        <small class="text-muted d-block mt-1"><i class="bi bi-person"></i> {{ h.created_by }}</small>
+                        {% endif %}
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <div class="text-center py-5 text-muted">
+                    <i class="bi bi-inbox display-6" aria-hidden="true"></i>
+                    <p class="mt-2 mb-0">تغییری ثبت نشده است</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ══════════ مودال تأیید (تک‌مودال قابل‌استفاده‌ی مجدد) ══════════ -->
+<div class="modal fade" id="permConfirmModal" tabindex="-1" role="dialog"
+     aria-labelledby="permConfirmTitle" aria-describedby="permConfirmDesc" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg rounded-4">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold" id="permConfirmTitle"></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="بستن"></button>
+            </div>
+            <div class="modal-body" id="permConfirmDesc"></div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary rounded-pill" data-bs-dismiss="modal">لغو</button>
+                <button type="button" id="permConfirmBtn" class="btn rounded-pill px-4" data-action="">
+                    <span class="spinner-border spinner-border-sm d-none" id="permConfirmSpinner" aria-hidden="true"></span>
+                    <span id="permConfirmBtnText">تأیید</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ══════════ Toast پیام‌ها (aria-live) ══════════ -->
+<div class="toast-container position-fixed top-0 start-50 translate-middle-x p-3" id="permToastWrap">
+    <div class="toast align-items-center border-0 text-bg-success" id="permToast"
+         role="alert" aria-live="polite" aria-atomic="true">
+        <div class="d-flex">
+            <div class="toast-body" id="permToastBody"></div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="بستن"></button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    'use strict';
+    var targetNameEl = document.getElementById('permTargetName');
+    var TARGET_NAME = targetNameEl ? targetNameEl.textContent.trim() : 'کاربر';
+
+    var texts = {
+        grant: { title: 'اعطای دسترسی', btn: 'اعطا', cls: 'btn-success',
+                 body: 'آیا می‌خواهید دسترسی «%%PERM%%» را برای «%%USER%%» اعطا کنید؟' },
+        revoke: { title: 'سلب دسترسی', btn: 'سلب', cls: 'btn-danger',
+                  body: 'آیا می‌خواهید دسترسی «%%PERM%%» را از «%%USER%%» سلب کنید؟' },
+        reset: { title: 'بازگردانی دسترسی', btn: 'بازگردانی', cls: 'btn-warning',
+                 body: 'آیا می‌خواهید دسترسی «%%PERM%%» برای «%%USER%%» به مقدار پیش‌فرض نقش بازگردانده شود؟ با این کار Override اختصاصی این کاربر حذف می‌شود.' }
+    };
+    var successMsgs = {
+        grant: 'دسترسی «%%PERM%%» به «%%USER%%» اعطا شد.',
+        revoke: 'دسترسی «%%PERM%%» از «%%USER%%» سلب شد.',
+        reset: 'دسترسی «%%PERM%%» بازنشانی شد و به تنظیمات نقش برگشت.'
+    };
+
+    var modalEl = document.getElementById('permConfirmModal');
+    var modal = null;
+    var pending = null;   // { form, action, permLabel }
+    var lastFocus = null;
+
+    function fill(msg, perm, user) {
+        return msg.split('%%PERM%%').join(perm).split('%%USER%%').join(user);
+    }
+
+    function showPermToast(message, kind) {
+        var el = document.getElementById('permToast');
+        var body = document.getElementById('permToastBody');
+        el.classList.remove('text-bg-success', 'text-bg-danger', 'text-bg-warning');
+        if (kind === 'error') { el.classList.add('text-bg-danger'); }
+        else if (kind === 'warn') { el.classList.add('text-bg-warning'); }
+        else { el.classList.add('text-bg-success'); }
+        body.textContent = message;
+        var t = bootstrap.Toast.getOrCreateInstance(el, { delay: 4500 });
+        t.show();
+    }
+
+    function setBusy(form, busy) {
+        form.querySelectorAll('button.perm-btn').forEach(function (b) {
+            if (busy) {
+                b.dataset.wasBusy = String(b.disabled);
+                b.disabled = true;
+            } else {
+                b.disabled = (String(b.dataset.wasBusy) === 'true');
+            }
+        });
+    }
+
+    function openConfirm(form, submitter) {
+        var action = submitter.getAttribute('data-action');
+        var permLabel = submitter.getAttribute('data-perm-label') || '';
+        var t = texts[action] || texts.revoke;
+        document.getElementById('permConfirmTitle').textContent = t.title;
+        document.getElementById('permConfirmDesc').textContent = fill(t.body, permLabel, TARGET_NAME);
+        var btn = document.getElementById('permConfirmBtn');
+        btn.classList.remove('btn-success', 'btn-danger', 'btn-warning');
+        btn.classList.add(t.cls);
+        document.getElementById('permConfirmBtnText').textContent = t.btn;
+        document.getElementById('permConfirmSpinner').classList.add('d-none');
+        pending = { form: form, action: action, permLabel: permLabel };
+        modal = modal || bootstrap.Modal.getOrCreateInstance(modalEl);
+        modal.show();
+        btn.focus();
+    }
+
+    function restoreFocus() {
+        if (lastFocus && document.body.contains(lastFocus)) { lastFocus.focus(); }
+        lastFocus = null;
+    }
+
+    function doSubmit() {
+        var req = pending;
+        if (!req) { return; }
+        setBusy(req.form, true);
+        var fd = new FormData(req.form);
+        fd.set('action', req.action);
+        var url = req.form.getAttribute('action');
+        fetch(url, {
+            method: 'POST',
+            body: fd,
+            headers: { 'Accept': 'application/json' },
+            redirect: 'manual',
+            credentials: 'same-origin'
+        }).then(function (resp) {
+            if (resp.type === 'opaqueredirect' || (resp.status >= 200 && resp.status < 400)) {
+                showPermToast(fill(successMsgs[req.action] || '', req.permLabel, TARGET_NAME), 'ok');
+                return true;
+            }
+            return resp.json().then(function (data) {
+                var d = (data && data.detail) || '';
+                showPermToast(d ? ('تغییر دسترسی انجام نشد. ' + d) : 'تغییر دسترسی انجام نشد. لطفاً دوباره تلاش کنید.', 'error');
+                return false;
+            }).catch(function () {
+                showPermToast('تغییر دسترسی انجام نشد. لطفاً دوباره تلاش کنید.', 'error');
+                return false;
+            });
+        }).then(function (ok) {
+            if (modal) { modal.hide(); }
+            if (ok) {
+                setTimeout(function () { window.location.reload(); }, 700);
+            } else {
+                setBusy(req.form, false);
+                restoreFocus();
+            }
+            pending = null;
+        }).catch(function () {
+            if (modal) { modal.hide(); }
+            showPermToast('تغییر دسترسی انجام نشد. لطفاً دوباره تلاش کنید.', 'error');
+            setBusy(req.form, false);
+            pending = null;
+            restoreFocus();
+        });
+    }
+
+    // ارسال فرم‌ها → مودال تأیید
+    document.addEventListener('submit', function (e) {
+        var form = e.target.closest('.perm-form');
+        if (!form) { return; }
+        var submitter = e.submitter;
+        if (!submitter) {
+            e.preventDefault();
+            showPermToast('برای ثبت تغییر، یکی از دکمه‌های اعطا، سلب یا بازنشانی را بزنید.', 'warn');
+            return;
+        }
+        if (submitter.disabled || submitter.value === '') {
+            e.preventDefault();
+            return;
+        }
+        e.preventDefault();
+        lastFocus = submitter;
+        openConfirm(form, submitter);
+    });
+
+    // تأیید در مودال
+    document.getElementById('permConfirmBtn').addEventListener('click', function () {
+        if (!pending) { return; }
+        this.disabled = true;
+        document.getElementById('permConfirmSpinner').classList.remove('d-none');
+        doSubmit();
+    });
+
+    // هنگام بسته شدن مودال: بازگردانی حالت و تمرکز
+    modalEl.addEventListener('hidden.bs.modal', function () {
+        var btn = document.getElementById('permConfirmBtn');
+        btn.disabled = false;
+        document.getElementById('permConfirmSpinner').classList.add('d-none');
+        restoreFocus();
+    });
+})();
+</script>
+{% endblock %}

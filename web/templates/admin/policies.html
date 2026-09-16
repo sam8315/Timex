@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}سیاست کلی | مدیریت{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4><i class="bi bi-gear-wide-connected text-primary"></i> ⚙️ سیاست کلی</h4>
+</div>
+
+<div class="row g-4">
+    <!-- مرخصی -->
+    <div class="col-md-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body text-center p-4">
+        <div class="mb-3"><i class="bi bi-sun" style="font-size: 3rem; color: #ffc107;"></i></div>
+        <h5 class="card-title mb-2">🏖️ مرخصی</h5><p class="card-text text-muted small">مدیریت مرخصی‌ها</p>
+        <a href="/admin/policies/leave" class="btn btn-primary btn-sm"><i class="bi bi-eye"></i> مشاهده</a>
+    </div></div></div>
+
+    <!-- مرخصی توراهی -->
+    <div class="col-md-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body text-center p-4">
+        <div class="mb-3"><i class="bi bi-signpost-2" style="font-size: 3rem; color: #6f42c1;"></i></div>
+        <h5 class="card-title mb-2">🛣️ مرخصی توراهی</h5>
+        <p class="card-text text-muted small">سیاست بر اساس نوع قرارداد، وضعیت تأهل، فاصله و سهمیه سالانه</p>
+        <a href="/admin/policies/travel-leave" class="btn btn-primary btn-sm"><i class="bi bi-eye"></i> مشاهده</a>
+    </div></div></div>
+
+    <!-- مرخصی ساعتی -->
+    <div class="col-md-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body text-center p-4">
+        <div class="mb-3"><i class="bi bi-hourglass-split" style="font-size: 3rem; color: #0f766e;"></i></div>
+        <h5 class="card-title mb-2">⏳ مرخصی ساعتی</h5><p class="card-text text-muted small">تنظیم قوانین مرخصی ساعتی</p>
+        <a href="/admin/policies/hourly-leave" class="btn btn-primary btn-sm"><i class="bi bi-eye"></i> مشاهده</a>
+    </div></div></div>
+
+    <!-- مناطق -->
+    <div class="col-md-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body text-center p-4">
+        <div class="mb-3"><i class="bi bi-geo-alt" style="font-size: 3rem; color: #17a2b8;"></i></div>
+        <h5 class="card-title mb-2">🌍 مناطق</h5><p class="card-text text-muted small">مدیریت مناطق خدمتی</p>
+        <a href="/admin/policies/regions" class="btn btn-primary btn-sm"><i class="bi bi-eye"></i> مشاهده</a>
+    </div></div></div>
+
+    <!-- پیامک -->
+    <div class="col-md-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body text-center p-4">
+        <div class="mb-3"><i class="bi bi-chat-dots" style="font-size: 3rem; color: #0dcaf0;"></i></div>
+        <h5 class="card-title mb-2">📱 پیامک</h5>
+        <p class="card-text small">{% if sms_enabled %}<span class="badge bg-success">فعال</span>{% else %}<span class="badge bg-secondary">غیرفعال</span>{% endif %}</p>
+        <a href="/admin/policies/sms" class="btn btn-primary btn-sm"><i class="bi bi-eye"></i> مشاهده</a>
+    </div></div></div>
+
+    <!-- حضور و غیاب -->
+    <div class="col-md-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body text-center p-4">
+        <div class="mb-3"><i class="bi bi-clock" style="font-size: 3rem; color: #0d6efd;"></i></div>
+        <h5 class="card-title mb-2">⏱️ حضور و غیاب</h5><p class="card-text text-muted small">سیاست‌های حضور و غیاب برای هر نوع عضویت</p>
+        <a href="/admin/policies/attendance" class="btn btn-primary btn-sm"><i class="bi bi-eye"></i> مشاهده</a>
+    </div></div></div>
+
+    <!-- اضافه‌کاری -->
+    <div class="col-md-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body text-center p-4">
+        <div class="mb-3"><i class="bi bi-cash-coin" style="font-size: 3rem; color: #28a745;"></i></div>
+        <h5 class="card-title mb-2">💰 اضافه‌کاری</h5><p class="card-text text-muted small">به‌زودی</p>
+        <button class="btn btn-secondary btn-sm" disabled><i class="bi bi-lock"></i> به‌زودی</button>
+    </div></div></div>
+</div>
+
+{% endblock %}

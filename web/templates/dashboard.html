@@ -1,0 +1,537 @@
+{% extends "base.html" %}
+{% block title %}داشبورد{% endblock %}
+{% block content %}
+<!-- 🆕 نمایش پیام‌ها -->
+{% set success_msg = request.query_params.get('success') %}
+{% set error_msg = request.query_params.get('error') %}
+{% set info_msg = request.query_params.get('info') %}
+
+{% if success_msg %}
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+    <i class="bi bi-check-circle-fill"></i> {{ success_msg }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="بستن"></button>
+</div>
+{% endif %}
+
+{% if error_msg %}
+<div class="alert alert-danger alert-dismissible fade show" role="alert">
+    <i class="bi bi-exclamation-triangle-fill"></i> {{ error_msg }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="بستن"></button>
+</div>
+{% endif %}
+
+{% if info_msg %}
+<div class="alert alert-info alert-dismissible fade show" role="alert">
+    <i class="bi bi-info-circle-fill"></i> {{ info_msg }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="بستن"></button>
+</div>
+{% endif %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4><i class="bi bi-house-door"></i> داشبورد</h4>
+        <!-- 🆕 خوش‌آمدگویی و آخرین ورود -->
+        <small class="text-muted">
+            👋 خوش آمدید، {{ user.name }}
+            {% if last_login_display %}
+            | <i class="bi bi-clock-history"></i> ورود قبلی: {{ last_login_display }}
+            {% endif %}
+        </small>
+    </div>
+    <span class="text-muted">{{ today_j.strftime('%Y/%m/%d') }}</span>
+</div>
+<!-- 🆕 کارت یادآوری مرخصی استفاده نشده (وقتی مودال نمایش داده نمی‌شود) -->
+{% if has_pending_carry_forward and not show_carry_forward_modal %}
+<div class="alert alert-warning d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <i class="bi bi-exclamation-triangle"></i>
+        شما
+        {% for leave_type, days in unused_leave.items() %}
+        <strong>{{ days }} روز</strong> مرخصی
+        {{ 'استحقاقی' if leave_type == 'AL' else 'استعلاجی' }}
+        {% if not loop.last %} و {% endif %}
+        {% endfor %}
+        استفاده نشده از سال <strong>{{ carry_forward_year }}</strong> دارید.
+    </div>
+    <a href="/carry-forward/manage" class="btn btn-warning btn-sm">
+        <i class="bi bi-arrow-repeat"></i> تعیین تکلیف
+    </a>
+</div>
+{% endif %}
+<!-- ============================================ -->
+<!-- 📊 کارت‌های آمار - طراحی مدرن                 -->
+<!-- ============================================ -->
+<div class="row g-3 mb-4">
+
+    <!-- 🗓️ ترددهای این ماه -->
+    <div class="col-lg-3 col-md-6">
+        <div class="card border-0 shadow-sm h-100" style="border-radius: 16px; overflow: hidden;">
+            <div class="card-body p-4 d-flex align-items-center gap-3">
+                <div class="rounded-4 d-flex align-items-center justify-content-center flex-shrink-0"
+                     style="width: 56px; height: 56px; background: linear-gradient(135deg, #667eea, #764ba2); color: white; font-size: 1.5rem;">
+                    <i class="bi bi-calendar-check"></i>
+                </div>
+                <div>
+                    <div class="text-muted small fw-semibold mb-1">ترددهای این ماه</div>
+                    <div class="fs-2 fw-bold text-dark" style="line-height: 1;">{{ month_attendance_count }}</div>
+                    <div class="text-muted small mt-1">روز حضور ثبت شده</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ✈️ مانده مرخصی -->
+    <div class="col-lg-3 col-md-6">
+        <div class="card border-0 shadow-sm h-100" style="border-radius: 16px; overflow: hidden;">
+            <div class="card-body p-4 d-flex align-items-center gap-3">
+                <div class="rounded-4 d-flex align-items-center justify-content-center flex-shrink-0"
+                     style="width: 56px; height: 56px; background: linear-gradient(135deg, #11998e, #38ef7d); color: white; font-size: 1.5rem;">
+                    <i class="bi bi-airplane"></i>
+                </div>
+                <div>
+                    <div class="text-muted small fw-semibold mb-1">مانده مرخصی</div>
+<!-- 🆕 نمایش یکپارچه مرخصی -->
+{% if total_al_available > 0 %}
+<span class="badge bg-success fs-6 me-2">
+    {{ total_al_available }} روز مرخصی قابل استفاده
+</span>
+{% if cw_days > 0 %}
+<small class="text-muted d-block mt-1">
+    شامل {{ cw_days }} روز انتقالی از سال قبل
+</small>
+{% endif %}
+{% else %}
+<span class="badge bg-secondary">
+    مرخصی قابل استفاده: ۰ روز
+</span>
+{% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ⏳ درخواست‌های در انتظار -->
+    <div class="col-lg-3 col-md-6">
+        <div class="card border-0 shadow-sm h-100" style="border-radius: 16px; overflow: hidden;">
+            <div class="card-body p-4 d-flex align-items-center gap-3">
+                <div class="rounded-4 d-flex align-items-center justify-content-center flex-shrink-0"
+                     style="width: 56px; height: 56px; background: linear-gradient(135deg, #f59e0b, #fbbf24); color: white; font-size: 1.5rem;">
+                    <i class="bi bi-hourglass-split"></i>
+                </div>
+                <div>
+                    <div class="text-muted small fw-semibold mb-1">درخواست‌های در انتظار</div>
+                    <div class="fs-2 fw-bold {% if pending_count > 0 %}text-warning{% else %}text-success{% endif %}"
+                         style="line-height: 1;">
+                        {{ pending_count }}
+                    </div>
+                    <div class="text-muted small mt-1">
+                        {% if pending_count > 0 %}نیاز به پیگیری{% else %}همه بررسی شده ✅{% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 📋 قرارداد -->
+    <div class="col-lg-3 col-md-6">
+        {% if contract_info %}
+        <div class="card border-0 shadow-sm h-100" style="border-radius: 16px; overflow: hidden;">
+            <div class="card-body p-4 d-flex align-items-center gap-3">
+                <div class="rounded-4 d-flex align-items-center justify-content-center flex-shrink-0"
+                     style="width: 56px; height: 56px; font-size: 1.5rem; color: white;
+                            background: {% if contract_info.is_expiring_soon %}linear-gradient(135deg, #f59e0b, #fbbf24){% elif contract_info.is_expired %}linear-gradient(135deg, #ef4444, #f87171){% else %}linear-gradient(135deg, #6c757d, #adb5bd){% endif %};">
+                    <i class="bi bi-file-earmark-text"></i>
+                </div>
+                <div>
+                    <div class="text-muted small fw-semibold mb-1">مانده قرارداد</div>
+                    {% if contract_info.days_remaining is not none %}
+                    <div class="fs-2 fw-bold {% if contract_info.is_expiring_soon %}text-warning{% elif contract_info.is_expired %}text-danger{% else %}text-dark{% endif %}"
+                         style="line-height: 1;">
+                        {{ contract_info.days_remaining }} <span class="fs-6 fw-normal text-muted">روز</span>
+                    </div>
+                    {% if contract_info.is_expiring_soon %}
+                    <div class="text-warning small mt-1 fw-semibold">⚠️ رو به انقضا</div>
+                    {% elif contract_info.is_expired %}
+                    <div class="text-danger small mt-1 fw-semibold">❌ منقضی شده</div>
+                    {% endif %}
+                    {% else %}
+                    <div class="fs-3 fw-bold text-dark" style="line-height: 1;">نامحدود</div>
+                    {% endif %}
+                </div>
+            </div>
+            <!-- نوار پیشرفت قرارداد -->
+            {% if contract_info.progress_percent is defined and contract_info.total_days %}
+            <div style="height: 4px; background: #e9ecef;">
+                <div style="height: 100%; width: {{ contract_info.progress_percent }}%;
+                            background: {% if contract_info.is_expiring_soon %}#f59e0b{% elif contract_info.is_expired %}#ef4444{% else %}#6c757d{% endif %};
+                            border-radius: 0 2px 2px 0; transition: width 0.6s ease;"></div>
+            </div>
+            {% endif %}
+        </div>
+        {% else %}
+        <!-- بدون قرارداد -->
+        <div class="card border-0 shadow-sm h-100"
+             style="border-radius: 16px; overflow: hidden; border-right: 4px solid #ef4444 !important;">
+            <div class="card-body p-4 d-flex align-items-center gap-3">
+                <div class="rounded-4 d-flex align-items-center justify-content-center flex-shrink-0"
+                     style="width: 56px; height: 56px; background: linear-gradient(135deg, #ef4444, #f87171); color: white; font-size: 1.5rem;">
+                    <i class="bi bi-exclamation-triangle"></i>
+                </div>
+                <div>
+                    <div class="text-muted small fw-semibold mb-1">وضعیت قرارداد</div>
+                    <div class="fs-3 fw-bold text-danger" style="line-height: 1;">ثبت نشده</div>
+                    <div class="text-danger small mt-1">با منابع انسانی تماس بگیرید</div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+</div>
+
+<div class="row g-4">
+    <!-- تردد امروز -->
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-white"><h6><i class="bi bi-clock"></i> تردد امروز</h6></div>
+            <div class="card-body">
+                {% if today_attendance %}
+                <table class="table table-sm">
+                    <thead>
+                    <tr>
+                        <th>ساعت</th>
+                        <th>نوع</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {% for record in today_attendance %}
+                    <tr>
+                        <td>{{ record.timestamp.strftime('%H:%M') }}</td>
+                        <td>
+                            {% if record.punch == 0 %}
+                            <span class="badge bg-success">ورود</span>
+                            {% else %}
+                            <span class="badge bg-danger">خروج</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p class="text-muted text-center">هنوز ترددی ثبت نشده است</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- درخواست‌های اخیر -->
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-white"><h6><i class="bi bi-airplane"></i> درخواست‌های اخیر</h6></div>
+            <div class="card-body">
+                {% if recent_requests %}
+                <table class="table table-sm">
+                    <thead>
+                    <tr>
+                        <th>نوع</th>
+                        <th>از</th>
+                        <th>تا</th>
+                        <th>وضعیت</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {% for req in recent_requests %}
+                    <tr>
+                        <td>{{ req.leave_type_name }}</td>
+                        <td>{{ req.from_date_j }}</td>
+                        <td>{{ req.to_date_j }}</td>
+                        <td>
+                            {% if req.status == 'P' %}<span class="badge bg-warning">{{ req.status_name }}</span>
+                            {% elif req.status == 'A' %}<span class="badge bg-success">{{ req.status_name }}</span>
+                            {% else %}<span class="badge bg-danger">{{ req.status_name }}</span>{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p class="text-muted text-center">درخواستی ثبت نشده است</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+<!-- 🆕 جزئیات قرارداد -->
+{% if contract_info %}
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <h6><i class="bi bi-file-earmark-text"></i> قرارداد فعال</h6>
+                <span class="badge {% if contract_info.is_expiring_soon %}bg-warning{% elif contract_info.is_expired %}bg-danger{% else %}bg-success{% endif %}">
+                    {{ contract_info.contract_type }}
+                </span>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="text-muted small">تاریخ شروع</div>
+                        <div class="fw-bold">{{ contract_info.start_date_j }}</div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-muted small">تاریخ پایان</div>
+                        <div class="fw-bold">{{ contract_info.end_date_j }}</div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-muted small">روزهای سپری شده</div>
+                        <div class="fw-bold">
+                            {% if contract_info.elapsed_days is not none %}
+                            {{ contract_info.elapsed_days }} روز
+                            {% else %}
+                            -
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-muted small">روزهای باقی‌مانده</div>
+                        <div class="fw-bold {% if contract_info.is_expiring_soon %}text-warning{% elif contract_info.is_expired %}text-danger{% else %}text-success{% endif %}">
+                            {% if contract_info.days_remaining is not none %}
+                            {{ contract_info.days_remaining }} روز
+                            {% else %}
+                            نامحدود
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- نوار پیشرفت -->
+                {% if contract_info.total_days %}
+                <div class="mt-3">
+                    <div class="d-flex justify-content-between mb-1">
+                        <small class="text-muted">پیشرفت قرارداد</small>
+                        <small class="text-muted">{{ contract_info.progress_percent }}%</small>
+                    </div>
+                    <div class="progress" style="height: 10px;">
+                        <div class="progress-bar {% if contract_info.progress_percent > 90 %}bg-danger{% elif contract_info.progress_percent > 75 %}bg-warning{% else %}bg-success{% endif %}"
+                             role="progressbar"
+                             style="width: {{ contract_info.progress_percent }}%"
+                             aria-valuenow="{{ contract_info.progress_percent }}"
+                             aria-valuemin="0"
+                             aria-valuemax="100">
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- هشدار پایان نزدیک -->
+                {% if contract_info.is_expiring_soon %}
+                <div class="alert alert-warning mt-3 mb-0">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    قرارداد شما کمتر از ۳۰ روز دیگر به پایان می‌رسد. لطفاً با واحد منابع انسانی تماس بگیرید.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="alert alert-danger">
+            <i class="bi bi-exclamation-triangle"></i>
+            شما قرارداد فعالی ندارید. لطفاً با واحد منابع انسانی تماس بگیرید.
+        </div>
+    </div>
+</div>
+{% endif %}
+<!-- ============================================ -->
+<!-- 🏖️ مودال انتقال مرخصی سال قبل (ساده‌شده)   -->
+<!-- ============================================ -->
+{% if show_carry_forward_modal %}
+<div class="modal fade rtl-text" id="carryForwardModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1"
+     aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content shadow-lg border-0" style="border-radius: 16px; overflow: hidden;">
+
+            <!-- هدر ساده -->
+            <div class="modal-header text-white py-3"
+                 style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                <h6 class="modal-title fw-bold mb-0">
+                    <i class="bi bi-hourglass-split me-2"></i>
+                    تعیین تکلیف مرخصی سال {{ carry_forward_year }}
+                </h6>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+
+            <div class="modal-body p-4">
+
+                <!-- ۱. خلاصه مانده مرخصی (یک خط) -->
+                <div class="alert alert-light border mb-3 py-2 d-flex align-items-center justify-content-between">
+                    <span class="small fw-semibold text-muted">
+                        <i class="bi bi-wallet2 text-primary me-1"></i>
+                        مانده مرخصی:
+                    </span>
+                    <div>
+                        {% if unused_leave.AL %}
+                        <span class="badge bg-primary">{{ unused_leave.AL }} روز استحقاقی</span>
+                        {% endif %}
+                        {% if unused_leave.SL %}
+                        <span class="badge bg-info">{{ unused_leave.SL }} روز استعلاجی</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- ۲. خلاصه وضعیت قرارداد (یک خط) -->
+                {% if contract_analysis %}
+                <div class="alert alert-light border mb-3 py-2 d-flex align-items-center justify-content-between">
+                    <span class="small fw-semibold text-muted">
+                        <i class="bi bi-file-earmark-text text-primary me-1"></i>
+                        وضعیت سال {{ carry_forward_year }}:
+                    </span>
+                    <div>
+                        {% if contract_analysis.assumed_full_year is defined and contract_analysis.assumed_full_year %}
+                        <span class="badge bg-info">کل سال (بدون قرارداد)</span>
+                        {% elif contract_analysis.contracts_count > 0 %}
+                        <span class="badge bg-secondary">{{ contract_analysis.contracts_count }} قرارداد</span>
+                        <span class="badge bg-light text-dark border">{{ contract_analysis.total_days }} روز کارکرد</span>
+                        {% else %}
+                        <span class="badge bg-danger">بدون سابقه کارکرد</span>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- ۳. سقف مجاز (یک خط) -->
+                {% if carry_forward_limit and carry_forward_limit.max_days > 0 %}
+                <div class="alert alert-light border mb-3 py-2 d-flex align-items-center justify-content-between">
+                    <span class="small fw-semibold text-muted">
+                        <i class="bi bi-shield-check text-success me-1"></i>
+                        سقف مجاز:
+                    </span>
+                    <span class="badge bg-success fs-6">{{ carry_forward_limit.max_days }} روز</span>
+                </div>
+                {% elif carry_forward_limit %}
+                <div class="alert alert-warning py-2 mb-3 small">
+                    <i class="bi bi-exclamation-triangle me-1"></i>
+                    نوع قرارداد شما اجازه ذخیره/بازخرید مرخصی را نمی‌دهد.
+                </div>
+                {% endif %}
+
+                <!-- ۴. قوانین (ساده و کوتاه) -->
+                <div class="card border-0 bg-light mb-3">
+                    <div class="card-body py-3">
+                        <div class="d-flex flex-column gap-2 small">
+                            <div class="d-flex align-items-start gap-2">
+                                <i class="bi bi-check-circle-fill text-success mt-1"></i>
+                                <span>
+                                    <strong>قصد استفاده:</strong>
+                                    مرخصی به سال {{ carry_forward_year + 1 }} منتقل می‌شود.
+                                </span>
+                            </div>
+                            <div class="d-flex align-items-start gap-2">
+                                <i class="bi bi-cash-coin text-warning mt-1"></i>
+                                <span>
+                                    <strong>درخواست بازخرید:</strong>
+                                    درخواست به مدیر ارسال می‌شود و پس از تایید، معادل ریالی پرداخت می‌شود.
+                                </span>
+                            </div>
+                            <!-- 🆕 توضیح رد بازخرید -->
+                            <div class="d-flex align-items-start gap-2">
+                                <i class="bi bi-arrow-return-left text-info mt-1"></i>
+                                <span>
+                                    <strong class="text-info">در صورت رد بازخرید توسط مدیر،</strong>
+                                    مرخصی به‌صورت خودکار به سال بعد منتقل می‌شود.
+                                </span>
+                            </div>
+                            <div class="d-flex align-items-start gap-2">
+                                <i class="bi bi-exclamation-circle text-danger mt-1"></i>
+                                <span>
+                                    مازاد بر سقف مجاز <strong>سوخت می‌شود</strong>.
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ============================================ -->
+                <!-- 🎯 دکمه‌های انتخاب - طراحی یکدست و زیبا    -->
+                <!-- ============================================ -->
+                <div class="mt-4">
+                    <h6 class="text-muted mb-3 fw-bold">
+                        <i class="bi bi-hand-index-thumb me-1"></i>
+                        انتخاب کنید:
+                    </h6>
+
+                    {% for leave_type in unused_leave.keys() %}
+                    <div class="row g-2 mb-2">
+                        <!-- دکمه قصد استفاده -->
+                        <div class="col-6">
+                            <form method="post" action="/carry-forward/choose" class="d-grid h-100">
+                                <input type="hidden" name="choice" value="USE">
+                                <input type="hidden" name="leave_type" value="{{ leave_type }}">
+                                <button type="submit"
+                                        class="btn btn-success w-100 h-100 py-3 d-flex flex-column align-items-center justify-content-center gap-1 shadow-sm"
+                                        style="border-radius: 12px; transition: all 0.2s;"
+                                        onmouseover="this.style.transform='translateY(-2px)'"
+                                        onmouseout="this.style.transform='translateY(0)'">
+                                    <i class="bi bi-calendar-check fs-4"></i>
+                                    <span class="fw-bold">قصد استفاده</span>
+                                    <span class="badge bg-light text-success small">
+                        {{ unused_leave[leave_type] }} روز
+                        {% if leave_type == 'AL' %}استحقاقی{% else %}استعلاجی{% endif %}
+                    </span>
+                                </button>
+                            </form>
+                        </div>
+
+                        <!-- دکمه درخواست بازخرید -->
+                        <div class="col-6">
+                            <form method="post" action="/carry-forward/choose" class="d-grid h-100">
+                                <input type="hidden" name="choice" value="CASH">
+                                <input type="hidden" name="leave_type" value="{{ leave_type }}">
+                                <button type="submit"
+                                        class="btn btn-warning w-100 h-100 py-3 d-flex flex-column align-items-center justify-content-center gap-1 shadow-sm"
+                                        style="border-radius: 12px; transition: all 0.2s;"
+                                        onmouseover="this.style.transform='translateY(-2px)'"
+                                        onmouseout="this.style.transform='translateY(0)'">
+                                    <i class="bi bi-cash-coin fs-4"></i>
+                                    <span class="fw-bold">درخواست بازخرید</span>
+                                    <span class="badge bg-light text-warning small">
+                        {{ unused_leave[leave_type] }} روز
+                        {% if leave_type == 'AL' %}استحقاقی{% else %}استعلاجی{% endif %}
+                    </span>
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                    {% endfor %}
+
+                    <!-- دکمه یادآوری (لینک کوچک و کم‌رنگ) -->
+                    <div class="text-center mt-3 pt-2 border-top">
+                        <form method="post" action="/carry-forward/postpone">
+                            <button type="submit"
+                                    class="btn btn-link text-muted text-decoration-none small">
+                                <i class="bi bi-clock-history me-1"></i>
+                                بعداً تصمیم می‌گیرم (یادآوری ۷ روز دیگر)
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<!-- نمایش خودکار مودال -->
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        var carryForwardModal = new bootstrap.Modal(
+            document.getElementById('carryForwardModal'),
+            { backdrop: 'static', keyboard: false }
+        );
+        carryForwardModal.show();
+    });
+</script>
+{% endif %}
+{% endblock %}

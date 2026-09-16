@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+{% block title %}ویرایش {{ employee.full_name }} | مدیریت{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4>
+        <i class="bi bi-pencil"></i>
+        ویرایش: {{ employee.full_name }}
+        <small class="text-muted">({{ employee.user_id }})</small>
+    </h4>
+    <a href="/admin/profile/{{ employee.user_id }}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-right"></i> بازگشت
+    </a>
+</div>
+
+{% if request.query_params.get('error') %}
+<div class="alert alert-danger">
+    <i class="bi bi-exclamation-triangle"></i>
+    خطا: {{ request.query_params.get('error') }}
+</div>
+{% endif %}
+
+<form method="post" action="/admin/profile/{{ employee.user_id }}/edit">
+    <div class="row g-4">
+        <!-- اطلاعات هویتی -->
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-white">
+                    <h6><i class="bi bi-person-vcard text-primary"></i> اطلاعات هویتی</h6>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">نام <span class="text-danger">*</span></label>
+                            <input type="text" name="first_name" class="form-control"
+                                   value="{{ employee.first_name }}" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">نام خانوادگی <span class="text-danger">*</span></label>
+                            <input type="text" name="last_name" class="form-control"
+                                   value="{{ employee.last_name }}" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">نام پدر</label>
+                            <input type="text" name="father_name" class="form-control"
+                                   value="{{ employee.father_name or '' }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">کد ملی</label>
+                            <input type="text" name="national_code" class="form-control"
+                                   value="{{ employee.national_code or '' }}" maxlength="10">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">تاریخ تولد (شمسی)</label>
+                            <input type="text" name="birth_date_str" class="form-control jalali-date"
+                                   value="{{ birth_j_value }}" placeholder="1370/05/15" autocomplete="off">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">جنسیت</label>
+                            <select name="gender" class="form-select">
+                                <option value="">-</option>
+                                <option value="M" {% if employee.gender == 'M' %}selected{% endif %}>مرد</option>
+                                <option value="F" {% if employee.gender == 'F' %}selected{% endif %}>زن</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">تاهل</label>
+                            <select name="marital_status" class="form-select">
+                                <option value="">-</option>
+                                <option value="S" {% if employee.marital_status == 'S' %}selected{% endif %}>مجرد</option>
+                                <option value="M" {% if employee.marital_status == 'M' %}selected{% endif %}>متاهل</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- اطلاعات شغلی -->
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-white">
+                    <h6><i class="bi bi-briefcase text-warning"></i> اطلاعات شغلی</h6>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">ایمیل</label>
+                            <input type="email" name="email" class="form-control"
+                                   value="{{ employee.email or '' }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">تاریخ استخدام (شمسی)</label>
+                            <input type="text" name="hire_date_str" class="form-control jalali-date"
+                                   value="{{ hire_j_value }}" placeholder="1400/01/01" autocomplete="off">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">دپارتمان</label>
+                            <select name="department" class="form-select">
+                                <option value="">-</option>
+                                <option value="1" {% if employee.department == '1' %}selected{% endif %}>رسمی</option>
+                                <option value="2" {% if employee.department == '2' %}selected{% endif %}>وظیفه</option>
+                                <option value="3" {% if employee.department == '3' %}selected{% endif %}>خریدخدمت</option>
+                                <option value="4" {% if employee.department == '4' %}selected{% endif %}>قراردادی</option>
+                                <option value="5" {% if employee.department == '5' %}selected{% endif %}>پزشک</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">سمت</label>
+                            <input type="text" name="position" class="form-control"
+                                   value="{{ employee.position or '' }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">🌍 منطقه خدمتی</label>
+                            <select name="region_code" class="form-select">
+                                <option value="NORMAL" {% if employee.region_code == 'NORMAL' %}selected{% endif %}>عادی</option>
+                                <option value="GRADE_1" {% if employee.region_code == 'GRADE_1' %}selected{% endif %}>درجه یک</option>
+                                <option value="GRADE_2" {% if employee.region_code == 'GRADE_2' %}selected{% endif %}>درجه دو</option>
+                                <option value="GRADE_3" {% if employee.region_code == 'GRADE_3' %}selected{% endif %}>درجه سه</option>
+                            </select>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">یادداشت</label>
+                            <textarea name="notes" class="form-control" rows="2">{{ employee.notes or '' }}</textarea>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- وضعیت employment -->
+        <div class="col-12">
+            <div class="card border-danger">
+                <div class="card-header bg-danger text-white">
+                    <h6><i class="bi bi-exclamation-triangle"></i> وضعیت استخدام و ترک کار</h6>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-3">
+                            <div class="form-check form-switch mt-4">
+                                <input class="form-check-input" type="checkbox" name="is_active"
+                                       id="is_active" {% if employee.is_active %}checked{% endif %}
+                                       onchange="toggleTerminationFields()">
+                                <label class="form-check-label" for="is_active">
+                                    <strong>کارمند فعال است</strong>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-md-4" id="termination_date_field" {% if employee.is_active %}style="display:none;"{% endif %}>
+                            <label class="form-label">تاریخ ترک کار (شمسی)</label>
+                            <input type="text" name="termination_date_str" class="form-control jalali-date"
+                                   value="{{ term_j_value }}" placeholder="1405/05/15" autocomplete="off">
+                        </div>
+                        <div class="col-md-5" id="termination_reason_field" {% if employee.is_active %}style="display:none;"{% endif %}>
+                            <label class="form-label">دلیل ترک کار</label>
+                            <select name="termination_reason" class="form-select">
+                                <option value="">-</option>
+                                <option value="استعفا" {% if employee.termination_reason == 'استعفا' %}selected{% endif %}>استعفا</option>
+                                <option value="بازنشستگی" {% if employee.termination_reason == 'بازنشستگی' %}selected{% endif %}>بازنشستگی</option>
+                                <option value="اخراج" {% if employee.termination_reason == 'اخراج' %}selected{% endif %}>اخراج</option>
+                                <option value="پایان قرارداد" {% if employee.termination_reason == 'پایان قرارداد' %}selected{% endif %}>پایان قرارداد</option>
+                                <option value="انتقال" {% if employee.termination_reason == 'انتقال' %}selected{% endif %}>انتقال</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- دکمه‌ها -->
+        <div class="col-12">
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-success px-4">
+                    <i class="bi bi-check-circle"></i> ذخیره تغییرات
+                </button>
+                <a href="/admin/profile/{{ employee.user_id }}" class="btn btn-outline-secondary">
+                    انصراف
+                </a>
+            </div>
+        </div>
+    </div>
+</form>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function toggleTerminationFields() {
+    const isActive = document.getElementById('is_active').checked;
+    document.getElementById('termination_date_field').style.display = isActive ? 'none' : 'block';
+    document.getElementById('termination_reason_field').style.display = isActive ? 'none' : 'block';
+}
+</script>
+{% endblock %}

@@ -1,0 +1,530 @@
+{% extends "base.html" %}
+{% block title %}پروفایل من{% endblock %}
+{% block content %}
+
+<!-- هدر پروفایل -->
+<div class="card mb-4 overflow-hidden">
+    <div class="card-body p-0">
+        <!-- بنر بالا -->
+        <div style="height: 120px; background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);"></div>
+
+        <!-- اطلاعات اصلی -->
+        <div class="px-4 pb-4">
+            <div class="d-flex flex-wrap align-items-end justify-content-between" >
+                <div class="d-flex align-items-end">
+                    <!-- 🆕 آواتار با عکس یا حروف اول -->
+                    {% if photo_path %}
+                    <img src="{{ photo_path }}?v={{ employee.updated_at.timestamp() | int if employee else 0 }}"
+                         class="rounded-circle border border-4 border-white shadow"
+                         style="width: 20%; height: 20%; object-fit: cover;margin-top: -50px; object-position: center; display: block;"
+                         alt="{{ employee.full_name if employee else user.name }}">
+                    {% else %}
+                    <img src="/static/uploads/avatars/image.png"
+                         class="rounded-circle border border-4 border-white shadow"
+                         style="width: 20%; height: 20%; object-fit: cover;margin-top: -50px; object-position: center; display: block;"
+                         alt="{{ employee.full_name }}">
+                    {% endif %}
+
+                    <!-- نام و اطلاعات -->
+                    <div class="ms-3 mb-2">
+                        <h3 class="mb-1">
+                            {{ employee.full_name if employee else user.name }}
+                            {% if employee and not employee.is_active %}
+                            <span class="badge bg-danger fs-6">غیرفعال</span>
+                            {% endif %}
+                        </h3>
+                        <div class="text-muted">
+                            <i class="bi bi-person-badge"></i> {{ user.user_id }}
+                            {% if employee and employee.position %}
+                            | <i class="bi bi-briefcase"></i> {{ employee.position }}
+                            {% endif %}
+                        </div>
+                        <!-- 🆕 آخرین ورود قبلی -->
+                        {% if last_login_display %}
+                        <div class="text-muted small mt-1">
+                            <i class="bi bi-clock-history"></i>
+                            ورود قبلی: {{ last_login_display }}
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- وضعیت -->
+                <div class="mb-2">
+                    {% if employee and employee.is_active %}
+                    <span class="badge bg-success px-3 py-2">
+                        <i class="bi bi-check-circle"></i> {{ employee.status_name }}
+                    </span>
+                    {% elif employee %}
+                    <span class="badge bg-danger px-3 py-2">
+                        <i class="bi bi-x-circle"></i> {{ employee.status_name }}
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- آمار سریع -->
+<div class="row g-4 mb-4">
+    <div class="col-md-4">
+        <div class="card stat-card bg-primary text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6>سابقه کار</h6>
+                        {% if service %}
+                        <h2>{{ service.years }} سال و {{ service.months }} ماه</h2>
+                        {% else %}
+                        <h2>-</h2>
+                        {% endif %}
+                    </div>
+                    <i class="bi bi-briefcase fs-1 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card stat-card bg-info text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6>سن</h6>
+                        {% if age is not none %}
+                        <h2>{{ age }} سال</h2>
+                        {% else %}
+                        <h2>-</h2>
+                        {% endif %}
+                    </div>
+                    <i class="bi bi-cake fs-1 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card stat-card bg-success text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6>وضعیت</h6>
+                        <h2>{% if employee and employee.is_active %}فعال{% else %}غیرفعال{% endif %}</h2>
+                    </div>
+                    <i class="bi bi-person-check fs-1 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if employee %}
+<!-- کارت‌های اطلاعات -->
+<div class="row g-4">
+    <!-- اطلاعات هویتی -->
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header bg-white">
+                <h6><i class="bi bi-person-vcard text-primary"></i> اطلاعات هویتی</h6>
+            </div>
+            <div class="card-body">
+                <div class="list-group list-group-flush">
+                    <div class="list-group-item d-flex justify-content-between px-0">
+                        <span class="text-muted"><i class="bi bi-hash"></i> کد ملی</span>
+                        <span class="fw-bold">{{ employee.national_code or '-' }}</span>
+                    </div>
+                    <div class="list-group-item d-flex justify-content-between px-0">
+                        <span class="text-muted"><i class="bi bi-person"></i> نام پدر</span>
+                        <span class="fw-bold">{{ employee.father_name or '-' }}</span>
+                    </div>
+                    <div class="list-group-item d-flex justify-content-between px-0">
+                        <span class="text-muted"><i class="bi bi-calendar-heart"></i> تاریخ تولد</span>
+                        <span class="fw-bold">{{ birth_j_display or '-' }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- اطلاعات شخصی -->
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header bg-white">
+                <h6><i class="bi bi-heart text-danger"></i> اطلاعات شخصی</h6>
+            </div>
+            <div class="card-body">
+                <div class="list-group list-group-flush">
+                    <div class="list-group-item d-flex justify-content-between px-0">
+                        <span class="text-muted"><i class="bi bi-gender-ambiguous"></i> جنسیت</span>
+                        <span>
+                            {% if employee.gender == 'M' %}
+                            <span class="badge bg-primary"><i class="bi bi-gender-male"></i> مرد</span>
+                            {% elif employee.gender == 'F' %}
+                            <span class="badge bg-danger"><i class="bi bi-gender-female"></i> زن</span>
+                            {% else %}
+                            <span class="badge bg-secondary">نامشخص</span>
+                            {% endif %}
+                        </span>
+                    </div>
+                    <div class="list-group-item d-flex justify-content-between px-0">
+                        <span class="text-muted"><i class="bi bi-heart"></i> وضعیت تاهل</span>
+                        <span>
+                            {% if employee.marital_status == 'S' %}
+                            <span class="badge bg-info">مجرد</span>
+                            {% elif employee.marital_status == 'M' %}
+                            <span class="badge bg-success">متاهل</span>
+                            {% else %}
+                            <span class="badge bg-secondary">نامشخص</span>
+                            {% endif %}
+                        </span>
+                    </div>
+                    <div class="list-group-item d-flex justify-content-between px-0">
+                        <span class="text-muted"><i class="bi bi-envelope"></i> ایمیل</span>
+                        <span class="fw-bold">{{ employee.email or '-' }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- اطلاعات شغلی -->
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header bg-white">
+                <h6><i class="bi bi-briefcase text-warning"></i> اطلاعات شغلی</h6>
+            </div>
+            <div class="card-body">
+                <div class="list-group list-group-flush">
+                    <div class="list-group-item d-flex justify-content-between px-0">
+                        <span class="text-muted"><i class="bi bi-person-badge"></i> کد پرسنلی</span>
+                        <span class="fw-bold">{{ employee.user_id }}</span>
+                    </div>
+                    <div class="list-group-item d-flex justify-content-between px-0">
+                        <span class="text-muted"><i class="bi bi-calendar-event"></i> تاریخ استخدام</span>
+                        <span class="fw-bold">{{ hire_j_display or '-' }}</span>
+                    </div>
+                    <div class="list-group-item d-flex justify-content-between px-0">
+                        <span class="text-muted"><i class="bi bi-building"></i> دپارتمان</span>
+                        <span>
+                            {% if employee.department == '1' %}<span class="badge bg-primary">رسمی</span>
+                            {% elif employee.department == '2' %}<span class="badge bg-info">وظیفه</span>
+                            {% elif employee.department == '3' %}<span class="badge bg-warning text-dark">خریدخدمت</span>
+                            {% elif employee.department == '4' %}<span class="badge bg-success">قراردادی</span>
+                            {% elif employee.department == '5' %}<span class="badge bg-danger">پزشک</span>
+                            {% else %}<span class="badge bg-secondary">-</span>{% endif %}
+                        </span>
+                    </div>
+                    <div class="list-group-item d-flex justify-content-between px-0">
+                        <span class="text-muted"><i class="bi bi-award"></i> سمت</span>
+                        <span class="fw-bold">{{ employee.position or '-' }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- وضعیت و ترک کار -->
+    <div class="col-md-6">
+        <div class="card h-100 {% if not employee.is_active %}border-danger{% endif %}">
+            <div class="card-header bg-white">
+                <h6>
+                    <i class="bi bi-activity {% if employee.is_active %}text-success{% else %}text-danger{% endif %}"></i>
+                    وضعیت employment
+                </h6>
+            </div>
+            <div class="card-body">
+                {% if employee.is_active %}
+                <div class="alert alert-success mb-3">
+                    <i class="bi bi-check-circle"></i>
+                    شما در حال حاضر در وضعیت <strong>فعال</strong> هستید.
+                </div>
+                {% else %}
+                <div class="alert alert-danger mb-3">
+                    <i class="bi bi-x-circle"></i>
+                    شما در وضعیت <strong>غیرفعال</strong> هستید.
+                </div>
+                {% endif %}
+
+                <div class="list-group list-group-flush">
+                    <div class="list-group-item d-flex justify-content-between px-0">
+                        <span class="text-muted"><i class="bi bi-toggle-on"></i> وضعیت</span>
+                        <span>{{ employee.status_name }}</span>
+                    </div>
+                    {% if employee.termination_date %}
+                    <div class="list-group-item d-flex justify-content-between px-0">
+                        <span class="text-muted"><i class="bi bi-calendar-x"></i> تاریخ ترک</span>
+                        <span class="fw-bold text-danger">{{ termination_j_display }}</span>
+                    </div>
+                    {% endif %}
+                    {% if employee.termination_reason %}
+                    <div class="list-group-item d-flex justify-content-between px-0">
+                        <span class="text-muted"><i class="bi bi-chat-left-text"></i> دلیل ترک</span>
+                        <span class="fw-bold">{{ employee.termination_reason }}</span>
+                    </div>
+                    {% endif %}
+                </div>
+
+                {% if employee.notes %}
+                <div class="mt-3 p-3 bg-light rounded">
+                    <small class="text-muted d-block mb-1"><i class="bi bi-sticky"></i> یادداشت:</small>
+                    <small>{{ employee.notes }}</small>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- 🆕 بخش شماره‌های تماس -->
+<div class="card mb-4">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h6 class="mb-0"><i class="bi bi-telephone"></i> شماره‌های تماس</h6>
+        <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#addPhoneModal">
+            <i class="bi bi-plus-circle"></i> افزودن شماره
+        </button>
+    </div>
+    <div class="card-body">
+        {% if phones %}
+        <div class="list-group">
+            {% for phone in phones %}
+            <div class="list-group-item d-flex justify-content-between align-items-center">
+                <div>
+                    <i class="bi bi-phone text-primary"></i>
+                    <strong class="ms-2">{{ phone.phone_number }}</strong>
+                    <span class="badge bg-secondary ms-2">{{ phone.label }}</span>
+                    {% if phone.is_default %}
+                    <span class="badge bg-primary ms-1">⭐ پیش‌فرض</span>
+                    {% endif %}
+                </div>
+                <div class="btn-group btn-group-sm">
+                    {% if not phone.is_default %}
+                    <form method="post" action="/profile/phones/{{ phone.id }}/set-default" class="d-inline">
+                        <button type="submit" class="btn btn-outline-primary" title="تنظیم به عنوان پیش‌فرض">
+                            <i class="bi bi-star"></i>
+                        </button>
+                    </form>
+                    {% endif %}
+                    <form method="post" action="/profile/phones/{{ phone.id }}/delete" class="d-inline"
+                          onsubmit="return confirm('آیا مطمئن هستید؟ این شماره حذف می‌شود.');">
+                        <button type="submit" class="btn btn-outline-danger" title="حذف">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </form>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-center py-4">
+            <i class="bi bi-phone display-6 text-muted"></i>
+            <p class="text-muted mt-2 mb-0">هنوز شماره تلفنی ثبت نکرده‌اید</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- 🔐 فرم افزودن شماره با تأیید کد -->
+<div class="card border-0 shadow-sm mt-4">
+    <div class="card-header bg-white">
+        <h6 class="mb-0 fw-bold">
+            <i class="bi bi-plus-circle text-primary"></i> افزودن شماره جدید
+        </h6>
+    </div>
+    <div class="card-body">
+        <!-- مرحله ۱: ورود شماره -->
+        <div id="stepPhone">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label fw-bold">📱 شماره موبایل <span class="text-danger">*</span></label>
+                    <input type="tel" id="otpPhoneNumber" class="form-control text-center"
+                           placeholder="09121234567" maxlength="11"
+                           style="direction: ltr; letter-spacing: 2px;">
+                    <small class="text-muted">کد تأیید به این شماره پیامک می‌شود</small>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label fw-bold">🏷️ برچسب</label>
+                    <select id="otpLabel" class="form-select">
+                        <option value="همراه">همراه</option>
+                        <option value="منزل">منزل</option>
+                        <option value="اضطراری">اضطراری</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label fw-bold">⭐ پیش‌فرض</label>
+                    <div class="form-check form-switch mt-2">
+                        <input class="form-check-input" type="checkbox" id="otpIsDefault">
+                        <label class="form-check-label small" for="otpIsDefault">پیش‌فرض</label>
+                    </div>
+                </div>
+                <div class="col-12">
+                    <button type="button" class="btn btn-primary w-100" id="btnSendOtp" onclick="sendOtp()">
+                        <i class="bi bi-send"></i> ارسال کد تأیید
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- مرحله ۲: ورود کد -->
+        <div id="stepOtp" style="display: none;">
+            <div class="alert alert-info small">
+                <i class="bi bi-info-circle"></i>
+                کد تأیید به شماره <strong id="otpPhoneDisplay" style="direction: ltr;"></strong> ارسال شد.
+                <span id="otpTimer" class="text-danger fw-bold"></span>
+            </div>
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label fw-bold">🔐 کد تأیید <span class="text-danger">*</span></label>
+                    <input type="text" id="otpCode" class="form-control text-center"
+                           placeholder="______" maxlength="6"
+                           style="direction: ltr; letter-spacing: 8px; font-size: 1.3rem;">
+                </div>
+                <div class="col-md-3 d-grid">
+                    <button type="button" class="btn btn-success mt-auto" onclick="verifyOtp()">
+                        <i class="bi bi-check-circle"></i> تأیید کد
+                    </button>
+                </div>
+                <div class="col-md-3 d-grid">
+                    <button type="button" class="btn btn-outline-secondary mt-auto" onclick="cancelOtp()">
+                        <i class="bi bi-x-circle"></i> انصراف
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- پیام وضعیت -->
+        <div id="otpMessage" class="mt-3" style="display: none;"></div>
+    </div>
+</div>
+</div>
+{% else %}
+<div class="alert alert-warning">
+    <i class="bi bi-exclamation-triangle"></i>
+    اطلاعات تکمیلی شما ثبت نشده است. لطفاً با واحد منابع انسانی تماس بگیرید.
+</div>
+{% endif %}
+
+{% endblock %}
+{% block extra_js %}
+<script>
+// ============================================
+// 🔐 مدیریت ارسال و تأیید کد
+// ============================================
+
+let otpTimerInterval = null;
+let otpExpirySeconds = {{ 5 * 60 }};  // ۵ دقیقه
+
+function showOtpMessage(message, type) {
+    const msgDiv = document.getElementById('otpMessage');
+    msgDiv.style.display = 'block';
+    msgDiv.className = `alert alert-${type === 'success' ? 'success' : 'danger'} mt-3`;
+    msgDiv.innerHTML = message;
+}
+
+async function sendOtp() {
+    const phone = document.getElementById('otpPhoneNumber').value.trim();
+    const btn = document.getElementById('btnSendOtp');
+
+    // اعتبارسنجی سمت کلاینت
+    if (!/^09\d{9}$/.test(phone)) {
+        showOtpMessage('❌ شماره موبایل باید ۱۱ رقم و با ۰۹ شروع شود', 'error');
+        return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> در حال ارسال...';
+
+    try {
+        const formData = new FormData();
+        formData.append('phone_number', phone);
+
+        const response = await fetch('/profile/phones/send-otp', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            // نمایش مرحله ۲
+            document.getElementById('stepPhone').style.display = 'none';
+            document.getElementById('stepOtp').style.display = 'block';
+            document.getElementById('otpPhoneDisplay').textContent = phone;
+            showOtpMessage('✅ ' + data.message, 'success');
+            startOtpTimer();
+            document.getElementById('otpCode').focus();
+        } else {
+            showOtpMessage('❌ ' + data.message, 'error');
+        }
+    } catch (error) {
+        showOtpMessage('❌ خطا در ارتباط با سرور', 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-send"></i> ارسال کد تأیید';
+    }
+}
+
+async function verifyOtp() {
+    const phone = document.getElementById('otpPhoneNumber').value.trim();
+    const code = document.getElementById('otpCode').value.trim();
+    const label = document.getElementById('otpLabel').value;
+    const isDefault = document.getElementById('otpIsDefault').checked ? 'on' : 'off';
+
+    if (code.length !== 6) {
+        showOtpMessage('❌ کد تأیید باید ۶ رقم باشد', 'error');
+        return;
+    }
+
+    try {
+        const formData = new FormData();
+        formData.append('phone_number', phone);
+        formData.append('otp_code', code);
+        formData.append('label', label);
+        formData.append('is_default', isDefault);
+
+        const response = await fetch('/profile/phones/verify-otp', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            showOtpMessage('✅ ' + data.message, 'success');
+            // رفرش صفحه بعد از ۱.۵ ثانیه
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            showOtpMessage('❌ ' + data.message, 'error');
+        }
+    } catch (error) {
+        showOtpMessage('❌ خطا در ارتباط با سرور', 'error');
+    }
+}
+
+function cancelOtp() {
+    document.getElementById('stepPhone').style.display = 'block';
+    document.getElementById('stepOtp').style.display = 'none';
+    document.getElementById('otpCode').value = '';
+    document.getElementById('otpMessage').style.display = 'none';
+    if (otpTimerInterval) {
+        clearInterval(otpTimerInterval);
+        otpTimerInterval = null;
+    }
+}
+
+function startOtpTimer() {
+    let remaining = otpExpirySeconds;
+    const timerDiv = document.getElementById('otpTimer');
+
+    otpTimerInterval = setInterval(() => {
+        remaining--;
+        const minutes = Math.floor(remaining / 60);
+        const seconds = remaining % 60;
+        timerDiv.textContent = `(${minutes}:${seconds.toString().padStart(2, '0')})`;
+
+        if (remaining <= 0) {
+            clearInterval(otpTimerInterval);
+            timerDiv.textContent = '(منقضی شد)';
+            showOtpMessage('⏱️ کد تأیید منقضی شد. لطفاً دوباره درخواست دهید.', 'error');
+        }
+    }, 1000);
+}
+</script>
+{% endblock %}

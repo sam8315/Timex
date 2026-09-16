@@ -158,6 +158,7 @@ class DeviceManager:
 
         try:
             attendance = self.conn.get_attendance()
+            print(attendance)
             return [
                 {
                     'user_id': a.user_id,
@@ -195,6 +196,301 @@ class DeviceManager:
         except Exception as e:
             print(f"❌ خطا در پاک کردن رکوردها: {e}")
             return False
+
+    def sync_attendance_to_db(self, dry_run_first: bool = True) -> Dict:
+        """
+        Synchronize attendance records from the device to the database
+        """
+        from database.engine import SessionLocal
+        from models.attendance import Attendance
+        from sqlalchemy.dialects.postgresql import insert
+        from sqlalchemy.exc import SQLAlchemyError
+
+        print(f"\n🕐 Synchronization started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        stats = {
+            'total_fetched': 0,
+            'new_records': 0,
+            'inserted': 0,
+            'skipped_duplicates': 0,
+            'errors': 0,
+            'last_db_record': None,
+            'first_device_record': None,
+            'time_gap': None
+        }
+
+        # Step 1: Connect to the device
+        print("\n" + "=" * 70)
+        print("  🔌 Step 1: Connecting to device")
+        print("=" * 70)
+
+        was_connected = self._ensure_connected()
+        if not was_connected:
+            print("  ⚠️  Device was not connected. Connecting...")
+            if not self.connect():
+                return {'error': '❌ Could not establish connection to device'}
+            print("  ✅ Device successfully connected")
+        else:
+            print("  ✅ Device was already connected")
+
+        try:
+            # Step 2: Get the latest record from the database
+            print("\n" + "=" * 70)
+            print("  📊 Step 2: Checking latest record in database")
+            print("=" * 70)
+
+            db = SessionLocal()
+            try:
+                # ✅ Only records with source D (Device) or A (API)
+                last_record = db.query(Attendance).filter(
+                    Attendance.source.in_(['D', 'A'])
+                ).order_by(
+                    Attendance.timestamp.desc()
+                ).first()
+
+                if last_record:
+                    stats['last_db_record'] = last_record.timestamp
+                    print(f"  📅 Latest record in database: {last_record.timestamp}")
+                    print(f"  👤 User: {last_record.user_id}")
+                    print(f"  🔄 Type: {'Check-in' if last_record.punch == 0 else 'Check-out'}")
+                else:
+                    stats['last_db_record'] = None
+                    print("  ⚠️  Database is empty")
+            finally:
+                db.close()
+
+            # Step 3: Get records from the device
+            print("\n" + "=" * 70)
+            print("  📖 Step 3: Reading attendance records from device")
+            print("=" * 70)
+
+            device_attendance = self.conn.get_attendance()
+            stats['total_fetched'] = len(device_attendance)
+            print(f"  ✅ Found {len(device_attendance)} records on device")
+
+            if stats['total_fetched'] == 0:
+                print("  ⚠️  No records found on device")
+                return stats
+
+            # Step 4: Find the first unsynchronized record
+            print("\n" + "=" * 70)
+            print("  🔍 Step 4: Checking unsynchronized records")
+            print("=" * 70)
+
+            # Sort device records by time
+            device_attendance_sorted = sorted(device_attendance, key=lambda x: x.timestamp)
+
+            if stats['last_db_record']:
+                # Remove timezone for comparison
+                last_db_timestamp = stats['last_db_record']
+                if last_db_timestamp.tzinfo is not None:
+                    last_db_timestamp = last_db_timestamp.replace(tzinfo=None)
+
+                # Find the first record newer than the latest database record
+                first_new_record = None
+                for record in device_attendance_sorted:
+                    record_time = record.timestamp
+                    if record_time.tzinfo is not None:
+                        record_time = record_time.replace(tzinfo=None)
+
+                    if record_time > last_db_timestamp:
+                        first_new_record = record
+                        break
+
+                if first_new_record:
+                    stats['first_device_record'] = first_new_record.timestamp
+                    stats['new_records'] = sum(
+                        1 for r in device_attendance_sorted
+                        if (r.timestamp.replace(tzinfo=None) if r.timestamp.tzinfo else r.timestamp) > last_db_timestamp
+                    )
+
+                    # Calculate time difference
+                    record_time = first_new_record.timestamp
+                    if record_time.tzinfo is not None:
+                        record_time = record_time.replace(tzinfo=None)
+                    time_gap = record_time - last_db_timestamp
+                    stats['time_gap'] = time_gap
+
+                    print(f"  📅 First unsynchronized record: {first_new_record.timestamp}")
+                    print(f"  👤 User: {first_new_record.user_id}")
+                    print(f"  🔄 Type: {'Check-in' if first_new_record.punch == 0 else 'Check-out'}")
+                    print(f"  📊 Number of new records: {stats['new_records']}")
+                    print(f"  ⏱️  Time difference: {time_gap}")
+                else:
+                    print("  ✅ All records are synchronized")
+                    return stats
+            else:
+                # Database is empty, all records are new
+                stats['first_device_record'] = device_attendance_sorted[0].timestamp
+                stats['new_records'] = len(device_attendance_sorted)
+                print(f"  📅 First record: {stats['first_device_record']}")
+                print(f"  📊 Number of new records: {stats['new_records']}")
+
+            # Step 5: DRY RUN
+            if dry_run_first:
+                print("\n" + "=" * 70)
+                print("  🔍 Step 5: DRY RUN (no changes)")
+                print("=" * 70)
+
+                dry_stats = self._dry_run_sync(device_attendance_sorted, stats['last_db_record'])
+
+                print(f"\n  📊 DRY RUN Results:")
+                print(f"     • New records to insert    : {dry_stats['would_insert']}")
+                print(f"     • Duplicate records in DB   : {dry_stats['would_skip_duplicate']}")
+                print(f"     • Old records (before latest): {dry_stats['would_skip_old']}")
+                print(f"     • Total skipped             : {dry_stats['total_skipped']}")
+
+                # Ask for confirmation
+                print("\n" + "-" * 70)
+                confirm = input("  Do you want to proceed with actual synchronization? (yes/no): ").strip()
+
+                if confirm.lower() not in ['yes', 'y']:
+                    print("  ❌ Operation cancelled")
+                    return stats
+
+            # Step 6: Actual execution
+            print("\n" + "=" * 70)
+            print("  💾 Step 6: Saving to database")
+            print("=" * 70)
+
+            db = SessionLocal()
+            batch_size = 200
+
+            for i, record in enumerate(device_attendance_sorted, 1):
+                # Remove timezone for comparison
+                record_time = record.timestamp
+                if record_time.tzinfo is not None:
+                    record_time = record_time.replace(tzinfo=None)
+
+                # Process only new records
+                if stats['last_db_record']:
+                    last_db_timestamp = stats['last_db_record']
+                    if last_db_timestamp.tzinfo is not None:
+                        last_db_timestamp = last_db_timestamp.replace(tzinfo=None)
+                    if record_time <= last_db_timestamp:
+                        continue
+
+                try:
+                    user_id_str = str(record.user_id)
+
+                    stmt = insert(Attendance).values(
+                        user_id=user_id_str,
+                        timestamp=record.timestamp,
+                        status=record.status if record.status is not None else 0,
+                        punch=record.punch if record.punch is not None else 0,
+                        source=Attendance.SOURCE_DEVICE
+                    ).on_conflict_do_nothing(
+                        index_elements=['user_id', 'timestamp']
+                    )
+
+                    result = db.execute(stmt)
+
+                    if result.rowcount > 0:
+                        stats['inserted'] += 1
+                    else:
+                        stats['skipped_duplicates'] += 1
+
+                    # Batch commit
+                    if i % batch_size == 0 or i == len(device_attendance_sorted):
+                        db.commit()
+                        print(f"  ✅ Batch saved: {i}/{len(device_attendance_sorted)}")
+
+                except SQLAlchemyError as e:
+                    db.rollback()
+                    print(f"  ⚠️  Error on record {i} (User: {record.user_id}): {type(e).__name__}")
+                    stats['errors'] += 1
+
+            db.close()
+            print("\n  ✅ Attendance synchronization completed")
+
+        except Exception as e:
+            print(f"\n  ❌ General error during attendance synchronization: {e}")
+            stats['errors'] += 1
+
+        finally:
+            # Step 7: Disconnect
+            print("\n" + "=" * 70)
+            print("  🔌 Step 7: Disconnecting from device")
+            print("=" * 70)
+
+            if self.conn and hasattr(self.conn, 'disconnect'):
+                try:
+                    self.disconnect()
+                    print("  ✅ Disconnected from device")
+                except Exception as e:
+                    print(f"  ⚠️  Error during disconnection: {e}")
+
+        # Display final statistics
+        print("\n" + "=" * 70)
+        print("  📊 Final Attendance Synchronization Statistics")
+        print("=" * 70)
+        print(f"  • Total records read    : {stats['total_fetched']}")
+        print(f"  • New records           : {stats['new_records']}")
+        print(f"  • Records inserted      : {stats['inserted']}")
+        print(f"  • Duplicates skipped    : {stats['skipped_duplicates']}")
+        print(f"  • Errors                : {stats['errors']}")
+
+        if stats['last_db_record']:
+            print(f"\n  📅 Previous latest record : {stats['last_db_record']}")
+        if stats['first_device_record']:
+            print(f"  📅 First new record       : {stats['first_device_record']}")
+        if stats['time_gap']:
+            print(f"  ⏱️  Time difference        : {stats['time_gap']}")
+
+        print("=" * 70)
+
+        return stats
+
+    def _dry_run_sync(self, device_attendance: List, last_db_timestamp) -> Dict:
+        """
+        DRY RUN: بررسی رکوردها بدون ذخیره
+        """
+        from database.engine import SessionLocal
+        from models.attendance import Attendance
+        from sqlalchemy import and_
+
+        would_insert = 0
+        would_skip_duplicate = 0  # ✅ رکوردهای تکراری در دیتابیس
+        would_skip_old = 0  # ✅ رکوردهای قدیمی (قبل از آخرین رکورد)
+
+        # ✅ حذف timezone برای مقایسه
+        if last_db_timestamp and last_db_timestamp.tzinfo is not None:
+            last_db_timestamp = last_db_timestamp.replace(tzinfo=None)
+
+        db = SessionLocal()
+        try:
+            for record in device_attendance:
+                # ✅ حذف timezone از رکورد دستگاه
+                record_time = record.timestamp
+                if record_time.tzinfo is not None:
+                    record_time = record_time.replace(tzinfo=None)
+
+                # ✅ بررسی رکوردهای قدیمی
+                if last_db_timestamp and record_time <= last_db_timestamp:
+                    would_skip_old += 1
+                    continue
+
+                # ✅ بررسی رکوردهای تکراری در دیتابیس
+                existing = db.query(Attendance).filter(
+                    and_(
+                        Attendance.user_id == str(record.user_id),
+                        Attendance.timestamp == record.timestamp
+                    )
+                ).first()
+
+                if existing:
+                    would_skip_duplicate += 1
+                else:
+                    would_insert += 1
+
+        finally:
+            db.close()
+
+        return {
+            'would_insert': would_insert,
+            'would_skip_duplicate': would_skip_duplicate,
+            'would_skip_old': would_skip_old,
+            'total_skipped': would_skip_duplicate + would_skip_old
+        }
 
     # ============================================
     # تنظیمات دستگاه
@@ -247,3 +543,82 @@ class DeviceManager:
         except Exception as e:
             print(f"❌ خطا: {e}")
             return False
+
+    def sync_users_to_db(self) -> Dict:
+        """
+        خواندن کاربران از دستگاه و ذخیره در دیتابیس
+        """
+        from database.engine import SessionLocal
+        from models.user import User
+        from sqlalchemy.exc import SQLAlchemyError
+
+        if not self._ensure_connected():
+            return {'error': 'اتصال برقرار نیست'}
+
+        stats = {
+            'total_users': 0,
+            'new_users': 0,
+            'updated_users': 0,
+            'errors': 0
+        }
+
+        try:
+            print("\n📖 در حال خواندن کاربران از دستگاه...")
+            device_users = self.conn.get_users()
+            stats['total_users'] = len(device_users)
+            print(f"✅ تعداد {len(device_users)} کاربر در دستگاه یافت شد")
+
+            db = SessionLocal()
+            print("\n💾 در حال ذخیره در دیتابیس...")
+
+            for i, device_user in enumerate(device_users, 1):
+                try:
+                    # تبدیل user_id به String
+                    user_id_str = str(device_user.user_id)
+
+                    existing_user = db.query(User).filter(User.user_id == user_id_str).first()
+
+                    if existing_user:
+                        existing_user.name = device_user.name
+                        existing_user.card = device_user.card
+                        # existing_user.group_id = device_user.group_id     #گروه کابر نباید تغییر کند
+                        existing_user.privilege = device_user.privilege
+                        stats['updated_users'] += 1
+                    else:
+                        new_user = User(
+                            user_id=user_id_str,  # ✅ استفاده از user_id (نه uid)
+                            name=device_user.name,
+                            card=device_user.card,
+                            group_id=device_user.group_id,
+                            privilege=device_user.privilege
+                        )
+                        db.add(new_user)
+                        stats['new_users'] += 1
+
+                    if i % 50 == 0 or i == len(device_users):
+                        db.commit()
+                        print(f"  ✅ دسته‌ای ذخیره شد: {i}/{len(device_users)}")
+
+                except SQLAlchemyError as e:
+                    db.rollback()
+                    print(f"  ⚠️  خطا در کاربر user_id={device_user.user_id} ({device_user.name}): {type(e).__name__}")
+                    stats['errors'] += 1
+
+            db.close()
+            print("\n✅ همگام‌سازی کاربران به پایان رسید")
+
+        except Exception as e:
+            print(f"\n❌ خطای کلی در همگام‌سازی: {e}")
+            stats['errors'] += 1
+
+        # نمایش آمار
+        print("\n" + "-" * 60)
+        print("  📊 آمار نهایی همگام‌سازی کاربران:")
+        print("-" * 60)
+        print(f"  • کل کاربران دستگاه   : {stats['total_users']}")
+        print(f"  • کاربران جدید ساخته  : {stats['new_users']}")
+        print(f"  • کاربران به‌روزرسانی  : {stats['updated_users']}")
+        print(f"  • خطاها               : {stats['errors']}")
+        print("-" * 60)
+
+        return stats

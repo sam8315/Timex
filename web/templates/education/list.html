@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}مدارک تحصیلی{% endblock %}
+{% block content %}
+
+<!-- پیام‌ها -->
+{% if request.query_params.get('success') %}
+<div class="alert alert-success alert-dismissible fade show">
+    <i class="bi bi-check-circle"></i> {{ request.query_params.get('success') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+{% if request.query_params.get('error') %}
+<div class="alert alert-danger alert-dismissible fade show">
+    <i class="bi bi-exclamation-triangle"></i> {{ request.query_params.get('error') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4><i class="bi bi-mortarboard"></i> مدارک تحصیلی</h4>
+    <a href="/education/new" class="btn btn-success btn-sm">
+        <i class="bi bi-plus-circle"></i> افزودن مدرک جدید
+    </a>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        {% if educations %}
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>ردیف</th>
+                        <th>گروه</th>
+                        <th>مقطع</th>
+                        <th>رشته</th>
+                        <th class="text-center">تاریخ دریافت</th>
+                        <th class="text-center">مدرک</th>
+                        <th class="text-center">وضعیت</th>
+                        <th class="text-center">عملیات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for edu in educations %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td>{{ edu.education_group_name }}</td>
+                        <td>
+                            {{ edu.degree_level_name }}
+                            {% if edu.is_highest %}
+                            <span class="badge bg-primary">بالاترین</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ edu.major }}</td>
+                        <td class="text-center">{{ edu.graduation_date_j }}</td>
+                        <td class="text-center">
+                            {% if edu.certificate_path %}
+                            <a href="{{ edu.certificate_path }}" target="_blank" class="btn btn-outline-primary btn-sm">
+                                {% if edu.certificate_type == 'pdf' %}
+                                <i class="bi bi-file-pdf"></i> PDF
+                                {% else %}
+                                <i class="bi bi-image"></i> عکس
+                                {% endif %}
+                            </a>
+                            {% else %}
+                            <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            {% if edu.verified %}
+                            <span class="badge bg-success">تایید شده</span>
+                            {% else %}
+                            <span class="badge bg-warning text-dark">در انتظار تایید</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            {% if not edu.verified %}
+                            <div class="btn-group btn-group-sm">
+                                <a href="/education/{{ edu.id }}/edit" class="btn btn-outline-primary" title="ویرایش">
+                                    <i class="bi bi-pencil"></i>
+                                </a>
+                                <form method="post" action="/education/{{ edu.id }}/delete" class="d-inline"
+                                      onsubmit="return confirm('آیا مطمئن هستید؟');">
+                                    <button type="submit" class="btn btn-outline-danger" title="حذف">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                            </div>
+                            {% else %}
+                            <small class="text-muted">غیرقابل ویرایش</small>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5">
+            <i class="bi bi-mortarboard display-4 text-muted"></i>
+            <p class="text-muted mt-3">هنوز مدرکی ثبت نکرده‌اید</p>
+            <a href="/education/new" class="btn btn-success">افزودن اولین مدرک</a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% endblock %}

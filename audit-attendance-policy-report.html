@@ -1,0 +1,594 @@
+<title>Attendance & Work Policy Audit Report</title>
+<style>
+:root {
+  --bg: #f8f9fa;
+  --card-bg: #ffffff;
+  --text: #212529;
+  --text-muted: #6c757d;
+  --border: #dee2e6;
+  --primary: #0d6efd;
+  --danger: #dc3545;
+  --warning: #ffc107;
+  --success: #198754;
+  --info: #0dcaf0;
+  --purple: #6f42c1;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1a1a1a;
+    --card-bg: #2d2d2d;
+    --text: #e9ecef;
+    --text-muted: #adb5bd;
+    --border: #495057;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  line-height: 1.6;
+  color: var(--text);
+  background: var(--bg);
+  margin: 0;
+  padding: 24px;
+}
+.container { max-width: 1100px; margin: 0 auto; }
+h1 { font-size: 1.8rem; margin-bottom: 8px; }
+h2 { font-size: 1.4rem; margin: 32px 0 16px; padding-bottom: 8px; border-bottom: 2px solid var(--border); }
+h3 { font-size: 1.1rem; margin: 20px 0 12px; color: var(--primary); }
+h4 { font-size: 0.95rem; margin: 16px 0 8px; }
+p { margin: 12px 0; }
+.code-block {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px 16px;
+  font-family: 'Consolas', monospace;
+  font-size: 0.85rem;
+  overflow-x: auto;
+  margin: 12px 0;
+}
+table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+th, td { padding: 10px 12px; text-align: right; border: 1px solid var(--border); }
+th { background: var(--card-bg); font-weight: 600; }
+tr:nth-child(even) { background: rgba(0,0,0,0.02); }
+@media (prefers-color-scheme: dark) { tr:nth-child(even) { background: rgba(255,255,255,0.03); } }
+.alert { padding: 12px 16px; border-radius: 6px; margin: 16px 0; }
+.alert-danger { background: #f8d7da; color: #842029; border: 1px solid #f5c2c7; }
+.alert-warning { background: #fff3cd; color: #664d03; border: 1px solid #ffecb5; }
+.alert-success { background: #d1e7dd; color: #0f5132; border: 1px solid #badbcc; }
+.alert-info { background: #cff4fc; color: #055160; border: 1px solid #b6effb; }
+.tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; margin-left: 6px; }
+.tag-danger { background: var(--danger); color: white; }
+.tag-warning { background: var(--warning); color: #000; }
+.tag-success { background: var(--success); color: white; }
+.tag-info { background: var(--info); color: #000; }
+.tag-purple { background: var(--purple); color: white; }
+.finding { background: var(--card-bg); border-right: 4px solid var(--primary); padding: 16px; margin: 16px 0; border-radius: 0 6px 6px 0; }
+.finding.critical { border-color: var(--danger); }
+.finding.high { border-color: var(--warning); }
+.finding.medium { border-color: var(--info); }
+.finding-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.finding-file { font-family: monospace; background: var(--bg); padding: 2px 6px; border-radius: 3px; }
+.finding-impact { color: var(--text-muted); font-size: 0.9rem; margin-top: 8px; }
+.finding-recommendation { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); font-size: 0.9rem; }
+.section-nav { position: sticky; top: 0; background: var(--bg); padding: 12px 0; border-bottom: 1px solid var(--border); margin-bottom: 24px; z-index: 100; }
+.section-nav ul { display: flex; flex-wrap: wrap; gap: 12px; list-style: none; margin: 0; padding: 0; }
+.section-nav a { color: var(--primary); text-decoration: none; font-size: 0.9rem; }
+.section-nav a:hover { text-decoration: underline; }
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+@media (max-width: 768px) { .two-col { grid-template-columns: 1fr; } }
+.phase { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin: 12px 0; }
+.phase-num { display: inline-block; width: 28px; height: 28px; background: var(--primary); color: white; border-radius: 50%; text-align: center; line-height: 28px; font-weight: bold; margin-left: 8px; }
+.risk-item { padding: 8px 0; border-bottom: 1px solid var(--border); }
+.risk-item:last-child { border-bottom: none; }
+.risk-severity { font-weight: 600; }
+.risk-severity.critical { color: var(--danger); }
+.risk-severity.high { color: var(--warning); }
+.risk-severity.medium { color: var(--info); }
+.files-table td:first-child { font-family: monospace; font-size: 0.85rem; }
+.files-table tr.duplicate td { background: rgba(255,193,7,0.1); }
+.note { font-size: 0.85rem; color: var(--text-muted); font-style: italic; }
+</style>
+
+# گزارش جامع حسابرسی و تحلیل سیستم حضور و غیاب
+
+## خلاصه اجرایی
+
+سیستم حضور و غیاب پروژه Timex در حال حاضر با یک مشکل معماری مهم مواجه است: **میزان موظفی روزانه (7:20) به صورت Hard-coded در چندین نقطه کد تعریف شده و برای تمام کارکنان بدون توجه به نوع استخدام یا سیاست مربوطه اعمال می‌شود.** این مقدار مخصوص کارکنان قراردادی است و نباید به عنوان مقدار جهانی (Universal) در نظر گرفته شود.
+
+---
+
+## ۱. معماری فعلی Attendance
+
+### ۱.۱ مسیرهای مرتبط
+
+| مسیر | نما | فایل |
+|------|-----|------|
+| `/attendance` | User View | `web/routes/attendance.py` |
+| `/admin/attendance` | Manager Daily | `web/routes/admin.py:702` |
+| `/admin/attendance/user/{id}` | Manager User | `web/routes/admin.py:892` |
+| `/reports/monthly-detailed` | Reports | `web/routes/reports.py:62` |
+
+### ۱.۲ زنجیره وابستگی
+
+```
+User Request
+    ↓
+Route (attendance.py / admin.py)
+    ↓
+analyze_day_status() + calculate_work_hours()
+    ↓
+DAILY_DUTY_HOURS (Hard-coded constant = 7.33)
+    ↓
+Template (attendance.html / admin/attendance.html)
+```
+
+---
+
+## ۲. تحلیل نمای کاربر (User View)
+
+### ۲.۱ نقاط کلیدی
+
+فایل: `web/routes/attendance.py`
+
+| خط | متغیر/تابع | مقدار |
+|----|-----------|-------|
+| 55 | `DAILY_DUTY_HOURS = 7 + 20/60` | **7.333 ساعت (7:20)** |
+| 622 | `monthly_duty_hours = duty_days_month * DAILY_DUTY_HOURS` | محاسبه موظفی ماهانه |
+| 661 | `instant_duty_hours = duty_days_until_ref * DAILY_DUTY_HOURS` | محاسبه موظفی لحظه‌ای |
+| 674 | `monthly_balance = total_work_hours_month - monthly_duty_hours` | محاسبه اضافه/کسری |
+
+### ۲.۲ یافته‌ها
+
+**فایل:** `web/routes/attendance.py:55`
+**کامپوننت:** ثابت‌های ماژول
+**یافته:** میزان موظفی به صورت Hard-coded تعریف شده
+**تأثیر:** تمام کاربران بدون توجه به نوع استخدام، مقدار 7:20 دریافت می‌کنند
+**پیشنهاد:** مقدار موظفی باید از سیاست (Policy) مربوط به کاربر خوانده شود
+
+---
+
+## ۳. تحلیل نمای مدیر (Manager View)
+
+### ۳.۱ Admin Daily Attendance (`/admin/attendance`)
+
+فایل: `web/routes/admin.py:702-889`
+
+این صفحه فقط نمایش روزانه دارد و محاسبه اضافه/کسری انجام نمی‌دهد. وضعیت‌های نمایش داده شده:
+- ✅ کامل
+- ⬅️ ورود بدون خروج
+- ➡️ خروج بدون ورود
+- ⚪ بدون تردد
+- 🌴 مرخصی
+- ⚠️ ناقص
+
+**مهم:** این صفحه از `DAILY_DUTY_HOURS` استفاده نمی‌کند.
+
+### ۳.۲ Admin User Attendance (`/admin/attendance/user/{id}`)
+
+فایل: `web/routes/admin.py:892-1350`
+
+| خط | متغیر | منبع |
+|----|-------|------|
+| 28, 33 | `from web.routes.attendance import DAILY_DUTY_HOURS` | Import از attendance.py |
+| 1100 | `monthly_duty_hours = duty_days_month * DAILY_DUTY_HOURS` | محاسبه موظفی ماهانه |
+| 1129 | `instant_duty_hours = duty_days_until_ref * DAILY_DUTY_HOURS` | محاسبه موظفی لحظه‌ای |
+| 1188 | `this_week_duty_hours = this_week_work_days * DAILY_DUTY_HOURS` | موظفی هفته جاری |
+| 1255 | `week_duty_hours = week_duty_days * DAILY_DUTY_HOURS` | موظفی هفتگی |
+
+### ۳.۳ یافته‌ها
+
+**فایل:** `web/routes/admin.py:28,33`
+**کامپوننت:** Import statements
+**یافته:** Admin از همان ثابت `DAILY_DUTY_HOURS` استفاده می‌کند که در attendance.py تعریف شده
+**تأثیر:** User View و Manager View از منطق مشترک استفاده می‌کنند ✓
+**اما:** هر دو نما از یک مقدار Hard-coded استفاده می‌کنند ✗
+
+---
+
+## ۴. ریشه‌ای مشکل 7:20
+
+### ۴.۱ تمام نقاط تعریف 7:20
+
+<div class="finding critical">
+<div class="finding-header">
+<span class="tag tag-danger">CRITICAL</span>
+<span>Hard-coded Constant</span>
+</div>
+<div class="finding-file">web/routes/attendance.py:55</div>
+<div class="finding-impact">مبدأ اصلی مقدار 7:20 در سیستم</div>
+<div class="finding-recommendation">این ثابت باید حذف و با تابع خواندن از Policy جایگزین شود</div>
+</div>
+
+<div class="finding high">
+<div class="finding-header">
+<span class="tag tag-warning">HIGH</span>
+<span>Report Generator</span>
+</div>
+<div class="finding-file">core/detailed_monthly_report.py:23</div>
+<div class="finding-impact">گزارش‌گیر تفصیلی ماهانه</div>
+<div class="finding-recommendation">DAILY_REQUIRED_HOURS = 7.33 # 7:20</div>
+</div>
+
+<div class="finding high">
+<div class="finding-header">
+<span class="tag tag-warning">HIGH</span>
+<span>Report Generator V2</span>
+</div>
+<div class="finding-file">core/detailed_monthly_report_v2.py:24</div>
+<div class="finding-impact">گزارش‌گیر تفصیلی ماهانه نسخه ۲</div>
+<div class="finding-recommendation">DAILY_REQUIRED_HOURS = 7.33 # 7:20</div>
+</div>
+
+<div class="finding high">
+<div class="finding-header">
+<span class="tag tag-warning">HIGH</span>
+<span>Analytical Report</span>
+</div>
+<div class="finding-file">core/analytical_report.py:24-31</div>
+<div class="finding-impact">گزارش تحلیلی ماهانه - دیکشنری با تمام مقادیر 7.33</div>
+<div class="finding-recommendation">DAILY_REQUIRED_HOURS = {'0': 7.33, '1': 7.33, ...}</div>
+</div>
+
+<div class="finding medium">
+<div class="finding-header">
+<span class="tag tag-info">MEDIUM</span>
+<span>Excel Export</span>
+</div>
+<div class="finding-file">core/excel_detailed_export_v2.py:176-177</div>
+<div class="finding-impact">خروجی اکسل - متن نمایشی</div>
+<div class="finding-recommendation">متن «مبنای 7:20» در سرستون</div>
+</div>
+
+<div class="finding medium">
+<div class="finding-header">
+<span class="tag tag-info">MEDIUM</span>
+<span>PDF Export</span>
+</div>
+<div class="finding-file">core/pdf_detailed_export_v2.py:181</div>
+<div class="finding-impact">خروجی PDF - متن نمایشی</div>
+<div class="finding-recommendation">متن «مبنای 7:20» در فوتر</div>
+</div>
+
+### ۴.۲ خلاصه ریشه‌ای
+
+| # | فایل | نوع | تکرار |
+|---|------|-----|-------|
+| 1 | `web/routes/attendance.py:55` | **اصلی** | Source of truth |
+| 2 | `core/detailed_monthly_report.py:23` | Duplicate | گزارش |
+| 3 | `core/detailed_monthly_report_v2.py:24` | Duplicate | گزارش |
+| 4 | `core/analytical_report.py:24-31` | Duplicate | گزارش |
+| 5 | `core/excel_detailed_export_v2.py` | Display | متن |
+| 6 | `core/pdf_detailed_export_v2.py` | Display | متن |
+
+---
+
+## ۵. معماری فعلی Policy
+
+### ۵.۱ ساختار موجود
+
+فایل: `models/policy.py`
+
+| مدل | کاربرد | فیلدهای کلیدی |
+|-----|--------|---------------|
+| `Policy` | container اصلی | category, name, is_active |
+| `PolicyValue` | مقادیر پارامترها | policy_id, parameter_key, parameter_value, region_code |
+| `PolicyAuditLog` | تاریخچه تغییرات | entity_type, action, old_value, new_value |
+
+### ۵.۲ Policyهای موجود
+
+| Category | کاربرد | مسیر مدیریت |
+|----------|--------|-------------|
+| `leave` | سیاست مرخصی | `/admin/policies/leave` |
+| `sms` | تنظیمات پیامک | `/admin/policies/sms` |
+| `region` | مناطق خدماتی | `/admin/policies/regions` |
+
+### ۵.۳ یافته‌ها
+
+**فایل:** `models/policy.py`
+**کامپوننت:** Policy Model
+**یافته:** ساختار Policy آماده است اما **هیچ Policy برای Attendance تعریف نشده**
+**تأثیر:** می‌توان از ساختار موجود برای Attendance Policy استفاده کرد
+**پیشنهاد:** ایجاد category جدید `attendance` در جدول policies
+
+---
+
+## ۶. تحلیل تأخیر و تعجیل
+
+### ۶.۱ یافته‌ها
+
+**در حال حاضر هیچ منطقی برای محاسبه تأخیر (Late) و تعجیل (Early Leave) در سیستم وجود ندارد.**
+
+سیستم فقط موارد زیر را محاسبه می‌کند:
+- ✅ ساعات کارکرد واقعی (ورود تا خروج)
+- ✅ موظفی (روز کاری × 7:20)
+- ✅ اضافه‌کاری / کسری کار
+
+**محاسبه نمی‌شود:**
+- ❌ تأخیر ورود (دیر آمدن)
+- ❌ تعجیل خروج (زود خارج شدن)
+- ❌ آستانه مجاز (Grace Period)
+
+---
+
+## ۷. معماری پیشنهادی
+
+### ۷.۱ ساختار Policy جدید
+
+```
+Policy (category = 'attendance')
+    └── PolicyValues:
+        ├── required_work_hours          → 7.33 (7:20)
+        ├── late_enabled                 → true/false
+        ├── late_allowed_minutes         → 15
+        ├── early_leave_enabled          → true/false
+        ├── early_leave_allowed_minutes  → 15
+```
+
+### ۷.۲ رابطه با انواع استخدام
+
+جدول `contracts` از قبل وجود دارد (`models/contract.py:11-68`) و شامل:
+
+| کد | نام | مرخصی سالانه |
+|----|-----|-------------|
+| 1 | رسمی | 35 روز |
+| 2 | وظیفه | 35 روز |
+| 3 | خریدخدمت | 30 روز |
+| 4 | **قراردادی** | 30 روز |
+| 5 | پزشک | 0 روز |
+
+**پیشنهاد:** مقدار موظفی می‌تواند در `Contract` ذخیره شود یا از Policy با کلید `required_work_dept_{type}` خوانده شود.
+
+### ۷.۳ تابع کمکی پیشنهادی
+
+```python
+def get_required_work_hours(db: Session, user_id: str) -> float:
+    """
+    دریافت ساعات موظفی روزانه برای یک کاربر
+    1. بررسی Contract فعال کاربر
+    2. خواندن از Attendance Policy
+    3. مقدار پیش‌فرض: 8 ساعت
+    """
+    # پیاده‌سازی در فاز بعد
+```
+
+---
+
+## ۸. تغییرات پایگاه داده
+
+### ۸.۱ نیازمندی‌ها
+
+| تغییر | نوع | توضیح |
+|-------|-----|-------|
+| افزودن پارامتر به `policy_values` | Data | افزودن رکوردهای جدید برای Attendance Policy |
+| **نیاز به Migration نیست** | - | ساختار فعلی Policy قابل استفاده است |
+
+### ۸.۲ رکوردهای مورد نیاز
+
+```sql
+-- در policy_values
+INSERT INTO policy_values (policy_id, parameter_key, parameter_value, is_editable)
+VALUES
+  (/* attendance policy id */, 'required_work_hours', '7.33', true),
+  (/* attendance policy id */, 'late_enabled', 'true', true),
+  (/* attendance policy id */, 'late_allowed_minutes', '15', true),
+  (/* attendance policy id */, 'early_leave_enabled', 'true', true),
+  (/* attendance policy id */, 'early_leave_allowed_minutes', '15', true);
+```
+
+---
+
+## ۹. تغییرات Business Logic
+
+### ۹.۱ فایل‌های نیازمند تغییر
+
+| فایل | تغییر | اولویت |
+|------|-------|--------|
+| `web/routes/attendance.py:55` | جایگزینی با تابع خواندن از Policy | P0 |
+| `web/routes/admin.py:28,33` | Import تابع جدید | P0 |
+| `core/detailed_monthly_report.py` | استفاده از تابع مشترک | P1 |
+| `core/detailed_monthly_report_v2.py` | استفاده از تابع مشترک | P1 |
+| `core/analytical_report.py` | استفاده از تابع مشترک | P1 |
+
+### ۹.۲ تابع مشترک پیشنهادی
+
+```python
+# core/attendance_policy.py (فایل جدید)
+
+from sqlalchemy.orm import Session
+from models.policy import Policy, PolicyValue
+
+DEFAULT_REQUIRED_HOURS = 8.0  # پیش‌فرض 8 ساعت
+
+def get_required_work_hours(db: Session, contract_type_code: str = None) -> float:
+    """دریافت ساعات موظفی از Policy یا پیش‌فرض"""
+    policy = db.query(Policy).filter(Policy.category == 'attendance').first()
+    if not policy:
+        return DEFAULT_REQUIRED_HOURS
+
+    pv = db.query(PolicyValue).filter(
+        PolicyValue.policy_id == policy.id,
+        PolicyValue.parameter_key == 'required_work_hours'
+    ).first()
+
+    if pv:
+        return float(pv.parameter_value)
+    return DEFAULT_REQUIRED_HOURS
+```
+
+---
+
+## ۱۰. تغییرات UI
+
+### ۱۰.۱ صفحه General Policies
+
+افزودن تب جدید در `/admin/policies` برای Attendance:
+
+| فیلد | نوع | پیش‌فرض |
+|------|-----|---------|
+| ساعات موظفی روزانه | Number (Decimal) | 8.0 |
+| محاسبه تأخیر فعال | Checkbox | true |
+| دقایق مجاز تأخیر | Number | 15 |
+| محاسبه تعجیل فعال | Checkbox | true |
+| دقایق مجاز تعجیل | Number | 15 |
+
+### ۱۰.۲ صفحه Attendance کاربر
+
+- نمایش وضعیت تأخیر/تعجیل (در صورت فعال بودن)
+- نمایش دقایق تأخیر/تعجیل در صورت وجود
+
+---
+
+## ۱۱. استراتژی داده‌های تاریخی
+
+### ۱۱.۱ سؤالات باز
+
+| سؤال | پاسخ |
+|------|------|
+| آیا Attendanceهای قبلی باید با Policy جدید محاسبه شوند؟ | **خیر** — محاسبات قبلی تغییر نکند |
+| آیا مقدار 7:20 باید به عنوان پیش‌فرض باقی بماند؟ | **بله** — سازگاری با داده‌های قبلی |
+| آیا Policy باید تاریخ effective داشته باشد؟ | **پیشنهاد:** بله، برای تغییرات آینده |
+
+### ۱۱.۲ پیشنهاد
+
+محاسبات Attendance بر اساس **Policy زمان ثبت** انجام شود:
+- attendance قبل از تغییر Policy → مقدار قبلی
+- attendance بعد از تغییر Policy → مقدار جدید
+
+---
+
+## ۱۲. طرح تست
+
+### ۱۲.۱ سناریوهای مورد نیاز
+
+| سناریو | ورودی | خروجی مورد انتظار |
+|--------|-------|------------------|
+| Contract Employee | policy required=7.33 | 7:20 |
+| Non-Contract | policy required=8.0 | 8:00 |
+| بدون Policy | - | 8:00 (پیش‌فرض) |
+| Late Enabled + Within | 10 دقیقه تأخیر | 0 کسری |
+| Late Enabled + Over | 20 دقیقه تأخیر | 5 دقیقه کسری |
+| Late Disabled | هر تأخیر | 0 کسری |
+| Early Enabled + Within | 10 دقیقه زود | 0 کسری |
+| Early Enabled + Over | 20 دقیقه زود | 5 دقیقه کسری |
+| Early Disabled | هر تعجیل | 0 کسری |
+
+### ۱۲.۲ تست‌های رگرسیون
+
+- ✅ User View محاسبات
+- ✅ Manager View محاسبات
+- ✅ گزارش‌های ماهانه
+- ✅ خروجی اکسل
+- ✅ خروجی PDF
+- ✅ محاسبات هفتگی
+
+---
+
+## ۱۳. فازهای پیاده‌سازی
+
+### Phase 1 — زیرساخت Policy
+- ایجاد Attendance Policy در دیتابیس
+- افزودن پارامترهای اولیه
+- ایجاد تابع `get_required_work_hours()`
+
+### Phase 2 — Business Logic
+- جایگزینی `DAILY_DUTY_HOURS` با تابع جدید
+- به‌روزرسانی تمام نقاط استفاده
+- تست یکپارچگی
+
+### Phase 3 — User Attendance
+- به‌روزرسانی `/attendance`
+- نمایش وضعیت تأخیر/تعجیل
+
+### Phase 4 — Manager Attendance
+- به‌روزرسانی `/admin/attendance/user/{id}`
+- به‌روزرسانی گزارش‌ها
+
+### Phase 5 — UI Policy
+- افزودن تب Attendance در `/admin/policies`
+- فرم ویرایش پارامترها
+
+### Phase 6 — تست و رگرسیون
+- اجرای تست‌های واحد
+- تست دستی
+- بررسی گزارش‌ها
+
+---
+
+## ۱۴. فایل‌های نیازمند تغییر
+
+### ۱۴.۱ اولویت P0 (بحرانی)
+
+| فایل | دلیل |
+|------|------|
+| `web/routes/attendance.py:55` | ثابت اصلی 7:20 - Source of truth |
+| `web/routes/admin.py:28,33` | Import و استفاده از ثابت |
+
+### ۱۴.۲ اولویت P1 (بالا)
+
+| فایل | دلیل |
+|------|------|
+| `core/detailed_monthly_report.py:23` | گزارش‌گیر ماهانه |
+| `core/detailed_monthly_report_v2.py:24` | گزارش‌گیر ماهانه V2 |
+| `core/analytical_report.py:24-31` | گزارش تحلیلی |
+
+### ۱۴.۳ اولویت P2 (متوسط)
+
+| فایل | دلیل |
+|------|------|
+| `web/routes/admin_policy.py` | افزودن تب Attendance |
+| `web/templates/admin/policy_*.html` | قالب‌های Policy |
+| `core/excel_detailed_export_v2.py:176-177` | متن نمایشی |
+| `core/pdf_detailed_export_v2.py:181` | متن نمایشی |
+
+---
+
+## ۱۵. ریسک‌ها و موارد لبه‌ای
+
+<div class="risk-item">
+<span class="risk-severity critical">CRITICAL</span>
+تغییر مقدار پیش‌فرض از 7:20 به 8:0 → تأثیر بر محاسبات جاری
+</div>
+
+<div class="risk-item">
+<span class="risk-severity high">HIGH</span>
+عدم هماهنگی بین نقاط مختلف کد → ناسازگاری در گزارش‌ها
+</div>
+
+<div class="risk-item">
+<span class="risk-severity medium">MEDIUM</span>
+تغییر Policy بدون تاریخ مؤثر → تأثیر بر داده‌های گذشته
+</div>
+
+<div class="risk-item">
+<span class="risk-severity medium">MEDIUM</span>
+نداشتن تست‌های واحد برای توابع محاسباتی
+</div>
+
+---
+
+## نتیجه‌گیری
+
+سیستم فعلی Attendance از یک معماری ساده با مقدار Hard-coded استفاده می‌کند. با استفاده از ساختار موجود `Policy` می‌توان این مشکل را برطرف کرد و سیستم را قابل تنظیم و توسعه نمود.
+
+**خلاصه اقدامات:**
+1. ✅ معماری Policy آماده است
+2. ✅ زنجیره User/Manager View مشترک است
+3. ❌ هیچ Policy برای Attendance تعریف نشده
+4. ❌ Late/Early محاسبه نمی‌شود
+5. ❌ مقدار 7:20 در چندین نقطه تکرار شده
+
+---
+
+<div class="alert alert-info">
+
+**READ-ONLY REVIEW COMPLETE**
+
+- ✅ هیچ فایلی تغییر نکرد
+- ✅ هیچ Migration ایجاد نشد
+- ✅ هیچ تغییر پایگاه داده انجام نشد
+- ✅ هیچ Commit ایجاد نشد
+
+هدف این مرحله فقط تحلیل و طراحی بود. آماده ورود به فاز پیاده‌سازی هستید.
+
+</div>
