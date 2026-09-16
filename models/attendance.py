@@ -2,7 +2,7 @@
 مدل جدول رکوردهای تردد
 """
 from datetime import datetime, time, date
-from typing import Optional
+from typing import Optional, List
 from sqlalchemy import Integer, String, Text, DateTime, ForeignKey, UniqueConstraint, Boolean, Time, Date, Enum, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from models.base import Base, TimestampMixin
