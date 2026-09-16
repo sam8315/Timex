@@ -2,127 +2,173 @@
 {% block title %}مأموریت و استراحت | پنل مدیریت{% endblock %}
 {% block content %}
 
-<!-- پیام‌ها -->
 {% if request.query_params.get('success') %}
-<div class="alert alert-success alert-dismissible fade show">
+<div class="alert alert-success alert-dismissible fade show" role="alert">
     <i class="bi bi-check-circle"></i> {{ request.query_params.get('success') }}
-    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="بستن"></button>
 </div>
 {% endif %}
 {% if request.query_params.get('error') %}
-<div class="alert alert-danger alert-dismissible fade show">
+<div class="alert alert-danger alert-dismissible fade show" role="alert">
     <i class="bi bi-exclamation-triangle"></i> {{ request.query_params.get('error') }}
-    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="بستن"></button>
 </div>
 {% endif %}
 
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h4><i class="bi bi-briefcase"></i> مأموریت و استراحت</h4>
+<div class="d-flex justify-content-between align-items-center gap-2 mb-4">
+    <h4 class="mb-0"><i class="bi bi-briefcase"></i> مأموریت و استراحت</h4>
     <a href="/admin/" class="btn btn-outline-primary btn-sm">
-        <i class="bi bi-arrow-right"></i> بازگشت به پنل مدیریت
+        <i class="bi bi-arrow-right"></i> پنل مدیریت
     </a>
 </div>
 
-<!-- فرم ثبت -->
+<div class="row g-2 mb-3" aria-label="آمار وضعیت‌ها">
+    <div class="col-4 col-md-2">
+        <div class="card border-primary shadow-sm h-100">
+            <div class="card-body text-center py-2 px-1">
+                <div class="fs-5 fw-bold text-primary">{{ mission_count }}</div>
+                <small class="text-muted">مأموریت</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-4 col-md-2">
+        <div class="card border-info shadow-sm h-100">
+            <div class="card-body text-center py-2 px-1">
+                <div class="fs-5 fw-bold text-info">{{ rest_count }}</div>
+                <small class="text-muted">استراحت</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-4 col-md-2">
+        <div class="card border-secondary shadow-sm h-100">
+            <div class="card-body text-center py-2 px-1">
+                <div class="fs-5 fw-bold text-secondary">{{ total_count }}</div>
+                <small class="text-muted">مجموع</small>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="card mb-4">
     <div class="card-header bg-white">
-        <h6><i class="bi bi-plus-circle"></i> ثبت مأموریت یا استراحت</h6>
+        <h6 class="mb-0"><i class="bi bi-plus-circle"></i> ثبت مأموریت یا استراحت</h6>
     </div>
     <div class="card-body">
         <form method="post" action="/admin/daily-status/add" class="row g-3 align-items-end">
-            <div class="col-md-2">
-                <label class="form-label">👤 کد پرسنلی <span class="text-danger">*</span></label>
-                <input type="text" name="user_id" class="form-control" placeholder="NN-1234" required>
+            <div class="col-12 col-sm-6 col-md-2">
+                <label class="form-label">کد پرسنلی <span class="text-danger">*</span></label>
+                <input type="text" name="user_id" class="form-control" placeholder="NN-1234" required list="employee-list">
+                {% if employees %}
+                <datalist id="employee-list">
+                    {% for emp in employees %}
+                    <option value="{{ emp.user_id }}">{{ emp.full_name }} ({{ emp.user_id }})</option>
+                    {% endfor %}
+                </datalist>
+                {% endif %}
             </div>
-            <div class="col-md-2">
-                <label class="form-label">📅 تاریخ (شمسی) <span class="text-danger">*</span></label>
-                <input type="text" name="date_str" class="form-control jalali-date" placeholder="1405/05/19" autocomplete="off" required>
+            <div class="col-6 col-sm-6 col-md-2">
+                <label class="form-label" for="from_date">از تاریخ <span class="text-danger">*</span></label>
+                <input type="text" id="from_date" name="from_date" class="form-control jalali-date" placeholder="1405/05/19" autocomplete="off" required>
             </div>
-            <div class="col-md-2">
-                <label class="form-label">🏷️ نوع وضعیت <span class="text-danger">*</span></label>
-                <select name="status_code" class="form-select">
+            <div class="col-6 col-sm-6 col-md-2">
+                <label class="form-label" for="to_date">تا تاریخ</label>
+                <input type="text" id="to_date" name="to_date" class="form-control jalali-date" placeholder="خالی = همان روز" autocomplete="off">
+            </div>
+            <div class="col-6 col-sm-6 col-md-2">
+                <label class="form-label" for="status_code">نوع وضعیت <span class="text-danger">*</span></label>
+                <select id="status_code" name="status_code" class="form-select">
                     {% for code, name in status_codes.items() %}
                     <option value="{{ code }}">{{ name }}</option>
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-md-4">
-                <label class="form-label">📝 توضیحات</label>
-                <input type="text" name="description" class="form-control" placeholder="مقصد مأموریت، دلیل استراحت و...">
+            <div class="col-12 col-md-3">
+                <label class="form-label" for="description">توضیحات</label>
+                <input type="text" id="description" name="description" class="form-control" placeholder="مقصد مأموریت، دلیل استراحت و...">
             </div>
-            <div class="col-md-2">
-                <button type="submit" class="btn btn-success w-100">
+            <div class="col-6 col-md-1">
+                <button type="submit" class="btn btn-success w-100" title="ثبت برای تمام روزهای بازه انتخاب شده">
                     <i class="bi bi-plus"></i> ثبت
                 </button>
             </div>
         </form>
+        <div class="form-text mt-2">
+            <i class="bi bi-info-circle"></i> این وضعیت برای <strong>تمام روزهای بازهٔ انتخاب‌شده</strong> ثبت می‌شود. اگر «تا تاریخ» خالی باشد، فقط همان روز ثبت می‌شود. در صورت وجود هرگونه رکورد در بازه، هیچ روزی ثبت نخواهد شد.
+        </div>
     </div>
 </div>
 
-<!-- فیلترها -->
 <div class="card mb-4">
     <div class="card-body py-2">
-        <form method="get" action="/admin/daily-status" class="d-flex flex-wrap align-items-center gap-2">
-            <input type="text" name="search" class="form-control form-control-sm" style="width: 220px;"
-                   value="{{ search }}" placeholder="🔍 جستجو: نام یا کد پرسنلی">
-            <select name="status_filter" class="form-select form-select-sm" style="width: auto;">
-                <option value="">همه وضعیت‌ها</option>
-                {% for code, name in status_codes.items() %}
-                <option value="{{ code }}" {% if status_filter == code %}selected{% endif %}>{{ name }}</option>
-                {% endfor %}
-            </select>
-            <select name="year" class="form-select form-select-sm" style="width: auto;">
-                {% for y in available_years %}
-                <option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>
-                {% endfor %}
-            </select>
-            <select name="month" class="form-select form-select-sm" style="width: auto;">
-                {% for m in available_months %}
-                <option value="{{ m }}" {% if m == month %}selected{% endif %}>{{ month_names[m] }}</option>
-                {% endfor %}
-            </select>
-            <button type="submit" class="btn btn-primary btn-sm">
-                <i class="bi bi-search"></i> اعمال
-            </button>
-            <a href="/admin/daily-status?show_all=1" class="btn btn-success btn-sm {% if show_all %}disabled{% endif %}">
-                <i class="bi bi-list"></i> نمایش همه
-            </a>
+        <form method="get" action="/admin/daily-status" class="row g-2 align-items-end">
+            {% if show_all %}<input type="hidden" name="show_all" value="{{ show_all }}">{% endif %}
+            <div class="col-12 col-sm-6 col-lg-3">
+                <label class="form-label small text-muted" for="search">جستجوی کارمند</label>
+                <input type="text" id="search" name="search" class="form-control form-control-sm" value="{{ search }}" placeholder="نام، نام خانوادگی یا کد پرسنلی">
+            </div>
+            <div class="col-6 col-sm-6 col-lg-2">
+                <label class="form-label small text-muted" for="status_filter">وضعیت</label>
+                <select id="status_filter" name="status_filter" class="form-select form-select-sm">
+                    <option value="">همه وضعیت‌ها</option>
+                    {% for code, name in status_codes.items() %}
+                    <option value="{{ code }}" {% if status_filter == code %}selected{% endif %}>{{ name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-6 col-sm-6 col-lg-2">
+                <label class="form-label small text-muted" for="year">سال</label>
+                <select id="year" name="year" class="form-select form-select-sm">
+                    {% for y in available_years %}
+                    <option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-6 col-sm-6 col-lg-2">
+                <label class="form-label small text-muted" for="month">ماه</label>
+                <select id="month" name="month" class="form-select form-select-sm">
+                    {% for m in available_months %}
+                    <option value="{{ m }}" {% if m == month %}selected{% endif %}>{{ month_names[m] }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-6 col-sm-6 col-lg-1">
+                <button type="submit" class="btn btn-primary btn-sm w-100"><i class="bi bi-search"></i> اعمال</button>
+            </div>
+            <div class="col-6 col-sm-6 col-lg-1">
+                <a href="/admin/daily-status" class="btn btn-outline-secondary btn-sm w-100"><i class="bi bi-x-circle"></i> پاک کردن</a>
+            </div>
+            <div class="col-12 col-lg-1">
+                <a href="/admin/daily-status?{{ pagination_params }}&show_all=1" class="btn btn-outline-success btn-sm w-100 {% if show_all %}disabled{% endif %}"><i class="bi bi-list"></i> همه</a>
+            </div>
         </form>
     </div>
 </div>
 
-<!-- جدول -->
-{% if not has_filter %}
+{% if total_count == 0 %}
 <div class="card">
     <div class="card-body text-center py-5">
-        <i class="bi bi-search display-4 text-muted"></i>
-        <h5 class="mt-3 text-muted">برای مشاهده، فیلتر اعمال کنید یا "نمایش همه" را بزنید</h5>
+        <i class="bi bi-inbox display-4 text-muted"></i>
+        <h5 class="mt-3 text-muted">در ماه انتخاب‌شده رکوردی یافت نشد</h5>
     </div>
 </div>
-
-{% elif total_count == 0 %}
-<div class="card">
-    <div class="card-body text-center py-5">
-        <i class="bi bi-emoji-frown display-4 text-muted"></i>
-        <h5 class="mt-3 text-muted">هیچ رکوردی یافت نشد</h5>
-    </div>
-</div>
-
 {% else %}
 <div class="card">
-    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
         <h6 class="mb-0"><i class="bi bi-list-ul"></i> مأموریت‌ها و استراحت‌ها</h6>
-        <span class="badge bg-primary fs-6">{{ total_count }} مورد</span>
+        <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-primary fs-6">{{ total_count }} مورد</span>
+            <small class="text-muted">صفحه {{ page }} از {{ total_pages }}</small>
+        </div>
     </div>
-    <div class="card-body">
+    <div class="card-body p-0">
         <div class="table-responsive">
-            <table class="table table-hover">
-                <thead>
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
                     <tr>
                         <th>ردیف</th>
                         <th>تاریخ</th>
-                        <th>کد</th>
-                        <th>نام</th>
+                        <th>کد پرسنلی</th>
+                        <th>نام کامل</th>
                         <th class="text-center">وضعیت</th>
                         <th>توضیحات</th>
                         <th>ثبت‌کننده</th>
@@ -132,28 +178,28 @@
                 <tbody>
                     {% for item in statuses %}
                     <tr>
-                        <td>{{ loop.index }}</td>
+                        <td>{{ (page - 1) * per_page + loop.index }}</td>
                         <td>{{ item.date_j }}</td>
-                        <td>{{ item.status.user_id }}</td>
-                        <td>{{ item.full_name }}</td>
+                        <td><code dir="ltr">{{ item.personnel_code }}</code></td>
+                        <td class="fw-medium">{{ item.full_name }}</td>
                         <td class="text-center">
                             {% if item.status.status_code.strip() == 'M' %}
-                            <span class="badge bg-primary">🚗 مأموریت</span>
+                            <span class="badge bg-primary">مأموریت</span>
                             {% elif item.status.status_code.strip() == 'R' %}
-                            <span class="badge bg-info">😴 استراحت</span>
+                            <span class="badge bg-info text-dark">استراحت</span>
                             {% else %}
                             <span class="badge bg-secondary">{{ item.status.status_code }}</span>
                             {% endif %}
                         </td>
                         <td><small>{{ item.status.description or '-' }}</small></td>
                         <td><small>{{ item.status.created_by or '-' }}</small></td>
-                        <td class="text-center">
-                            <form method="post" action="/admin/daily-status/{{ item.status.id }}/delete"
-                                  class="d-inline" onsubmit="return confirm('آیا مطمئن هستید؟');">
-                                <button type="submit" class="btn btn-outline-danger btn-sm">
-                                    <i class="bi bi-trash"></i>
-                                </button>
-                            </form>
+                        <td class="text-center text-nowrap">
+                            <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#editModal{{ item.status.id }}" aria-label="ویرایش {{ item.full_name }}">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            <button type="button" class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#deleteModal{{ item.status.id }}" aria-label="حذف {{ item.full_name }}">
+                                <i class="bi bi-trash"></i>
+                            </button>
                         </td>
                     </tr>
                     {% endfor %}
@@ -161,6 +207,80 @@
             </table>
         </div>
     </div>
+
+    {% for item in statuses %}
+    <div class="modal fade" id="editModal{{ item.status.id }}" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">ویرایش {{ item.status_name }} - {{ item.full_name }}</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="بستن"></button>
+                </div>
+                <form method="post" action="/admin/daily-status/{{ item.status.id }}/edit">
+                    <div class="modal-body row g-3">
+                        <div class="col-12">
+                            <label class="form-label">کد پرسنلی</label>
+                            <input type="text" class="form-control" value="{{ item.personnel_code }} - {{ item.full_name }}" readonly>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label" for="edit_date_{{ item.status.id }}">تاریخ <span class="text-danger">*</span></label>
+                            <input type="text" id="edit_date_{{ item.status.id }}" name="date_str" class="form-control jalali-date" value="{{ item.date_j }}" autocomplete="off" required>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label" for="edit_status_{{ item.status.id }}">نوع وضعیت <span class="text-danger">*</span></label>
+                            <select id="edit_status_{{ item.status.id }}" name="status_code" class="form-select">
+                                {% for code, name in status_codes.items() %}
+                                <option value="{{ code }}" {% if item.status.status_code.strip() == code %}selected{% endif %}>{{ name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label" for="edit_description_{{ item.status.id }}">توضیحات</label>
+                            <input type="text" id="edit_description_{{ item.status.id }}" name="description" class="form-control" value="{{ item.status.description or '' }}">
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
+                        <button type="submit" class="btn btn-primary">ذخیره تغییرات</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="deleteModal{{ item.status.id }}" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title">حذف {{ item.status_name }}</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="بستن"></button>
+                </div>
+                <div class="modal-body">
+                    <p>آیا از حذف <strong>{{ item.status_name }}</strong> برای <strong>{{ item.full_name }}</strong> ({{ item.personnel_code }}) در تاریخ <strong>{{ item.date_j }}</strong> مطمئن هستید؟</p>
+                    <p class="text-danger small mb-0"><i class="bi bi-exclamation-triangle"></i> این عمل غیرقابل بازگشت است.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
+                    <form method="post" action="/admin/daily-status/{{ item.status.id }}/delete">
+                        <button type="submit" class="btn btn-danger">حذف</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+
+    {% if total_pages > 1 %}
+    <div class="card-footer bg-white d-flex justify-content-center align-items-center gap-2 py-3 flex-wrap">
+        {% if page > 1 %}
+        <a href="/admin/daily-status?{{ pagination_params }}&page={{ page - 1 }}&per_page={{ per_page }}" class="btn btn-outline-primary btn-sm rounded-pill">قبلی</a>
+        {% endif %}
+        <span class="small text-muted">صفحه {{ page }} از {{ total_pages }}</span>
+        {% if page < total_pages %}
+        <a href="/admin/daily-status?{{ pagination_params }}&page={{ page + 1 }}&per_page={{ per_page }}" class="btn btn-outline-primary btn-sm rounded-pill">بعدی</a>
+        {% endif %}
+    </div>
+    {% endif %}
 </div>
 {% endif %}
 
