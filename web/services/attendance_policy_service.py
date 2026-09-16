@@ -353,10 +353,6 @@ def compute_required_minutes_for_range(
         hourly_leave_minutes_by_date = {}
     if mission_dates is None:
         mission_dates = set()
-
-    if mission_dates is None:
-        mission_dates = set()
-
     total = 0
     current = start_date
     while current <= end_date:
