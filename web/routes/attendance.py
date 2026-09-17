@@ -463,11 +463,34 @@ async def attendance_page(
     emp = db.query(Employee).filter(Employee.user_id == user.user_id).first()
     user_group = emp.department if emp else None
 
-    # 🆕 دریافت تعطیلات: ملی + گروه کاربر
+    # 🆕 دریافت مرخصی‌های تایید شده برای بازه ماه (فقط مرخصی‌های روزانه، HL جداگانه پردازش می‌شود)
+    approved_leaves = db.query(LeaveRequest).filter(
+        and_(
+            LeaveRequest.user_id == user.user_id,
+            LeaveRequest.status == 'A',
+            LeaveRequest.leave_type != 'HL',  # ✅ HL 제외: HL باید در leaves_by_date نباشد
+            LeaveRequest.from_date <= month_end_g,
+            LeaveRequest.to_date >= month_start_g
+        )
+    ).all()
+
+    # دریافت تعطیلات: نه فقط ماه جاری، بلکه کل بازه مرخصی‌های مورد نیاز
+    holiday_start = month_start_g
+    holiday_end = month_end_g
+
+    if approved_leaves:
+        holiday_start = min(
+            holiday_start,
+            min(leave.from_date for leave in approved_leaves)
+        )
+        holiday_end = max(
+            holiday_end,
+            max(leave.to_date for leave in approved_leaves)
+        )
     holiday_query = db.query(Holiday).filter(
         and_(
-            Holiday.holiday_date >= month_start_g,
-            Holiday.holiday_date <= month_end_g
+            Holiday.holiday_date >= holiday_start,
+            Holiday.holiday_date <= holiday_end
         )
     )
     if user_group:
@@ -482,16 +505,6 @@ async def attendance_page(
     holidays = holiday_query.all()
     holiday_dates = {h.holiday_date: h.title for h in holidays}
 
-    # 🆕 دریافت مرخصی‌های تایید شده برای بازه ماه (فقط مرخصی‌های روزانه، HL جداگانه پردازش می‌شود)
-    approved_leaves = db.query(LeaveRequest).filter(
-        and_(
-            LeaveRequest.user_id == user.user_id,
-            LeaveRequest.status == 'A',
-            LeaveRequest.leave_type != 'HL',  # ✅ HL 제외: HL باید در leaves_by_date نباشد
-            LeaveRequest.from_date <= month_end_g,
-            LeaveRequest.to_date >= month_start_g
-        )
-    ).all()
 
     # 🆕 ساخت دیکشنری مرخصی‌ها بر اساس تاریخ (فقط full-day leaves: AL, SL, RL, CW, ...)
     # Travel Leave (TL) روزها در build_leave_days_by_date مرکزی محاسبه می‌شوند

@@ -216,6 +216,37 @@ class TestBuildLeaveDaysByDate:
         assert mapping[D6] == "AL"
         assert FRI not in mapping
 
+    def test_cross_month_holiday_before_visible_window_does_not_consume_tl_day(self):
+        """
+        A holiday before the visible window, but inside the LeaveRequest range,
+        must still be excluded from working-day counting.
+        """
+        detail = SimpleNamespace(final_travel_days=2)
+
+        leave = _leave(
+            date(2024, 1, 5),   # Friday
+            date(2024, 1, 8),   # Monday
+            detail=detail,
+        )
+
+        holiday_dates = {
+            date(2024, 1, 6): "تعطیل رسمی",
+        }
+
+        mapping = build_leave_days_by_date(
+            [leave],
+            holiday_dates,
+            start_date=date(2024, 1, 6),
+            end_date=date(2024, 1, 8),
+        )
+
+        # Holiday must not consume a TL slot.
+        assert date(2024, 1, 6) not in mapping
+
+        # First two actual working days are TL.
+        assert mapping[date(2024, 1, 7)] == LEAVE_TYPE_TRAVEL
+        assert mapping[date(2024, 1, 8)] == LEAVE_TYPE_TRAVEL
+
 
 class TestIsWorkingDay:
     def test_friday_is_not_working(self):
