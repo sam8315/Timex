@@ -12,13 +12,13 @@
 <div class="card mb-4">
     <div class="card-body py-2">
         <form method="get" action="/admin/attendance" class="d-flex flex-wrap align-items-center gap-2">
-            <div>
+            <div class="flex-shrink-0">
                 <label class="form-label">📅 تاریخ</label>
                 <input type="text" name="date_str" id="attendanceDate" class="form-control jalali-date"
                        value="{{ date_str_input }}" placeholder="1405/05/19" style="width: 130px;" autocomplete="off">
             </div>
 
-            <div>
+            <div class="flex-shrink-0">
                 <label class="form-label">👤 کاربر</label>
                 <div class="user-search-wrapper position-relative" style="min-width: 220px;">
                 <div class="input-group">
@@ -49,8 +49,9 @@
                     </div>
                 </div>
             </div>
+            </div>
 
-            <div>
+            <div class="flex-shrink-0">
                 <label class="form-label">🏢 دپارتمان</label>
                 <select name="department" class="form-select" style="width: 160px;">
                 <option value="">همه دپارتمان‌ها</option>
