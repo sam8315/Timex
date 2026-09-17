@@ -41,6 +41,7 @@ from web.services.hourly_leave_service import (
     get_approved_hl_minutes_on_date,
     format_hl_display,
 )
+from web.services.travel_leave_service import build_leave_days_by_date
 from models.daily_status import DailyStatus
 from web.permissions import has_permission, get_effective_permissions, enforce_permission
 from models.employee_region import EmployeeRegion
@@ -794,7 +795,19 @@ async def admin_attendance(
             LeaveRequest.to_date >= target_date
         )
     ).all()
-    leave_by_user = {lv.user_id: lv.leave_type for lv in approved_leaves}
+    leaves_by_user = {lv.user_id: lv for lv in approved_leaves}
+
+    # 🆕 برای شمارش روزهای کاری مرخصی توراهی (TL)، تعطیلات بازه
+    # [اولین از تاریخ، تا تاریخ هدف] به تفکیک گروه هر کارمند لازم است
+    all_holidays_in_range = []
+    if approved_leaves:
+        range_start = min(lv.from_date for lv in approved_leaves)
+        all_holidays_in_range = db.query(Holiday).filter(
+            and_(
+                Holiday.holiday_date >= range_start,
+                Holiday.holiday_date <= target_date
+            )
+        ).all()
 
     # بررسی تعطیل بودن روز
     is_friday = target_date.weekday() == 4
@@ -814,7 +827,19 @@ async def admin_attendance(
 
         # تعیین وضعیت
         daily_status = status_by_user.get(emp.user_id)
-        leave_type = leave_by_user.get(emp.user_id)
+        leave = leaves_by_user.get(emp.user_id)
+        # 🆕 Travel Leave: اولین N روز کاری مرخصی، «مرخصی توراهی» (TL) نمایش داده می‌شود
+        if leave is not None:
+            emp_holiday_dates = {
+                h.holiday_date for h in all_holidays_in_range
+                if h.group_id is None or h.group_id == emp.department
+            }
+            _leave_map = build_leave_days_by_date(
+                [leave], emp_holiday_dates, target_date, target_date
+            )
+            leave_type = _leave_map.get(target_date, leave.leave_type)
+        else:
+            leave_type = None
 
         # 🕐 دقایق مرخصی ساعتی تایید شده در این روز (فقط نمایش)
         hl_minutes = get_approved_hl_minutes_on_date(db, emp, target_date)
@@ -825,6 +850,7 @@ async def admin_attendance(
             'RL': 'تشویقی',
             'UL': 'بدون حقوق',
             'CW': 'ذخیره',
+            'TL': 'توراهی',
         }
 
         # ✅ اولویت ۱: تعطیل رسمی یا جمعه
@@ -1085,19 +1111,17 @@ async def admin_user_attendance(
     ).all()
 
     # ساخت دیکشنری مرخصی‌ها بر اساس تاریخ (فقط full-day leaves)
+    # Travel Leave (TL) روزها در build_leave_days_by_date مرکزی محاسبه می‌شوند
     LEAVE_TYPE_NAMES_LOCAL = {
         'AL': 'استحقاقی',
         'SL': 'استعلاجی',
         'RL': 'تشویقی',
         'CW': 'ذخیره',
+        'TL': 'توراهی',
     }
-    leaves_by_date = {}
-    for leave in approved_leaves:
-        current_leave = leave.from_date
-        while current_leave <= leave.to_date:
-            if month_start_g <= current_leave <= month_end_g:
-                leaves_by_date[current_leave] = leave.leave_type
-            current_leave += timedelta(days=1)
+    leaves_by_date = build_leave_days_by_date(
+        approved_leaves, holiday_dates, month_start_g, month_end_g
+    )
 
     # Phase 7: Fetch approved hourly leave minutes by date
     hourly_leave_minutes_by_date = get_approved_hl_minutes(
