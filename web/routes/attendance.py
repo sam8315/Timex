@@ -18,6 +18,7 @@ from models.leave_request import LeaveRequest  # 🆕
 from models.daily_status import DailyStatus
 from web.services.attendance_policy_service import compute_required_minutes_for_range
 from web.services.hourly_leave_service import get_approved_hl_minutes, format_hl_display
+from web.services.travel_leave_service import build_leave_days_by_date
 
 router = APIRouter(tags=["Attendance"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
@@ -493,19 +494,17 @@ async def attendance_page(
     ).all()
 
     # 🆕 ساخت دیکشنری مرخصی‌ها بر اساس تاریخ (فقط full-day leaves: AL, SL, RL, CW, ...)
-    leaves_by_date = {}
+    # Travel Leave (TL) روزها در build_leave_days_by_date مرکزی محاسبه می‌شوند
     LEAVE_TYPE_NAMES_LOCAL = {
         'AL': 'استحقاقی',
         'SL': 'استعلاجی',
         'RL': 'تشویقی',
         'CW': 'ذخیره',
+        'TL': 'توراهی',
     }
-    for leave in approved_leaves:
-        current_leave = leave.from_date
-        while current_leave <= leave.to_date:
-            if month_start_g <= current_leave <= month_end_g:
-                leaves_by_date[current_leave] = leave.leave_type
-            current_leave += timedelta(days=1)
+    leaves_by_date = build_leave_days_by_date(
+        approved_leaves, holiday_dates, month_start_g, month_end_g
+    )
 
     # Phase 7: Fetch approved hourly leave minutes by date
     hourly_leave_minutes_by_date = get_approved_hl_minutes(

@@ -1,6 +1,6 @@
 """Travel Leave domain service."""
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Optional, Tuple
 
 import jdatetime
@@ -258,3 +258,89 @@ def override_travel_days(db: Session, detail_id: int, new_final_days: int, admin
 
 def get_active_cities(db: Session):
     return db.query(City).filter(City.is_active == True).order_by(City.name).all()
+
+
+# ============================================
+# 🆕 Attendance leave-day mapping (shared by attendance views)
+# ============================================
+
+# Code injected into the per-date leave mapping when a working day belongs to
+# the Travel Leave portion of an approved AL request.
+LEAVE_TYPE_TRAVEL = "TL"
+
+
+def is_working_day(d: date, holiday_dates) -> bool:
+    """A working day is neither Friday nor a known holiday.
+
+    Friday is detected by the gregorian weekday (Friday == 4). Holidays are
+    passed in as the same ``holiday_dates`` mapping already computed by the
+    attendance routes (a dict/list whose keys are holiday dates).
+    """
+    if d.weekday() == 4:
+        return False
+    return d not in holiday_dates
+
+
+def build_leave_days_by_date(
+    approved_leaves,
+    holiday_dates,
+    start_date: date,
+    end_date: date,
+):
+    """Build a ``{date: leave_type}`` mapping for approved full-day leaves.
+
+    Shared by ``/attendance``, ``/admin/attendance/user/{id}`` and
+    ``/admin/attendance`` so the Travel Leave split is computed in one place.
+
+    For each approved leave (HL is excluded upstream):
+      * iterate from ``from_date`` through ``to_date``;
+      * only working days count (not Friday, not a holiday);
+      * if the leave carries a ``TravelLeaveDetail``:
+          - the first ``final_travel_days`` working days map to ``'TL'``;
+          - the remaining working days keep the original ``leave_type``;
+      * otherwise every working day maps to the original ``leave_type``.
+
+    Fridays and holidays are never emitted — the attendance views already give
+    them precedence. Working-day counting runs across the *whole* leave range
+    (not only the visible window) so "first N working days" is measured against
+    the entire request; only dates inside ``[start_date, end_date]`` are
+    actually written into the returned mapping.
+
+    The helper performs **no** database writes and never creates fake rows;
+    ``final_travel_days`` is read as-is (Travel Leave quota/calculation rules
+    are out of scope here).
+    """
+    leaves_by_date: dict = {}
+    for leave in approved_leaves:
+        detail = getattr(leave, "travel_leave_detail", None)
+        tl_days = detail.final_travel_days if detail is not None else 0
+        working_seen = 0
+        current = leave.from_date
+        while current <= leave.to_date:
+            if is_working_day(current, holiday_dates):
+                if start_date <= current <= end_date:
+                    if tl_days > 0 and working_seen < tl_days:
+                        leaves_by_date[current] = LEAVE_TYPE_TRAVEL
+                    else:
+                        leaves_by_date[current] = leave.leave_type
+                working_seen += 1
+            current += timedelta(days=1)
+    return leaves_by_date
+
+
+# Local display names for the attendance leave-type column. Mirrors the
+# legacy ``LEAVE_TYPE_NAMES``/``LEAVE_TYPE_NAMES_LOCAL`` dicts used by the
+# attendance templates so both code paths stay in sync.
+ATTENDANCE_LEAVE_TYPE_NAMES = {
+    'AL': 'استحقاقی',
+    'SL': 'استعلاجی',
+    'RL': 'تشویقی',
+    'UL': 'بدون حقوق',
+    'CW': 'ذخیره',
+    'TL': 'توراهی',
+}
+
+
+def leave_type_label(leave_type: str) -> str:
+    """Render the human-readable leave name for an attendance ``leave_type``."""
+    return ATTENDANCE_LEAVE_TYPE_NAMES.get(leave_type, '')
