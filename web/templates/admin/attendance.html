@@ -18,7 +18,7 @@
 
             <label class="form-label small mb-0 d-inline-block" style="max-width: 60px;">👤 کاربر</label>
             <div class="user-search-wrapper position-relative" style="min-width: 220px;">
-                <div class="input-group">
+            <div class="input-group">
                     <span class="input-group-text"><i class="bi bi-search"></i></span>
                     <input type="text"
                            class="form-control"
@@ -26,14 +26,26 @@
                            placeholder="جستجو بر اساس نام، کد پرسنلی یا عضویت..."
                            autocomplete="off"
                            {% if selected_user_id %}value="{{ selected_user_name or '' }}"{% endif %}>
-                    <button type="button" class="btn btn-sm btn-outline-danger" id="clearUserBtn"
+                    <button type="button" class="btn btn-outline-secondary" id="clearUserBtn"
                             style="display:{% if selected_user_id %}block{% else %}none{% endif %};">
-                        <i class="bi bi-x"></i>
+                        <i class="bi bi-x-lg"></i>
                     </button>
                 </div>
                 <input type="hidden" name="user_id" id="targetUserId" value="{{ selected_user_id or '' }}">
                 <div class="user-search-results" id="userSearchResults"></div>
-            </div>
+                <div class="selected-user-info mt-2" id="selectedUserInfo" style="display:{% if selected_user_id %}block{% else %}none{% endif %};">
+                    <div class="alert alert-success py-2 mb-0 d-flex justify-content-between align-items-center">
+                        <span>
+                            <i class="bi bi-check-circle"></i>
+                            <strong id="selectedUserName">{{ selected_user_name or '' }}</strong>
+                            <small class="text-muted ms-2" id="selectedUserDept">({{ selected_user_id or '' }})</small>
+                        </span>
+                        <button type="button" class="btn btn-sm btn-outline-danger" id="removeUserBtn">
+                            <i class="bi bi-x"></i>
+                        </button>
+                    </div>
+                </div>
+                </div>
 
             <label class="form-label small mb-0 d-inline-block" style="max-width: 70px;">🏢 دپارتمان</label>
             <select name="department" class="form-select" style="width: 160px;">
@@ -45,7 +57,7 @@
                 <option value="5" {% if department == '5' %}selected{% endif %}>پزشک</option>
             </select>
 
-            <button type="submit" class="btn btn-primary">
+            <button type="submit" class="btn btn-primary btn-sm">
                 <i class="bi bi-funnel"></i> اعمال فیلتر
             </button>
 
