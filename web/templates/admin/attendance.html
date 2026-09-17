@@ -17,20 +17,19 @@
                    value="{{ date_str_input }}" placeholder="1405/05/19" style="width: 130px;" autocomplete="off">
 
             <label class="form-label small mb-0 d-inline-block" style="max-width: 60px;">👤 کاربر</label>
-            <div class="user-search-wrapper position-relative" style="min-width: 220px;">
-                <div class="input-group">
-                    <span class="input-group-text"><i class="bi bi-search"></i></span>
-                    <input type="text"
-                           class="form-control"
-                           id="userSearchInput"
-                           placeholder="جستجو بر اساس نام، کد پرسنلی یا عضویت..."
-                           autocomplete="off"
-                           {% if selected_user_id %}value="{{ selected_user_name or '' }}"{% endif %}>
-                    <button type="button" class="btn btn-outline-secondary" id="clearUserBtn"
-                            style="display:{% if selected_user_id %}block{% else %}none{% endif %};">
-                        <i class="bi bi-x-lg"></i>
-                    </button>
-                </div>
+            <div class="user-search-wrapper" style="position: relative; min-width: 220px;">
+                <input type="text"
+                       class="form-control"
+                       id="userSearchInput"
+                       placeholder="نام، نام خانوادگی، کد"
+                       autocomplete="off"
+                       {% if selected_user_id %}value="{{ selected_user_name or '' }}"{% endif %}>
+                <span id="searchIcon" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #6c757d; pointer-events: none; z-index: 2;">
+                    <i class="bi bi-search"></i>
+                </span>
+                <button type="button" class="btn btn-sm text-danger" id="clearUserBtn" style="display:none; position: absolute; left: 12px; top: 50%; transform: translateY(-50%); {% if selected_user_id %}display: inline-flex;{% endif %};">
+                    <i class="bi bi-trash"></i>
+                </button>
                 <input type="hidden" name="user_id" id="targetUserId" value="{{ selected_user_id or '' }}">
                 <div class="user-search-results" id="userSearchResults"></div>
             </div>
@@ -225,6 +224,7 @@ const searchInput = document.getElementById('userSearchInput');
 const searchResults = document.getElementById('userSearchResults');
 const targetUserId = document.getElementById('targetUserId');
 const clearUserBtn = document.getElementById('clearUserBtn');
+const searchIcon = document.getElementById('searchIcon');
 
 function searchEmployees(query) {
     if (!query.trim()) return employeesData.slice(0, 50);
@@ -261,16 +261,16 @@ function selectEmployee(emp) {
     targetUserId.value = emp.user_id;
     searchInput.value = emp.full_name;
     searchInput.classList.add('user-selected');
-    clearUserBtn.style.display = 'block';
+    clearUserBtn.style.display = 'inline-flex';
+    searchIcon.style.display = 'none';
     searchResults.classList.remove('show');
-    searchInput.blur();
 }
 function clearSelection() {
     targetUserId.value = ''; searchInput.value = ''; searchInput.classList.remove('user-selected');
-    clearUserBtn.style.display = 'none'; searchInput.focus();
+    clearUserBtn.style.display = 'none'; searchIcon.style.display = 'inline-flex'; searchInput.focus();
 }
 if (searchInput) {
-    searchInput.addEventListener('input', function() { if (targetUserId.value) { targetUserId.value = ''; searchInput.classList.remove('user-selected'); } const results = searchEmployees(this.value); renderResults(results); clearUserBtn.style.display = this.value ? 'block' : 'none'; });
+    searchInput.addEventListener('input', function() { if (targetUserId.value) { targetUserId.value = ''; searchInput.classList.remove('user-selected'); } const results = searchEmployees(this.value); renderResults(results); clearUserBtn.style.display = targetUserId.value ? 'inline-flex' : 'none'; });
     searchInput.addEventListener('focus', function() { if (!targetUserId.value) { const results = searchEmployees(this.value); renderResults(results); } });
     searchInput.addEventListener('keydown', function(e) {
         const items = searchResults.querySelectorAll('.user-search-item');
