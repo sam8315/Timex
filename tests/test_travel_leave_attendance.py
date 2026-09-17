@@ -30,6 +30,7 @@ from web.services.travel_leave_service import (
 )
 
 from .conftest import login_as, TestingSessionLocal
+from models.holiday import Holiday
 
 
 # ---------------------------------------------------------------------------
@@ -393,3 +394,147 @@ class TestPlainALStillShowsAl:
 
         assert "🌴 مرخصی توراهی" not in html
         assert html.count("🌴 مرخصی استحقاقی") >= 1
+
+
+class TestCrossMonthHolidayRoute:
+
+    def test_attendance_cross_month_holiday_does_not_consume_tl_day(
+        self, db, client, make_user
+    ):
+        """
+        Regression test for the monthly /attendance route.
+
+        A holiday immediately before the visible Jalali month is inside
+        the LeaveRequest range. It must be loaded by the route and must
+        not consume a Travel Leave day.
+
+        Expected:
+            previous Jalali day -> holiday / not a working day
+            first visible working day  -> TL
+            second visible working day -> TL
+        """
+        user = make_user(
+            role="user",
+            balance_al=30,
+            department="1",
+        )
+
+        emp = db.query(Employee).filter(
+            Employee.user_id == user["user_id"]
+        ).first()
+
+        today_j = jdatetime.date.today()
+        month_start_g = jdatetime.date(
+            today_j.year,
+            today_j.month,
+            1,
+        ).togregorian()
+
+        if today_j.month == 12:
+            month_end_g = jdatetime.date(
+                today_j.year,
+                12,
+                29,
+            ).togregorian()
+        else:
+            month_end_g = (
+                jdatetime.date(
+                    today_j.year,
+                    today_j.month + 1,
+                    1,
+                ) - timedelta(days=1)
+            ).togregorian()
+
+        # Find the first two actual working days of the visible month,
+        # respecting holidays that apply to this employee's department.
+        current_month_holidays = {
+            h.holiday_date
+            for h in db.query(Holiday).filter(
+                Holiday.holiday_date >= month_start_g,
+                Holiday.holiday_date <= month_end_g,
+            ).all()
+            if h.group_id is None or h.group_id == emp.department
+        }
+
+        visible_workdays = []
+        current = month_start_g
+
+        while current <= month_end_g and len(visible_workdays) < 2:
+            if (
+                current.weekday() != 4
+                and current not in current_month_holidays
+            ):
+                visible_workdays.append(current)
+            current += timedelta(days=1)
+
+        assert len(visible_workdays) == 2
+
+        first_visible_workday = visible_workdays[0]
+        second_visible_workday = visible_workdays[1]
+
+        # Pick the immediately preceding Jalali day.
+        # If it is Friday, use the day before that so there is no
+        # extra working day between the holiday and the visible month.
+        cross_month_holiday = month_start_g - timedelta(days=1)
+
+        if cross_month_holiday.weekday() == 4:
+            cross_month_holiday -= timedelta(days=1)
+
+        existing_holiday = db.query(Holiday).filter(
+            Holiday.holiday_date == cross_month_holiday
+        ).first()
+
+        if existing_holiday is None:
+            db.add(
+                Holiday(
+                    holiday_date=cross_month_holiday,
+                    title="تعطیل تست Travel Leave",
+                    is_national=True,
+                    group_id=None,
+                )
+            )
+            db.commit()
+
+        # Leave starts on the cross-month holiday and continues into
+        # the visible month. With final_travel_days=2, the first two
+        # working days across the WHOLE range must be TL.
+        _create_al_with_travel_leave(
+            db,
+            emp,
+            cross_month_holiday,
+            second_visible_workday,
+            2,
+        )
+
+        jy, jm = _current_jalali_month()
+
+        login_as(client, user["national_code"])
+
+        resp = client.get(
+            f"/attendance?year={jy}&month={jm}"
+        )
+
+        assert resp.status_code == 200
+
+        html = resp.text
+
+        # Exactly the first two visible working days should be TL.
+        assert html.count("🌴 مرخصی توراهی") == 2
+
+        row1 = _html_row_containing(
+            html,
+            _jalali_str(first_visible_workday),
+        )
+        row2 = _html_row_containing(
+            html,
+            _jalali_str(second_visible_workday),
+        )
+
+        assert row1 != ""
+        assert row2 != ""
+
+        assert "🌴 مرخصی توراهی" in row1
+        assert "🌴 مرخصی استحقاقی" not in row1
+
+        assert "🌴 مرخصی توراهی" in row2
+        assert "🌴 مرخصی استحقاقی" not in row2
