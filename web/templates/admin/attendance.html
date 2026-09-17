@@ -11,14 +11,14 @@
 <!-- فیلتر و ناوبری -->
 <div class="card mb-4">
     <div class="card-body py-2">
-        <form method="get" action="/admin/attendance" class="d-flex flex-wrap align-items-start gap-2">
+        <form method="get" action="/admin/attendance" class="d-flex flex-wrap align-items-center gap-2">
             <label class="form-label small mb-0 d-inline-block" style="max-width: 70px;">📅 تاریخ</label>
             <input type="text" name="date_str" id="attendanceDate" class="form-control jalali-date"
                    value="{{ date_str_input }}" placeholder="1405/05/19" style="width: 130px;" autocomplete="off">
 
             <label class="form-label small mb-0 d-inline-block" style="max-width: 60px;">👤 کاربر</label>
             <div class="user-search-wrapper position-relative" style="min-width: 220px;">
-            <div class="input-group">
+                <div class="input-group">
                     <span class="input-group-text"><i class="bi bi-search"></i></span>
                     <input type="text"
                            class="form-control"
@@ -26,14 +26,14 @@
                            placeholder="جستجو بر اساس نام، کد پرسنلی یا عضویت..."
                            autocomplete="off"
                            {% if selected_user_id %}value="{{ selected_user_name or '' }}"{% endif %}>
-                    <button type="button" class="btn btn-outline-secondary" id="clearUserBtn"
+                    <button type="button" class="btn btn-sm btn-outline-danger" id="clearUserBtn"
                             style="display:{% if selected_user_id %}block{% else %}none{% endif %};">
-                        <i class="bi bi-x-lg"></i>
+                        <i class="bi bi-x"></i>
                     </button>
                 </div>
                 <input type="hidden" name="user_id" id="targetUserId" value="{{ selected_user_id or '' }}">
                 <div class="user-search-results" id="userSearchResults"></div>
-                </div>
+            </div>
 
             <label class="form-label small mb-0 d-inline-block" style="max-width: 70px;">🏢 دپارتمان</label>
             <select name="department" class="form-select" style="width: 160px;">
@@ -45,7 +45,7 @@
                 <option value="5" {% if department == '5' %}selected{% endif %}>پزشک</option>
             </select>
 
-            <button type="submit" class="btn btn-primary btn-sm">
+            <button type="submit" class="btn btn-primary">
                 <i class="bi bi-funnel"></i> اعمال فیلتر
             </button>
 
