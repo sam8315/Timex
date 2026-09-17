@@ -8,100 +8,73 @@
     </a>
 </div>
 
-<!-- 🆕 نوار ناوبری روز -->
+<!-- فیلتر و ناوبری -->
 <div class="card mb-4">
-    <div class="card-body py-3">
-        <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
-            <!-- دکمه‌های ناوبری -->
+    <div class="card-body py-2">
+        <form method="get" action="/admin/attendance" class="d-flex flex-wrap align-items-center gap-2">
             <div class="d-flex align-items-center gap-2">
+                {% if selected_user_id %}<input type="hidden" name="user_id" value="{{ selected_user_id }}">{% endif %}
+                <input type="text" name="date_str" id="attendanceDate" class="form-control jalali-date"
+                       value="{{ date_str_input }}" placeholder="1405/05/19" style="width: 130px;" autocomplete="off">
+            </div>
+
+            <div class="user-search-wrapper position-relative" style="min-width: 220px;">
+                <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input type="text"
+                           class="form-control"
+                           id="userSearchInput"
+                           placeholder="جستجو بر اساس نام، کد پرسنلی یا عضویت..."
+                           autocomplete="off"
+                           {% if selected_user_id %}value="{{ selected_user_name or '' }}"{% endif %}>
+                    <button type="button" class="btn btn-outline-secondary" id="clearUserBtn"
+                            style="display:{% if selected_user_id %}block{% else %}none{% endif %};">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </div>
+                <input type="hidden" name="user_id" id="targetUserId" value="{{ selected_user_id or '' }}">
+                <div class="user-search-results" id="userSearchResults"></div>
+                <div class="selected-user-info mt-2" id="selectedUserInfo" style="display:{% if selected_user_id %}block{% else %}none{% endif %};">
+                    <div class="alert alert-success py-2 mb-0 d-flex justify-content-between align-items-center">
+                        <span>
+                            <i class="bi bi-check-circle"></i>
+                            <strong id="selectedUserName">{{ selected_user_name or '' }}</strong>
+                            <small class="text-muted ms-2" id="selectedUserDept">({{ selected_user_id or '' }})</small>
+                        </span>
+                        <button type="button" class="btn btn-sm btn-outline-danger" id="removeUserBtn">
+                            <i class="bi bi-x"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <select name="department" class="form-select" style="width: 160px;">
+                <option value="">همه دپارتمان‌ها</option>
+                <option value="1" {% if department == '1' %}selected{% endif %}>رسمی</option>
+                <option value="2" {% if department == '2' %}selected{% endif %}>وظیفه</option>
+                <option value="3" {% if department == '3' %}selected{% endif %}>خریدخدمت</option>
+                <option value="4" {% if department == '4' %}selected{% endif %}>قراردادی</option>
+                <option value="5" {% if department == '5' %}selected{% endif %}>پزشک</option>
+            </select>
+
+            <button type="submit" class="btn btn-primary btn-sm">
+                <i class="bi bi-funnel"></i> اعمال فیلتر
+            </button>
+
+            <div class="d-flex align-items-center gap-2 ms-auto">
                 <a href="/admin/attendance?date_str={{ prev_date_str }}{% if department %}&department={{ department }}{% endif %}{{ user_id_query }}"
                    class="btn btn-outline-primary btn-sm">
                     <i class="bi bi-chevron-right"></i> روز قبل
-                </a>
-                <a href="/admin/attendance?date_str={{ next_date_str }}{% if department %}&department={{ department }}{% endif %}{{ user_id_query }}"
-                   class="btn btn-outline-primary btn-sm">
-                    روز بعد <i class="bi bi-chevron-left"></i>
                 </a>
                 {% if not is_today %}
                 <a href="/admin/attendance?date_str={{ date_str_input }}{% if department %}&department={{ department }}{% endif %}{{ user_id_query }}" class="btn btn-success btn-sm">
                     <i class="bi bi-calendar-today"></i> امروز
                 </a>
                 {% endif %}
-            </div>
-
-            <!-- فرم انتخاب مستقیم -->
-            <form method="get" action="/admin/attendance" class="d-flex align-items-center gap-2">
-                {% if selected_user_id %}<input type="hidden" name="user_id" value="{{ selected_user_id }}">{% endif %}
-                <input type="text" name="date_str" class="form-control jalali-date"
-                       value="{{ date_str_input }}" placeholder="1405/05/19" style="width: 130px;" autocomplete="off">
-
-                {% if department %}
-                <input type="hidden" name="department" value="{{ department }}">
-                {% endif %}
-                <button type="submit" class="btn btn-primary btn-sm">
-                    <i class="bi bi-search"></i> نمایش
-                </button>
-            </form>
-        </div>
-    </div>
-</div>
-
-<!-- فیلترها -->
-<div class="card mb-4">
-    <div class="card-body">
-        <form method="get" action="/admin/attendance" class="row g-3 align-items-end">
-            <div class="col-md-3">
-                <label class="form-label">📅 تاریخ</label>
-                <input type="text" name="date_str" class="form-control jalali-date" id="attendanceDate"
-                       placeholder="انتخاب تاریخ" autocomplete="off" value="{{ date_str_input }}">
-            </div>
-            <div class="col-md-3">
-                <label class="form-label">👤 کاربر</label>
-                <div class="user-search-wrapper position-relative">
-                    <div class="input-group">
-                        <span class="input-group-text"><i class="bi bi-search"></i></span>
-                        <input type="text"
-                               class="form-control"
-                               id="userSearchInput"
-                               placeholder="جستجو بر اساس نام، کد پرسنلی یا عضویت..."
-                               autocomplete="off"
-                               {% if selected_user_id %}value="{{ selected_user_name or '' }}"{% endif %}>
-                        <button type="button" class="btn btn-outline-secondary" id="clearUserBtn"
-                                style="display:{% if selected_user_id %}block{% else %}none{% endif %};">
-                            <i class="bi bi-x-lg"></i>
-                        </button>
-                    </div>
-                    <input type="hidden" name="user_id" id="targetUserId" value="{{ selected_user_id or '' }}">
-                    <div class="user-search-results" id="userSearchResults"></div>
-                    <div class="selected-user-info mt-2" id="selectedUserInfo" style="display:{% if selected_user_id %}block{% else %}none{% endif %};">
-                        <div class="alert alert-success py-2 mb-0 d-flex justify-content-between align-items-center">
-                            <span>
-                                <i class="bi bi-check-circle"></i>
-                                <strong id="selectedUserName">{{ selected_user_name or '' }}</strong>
-                                <small class="text-muted ms-2" id="selectedUserDept">({{ selected_user_id or '' }})</small>
-                            </span>
-                            <button type="button" class="btn btn-sm btn-outline-danger" id="removeUserBtn">
-                                <i class="bi bi-x"></i>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <label class="form-label">🏢 دپارتمان</label>
-                <select name="department" class="form-select">
-                    <option value="">همه دپارتمان‌ها</option>
-                    <option value="1" {% if department == '1' %}selected{% endif %}>رسمی</option>
-                    <option value="2" {% if department == '2' %}selected{% endif %}>وظیفه</option>
-                    <option value="3" {% if department == '3' %}selected{% endif %}>خریدخدمت</option>
-                    <option value="4" {% if department == '4' %}selected{% endif %}>قراردادی</option>
-                    <option value="5" {% if department == '5' %}selected{% endif %}>پزشک</option>
-                </select>
-            </div>
-            <div class="col-md-2">
-                <button type="submit" class="btn btn-primary w-100">
-                    <i class="bi bi-funnel"></i> اعمال فیلتر
-                </button>
+                <a href="/admin/attendance?date_str={{ next_date_str }}{% if department %}&department={{ department }}{% endif %}{{ user_id_query }}"
+                   class="btn btn-outline-primary btn-sm">
+                    روز بعد <i class="bi bi-chevron-left"></i>
+                </a>
             </div>
         </form>
     </div>
@@ -262,7 +235,6 @@
 {% block extra_js %}
 <script>
 $(document).ready(function() {
-    $('#attendanceDate').pDatepicker({ format: 'YYYY/MM/DD', autoClose: true });
 });
 
 // 🆕 User search (reused from leave_register.html)
