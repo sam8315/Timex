@@ -33,18 +33,6 @@
                 </div>
                 <input type="hidden" name="user_id" id="targetUserId" value="{{ selected_user_id or '' }}">
                 <div class="user-search-results" id="userSearchResults"></div>
-                <div class="selected-user-info mt-2" id="selectedUserInfo" style="display:{% if selected_user_id %}block{% else %}none{% endif %};">
-                    <div class="alert alert-success py-2 mb-0 d-flex justify-content-between align-items-center">
-                        <span>
-                            <i class="bi bi-check-circle"></i>
-                            <strong id="selectedUserName">{{ selected_user_name or '' }}</strong>
-                            <small class="text-muted ms-2" id="selectedUserDept">({{ selected_user_id or '' }})</small>
-                        </span>
-                        <button type="button" class="btn btn-sm btn-outline-danger" id="removeUserBtn">
-                            <i class="bi bi-x"></i>
-                        </button>
-                    </div>
-                </div>
                 </div>
 
             <label class="form-label small mb-0 d-inline-block" style="max-width: 70px;">🏢 دپارتمان</label>
@@ -236,11 +224,7 @@ let filteredEmployees = [];
 const searchInput = document.getElementById('userSearchInput');
 const searchResults = document.getElementById('userSearchResults');
 const targetUserId = document.getElementById('targetUserId');
-const selectedUserInfo = document.getElementById('selectedUserInfo');
-const selectedUserName = document.getElementById('selectedUserName');
-const selectedUserDept = document.getElementById('selectedUserDept');
 const clearUserBtn = document.getElementById('clearUserBtn');
-const removeUserBtn = document.getElementById('removeUserBtn');
 
 function searchEmployees(query) {
     if (!query.trim()) return employeesData.slice(0, 50);
@@ -277,19 +261,16 @@ function selectEmployee(emp) {
     targetUserId.value = emp.user_id;
     searchInput.value = emp.full_name;
     searchInput.classList.add('user-selected');
-    selectedUserName.textContent = emp.full_name;
-    selectedUserDept.textContent = `(${emp.user_id}) - ${emp.department}`;
-    selectedUserInfo.style.display = 'block';
     clearUserBtn.style.display = 'block';
     searchResults.classList.remove('show');
     searchInput.blur();
 }
 function clearSelection() {
     targetUserId.value = ''; searchInput.value = ''; searchInput.classList.remove('user-selected');
-    selectedUserInfo.style.display = 'none'; clearUserBtn.style.display = 'none'; searchInput.focus();
+    clearUserBtn.style.display = 'none'; searchInput.focus();
 }
 if (searchInput) {
-    searchInput.addEventListener('input', function() { if (targetUserId.value) { targetUserId.value = ''; selectedUserInfo.style.display = 'none'; searchInput.classList.remove('user-selected'); } const results = searchEmployees(this.value); renderResults(results); clearUserBtn.style.display = this.value ? 'block' : 'none'; });
+    searchInput.addEventListener('input', function() { if (targetUserId.value) { targetUserId.value = ''; searchInput.classList.remove('user-selected'); } const results = searchEmployees(this.value); renderResults(results); clearUserBtn.style.display = this.value ? 'block' : 'none'; });
     searchInput.addEventListener('focus', function() { if (!targetUserId.value) { const results = searchEmployees(this.value); renderResults(results); } });
     searchInput.addEventListener('keydown', function(e) {
         const items = searchResults.querySelectorAll('.user-search-item');
@@ -299,7 +280,6 @@ if (searchInput) {
         else if (e.key === 'Escape') { searchResults.classList.remove('show'); }
     });
     if (clearUserBtn) clearUserBtn.addEventListener('click', clearSelection);
-    if (removeUserBtn) removeUserBtn.addEventListener('click', clearSelection);
 }
 document.addEventListener('click', function(e) { if (!e.target.closest('.user-search-wrapper')) { searchResults.classList.remove('show'); } });
 </script>
