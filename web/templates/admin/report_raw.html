@@ -154,7 +154,9 @@
     .raw-table th {
         font-weight: 700;
         background: #f8f9fa;
-        white-space: nowrap;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        word-break: normal;
         text-align: center;
     }
     .raw-table td {
@@ -433,7 +435,7 @@
                 <th style="width: 8%">روز</th>
                 <th style="width: 8%">وضعیت روز</th>
                 <th style="width: 10%">وضعیت فرد</th>
-                <th style="width: 10%; direction: rtl; unicode-bidi: isolate;">نوع مرخصی / مرخصی ساعتی</th>
+                <th style="width: 10%; direction: rtl; unicode-bidi: isolate; white-space: normal; overflow-wrap: anywhere; line-height: 1.25;">نوع مرخصی / مرخصی ساعتی</th>
                 <th style="width: 55%">ترددها (ورود → خروج)</th>
             </tr>
             </thead>
