@@ -101,13 +101,15 @@ class RawPDF(FPDF):
     def _lines(text: str, width: float, font_size: float) -> List[str]:
         return [] if not text else [text]
 
-    def _write_cell(self, x: float, y: float, width: float, height: float, text, align: str = "C"):
+    def _write_cell(self, x: float, y: float, width: float, row_height: float,
+                    line_height: float, text, align: str = "C"):
+        self.rect(x, y, width, row_height)
         self.set_xy(x, y)
         self.multi_cell(
             width,
-            height,
+            line_height,
             _shape(str(text)),
-            border=1,
+            border=0,
             align=align,
             new_x="RIGHT",
             new_y="NEXT",
@@ -122,7 +124,7 @@ class RawPDF(FPDF):
         y = self.get_y()
         self.set_font(self.font_name, "B", 7.5)
         for index, width in enumerate(widths):
-            self._write_cell(x, y, width, line_height, headers[index], "C")
+            self._write_cell(x, y, width, line_height, line_height, headers[index], "C")
             x += width
         self.set_xy(self.l_margin, y + line_height)
 
@@ -159,7 +161,7 @@ class RawPDF(FPDF):
             x = self.l_margin
             y = self.get_y()
             for index, (width, value) in enumerate(zip(widths, values)):
-                self._write_cell(x, y, width, row_height, value, "R" if index == 6 else "C")
+                self._write_cell(x, y, width, row_height, line_height, value, "R" if index == 6 else "C")
                 x += width
             self.set_xy(self.l_margin, y + row_height)
         self.ln(2)

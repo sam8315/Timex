@@ -278,8 +278,8 @@ class TestHourlyLeaveInFilter:
 # 5. PDF row-height wraps long text
 # ---------------------------------------------------------------------------
 class TestPDFRowHeight:
-    def test_pdf_generates_without_error(self):
-        report = {
+    def _make_report(self, days):
+        return {
             "year": 1405,
             "month": 6,
             "month_name": "شهریور",
@@ -289,53 +289,60 @@ class TestPDFRowHeight:
                 "membership": "قراردادی",
                 "hire_date_j": None,
                 "termination_date_j": None,
-                "days": [{
-                    "jalali_date": "1405/06/15",
-                    "day_name": "شنبه",
-                    "day_status": "کاری",
-                    "holiday_title": None,
-                    "person_status_name": "حاضر",
-                    "leave_name": None,
-                    "hourly_leave": {},
-                    "attendance_str": "07:00 → 14:00 | 15:00 → 18:00 | 19:00 → 22:00",
-                }] * 31,
+                "days": days,
             }],
         }
-        output = BytesIO()
-        pdf_export_group(report, output)
-        output.seek(0)
-        assert output.tell() == 0 or len(output.getvalue()) > 0
 
-    def test_pdf_long_attendance_string(self):
-        long_att = " | ".join(
-            f"{h:02d}:00 → {h+1:02d}:00" for h in range(7, 19)
-        )
-        report = {
-            "year": 1405,
-            "month": 6,
-            "month_name": "شهریور",
-            "employees": [{
-                "user_id": "12345",
-                "full_name": "Test User",
-                "membership": "قراردادی",
-                "hire_date_j": None,
-                "termination_date_j": None,
-                "days": [{
-                    "jalali_date": "1405/06/15",
-                    "day_name": "شنبه",
-                    "day_status": "کاری",
-                    "holiday_title": None,
-                    "person_status_name": "حاضر",
-                    "leave_name": None,
-                    "hourly_leave": {},
-                    "attendance_str": long_att,
-                }],
-            }],
+    def _day(self, att_str):
+        return {
+            "jalali_date": "1405/06/15",
+            "day_name": "شنبه",
+            "day_status": "کاری",
+            "holiday_title": None,
+            "person_status_name": "حاضر",
+            "leave_name": None,
+            "hourly_leave": {},
+            "attendance_str": att_str,
         }
+
+    def test_pdf_generates_without_error(self):
+        report = self._make_report([self._day("07:00 → 14:00 | 15:00 → 18:00 | 19:00 → 22:00")] * 31)
         output = BytesIO()
         pdf_export_group(report, output)
         output.seek(0)
         assert len(output.getvalue()) > 0
+
+    def test_long_text_causes_extra_row_height(self):
+        short_day = self._day("07:00 → 14:00")
+        long_str = " | ".join(f"{h:02d}:00 → {h+1:02d}:00" for h in range(7, 19))
+        long_day = self._day(long_str)
+
+        from core.pdf_raw_report import RawPDF
+
+        pdf_short = RawPDF()
+        pdf_short.add_page()
+        pdf_short._header_block("T", "S")
+        pdf_short._employee_header({"full_name": "X", "user_id": "1", "membership": "R"})
+        pdf_short.set_font(pdf_short.font_name, "", 7)
+        y_before = pdf_short.get_y()
+        pdf_short._daily_table([short_day])
+        y_after_short = pdf_short.get_y()
+
+        pdf_long = RawPDF()
+        pdf_long.add_page()
+        pdf_long._header_block("T", "S")
+        pdf_long._employee_header({"full_name": "X", "user_id": "1", "membership": "R"})
+        pdf_long.set_font(pdf_long.font_name, "", 7)
+        y_before_long = pdf_long.get_y()
+        pdf_long._daily_table([long_day])
+        y_after_long = pdf_long.get_y()
+
+        short_consumed = y_after_short - y_before
+        long_consumed = y_after_long - y_before_long
+        assert long_consumed > short_consumed, (
+            f"Long attendance row ({long_consumed:.1f}mm) should be taller "
+            f"than short row ({short_consumed:.1f}mm)"
+        )
 
 
 # ---------------------------------------------------------------------------
