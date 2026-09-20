@@ -775,9 +775,14 @@ class TestPDFPhysicalRTLOrder:
 
         original_write_cell = RawPDF._write_cell
 
-        def tracking_write_cell(self, x, y, width, row_height, line_height, text, align="C"):
-            all_calls.append({"x": x, "y": y, "w": width, "text": str(text), "align": align})
-            original_write_cell(self, x, y, width, row_height, line_height, text, align)
+        def tracking_write_cell(self, x, y, width, row_height, line_height, text, align="C", base_dir="R"):
+            all_calls.append({
+                "x": x, "y": y, "w": width,
+                "text": str(text), "align": align, "base_dir": base_dir,
+            })
+            original_write_cell(
+                self, x, y, width, row_height, line_height, text, align, base_dir
+            )
 
         with patch.object(RawPDF, "_write_cell", tracking_write_cell):
             pdf = RawPDF()
@@ -829,9 +834,13 @@ class TestPDFPhysicalRTLOrder:
 
         original_write_cell = RawPDF._write_cell
 
-        def tracking_write_cell(self, x, y, width, row_height, line_height, text, align="C"):
-            new_x_values.append({"text": str(text)[:30], "x": x, "w": width})
-            original_write_cell(self, x, y, width, row_height, line_height, text, align)
+        def tracking_write_cell(self, x, y, width, row_height, line_height, text, align="C", base_dir="R"):
+            new_x_values.append({
+                "text": str(text)[:30], "x": x, "w": width, "base_dir": base_dir
+            })
+            original_write_cell(
+                self, x, y, width, row_height, line_height, text, align, base_dir
+            )
 
         with patch.object(RawPDF, "_write_cell", tracking_write_cell):
             pdf = RawPDF()
