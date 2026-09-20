@@ -148,20 +148,33 @@ def _format_segment(segment: dict) -> str:
 
 
 def build_attendance_segments(records: List[Attendance]) -> List[dict]:
-    """همه رکوردها را به‌ترتیب زمانی نگه می‌دارد و فقط برای نمایش جفت می‌کند."""
+    """همه رکوردها را به‌ترتیب زمانی نگه می‌دارد و فقط برای نمایش جفت می‌کند.
+
+    Pairing logic matches AttendanceAnalyzer:
+    - one pending entry at a time
+    - when a second consecutive entry appears, the previous becomes entry_only
+    - the next exit pairs with the current pending entry
+    - an exit without a pending entry is exit_only
+    """
     ordered = sorted(records, key=lambda record: (record.timestamp, record.id or 0))
-    pending_entries = []
+    pending_entry = None
     segments = []
     for record in ordered:
         if record.punch == 0:
-            pending_entries.append(_record_dict(record))
+            if pending_entry is not None:
+                segments.append({
+                    'kind': 'entry_only',
+                    'record': pending_entry,
+                })
+            pending_entry = _record_dict(record)
         elif record.punch == 1:
-            if pending_entries:
+            if pending_entry is not None:
                 segments.append({
                     'kind': 'pair',
-                    'enter': pending_entries.pop(0),
+                    'enter': pending_entry,
                     'exit': _record_dict(record),
                 })
+                pending_entry = None
             else:
                 segments.append({
                     'kind': 'exit_only',
@@ -172,10 +185,11 @@ def build_attendance_segments(records: List[Attendance]) -> List[dict]:
                 'kind': 'unknown',
                 'record': _record_dict(record),
             })
-    segments.extend({
-        'kind': 'entry_only',
-        'record': record,
-    } for record in pending_entries)
+    if pending_entry is not None:
+        segments.append({
+            'kind': 'entry_only',
+            'record': pending_entry,
+        })
     return segments
 
 
@@ -447,6 +461,8 @@ class RawReportService:
                         day for day in days
                         if day['person_status'] in LEAVE_PERSON_STATUS
                         or day['leave_type'] is not None
+                        or day['person_status'] == 'HL'
+                        or (day.get('hourly_leave') and day['hourly_leave'].get('minutes', 0) > 0)
                     ]
                 elif status_filter == 'working':
                     days = [day for day in days if day['day_status'] == 'کاری']

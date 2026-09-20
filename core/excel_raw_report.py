@@ -199,8 +199,8 @@ def export_group(report: dict, output) :
     _auto_width(ws, [6, 14, 24, 18, 24])
     ws.freeze_panes = 'A4'
 
-    for emp in report['employees']:
-        sheet_name = _safe_sheet_name(str(emp['user_id']), used)
+    for index, emp in enumerate(report['employees']):
+        sheet_name = sheet_names[index]
         ws_employee = workbook.create_sheet(sheet_name)
         ws_employee.sheet_view.rightToLeft = True
         _write_title(

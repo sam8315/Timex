@@ -144,11 +144,14 @@ class RawPDF(FPDF):
                 leave_display,
                 day["attendance_str"],
             ]
-            lines = [
-                max(1, len(_shape(str(value)).splitlines()) or 1)
-                for value in values
-            ]
-            row_height = max(line_height, max(lines) * line_height + 1.2)
+            max_lines = 1
+            for index, (width, value) in enumerate(zip(widths, values)):
+                shaped = _shape(str(value))
+                text_width = self.get_string_width(shaped)
+                if text_width > width:
+                    est_lines = int(text_width / width) + 1
+                    max_lines = max(max_lines, est_lines)
+            row_height = max(line_height, max_lines * line_height + 1.2)
             if self.get_y() + row_height > bottom_limit:
                 self.add_page()
                 self._table_header(widths, line_height)
