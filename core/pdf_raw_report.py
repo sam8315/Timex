@@ -5,6 +5,8 @@ from typing import List
 
 from fpdf import FPDF
 
+from core.raw_report import fmt_time
+
 try:
     import arabic_reshaper
     from bidi.algorithm import get_display
