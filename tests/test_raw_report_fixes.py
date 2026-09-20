@@ -21,7 +21,7 @@ from core.pdf_raw_report import (
 from models.attendance import Attendance
 
 
-PORTRAIT_WIDTHS = [101, 27, 19, 15, 15, 17]
+PORTRAIT_WIDTHS = [96, 32, 19, 15, 15, 17]
 EXPECTED_HEADERS_RTL = [
     "ترددها (ورود → خروج)",
     "نوع مرخصی",
