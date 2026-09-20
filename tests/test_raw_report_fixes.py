@@ -899,15 +899,50 @@ class TestPDFHeaderLayout:
     def test_report_guide_uses_compact_wording(self):
         from pathlib import Path
         html = Path("web/templates/admin/report_raw.html").read_text(encoding="utf-8")
-        assert "(M) یعنی تردد دستی." in html
-        assert "نبودن (M)" not in html
-        assert "زمان‌ها به ترتیب ورود و سپس خروج" in html
+        assert "(M) یعنی تردد دستی؛ نبودن (M) یعنی ثبت توسط دستگاه." in html
+        assert "زمان‌ها به ترتیب ورود و سپس خروج نمایش داده می‌شوند." in html
+
+
+# ---------------------------------------------------------------------------
+# 15c. Report guide is present in PDF and Excel
+# ---------------------------------------------------------------------------
+class TestReportGuideExports:
+    def _make_report(self):
+        return _make_individual_report([_normal_day(1, "07:00 (M) → 14:00")])
+
+    def test_pdf_contains_full_report_guide(self):
+        report = self._make_report()
+        output = BytesIO()
+        pdf_export_individual(report, output)
+        output.seek(0)
+        raw = output.getvalue()
+        assert b"\xd8" in raw or b"\xd9" in raw
+
+    def test_excel_contains_full_report_guide(self):
+        from core.excel_raw_report import export_individual as excel_individual
+        report = self._make_report()
+        output = BytesIO()
+        excel_individual(report, output)
+        output.seek(0)
+        from openpyxl import load_workbook
+        wb = load_workbook(output)
+        ws = wb.active
+        found_guide = False
+        expected = "راهنمای گزارش: (M) یعنی تردد دستی؛ نبودن (M) یعنی ثبت توسط دستگاه. در هر روز، زمان‌ها به ترتیب ورود و سپس خروج نمایش داده می‌شوند."
+        for row in ws.iter_rows(values_only=True):
+            for cell in row:
+                if cell == expected:
+                    found_guide = True
+                    break
+            if found_guide:
+                break
+        assert found_guide, "Excel output must contain the full report guide"
 
 
 # ---------------------------------------------------------------------------
 # 16. Manual source='M' shown in PDF and Excel outputs
 # ---------------------------------------------------------------------------
-class TestPDFMixedDirection:
+
     def test_attendance_cell_uses_ltr_base_direction(self):
         from unittest.mock import patch
         from core.pdf_raw_report import RawPDF
