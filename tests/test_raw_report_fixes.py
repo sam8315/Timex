@@ -591,21 +591,51 @@ class TestNoHolidayTitle:
 
 
 # ---------------------------------------------------------------------------
-# 11. RTL text isolation in HTML headers
+# 11. RTL text isolation and leave-cell wrapping in HTML
 # ---------------------------------------------------------------------------
 class TestHTMLRTLFix:
-    def test_leave_header_has_isolation(self):
+    def _html(self):
         with open("web/templates/admin/report_raw.html", encoding="utf-8") as f:
-            html = f.read()
-        assert "unicode-bidi: isolate" in html, (
+            return f.read()
+
+    def test_leave_header_has_isolation(self):
+        assert "unicode-bidi: isolate" in self._html(), (
             "HTML should use unicode-bidi: isolate to prevent RTL corruption"
         )
 
     def test_leave_header_contains_slash(self):
-        with open("web/templates/admin/report_raw.html", encoding="utf-8") as f:
-            html = f.read()
-        assert "نوع مرخصی / مرخصی ساعتی" in html, (
+        assert "نوع مرخصی / مرخصی ساعتی" in self._html(), (
             "Header should contain the full Persian text with / separator"
+        )
+
+    def test_leave_cell_has_explicit_rtl(self):
+        html = self._html()
+        assert ".leave-cell" in html
+        leave_css = html.split(".leave-cell")[1].split("}")[0]
+        assert "direction: rtl" in leave_css, (
+            ".leave-cell must have explicit direction: rtl"
+        )
+
+    def test_leave_cell_allows_wrapping(self):
+        html = self._html()
+        leave_css = html.split(".leave-cell")[1].split("}")[0]
+        assert "white-space: normal" in leave_css, (
+            ".leave-cell must use white-space: normal to allow wrapping"
+        )
+
+    def test_leave_cell_has_overflow_wrap(self):
+        html = self._html()
+        leave_css = html.split(".leave-cell")[1].split("}")[0]
+        assert "overflow-wrap" in leave_css, (
+            ".leave-cell must have overflow-wrap for safe breaking"
+        )
+
+    def test_leave_header_has_explicit_rtl_inline(self):
+        html = self._html()
+        thead = html.split("<thead>")[1].split("</thead>")[0]
+        leave_th = [line for line in thead.split("<th") if "نوع مرخصی" in line][0]
+        assert "direction: rtl" in leave_th, (
+            "Leave <th> should have explicit direction: rtl inline"
         )
 
 
@@ -680,3 +710,54 @@ class TestManualLabelPerPunch:
         display = format_attendance_display(atts)
         assert "07:00 دستی → —" in display
         assert "07:10 دستی → 14:30 دستی" in display
+
+
+# ---------------------------------------------------------------------------
+# 14. Integration: manual attendance route → raw report shows دستی
+# ---------------------------------------------------------------------------
+class TestManualAttendanceIntegration:
+    def test_manual_record_appears_as_dasti_in_report(self, client, db, make_user):
+        from tests.conftest import login_as
+        from models.attendance import Attendance
+
+        admin = make_user(role="super_admin", balance_al=None)
+        target = make_user(role="user", balance_al=None)
+        login_as(client, admin["national_code"])
+
+        today_j = jdatetime.date.today()
+        today_str = today_j.strftime("%Y/%m/%d")
+        month = today_j.month
+        year = today_j.year
+
+        resp = client.post(
+            "/admin/attendance/edit/add",
+            data={
+                "user_id": target["user_id"],
+                "date_str": today_str,
+                "time_str": "08:30",
+                "punch": "0",
+            },
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+
+        record = db.query(Attendance).filter(
+            Attendance.user_id == target["user_id"],
+        ).order_by(Attendance.id.desc()).first()
+        assert record is not None
+        assert record.source == "M"
+
+        resp = client.post(
+            "/reports/raw",
+            data={
+                "target_user_id": target["user_id"],
+                "year": str(year),
+                "month": str(month),
+                "employment_type": "all",
+                "status_filter": "all",
+            },
+        )
+        assert resp.status_code == 200
+        assert "دستی" in resp.text, (
+            "Raw report HTML must contain 'دستی' for the manual record"
+        )

@@ -182,8 +182,10 @@
         white-space: nowrap;
     }
     .raw-table .leave-cell {
-        white-space: nowrap;
+        direction: rtl;
         unicode-bidi: isolate;
+        white-space: normal;
+        overflow-wrap: anywhere;
     }
     .raw-empty-state {
         padding: 32px 16px;
@@ -431,7 +433,7 @@
                 <th style="width: 8%">روز</th>
                 <th style="width: 8%">وضعیت روز</th>
                 <th style="width: 10%">وضعیت فرد</th>
-                <th style="width: 10%; unicode-bidi: isolate;">نوع مرخصی / مرخصی ساعتی</th>
+                <th style="width: 10%; direction: rtl; unicode-bidi: isolate;">نوع مرخصی / مرخصی ساعتی</th>
                 <th style="width: 55%">ترددها (ورود → خروج)</th>
             </tr>
             </thead>
