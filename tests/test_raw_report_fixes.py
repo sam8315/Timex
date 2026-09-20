@@ -23,12 +23,12 @@ from models.attendance import Attendance
 
 PORTRAIT_WIDTHS = [96, 32, 19, 15, 15, 17]
 EXPECTED_HEADERS_RTL = [
-    "ترددها (ورود → خروج)",
-    "نوع مرخصی",
-    "وضعیت فرد",
-    "وضعیت روز",
-    "روز",
     "تاریخ",
+    "روز",
+    "وضعیت روز",
+    "وضعیت فرد",
+    "نوع مرخصی",
+    "ترددها (ورود → خروج)",
 ]
 
 
@@ -200,7 +200,7 @@ class TestManualSourceLabel:
     def test_manual_entry_shows_dasti(self):
         atts = [_att(_dt(7, 0), 0, source="M", record_id=1)]
         display = format_attendance_display(atts)
-        assert "دستی" in display
+        assert "(M)" in display
 
     def test_device_entry_no_dasti(self):
         atts = [_att(_dt(7, 0), 0, source="D", record_id=1)]
@@ -691,7 +691,7 @@ class TestManualLabelPerPunch:
         ]
         display = format_attendance_display(atts)
         assert "07:00 دستی → 14:00" in display
-        assert "14:00 دستی" not in display
+        assert "14:00 (M)" not in display
 
     def test_all_device_no_dasti(self):
         atts = [
@@ -758,7 +758,7 @@ class TestManualAttendanceIntegration:
             },
         )
         assert resp.status_code == 200
-        assert "دستی" in resp.text, (
+        assert "(M)" in resp.text, (
             "Raw report HTML must contain 'دستی' for the manual record"
         )
 
@@ -812,13 +812,13 @@ class TestPDFPhysicalRTLOrder:
             )
 
         first_cell = first_row_cells[0]
-        assert "ترددها" in first_cell["text"], (
-            f"Rightmost header must be attendance, got: {first_cell['text']}"
+        assert "تاریخ" in first_cell["text"], (
+            f"Rightmost header must be date, got: {first_cell['text']}"
         )
 
         last_cell = first_row_cells[-1]
-        assert "تاریخ" in last_cell["text"], (
-            f"Leftmost header must be date, got: {last_cell['text']}"
+        assert "ترددها" in last_cell["text"], (
+            f"Leftmost header must be attendance, got: {last_cell['text']}"
         )
 
         for i in range(len(first_row_cells) - 1):
