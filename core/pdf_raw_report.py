@@ -231,7 +231,7 @@ class RawPDF(FPDF):
             if self.get_y() + row_height > bottom_limit:
                 self.add_page()
                 self._table_header(widths, line_height)
-                self.set_font(self.font_name, "", 7)
+                self.set_font(self.font_name, "", 7.6)
             y = self.get_y()
             x = self.w - self.r_margin
             for index, (width, value) in enumerate(zip(widths, values)):
