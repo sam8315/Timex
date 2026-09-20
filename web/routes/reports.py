@@ -2,23 +2,34 @@
 پنل گزارشات مدیریتی
 """
 from fastapi import APIRouter, Request, Depends, Form, Query
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
 from sqlalchemy.orm import Session
 from typing import Optional
+from urllib.parse import quote
+from io import BytesIO
 import jdatetime
 
 from web.dependencies import get_db, require_admin
 from web.permissions import enforce_permission
 from models.user import User
 from models.employee import Employee
-from fastapi.responses import FileResponse
-from starlette.background import BackgroundTask
-import os
-from fastapi.responses import FileResponse, StreamingResponse  # 🆕 StreamingResponse اضافه شود
-
-# 🆕 import کلاس گزارش - مسیر را بر اساس محل فایل تنظیم کنید
+from models.contract import CONTRACT_TYPES
+from core.raw_report import (
+    JALALI_MONTHS,
+    EMPLOYMENT_TYPE_OPTIONS,
+    STATUS_FILTER_OPTIONS,
+    build_raw_report,
+)
+from core.excel_raw_report import (
+    export_individual as export_raw_excel_individual,
+    export_group as export_raw_excel_group,
+)
+from core.pdf_raw_report import (
+    export_individual as export_raw_pdf_individual,
+    export_group as export_raw_pdf_group,
+)
 from core.detailed_monthly_report_v2 import DetailedMonthlyReportGeneratorV2
 
 router = APIRouter(tags=["Reports"])
@@ -57,6 +68,266 @@ async def reports_page(
         "current_month": jdatetime.date.today().month,
         "is_admin": True,
     })
+
+
+def _raw_employee_search_data(db: Session) -> list:
+    employees = db.query(Employee).filter(
+        Employee.is_active.is_(True)
+    ).order_by(Employee.first_name, Employee.last_name, Employee.user_id).all()
+    return [
+        {
+            'user_id': employee.user_id,
+            'full_name': employee.full_name,
+            'national_code': employee.national_code or '',
+            'card': employee.user_id,
+            'department': employee.department or '-',
+        }
+        for employee in employees
+    ]
+
+
+def _raw_selected_employee(db: Session, user_id: Optional[str]):
+    if not user_id:
+        return None
+    return db.query(Employee).filter(
+        Employee.user_id == user_id,
+        Employee.is_active.is_(True),
+    ).first()
+
+
+def _raw_context(
+    request: Request,
+    user: User,
+    db: Session,
+    report=None,
+    selected_user_id: Optional[str] = None,
+    selected_year: Optional[int] = None,
+    selected_month: Optional[int] = None,
+    selected_employment_type: str = 'all',
+    selected_status_filter: str = 'all',
+):
+    today_j = jdatetime.date.today()
+    selected_employee = _raw_selected_employee(db, selected_user_id)
+    return {
+        'user': user,
+        'report': report,
+        'employees_data': _raw_employee_search_data(db),
+        'available_years': list(range(today_j.year, today_j.year - 6, -1)),
+        'jalali_months': JALALI_MONTHS,
+        'employment_type_options': EMPLOYMENT_TYPE_OPTIONS,
+        'status_filter_options': STATUS_FILTER_OPTIONS,
+        'selected_user_id': selected_user_id or '',
+        'selected_user_name': selected_employee.full_name if selected_employee else '',
+        'selected_year': selected_year or today_j.year,
+        'selected_month': selected_month or today_j.month,
+        'selected_employment_type': selected_employment_type,
+        'selected_status_filter': selected_status_filter,
+        'is_admin': True,
+    }
+
+
+def _validate_raw_report_params(
+    year: int,
+    month: int,
+    employment_type: str,
+    status_filter: str,
+):
+    if month < 1 or month > 12:
+        raise ValueError('ماه نامعتبر است')
+    if employment_type not in CONTRACT_TYPES and employment_type != 'all':
+        raise ValueError('نوع عضویت نامعتبر است')
+    valid_status_filters = {value for value, _ in STATUS_FILTER_OPTIONS}
+    if status_filter not in valid_status_filters:
+        raise ValueError('فیلتر وضعیت نامعتبر است')
+
+
+@router.get("/reports/raw", response_class=HTMLResponse)
+async def raw_report_form(
+    request: Request,
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    enforce_permission(db, user, 'view_reports')
+    today_j = jdatetime.date.today()
+    selected_user_id = request.query_params.get('target_user_id', '')
+    try:
+        selected_year = int(request.query_params.get('year', today_j.year))
+        selected_month = int(request.query_params.get('month', today_j.month))
+    except (TypeError, ValueError):
+        selected_year, selected_month = today_j.year, today_j.month
+    selected_employment_type = request.query_params.get('employment_type', 'all')
+    selected_status_filter = request.query_params.get('status_filter', 'all')
+    _validate_raw_report_params(
+        selected_year,
+        selected_month,
+        selected_employment_type,
+        selected_status_filter,
+    )
+    return templates.TemplateResponse(
+        request,
+        'admin/report_raw.html',
+        _raw_context(
+            request,
+            user,
+            db,
+            selected_user_id=selected_user_id,
+            selected_year=selected_year,
+            selected_month=selected_month,
+            selected_employment_type=selected_employment_type,
+            selected_status_filter=selected_status_filter,
+        ),
+    )
+
+
+@router.post("/reports/raw", response_class=HTMLResponse)
+async def raw_report_generate(
+    request: Request,
+    target_user_id: Optional[str] = Form(None),
+    year: int = Form(...),
+    month: int = Form(...),
+    employment_type: str = Form('all'),
+    status_filter: str = Form('all'),
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    enforce_permission(db, user, 'view_reports')
+    try:
+        _validate_raw_report_params(year, month, employment_type, status_filter)
+        report = build_raw_report(
+            db,
+            year,
+            month,
+            employee_user_id=target_user_id or None,
+            employment_type=employment_type,
+            status_filter=status_filter,
+        )
+        return templates.TemplateResponse(
+            request,
+            'admin/report_raw.html',
+            _raw_context(
+                request,
+                user,
+                db,
+                report=report,
+                selected_user_id=target_user_id,
+                selected_year=year,
+                selected_month=month,
+                selected_employment_type=employment_type,
+                selected_status_filter=status_filter,
+            ),
+        )
+    except Exception as e:
+        error = quote(str(e), safe='')
+        return RedirectResponse(
+            url=f'/reports/raw?error={error}',
+            status_code=302,
+        )
+
+
+def _raw_export_report(
+    db: Session,
+    year: int,
+    month: int,
+    target_user_id: Optional[str],
+    employment_type: str,
+    status_filter: str,
+):
+    _validate_raw_report_params(year, month, employment_type, status_filter)
+    return build_raw_report(
+        db,
+        year,
+        month,
+        employee_user_id=target_user_id or None,
+        employment_type=employment_type,
+        status_filter=status_filter,
+    )
+
+
+@router.get("/reports/raw/excel")
+async def raw_report_excel(
+    request: Request,
+    year: int = Query(...),
+    month: int = Query(...),
+    target_user_id: Optional[str] = Query(None),
+    employment_type: str = Query('all'),
+    status_filter: str = Query('all'),
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    enforce_permission(db, user, 'view_reports')
+    try:
+        report = _raw_export_report(
+            db, year, month, target_user_id, employment_type, status_filter
+        )
+        output = BytesIO()
+        if report['mode'] == 'group':
+            export_raw_excel_group(report, output)
+        else:
+            export_raw_excel_individual(report, output)
+        filename = f'raw_attendance_{year}_{month:02d}.xlsx'
+        utf8_filename = quote(
+            f'گزارش_خام_تردد_{year}_{month:02d}.xlsx',
+            safe='',
+        )
+        return StreamingResponse(
+            output,
+            media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            headers={
+                'Content-Disposition': (
+                    f'attachment; filename="{filename}"; filename*=UTF-8\'\'{utf8_filename}'
+                )
+            },
+        )
+    except Exception as e:
+        error = quote(str(e), safe='')
+        return RedirectResponse(
+            url=f'/reports/raw?error={error}',
+            status_code=302,
+        )
+
+
+@router.get("/reports/raw/pdf")
+async def raw_report_pdf(
+    request: Request,
+    year: int = Query(...),
+    month: int = Query(...),
+    target_user_id: Optional[str] = Query(None),
+    employment_type: str = Query('all'),
+    status_filter: str = Query('all'),
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    enforce_permission(db, user, 'view_reports')
+    try:
+        report = _raw_export_report(
+            db, year, month, target_user_id, employment_type, status_filter
+        )
+        output = BytesIO()
+        if report['mode'] == 'group':
+            export_raw_pdf_group(report, output)
+        else:
+            export_raw_pdf_individual(report, output)
+        filename = f'raw_attendance_{year}_{month:02d}.pdf'
+        utf8_filename = quote(
+            f'گزارش_خام_تردد_{year}_{month:02d}.pdf',
+            safe='',
+        )
+        return StreamingResponse(
+            output,
+            media_type='application/pdf',
+            headers={
+                'Content-Disposition': (
+                    f'attachment; filename="{filename}"; filename*=UTF-8\'\'{utf8_filename}'
+                )
+            },
+        )
+    except Exception as e:
+        error = quote(str(e), safe='')
+        return RedirectResponse(
+            url=f'/reports/raw?error={error}',
+            status_code=302,
+        )
+
 
 
 @router.get("/reports/monthly-detailed", response_class=HTMLResponse)

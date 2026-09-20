@@ -2082,7 +2082,7 @@ async def admin_add_record(
             timestamp=timestamp,
             punch=punch,
             status=15,  # دستی
-            source='L'  # دستی
+            source='M'  # دستی
         )
         db.add(record)
         db.commit()
