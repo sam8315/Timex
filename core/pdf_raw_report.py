@@ -185,26 +185,26 @@ class RawPDF(FPDF):
             "روز",
             "وضعیت روز",
             "وضعیت فرد",
-            "نوع مرخصی\nمرخصی ساعتی",
-            "ترددها\n(ورود → خروج)",
+            "نوع مرخصی",
+            "ترددها (ورود → خروج)",
         ]
         x = self.w - self.r_margin
         y = self.get_y()
         self.set_font(self.font_name, "B", 7.2)
         for index, width in enumerate(widths):
             x -= width
-            header_height = 9 if index in (4, 5) else line_height
+            header_height = line_height if index in (4, 5) else line_height
             align = "R" if index in (0, 1, 2, 3, 4) else "C"
             base_dir = "R"
             self._write_cell(
                 x, y, width, header_height, line_height,
                 headers[index], align, base_dir=base_dir
             )
-        self.set_xy(self.l_margin, y + 9)
+        self.set_xy(self.l_margin, y + line_height)
 
     def _daily_table(self, days: list):
         widths = [17, 15, 15, 19, 32, 96]
-        line_height = 4.5
+        line_height = 4.8
         bottom_limit = self.h - self.b_margin - 5
         self._table_header(widths, line_height)
         self.set_font(self.font_name, "", 7)
@@ -227,11 +227,11 @@ class RawPDF(FPDF):
                     max_lines,
                     len(self._cell_lines(value, width, base_dir=base_dir)),
                 )
-            row_height = max(line_height, max_lines * line_height + 0.8)
+            row_height = max(line_height, max_lines * line_height + 0.6)
             if self.get_y() + row_height > bottom_limit:
                 self.add_page()
                 self._table_header(widths, line_height)
-                self.set_font(self.font_name, "", 7.6)
+                self.set_font(self.font_name, "", 7.8)
             y = self.get_y()
             x = self.w - self.r_margin
             for index, (width, value) in enumerate(zip(widths, values)):
