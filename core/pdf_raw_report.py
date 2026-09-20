@@ -101,24 +101,81 @@ class RawPDF(FPDF):
             self.cell(0, 4, _shape("    ".join(extra)), ln=True, align="R")
         self.ln(1)
 
-    @staticmethod
-    def _lines(text: str, width: float, font_size: float) -> List[str]:
-        return [] if not text else [text]
+    def _cell_lines(self, text: str, width: float, base_dir: str = "R") -> List[str]:
+        value = "" if text is None else str(text)
+        raw_lines = value.splitlines() or [""]
+        result: List[str] = []
+        for raw_line in raw_lines:
+            if not raw_line:
+                result.append("")
+                continue
+            if self.get_string_width(
+                _shape(raw_line, base_dir=base_dir) if base_dir == "R" else raw_line
+            ) <= width:
+                result.append(raw_line)
+                continue
+
+            parts = raw_line.split(" | ")
+            current = ""
+            for part in parts:
+                candidate = part if not current else f"{current} | {part}"
+                shaped_candidate = (
+                    _shape(candidate, base_dir=base_dir)
+                    if base_dir == "R"
+                    else candidate
+                )
+                if self.get_string_width(shaped_candidate) <= width:
+                    current = candidate
+                    continue
+                if current:
+                    result.append(current)
+                    current = part
+                else:
+                    current = part
+                if self.get_string_width(
+                    _shape(current, base_dir=base_dir) if base_dir == "R" else current
+                ) > width:
+                    words = current.split(" ")
+                    current = ""
+                    for word in words:
+                        candidate_word = word if not current else f"{current} {word}"
+                        shaped_word = (
+                            _shape(candidate_word, base_dir=base_dir)
+                            if base_dir == "R"
+                            else candidate_word
+                        )
+                        if self.get_string_width(shaped_word) <= width:
+                            current = candidate_word
+                        else:
+                            if current:
+                                result.append(current)
+                            current = word
+                    if current:
+                        result.append(current)
+                    current = ""
+            if current:
+                result.append(current)
+        return result or [""]
 
     def _write_cell(self, x: float, y: float, width: float, row_height: float,
                     line_height: float, text, align: str = "C",
                     base_dir: str = "R"):
+        lines = self._cell_lines(text, width, base_dir=base_dir)
         self.rect(x, y, width, row_height)
-        self.set_xy(x, y)
-        self.multi_cell(
-            width,
-            line_height,
-            _shape(str(text), base_dir=base_dir),
-            border=0,
-            align=align,
-            new_x="LEFT",
-            new_y="NEXT",
-        )
+        content_height = len(lines) * line_height
+        top_padding = max(0.0, (row_height - content_height) / 2)
+        for line_index, line in enumerate(lines):
+            self.set_xy(x, y + top_padding + line_index * line_height)
+            rendered = _shape(line, base_dir=base_dir) if base_dir == "R" else line
+            self.cell(
+                width,
+                line_height,
+                rendered,
+                border=0,
+                align=align,
+                new_x="LEFT",
+                new_y="NEXT",
+            )
 
     def _table_header(self, widths: List[float], line_height: float):
         # Physical RTL order: the first column is on the RIGHT,
@@ -165,11 +222,11 @@ class RawPDF(FPDF):
             ]
             max_lines = 1
             for index, (width, value) in enumerate(zip(widths, values)):
-                shaped = _shape(str(value))
-                text_width = self.get_string_width(shaped)
-                if text_width > width:
-                    est_lines = int(text_width / width) + 1
-                    max_lines = max(max_lines, est_lines)
+                base_dir = "L" if index == 5 else "R"
+                max_lines = max(
+                    max_lines,
+                    len(self._cell_lines(value, width, base_dir=base_dir)),
+                )
             row_height = max(line_height, max_lines * line_height + 0.8)
             if self.get_y() + row_height > bottom_limit:
                 self.add_page()
@@ -186,6 +243,20 @@ class RawPDF(FPDF):
                 )
             self.set_xy(self.l_margin, y + row_height)
         self.ln(1)
+        self.set_font(self.font_name, "", 6.5)
+        self.cell(
+            0,
+            4,
+            _shape(
+                "راهنمای تردد: علامت (M) یعنی تردد ثبت‌شده دستی؛ "
+                "ترددهای بدون (M) از دستگاه ثبت شده‌اند؛ "
+                "ترتیب زمان‌ها: ورود → خروج."
+            ),
+            border=0,
+            align="R",
+            new_x="LMARGIN",
+            new_y="NEXT",
+        )
 
 
 def _save_pdf(pdf: RawPDF, output):
