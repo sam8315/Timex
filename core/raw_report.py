@@ -3,7 +3,7 @@ from datetime import date, datetime, time, timedelta
 from typing import Dict, List, Optional, Tuple
 
 import jdatetime
-from sqlalchemy import and_
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session, selectinload
 
 from models.attendance import Attendance
@@ -365,7 +365,10 @@ class RawReportService:
                     Attendance.user_id.in_(user_ids),
                     Attendance.timestamp >= start_g,
                     Attendance.timestamp < end_exclusive,
-                    Attendance.is_deleted.is_(False),
+                    or_(
+                        Attendance.is_deleted.is_(False),
+                        Attendance.is_deleted.is_(None),
+                    ),
                 )
             ).order_by(Attendance.timestamp, Attendance.id).all()
             for attendance in attendances:
