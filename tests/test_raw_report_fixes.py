@@ -865,7 +865,32 @@ class TestPDFPhysicalRTLOrder:
 # ---------------------------------------------------------------------------
 # 16. Manual source='M' shown in PDF and Excel outputs
 # ---------------------------------------------------------------------------
-class TestManualSourceInOutputs:
+class TestPDFMixedDirection:
+    def test_attendance_cell_uses_ltr_base_direction(self):
+        from unittest.mock import patch
+        from core.pdf_raw_report import RawPDF
+
+        calls = []
+        original = RawPDF._write_cell
+
+        def tracking(self, x, y, width, row_height, line_height, text,
+                     align="C", base_dir="R"):
+            calls.append({"text": str(text), "base_dir": base_dir})
+            original(self, x, y, width, row_height, line_height, text, align, base_dir)
+
+        report = _make_individual_report([_normal_day(23, "— → 14:00 دستی")])
+        with patch.object(RawPDF, "_write_cell", tracking):
+            output = BytesIO()
+            pdf_export_individual(report, output)
+
+        attendance_calls = [c for c in calls if "14:00" in c["text"]]
+        assert attendance_calls
+        assert attendance_calls[0]["base_dir"] == "L"
+
+
+# ---------------------------------------------------------------------------
+# 16. Manual source='M' shown in PDF and Excel outputs
+# ---------------------------------------------------------------------------
     def _make_report_with_manual(self):
         day = {
             "jalali_date": "1405/06/15",
