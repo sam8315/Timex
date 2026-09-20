@@ -59,28 +59,28 @@ class RawPDF(FPDF):
     def header(self):
         if self.page_no() == 1:
             return
-        self.set_font(self.font_name, "", 7)
+        self.set_font(self.font_name, "", 7.5)
         self.set_text_color(80, 80, 80)
         self.cell(0, 5, _shape("گزارش خام تردد"), align="L")
         self.ln(5)
 
     def footer(self):
         self.set_y(-10)
-        self.set_font(self.font_name, "", 7)
+        self.set_font(self.font_name, "", 7.5)
         self.set_text_color(100, 100, 100)
         self.cell(0, 5, _shape(f"صفحه {self.page_no()}"), align="C")
 
     def _header_block(self, title: str, subtitle: str):
-        self.set_font(self.font_name, "B", 11)
+        self.set_font(self.font_name, "B", 12)
         self.set_text_color(0, 0, 0)
-        self.cell(0, 6, _shape(title), ln=True, align="C")
+        self.cell(0, 7, _shape(title), ln=True, align="C")
         if subtitle:
-            self.set_font(self.font_name, "", 8)
-            self.cell(0, 4, _shape(subtitle), ln=True, align="C")
+            self.set_font(self.font_name, "", 8.5)
+            self.cell(0, 4.5, _shape(subtitle), ln=True, align="C")
         self.ln(1)
 
     def _employee_header(self, emp: dict):
-        self.set_font(self.font_name, "B", 9)
+        self.set_font(self.font_name, "B", 9.5)
         self.cell(
             0,
             5,
@@ -97,7 +97,7 @@ class RawPDF(FPDF):
         if emp.get("termination_date_j"):
             extra.append(f"تاریخ پایان: {emp['termination_date_j']}")
         if extra:
-            self.set_font(self.font_name, "", 7.5)
+            self.set_font(self.font_name, "", 8)
             self.cell(0, 4, _shape("    ".join(extra)), ln=True, align="R")
         self.ln(1)
 
@@ -190,7 +190,7 @@ class RawPDF(FPDF):
         ]
         x = self.w - self.r_margin
         y = self.get_y()
-        self.set_font(self.font_name, "B", 7.2)
+        self.set_font(self.font_name, "B", 8)
         for index, width in enumerate(widths):
             x -= width
             header_height = line_height if index in (4, 5) else line_height
@@ -207,11 +207,9 @@ class RawPDF(FPDF):
         line_height = 4.8
         bottom_limit = self.h - self.b_margin - 5
         self._table_header(widths, line_height)
-        self.set_font(self.font_name, "", 7)
+        self.set_font(self.font_name, "", 7.8)
         for day in days:
             leave_display = day.get("leave_name") or "-"
-            # Keep the same RTL physical order as the header:
-            # تاریخ | روز | وضعیت روز | وضعیت فرد | نوع مرخصی | ترددها
             values = [
                 day["jalali_date"],
                 day["day_name"],
@@ -243,10 +241,10 @@ class RawPDF(FPDF):
                 )
             self.set_xy(self.l_margin, y + row_height)
         self.ln(1)
-        self.set_font(self.font_name, "", 6.5)
+        self.set_font(self.font_name, "", 7)
         self.cell(
             0,
-            4,
+            4.2,
             _shape(
                 "راهنمای تردد: علامت (M) یعنی تردد ثبت‌شده دستی؛ "
                 "ترددهای بدون (M) از دستگاه ثبت شده‌اند؛ "
