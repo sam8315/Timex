@@ -657,7 +657,7 @@ class TestFilterFormAlignment:
             html = f.read()
         form_end_idx = html.index('</form>')
         after_form = html[form_end_idx:form_end_idx + 500]
-        assert "برای گزارش گروهی" in after_form, (
+        assert "راهنمای گزارش:" in after_form, (
             "Helper text should appear after the form closing tag"
         )
 
@@ -900,7 +900,9 @@ class TestPDFHeaderLayout:
         from pathlib import Path
         html = Path("web/templates/admin/report_raw.html").read_text(encoding="utf-8")
         assert "(M) یعنی تردد دستی؛ نبودن (M) یعنی ثبت توسط دستگاه." in html
-        assert "زمان‌ها به ترتیب ورود و سپس خروج نمایش داده می‌شوند." in html
+        assert "زمان‌ها به ترتیب" in html
+        assert "<strong>ورود</strong>" in html
+        assert "<strong>خروج</strong>" in html
 
 
 # ---------------------------------------------------------------------------
