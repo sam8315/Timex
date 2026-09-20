@@ -119,6 +119,14 @@ def _write_daily_table(ws, days: List[dict]):
                 cell.fill = fill
         ws.row_dimensions[row].height = 34
 
+    guide_row = header_row + len(days) + 2
+    ws.merge_cells(start_row=guide_row, start_column=1, end_row=guide_row, end_column=6)
+    guide_cell = ws.cell(row=guide_row, column=1, value="راهنمای گزارش: (M) یعنی تردد دستی؛ نبودن (M) یعنی ثبت توسط دستگاه. در هر روز، زمان‌ها به ترتیب ورود و سپس خروج نمایش داده می‌شوند.")
+    guide_cell.font = Font(size=9, name=FONT_NAME)
+    guide_cell.alignment = Alignment(horizontal='right', vertical='center', wrap_text=True)
+    guide_cell.border = Border(top=THIN_SIDE)
+    ws.row_dimensions[guide_row].height = 24
+
     ws.freeze_panes = 'A7'
     ws.print_title_rows = '1:6'
     ws.page_setup.orientation = 'portrait'
