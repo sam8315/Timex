@@ -122,7 +122,7 @@ class RawPDF(FPDF):
 
     def _table_header(self, widths: List[float], line_height: float):
         headers = [
-            "ترددها (ورود → خروج)", "نوع مرخصی", "وضعیت فرد",
+            "ترددها (ورود → خروج)", "نوع مرخصی / مرخصی ساعتی", "وضعیت فرد",
             "وضعیت روز", "روز", "تاریخ",
         ]
         x = self.w - self.r_margin
