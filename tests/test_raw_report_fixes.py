@@ -863,6 +863,48 @@ class TestPDFPhysicalRTLOrder:
 
 
 # ---------------------------------------------------------------------------
+# 15b. PDF header layout / guide wording
+# ---------------------------------------------------------------------------
+class TestPDFHeaderLayout:
+    def test_pdf_header_uses_uniform_row_height(self):
+        from unittest.mock import patch
+        from core.pdf_raw_report import RawPDF
+
+        calls = []
+        original = RawPDF._write_cell
+
+        def tracking(self, x, y, width, row_height, line_height, text,
+                     align="C", base_dir="R"):
+            calls.append({
+                "text": str(text),
+                "y": round(y, 2),
+                "row_height": round(row_height, 2),
+            })
+            original(self, x, y, width, row_height, line_height, text, align, base_dir)
+
+        with patch.object(RawPDF, "_write_cell", tracking):
+            pdf = RawPDF()
+            pdf.add_page()
+            pdf._table_header([17, 15, 15, 19, 32, 96], 4.5)
+
+        header_calls = [c for c in calls if any(
+            marker in c["text"] for marker in
+            ("تاریخ", "روز", "وضعیت روز", "وضعیت فرد",
+             "نوع مرخصی", "ترددها")
+        )]
+        assert len(header_calls) == 6
+        assert {c["row_height"] for c in header_calls} == {9.0}
+        assert len({c["y"] for c in header_calls}) == 1
+
+    def test_report_guide_uses_compact_wording(self):
+        from pathlib import Path
+        html = Path("web/templates/admin/report_raw.html").read_text(encoding="utf-8")
+        assert "(M) یعنی تردد دستی." in html
+        assert "نبودن (M)" not in html
+        assert "زمان‌ها به ترتیب ورود و سپس خروج" in html
+
+
+# ---------------------------------------------------------------------------
 # 16. Manual source='M' shown in PDF and Excel outputs
 # ---------------------------------------------------------------------------
 class TestPDFMixedDirection:
