@@ -130,11 +130,12 @@ class RawPDF(FPDF):
         self.set_font(self.font_name, "B", 7.5)
         for index, width in enumerate(widths):
             x -= width
-            self._write_cell(x, y, width, line_height, line_height, headers[index], "C", base_dir="R")
-        self.set_xy(self.l_margin, y + line_height)
+            header_height = 9 if index == 1 else line_height
+            self._write_cell(x, y, width, header_height, line_height, headers[index], "C", base_dir="R")
+        self.set_xy(self.l_margin, y + 9)
 
     def _daily_table(self, days: list):
-        widths = [101, 27, 19, 15, 15, 17]
+        widths = [96, 32, 19, 15, 15, 17]
         line_height = 4.5
         bottom_limit = self.h - self.b_margin - 5
         self._table_header(widths, line_height)
