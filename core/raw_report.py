@@ -136,15 +136,15 @@ def _format_segment(segment: dict) -> str:
         exit_record = segment['exit']
         left = fmt_time(enter['time'])
         if enter['is_manual']:
-            left += ' دستی'
+            left += ' (M)'
         right = fmt_time(exit_record['time'])
         if exit_record['is_manual']:
-            right += ' دستی'
+            right += ' (M)'
         return f"{left} → {right}"
     record = segment['record']
     value = fmt_time(record['time'])
     if record['is_manual']:
-        value += ' دستی'
+        value += ' (M)'
     if kind == 'entry_only':
         return f"{value} → —"
     if kind == 'exit_only':
