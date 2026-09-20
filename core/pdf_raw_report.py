@@ -121,9 +121,10 @@ class RawPDF(FPDF):
         )
 
     def _table_header(self, widths: List[float], line_height: float):
+        # RTL physical order: rightmost -> leftmost.
         headers = [
-            "ترددها (ورود → خروج)", "نوع مرخصی / مرخصی ساعتی", "وضعیت فرد",
-            "وضعیت روز", "روز", "تاریخ",
+            "تاریخ", "روز", "وضعیت روز", "وضعیت فرد",
+            "نوع مرخصی / مرخصی ساعتی", "ترددها (ورود → خروج)",
         ]
         x = self.w - self.r_margin
         y = self.get_y()
@@ -142,13 +143,15 @@ class RawPDF(FPDF):
         self.set_font(self.font_name, "", 7)
         for day in days:
             leave_display = day.get("leave_name") or "-"
+            # Keep the same RTL physical order as the header:
+            # تاریخ | روز | وضعیت روز | وضعیت فرد | نوع مرخصی | ترددها
             values = [
-                day["attendance_str"],
-                leave_display,
-                day["person_status_name"],
-                day["day_status"],
-                day["day_name"],
                 day["jalali_date"],
+                day["day_name"],
+                day["day_status"],
+                day["person_status_name"],
+                leave_display,
+                day["attendance_str"],
             ]
             max_lines = 1
             for index, (width, value) in enumerate(zip(widths, values)):
@@ -168,10 +171,8 @@ class RawPDF(FPDF):
                 x -= width
                 self._write_cell(
                     x, y, width, row_height, line_height, value,
-                    "R" if index == 0 else "C",
-                    # متن تردد ترکیبی است (ساعت + فارسی + فلش) و باید LTR
-                    # چیده شود؛ جای خود ستون همچنان راست‌ترین ستون است.
-                    base_dir="L" if index == 0 else "R",
+                    "L" if index == 5 else "C",
+                    base_dir="L" if index == 5 else "R",
                 )
             self.set_xy(self.l_margin, y + row_height)
         self.ln(1)
