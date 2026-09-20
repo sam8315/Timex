@@ -122,7 +122,7 @@ def _write_daily_table(ws, days: List[dict]):
 
     ws.freeze_panes = 'A7'
     ws.print_title_rows = '1:6'
-    ws.page_setup.orientation = 'landscape'
+    ws.page_setup.orientation = 'portrait'
     ws.page_setup.fitToWidth = 1
     ws.page_setup.fitToHeight = 0
     ws.sheet_properties.pageSetUpPr.fitToPage = True
@@ -162,7 +162,7 @@ def export_individual(report: dict, output) :
         )
         _write_employee_header(ws, emp)
         _write_daily_table(ws, emp['days'])
-    _auto_width(ws, [14, 12, 12, 16, 22, 40])
+    _auto_width(ws, [12, 10, 10, 14, 18, 36])
     return _save_workbook(workbook, output)
 
 
@@ -210,6 +210,6 @@ def export_group(report: dict, output) :
         )
         _write_employee_header(ws_employee, emp)
         _write_daily_table(ws_employee, emp['days'])
-        _auto_width(ws_employee, [14, 12, 12, 16, 22, 40])
+        _auto_width(ws_employee, [12, 10, 10, 14, 18, 36])
 
     return _save_workbook(workbook, output)

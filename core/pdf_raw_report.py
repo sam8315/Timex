@@ -43,9 +43,9 @@ def _shape(text) -> str:
 
 class RawPDF(FPDF):
     def __init__(self):
-        super().__init__(orientation="L", unit="mm", format="A4")
-        self.set_auto_page_break(auto=True, margin=12)
-        self.set_margins(10, 10, 10)
+        super().__init__(orientation="P", unit="mm", format="A4")
+        self.set_auto_page_break(auto=True, margin=10)
+        self.set_margins(8, 8, 8)
         self.font_path = _find_font()
         self.font_name = "Persian" if self.font_path else "Helvetica"
         if self.font_path:
@@ -67,19 +67,19 @@ class RawPDF(FPDF):
         self.cell(0, 5, _shape(f"صفحه {self.page_no()}"), align="C")
 
     def _header_block(self, title: str, subtitle: str):
-        self.set_font(self.font_name, "B", 14)
+        self.set_font(self.font_name, "B", 11)
         self.set_text_color(0, 0, 0)
-        self.cell(0, 8, _shape(title), ln=True, align="C")
+        self.cell(0, 6, _shape(title), ln=True, align="C")
         if subtitle:
-            self.set_font(self.font_name, "", 10)
-            self.cell(0, 6, _shape(subtitle), ln=True, align="C")
-        self.ln(2)
+            self.set_font(self.font_name, "", 8)
+            self.cell(0, 4, _shape(subtitle), ln=True, align="C")
+        self.ln(1)
 
     def _employee_header(self, emp: dict):
-        self.set_font(self.font_name, "B", 10)
+        self.set_font(self.font_name, "B", 9)
         self.cell(
             0,
-            7,
+            5,
             _shape(
                 f"نام و نام خانوادگی: {emp['full_name']}    "
                 f"کد پرسنلی: {emp['user_id']}    نوع عضویت: {emp['membership']}"
@@ -93,8 +93,8 @@ class RawPDF(FPDF):
         if emp.get("termination_date_j"):
             extra.append(f"تاریخ پایان: {emp['termination_date_j']}")
         if extra:
-            self.set_font(self.font_name, "", 8)
-            self.cell(0, 5, _shape("    ".join(extra)), ln=True, align="R")
+            self.set_font(self.font_name, "", 7.5)
+            self.cell(0, 4, _shape("    ".join(extra)), ln=True, align="R")
         self.ln(1)
 
     @staticmethod
@@ -129,9 +129,9 @@ class RawPDF(FPDF):
         self.set_xy(self.l_margin, y + line_height)
 
     def _daily_table(self, days: list):
-        widths = [120, 32, 22, 18, 18, 20]
-        line_height = 5.2
-        bottom_limit = self.h - self.b_margin - 8
+        widths = [101, 27, 19, 15, 15, 17]
+        line_height = 4.5
+        bottom_limit = self.h - self.b_margin - 5
         self._table_header(widths, line_height)
         self.set_font(self.font_name, "", 7)
         for day in days:
@@ -152,7 +152,7 @@ class RawPDF(FPDF):
                 if text_width > width:
                     est_lines = int(text_width / width) + 1
                     max_lines = max(max_lines, est_lines)
-            row_height = max(line_height, max_lines * line_height + 1.2)
+            row_height = max(line_height, max_lines * line_height + 0.8)
             if self.get_y() + row_height > bottom_limit:
                 self.add_page()
                 self._table_header(widths, line_height)
@@ -163,7 +163,7 @@ class RawPDF(FPDF):
                 x -= width
                 self._write_cell(x, y, width, row_height, line_height, value, "R" if index == 0 else "C")
             self.set_xy(self.l_margin, y + row_height)
-        self.ln(2)
+        self.ln(1)
 
 
 def _save_pdf(pdf: RawPDF, output):

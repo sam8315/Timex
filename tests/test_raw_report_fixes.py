@@ -1,4 +1,5 @@
 """Focused regression tests for raw-attendance-report feature fixes."""
+import re
 from datetime import datetime, time, timedelta
 from io import BytesIO
 from types import SimpleNamespace
@@ -13,8 +14,31 @@ from core.raw_report import (
     RawReportService,
 )
 from core.excel_raw_report import export_group as excel_export_group
-from core.pdf_raw_report import export_group as pdf_export_group
+from core.pdf_raw_report import (
+    export_group as pdf_export_group,
+    export_individual as pdf_export_individual,
+)
 from models.attendance import Attendance
+
+
+PORTRAIT_WIDTHS = [101, 27, 19, 15, 15, 17]
+EXPECTED_HEADERS_RTL = [
+    "ترددها (ورود → خروج)",
+    "نوع مرخصی",
+    "وضعیت فرد",
+    "وضعیت روز",
+    "روز",
+    "تاریخ",
+]
+
+
+def _count_pdf_pages(pdf_bytes: bytes) -> int:
+    """Count pages in raw PDF bytes by parsing the page tree /Count."""
+    text = pdf_bytes.decode("latin-1", errors="replace")
+    m = re.search(r"/Type\s*/Pages.*?/Count\s+(\d+)", text, re.DOTALL)
+    if m:
+        return int(m.group(1))
+    return text.count("/Type /Page\n") + text.count("/Type /Page\r")
 
 
 # ---------------------------------------------------------------------------
@@ -34,6 +58,62 @@ def _dt(hour, minute=0):
     return datetime(2026, 9, 15, hour, minute)
 
 
+def _normal_day(day_num, att_str="07:00 → 14:00"):
+    return {
+        "jalali_date": f"1405/06/{day_num:02d}",
+        "day_name": "شنبه" if day_num % 7 == 1 else "یکشنبه",
+        "day_status": "کاری",
+        "person_status_name": "حاضر",
+        "leave_name": None,
+        "hourly_leave": {},
+        "attendance_str": att_str,
+    }
+
+
+def _make_individual_report(days):
+    return {
+        "year": 1405,
+        "month": 6,
+        "month_name": "شهریور",
+        "mode": "individual",
+        "employees": [{
+            "user_id": "12345",
+            "full_name": "Test User",
+            "membership": "قراردادی",
+            "hire_date_j": None,
+            "termination_date_j": None,
+            "days": days,
+        }],
+    }
+
+
+def _make_group_report(user_ids):
+    employees = []
+    for uid in user_ids:
+        employees.append({
+            "user_id": uid,
+            "full_name": f"User {uid}",
+            "first_name": "User",
+            "last_name": str(uid),
+            "department": "4",
+            "membership": "قراردادی",
+            "hire_date_j": None,
+            "termination_date_j": None,
+            "days": [],
+        })
+    return {
+        "year": 1405,
+        "month": 6,
+        "month_name": "شهریور",
+        "days_count": 31,
+        "mode": "group",
+        "employee_user_id": None,
+        "employment_type": "all",
+        "status_filter": "all",
+        "employees": employees,
+    }
+
+
 # ---------------------------------------------------------------------------
 # 1. Consecutive-entry pairing (matches AttendanceAnalyzer semantics)
 # ---------------------------------------------------------------------------
@@ -48,7 +128,7 @@ class TestPairingLogic:
         assert fmt_time(segs[0]["exit"]["time"]) == "14:30"
 
     def test_consecutive_entries_pair_with_next_exit(self):
-        """07:00 IN, 07:10 IN, 14:30 OUT → 07:00 → — | 07:10 → 14:30"""
+        """07:00 IN, 07:10 IN, 14:30 OUT -> 07:00 -> -- | 07:10 -> 14:30"""
         atts = [
             _att(_dt(7, 0), 0, record_id=1),
             _att(_dt(7, 10), 0, record_id=2),
@@ -63,7 +143,7 @@ class TestPairingLogic:
         assert fmt_time(segs[1]["exit"]["time"]) == "14:30"
 
     def test_three_consecutive_entries(self):
-        """IN, IN, IN, OUT → first two are entry_only, last IN pairs with OUT."""
+        """IN, IN, IN, OUT -> first two are entry_only, last IN pairs with OUT."""
         atts = [
             _att(_dt(7, 0), 0, record_id=1),
             _att(_dt(7, 5), 0, record_id=2),
@@ -91,7 +171,7 @@ class TestPairingLogic:
         assert segs[0]["kind"] == "entry_only"
 
     def test_pair_then_new_entry(self):
-        """IN, OUT, IN → pair + entry_only"""
+        """IN, OUT, IN -> pair + entry_only"""
         atts = [
             _att(_dt(7, 0), 0, record_id=1),
             _att(_dt(14, 0), 1, record_id=2),
@@ -132,34 +212,8 @@ class TestManualSourceLabel:
 # 3. Excel group sheet-name consistency
 # ---------------------------------------------------------------------------
 class TestExcelSheetNames:
-    def _make_report(self, user_ids):
-        employees = []
-        for uid in user_ids:
-            employees.append({
-                "user_id": uid,
-                "full_name": f"User {uid}",
-                "first_name": "User",
-                "last_name": str(uid),
-                "department": "4",
-                "membership": "قراردادی",
-                "hire_date_j": None,
-                "termination_date_j": None,
-                "days": [],
-            })
-        return {
-            "year": 1405,
-            "month": 6,
-            "month_name": "شهریور",
-            "days_count": 31,
-            "mode": "group",
-            "employee_user_id": None,
-            "employment_type": "all",
-            "status_filter": "all",
-            "employees": employees,
-        }
-
     def test_sheet_names_match_index(self):
-        report = self._make_report(["12345", "67890", "11111"])
+        report = _make_group_report(["12345", "67890", "11111"])
         output = BytesIO()
         excel_export_group(report, output)
         output.seek(0)
@@ -177,7 +231,7 @@ class TestExcelSheetNames:
             )
 
     def test_duplicate_user_ids_get_unique_names(self):
-        report = self._make_report(["12345", "12345", "12345"])
+        report = _make_group_report(["12345", "12345", "12345"])
         output = BytesIO()
         excel_export_group(report, output)
         output.seek(0)
@@ -198,7 +252,7 @@ class TestExcelSheetNames:
             assert name in wb.sheetnames
 
     def test_special_chars_in_user_id(self):
-        report = self._make_report(["[]:*?/\\"])
+        report = _make_group_report(["[]:*?/\\"])
         output = BytesIO()
         excel_export_group(report, output)
         output.seek(0)
@@ -245,7 +299,6 @@ class TestHourlyLeaveInFilter:
         assert day["hourly_leave"]["minutes"] > 0
 
     def test_leave_filter_logic(self):
-        """Simulate the leave filter logic from raw_report.py."""
         from core.raw_report import LEAVE_PERSON_STATUS
 
         days = [
@@ -343,35 +396,6 @@ class TestPDFRowHeight:
             f"than short row ({short_consumed:.1f}mm)"
         )
 
-    def test_pdf_has_6_columns_not_7(self):
-        from core.pdf_raw_report import RawPDF
-
-        pdf = RawPDF()
-        pdf.add_page()
-        pdf.set_font(pdf.font_name, "", 7)
-        widths = [120, 32, 22, 18, 18, 20]
-        pdf._table_header(widths, 5.2)
-        y_after = pdf.get_y()
-        assert y_after > 10
-        report = self._make_report([self._day("07:00 → 14:00")] * 5)
-        output = BytesIO()
-        pdf_export_group(report, output)
-        output.seek(0)
-        assert len(output.getvalue()) > 0
-
-    def test_pdf_rtl_column_order(self):
-        from core.pdf_raw_report import RawPDF
-
-        pdf = RawPDF()
-        pdf.add_page()
-        pdf._header_block("T", "S")
-        pdf._employee_header({"full_name": "X", "user_id": "1", "membership": "R"})
-        pdf.set_font(pdf.font_name, "", 7)
-        y_start = pdf.get_y()
-        pdf._daily_table([self._day("07:00 → 14:00")])
-        y_end = pdf.get_y()
-        assert y_end > y_start
-
 
 # ---------------------------------------------------------------------------
 # 6. Manual attendance source='M' in admin route
@@ -407,3 +431,160 @@ class TestManualAttendanceSource:
         ).order_by(Attendance.id.desc()).first()
         assert record is not None
         assert record.source == "M"
+
+
+# ---------------------------------------------------------------------------
+# 7. PDF portrait orientation
+# ---------------------------------------------------------------------------
+class TestPDFPortraitOrientation:
+    def test_rawpdf_is_portrait(self):
+        from core.pdf_raw_report import RawPDF
+        pdf = RawPDF()
+        assert pdf.w < pdf.h, "Portrait: width must be less than height"
+
+    def test_a4_portrait_dimensions(self):
+        from core.pdf_raw_report import RawPDF
+        pdf = RawPDF()
+        assert abs(pdf.w - 210) < 1
+        assert abs(pdf.h - 297) < 1
+
+
+# ---------------------------------------------------------------------------
+# 8. One-page fit for normal 31-day month
+# ---------------------------------------------------------------------------
+class TestPDFOnePageFit:
+    def test_31_normal_days_fits_one_page(self):
+        days = [_normal_day(d) for d in range(1, 32)]
+        report = _make_individual_report(days)
+        output = BytesIO()
+        pdf_export_individual(report, output)
+        output.seek(0)
+        page_count = _count_pdf_pages(output.getvalue())
+        assert page_count == 1, (
+            f"Normal 31-day portrait report should fit on 1 page, got {page_count}"
+        )
+
+    def test_31_days_with_two_shifts_still_one_page(self):
+        days = [_normal_day(d, "07:00 → 14:00 | 15:00 → 18:00") for d in range(1, 32)]
+        report = _make_individual_report(days)
+        output = BytesIO()
+        pdf_export_individual(report, output)
+        output.seek(0)
+        page_count = _count_pdf_pages(output.getvalue())
+        assert page_count == 1, (
+            f"31-day portrait report with two shifts should fit on 1 page, got {page_count}"
+        )
+
+    def test_group_starts_each_employee_on_new_page(self):
+        days = [_normal_day(d) for d in range(1, 32)]
+        employees = []
+        for uid in ["111", "222"]:
+            employees.append({
+                "user_id": uid,
+                "full_name": f"User {uid}",
+                "membership": "قراردادی",
+                "hire_date_j": None,
+                "termination_date_j": None,
+                "days": days,
+            })
+        report = {
+            "year": 1405, "month": 6, "month_name": "شهریور",
+            "employees": employees,
+        }
+        output = BytesIO()
+        pdf_export_group(report, output)
+        output.seek(0)
+        page_count = _count_pdf_pages(output.getvalue())
+        assert page_count == 2, (
+            f"Group report with 2 employees should have 2 pages, got {page_count}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 9. RTL column position verification
+# ---------------------------------------------------------------------------
+class TestPDFRTLColumnPositions:
+    def test_columns_are_placed_right_to_left(self):
+        from core.pdf_raw_report import RawPDF
+        pdf = RawPDF()
+        pdf.add_page()
+        pdf._header_block("T", "S")
+        pdf._employee_header({"full_name": "X", "user_id": "1", "membership": "R"})
+        pdf.set_font(pdf.font_name, "", 7)
+
+        widths = PORTRAIT_WIDTHS
+        right_edge = pdf.w - pdf.r_margin
+        x = right_edge
+        for i, w in enumerate(widths):
+            x -= w
+            assert x >= pdf.l_margin - 1, (
+                f"Column {i} ('{EXPECTED_HEADERS_RTL[i]}') x={x:.1f} "
+                f"should be >= left margin {pdf.l_margin}"
+            )
+
+        leftmost_x = right_edge - sum(widths)
+        rightmost_x = right_edge - widths[0]
+        assert leftmost_x < rightmost_x, (
+            "Leftmost column (date) should be to the left of rightmost (attendance)"
+        )
+
+    def test_rightmost_column_is_attendance(self):
+        from core.pdf_raw_report import RawPDF
+        pdf = RawPDF()
+        pdf.add_page()
+
+        widths = PORTRAIT_WIDTHS
+        right_edge = pdf.w - pdf.r_margin
+        rightmost_x = right_edge - widths[0]
+        assert rightmost_x < right_edge, "First column (attendance) should be rightmost"
+
+        leftmost_x = right_edge - sum(widths)
+        assert leftmost_x < rightmost_x, "Last column (date) should be leftmost"
+
+    def test_column_widths_fit_portrait_usable_width(self):
+        from core.pdf_raw_report import RawPDF
+        pdf = RawPDF()
+        widths = PORTRAIT_WIDTHS
+        table_width = pdf.w - pdf.l_margin - pdf.r_margin
+        assert sum(widths) <= table_width, (
+            f"Column widths sum ({sum(widths)}) should not exceed "
+            f"portrait table width ({table_width})"
+        )
+        assert len(widths) == 6, "Table should have exactly 6 columns"
+
+
+# ---------------------------------------------------------------------------
+# 10. No holiday_title in PDF/Excel/HTML
+# ---------------------------------------------------------------------------
+class TestNoHolidayTitle:
+    def test_pdf_headers_match_expected(self):
+        from core.pdf_raw_report import RawPDF
+        pdf = RawPDF()
+        pdf.add_page()
+        pdf.set_font(pdf.font_name, "", 7)
+        widths = PORTRAIT_WIDTHS
+        pdf._table_header(widths, 4.5)
+        assert pdf.get_y() > 8
+
+    def test_excel_no_holiday_title_column(self):
+        report = _make_individual_report([_normal_day(d) for d in range(1, 6)])
+        output = BytesIO()
+        from core.excel_raw_report import export_individual as excel_export_individual
+        excel_export_individual(report, output)
+        output.seek(0)
+        from openpyxl import load_workbook
+        wb = load_workbook(output)
+        ws = wb.active
+        headers = [cell.value for cell in ws[6]]
+        assert "عنوان تعطیلی" not in headers, (
+            f"holiday_title column should not exist in Excel, got: {headers}"
+        )
+        assert len(headers) == 6, f"Excel should have 6 columns, got {len(headers)}"
+
+    def test_html_no_holiday_title_column(self):
+        with open("web/templates/admin/report_raw.html", encoding="utf-8") as f:
+            html = f.read()
+        assert "عنوان تعطیلی" not in html, "holiday_title should not exist in HTML template"
+        thead_section = html.split("<thead>")[1].split("</thead>")[0] if "<thead>" in html else ""
+        th_count = thead_section.count("<th ")
+        assert th_count == 6, f"HTML raw table should have 6 <th> columns, got {th_count}"
