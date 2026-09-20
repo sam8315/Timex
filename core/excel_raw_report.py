@@ -97,8 +97,7 @@ def _write_daily_table(ws, days: List[dict]):
         fill = OFF_FILL if day['day_status'] == 'تعطیل' else (
             EVEN_FILL if row_index % 2 == 0 else None
         )
-        hourly_leave = day.get('hourly_leave') or {}
-        leave_display = day.get('leave_name') or hourly_leave.get('display') or '-'
+        leave_display = day.get('leave_name') or '-'
         values = [
             day['jalali_date'],
             day['day_name'],

@@ -111,7 +111,7 @@ class RawPDF(FPDF):
             _shape(str(text)),
             border=0,
             align=align,
-            new_x="RIGHT",
+            new_x="LEFT",
             new_y="NEXT",
         )
 
@@ -135,8 +135,7 @@ class RawPDF(FPDF):
         self._table_header(widths, line_height)
         self.set_font(self.font_name, "", 7)
         for day in days:
-            hourly_leave = day.get("hourly_leave") or {}
-            leave_display = day.get("leave_name") or hourly_leave.get("display") or "-"
+            leave_display = day.get("leave_name") or "-"
             values = [
                 day["attendance_str"],
                 leave_display,

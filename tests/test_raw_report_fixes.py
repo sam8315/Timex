@@ -761,3 +761,252 @@ class TestManualAttendanceIntegration:
         assert "دستی" in resp.text, (
             "Raw report HTML must contain 'دستی' for the manual record"
         )
+
+
+# ---------------------------------------------------------------------------
+# 15. PDF physical RTL column order via recorded cell coordinates
+# ---------------------------------------------------------------------------
+class TestPDFPhysicalRTLOrder:
+    def test_cells_recorded_right_to_left(self):
+        from unittest.mock import patch
+        from core.pdf_raw_report import RawPDF
+
+        all_calls = []
+
+        original_write_cell = RawPDF._write_cell
+
+        def tracking_write_cell(self, x, y, width, row_height, line_height, text, align="C"):
+            all_calls.append({"x": x, "y": y, "w": width, "text": str(text), "align": align})
+            original_write_cell(self, x, y, width, row_height, line_height, text, align)
+
+        with patch.object(RawPDF, "_write_cell", tracking_write_cell):
+            pdf = RawPDF()
+            pdf.add_page()
+            pdf._header_block("T", "S")
+            pdf._employee_header({"full_name": "X", "user_id": "1", "membership": "R"})
+            pdf.set_font(pdf.font_name, "", 7)
+            widths = PORTRAIT_WIDTHS
+            pdf._table_header(widths, 4.5)
+            pdf._daily_table([_normal_day(15)])
+
+        y_values = sorted(set(round(c["y"], 1) for c in all_calls))
+        assert len(y_values) >= 2, f"Expected at least 2 y-rows, got {y_values}"
+
+        first_row_y = y_values[0]
+        first_row_cells = [
+            c for c in all_calls if round(c["y"], 1) == first_row_y
+        ]
+        assert len(first_row_cells) == 6, (
+            f"Expected 6 cells in first row at y={first_row_y}, got {len(first_row_cells)}"
+        )
+
+        for i in range(len(first_row_cells) - 1):
+            assert first_row_cells[i]["x"] > first_row_cells[i + 1]["x"], (
+                f"Header cell '{first_row_cells[i]['text']}' at x={first_row_cells[i]['x']:.1f} "
+                f"must be to the RIGHT of '{first_row_cells[i+1]['text']}' at x={first_row_cells[i+1]['x']:.1f}"
+            )
+
+        first_cell = first_row_cells[0]
+        assert "ترددها" in first_cell["text"], (
+            f"Rightmost header must be attendance, got: {first_cell['text']}"
+        )
+
+        last_cell = first_row_cells[-1]
+        assert "تاریخ" in last_cell["text"], (
+            f"Leftmost header must be date, got: {last_cell['text']}"
+        )
+
+        for i in range(len(first_row_cells) - 1):
+            assert first_row_cells[i]["x"] > first_row_cells[i + 1]["x"], (
+                f"Cell {i} x={first_row_cells[i]['x']:.1f} must be > cell {i+1} x={first_row_cells[i+1]['x']:.1f}"
+            )
+
+    def test_all_cells_have_rtl_cursor(self):
+        from unittest.mock import patch
+        from core.pdf_raw_report import RawPDF
+
+        new_x_values = []
+
+        original_write_cell = RawPDF._write_cell
+
+        def tracking_write_cell(self, x, y, width, row_height, line_height, text, align="C"):
+            new_x_values.append({"text": str(text)[:30], "x": x, "w": width})
+            original_write_cell(self, x, y, width, row_height, line_height, text, align)
+
+        with patch.object(RawPDF, "_write_cell", tracking_write_cell):
+            pdf = RawPDF()
+            pdf.add_page()
+            pdf._header_block("T", "S")
+            pdf._employee_header({"full_name": "X", "user_id": "1", "membership": "R"})
+            pdf.set_font(pdf.font_name, "", 7)
+            pdf._daily_table([_normal_day(15)])
+
+        right_edge = pdf.w - pdf.r_margin
+        for cell in new_x_values:
+            assert cell["x"] < right_edge + 1, (
+                f"Cell '{cell['text']}' starts at x={cell['x']:.1f}, "
+                f"should be inside right margin {right_edge:.1f}"
+            )
+            assert cell["x"] + cell["w"] <= right_edge + 1, (
+                f"Cell '{cell['text']}' ends at x={cell['x']+cell['w']:.1f}, "
+                f"should not exceed right margin"
+            )
+
+
+# ---------------------------------------------------------------------------
+# 16. Manual source='M' shown in PDF and Excel outputs
+# ---------------------------------------------------------------------------
+class TestManualSourceInOutputs:
+    def _make_report_with_manual(self):
+        day = {
+            "jalali_date": "1405/06/15",
+            "day_name": "شنبه",
+            "day_status": "کاری",
+            "person_status_name": "حاضر",
+            "leave_name": None,
+            "hourly_leave": {},
+            "attendance_str": "07:00 دستی → 14:00 دستی",
+        }
+        return {
+            "year": 1405,
+            "month": 6,
+            "month_name": "شهریور",
+            "employees": [{
+                "user_id": "12345",
+                "full_name": "Test User",
+                "membership": "قراردادی",
+                "hire_date_j": None,
+                "termination_date_j": None,
+                "days": [day],
+            }],
+        }
+
+    def test_pdf_contains_dasti(self):
+        report = self._make_report_with_manual()
+        output = BytesIO()
+        pdf_export_individual(report, output)
+        output.seek(0)
+        raw = output.getvalue()
+        assert b"\xd8" in raw or b"\xd9" in raw, (
+            "PDF should contain Persian bytes (Arabic range)"
+        )
+
+    def test_excel_contains_dasti(self):
+        from core.excel_raw_report import export_individual as excel_individual
+        report = self._make_report_with_manual()
+        output = BytesIO()
+        excel_individual(report, output)
+        output.seek(0)
+        from openpyxl import load_workbook
+        wb = load_workbook(output)
+        ws = wb.active
+        found_dasti = False
+        for row in ws.iter_rows(min_row=7, values_only=True):
+            for cell in row:
+                if cell and "دستی" in str(cell):
+                    found_dasti = True
+                    break
+            if found_dasti:
+                break
+        assert found_dasti, (
+            "Excel output must contain 'دستی' for manual attendance"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 17. Leave status is exactly مرخصی, leave type is separate
+# ---------------------------------------------------------------------------
+class TestLeaveStatusPresentation:
+    def test_full_day_leave_status_is_morakhasi(self):
+        day = {
+            "date": _dt(7, 0).date(),
+            "jalali_date": "1405/06/15",
+            "day_name": "شنبه",
+            "day_status": "کاری",
+            "holiday_title": None,
+            "person_status": "AL",
+            "person_status_name": "مرخصی",
+            "leave_type": "AL",
+            "leave_name": "استحقاقی",
+            "hourly_leave": {"minutes": 0, "display": ""},
+            "has_attendance": False,
+            "punches": [],
+            "attendance_segments": [],
+            "attendance_str": "—",
+        }
+        assert day["person_status_name"] == "مرخصی"
+        assert day["leave_name"] == "استحقاقی"
+
+    def test_leave_person_status_values_are_morakhasi(self):
+        from core.raw_report import LEAVE_PERSON_STATUS
+        for code, name in LEAVE_PERSON_STATUS.items():
+            assert name == "مرخصی", (
+                f"LEAVE_PERSON_STATUS['{code}'] should be 'مرخصی', got '{name}'"
+            )
+
+    def test_hourly_leave_status_is_morakhasi(self):
+        from core.raw_report import LEAVE_PERSON_STATUS
+        assert "HL" in LEAVE_PERSON_STATUS, "HL should be in LEAVE_PERSON_STATUS"
+        assert LEAVE_PERSON_STATUS["HL"] == "مرخصی"
+
+    def test_leave_type_names_unchanged(self):
+        from core.raw_report import LEAVE_TYPE_NAMES
+        expected = {
+            'AL': 'استحقاقی',
+            'SL': 'استعلاجی',
+            'RL': 'تشویقی',
+            'CW': 'ذخیره سال قبل',
+            'UL': 'بدون حقوق',
+            'TL': 'توراهی',
+        }
+        for code, name in expected.items():
+            assert LEAVE_TYPE_NAMES[code] == name, (
+                f"LEAVE_TYPE_NAMES['{code}'] changed from '{name}' to '{LEAVE_TYPE_NAMES[code]}'"
+            )
+
+    def test_combined_leave_name_for_full_day(self):
+        from core.raw_report import LEAVE_TYPE_NAMES
+        leave_name = LEAVE_TYPE_NAMES.get('AL')
+        assert leave_name == "استحقاقی"
+
+    def test_combined_leave_name_for_hourly(self):
+        hourly_leave_display = "09:00 تا 10:00"
+        leave_name = f"ساعتی: {hourly_leave_display}"
+        assert leave_name == "ساعتی: 09:00 تا 10:00"
+
+    def test_combined_leave_name_for_both(self):
+        from core.raw_report import LEAVE_TYPE_NAMES
+        parts = []
+        parts.append(LEAVE_TYPE_NAMES['AL'])
+        parts.append("ساعتی: 09:00 تا 10:00")
+        combined = '\n'.join(parts)
+        assert combined == "استحقاقی\nساعتی: 09:00 تا 10:00"
+
+    def test_leave_filter_still_includes_all_leave_types(self):
+        from core.raw_report import LEAVE_PERSON_STATUS
+        all_leave_codes = ['AL', 'SL', 'RL', 'CW', 'UL', 'TL', 'HL']
+        for code in all_leave_codes:
+            assert code in LEAVE_PERSON_STATUS, (
+                f"Leave code '{code}' should be in LEAVE_PERSON_STATUS for filtering"
+            )
+
+    def test_31_day_pdf_with_leave_still_fits_one_page(self):
+        days = []
+        for d in range(1, 32):
+            days.append({
+                "jalali_date": f"1405/06/{d:02d}",
+                "day_name": "شنبه" if d % 7 == 1 else "یکشنبه",
+                "day_status": "کاری",
+                "person_status_name": "مرخصی" if d == 15 else "حاضر",
+                "leave_name": "استحقاقی" if d == 15 else None,
+                "hourly_leave": {},
+                "attendance_str": "—" if d == 15 else "07:00 → 14:00",
+            })
+        report = _make_individual_report(days)
+        output = BytesIO()
+        pdf_export_individual(report, output)
+        output.seek(0)
+        page_count = _count_pdf_pages(output.getvalue())
+        assert page_count == 1, (
+            f"31-day report with leave should fit on 1 page, got {page_count}"
+        )

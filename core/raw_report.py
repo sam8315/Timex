@@ -37,12 +37,13 @@ LEAVE_TYPE_NAMES = {
 }
 
 LEAVE_PERSON_STATUS = {
-    'AL': 'مرخصی استحقاقی',
-    'SL': 'مرخصی استعلاجی',
-    'RL': 'مرخصی تشویقی',
-    'CW': 'مرخصی ذخیره سال قبل',
-    'UL': 'مرخصی بدون حقوق',
-    'TL': 'مرخصی توراهی',
+    'AL': 'مرخصی',
+    'SL': 'مرخصی',
+    'RL': 'مرخصی',
+    'CW': 'مرخصی',
+    'UL': 'مرخصی',
+    'TL': 'مرخصی',
+    'HL': 'مرخصی',
 }
 
 PERSON_STATUS_NAMES = {
@@ -52,7 +53,6 @@ PERSON_STATUS_NAMES = {
     'A': 'غایب',
     'N': 'بدون تردد',
     'H': 'تعطیل',
-    'HL': 'مرخصی ساعتی',
 }
 
 EMPLOYMENT_TYPE_OPTIONS = [
@@ -301,6 +301,14 @@ class RawReportService:
         else:
             person_status = 'N'
 
+        hourly_leave_display = self._hourly_leave_display(hourly_leaves)
+        leave_parts = []
+        if daily_leave in LEAVE_TYPE_NAMES:
+            leave_parts.append(LEAVE_TYPE_NAMES[daily_leave])
+        if hourly_leave_display.get('display'):
+            leave_parts.append(f"ساعتی: {hourly_leave_display['display']}")
+        leave_name = '\n'.join(leave_parts) if leave_parts else None
+
         return {
             'date': day,
             'jalali_date': jdatetime.date.fromgregorian(date=day).strftime('%Y/%m/%d'),
@@ -315,8 +323,8 @@ class RawReportService:
                 or person_status
             ),
             'leave_type': daily_leave if daily_leave in LEAVE_PERSON_STATUS else None,
-            'leave_name': LEAVE_TYPE_NAMES.get(daily_leave),
-            'hourly_leave': self._hourly_leave_display(hourly_leaves),
+            'leave_name': leave_name,
+            'hourly_leave': hourly_leave_display,
             'has_attendance': has_attendance,
             'punches': [_record_dict(record) for record in sorted(
                 attendances, key=lambda record: (record.timestamp, record.id or 0)
