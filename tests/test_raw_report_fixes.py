@@ -893,7 +893,7 @@ class TestPDFHeaderLayout:
              "نوع مرخصی", "ترددها")
         )]
         assert len(header_calls) == 6
-        assert {c["row_height"] for c in header_calls} == {4.8}
+        assert {c["row_height"] for c in header_calls} == {4.5}
         assert len({c["y"] for c in header_calls}) == 1
 
     def test_report_guide_uses_compact_wording(self):
