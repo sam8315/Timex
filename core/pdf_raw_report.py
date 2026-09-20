@@ -32,12 +32,16 @@ def _find_font() -> str:
     return ""
 
 
-def _shape(text) -> str:
+def _shape(text, base_dir: str = "R") -> str:
     value = "" if text is None else str(text)
     if arabic_reshaper is None or get_display is None:
         return value
     if any("\u0600" <= char <= "\u06FF" for char in value):
-        return get_display(arabic_reshaper.reshape(value))
+        reshaped = arabic_reshaper.reshape(value)
+        try:
+            return get_display(reshaped, base_dir=base_dir)
+        except TypeError:
+            return get_display(reshaped)
     return value
 
 
@@ -102,13 +106,14 @@ class RawPDF(FPDF):
         return [] if not text else [text]
 
     def _write_cell(self, x: float, y: float, width: float, row_height: float,
-                    line_height: float, text, align: str = "C"):
+                    line_height: float, text, align: str = "C",
+                    base_dir: str = "R"):
         self.rect(x, y, width, row_height)
         self.set_xy(x, y)
         self.multi_cell(
             width,
             line_height,
-            _shape(str(text)),
+            _shape(str(text), base_dir=base_dir),
             border=0,
             align=align,
             new_x="LEFT",
@@ -125,7 +130,7 @@ class RawPDF(FPDF):
         self.set_font(self.font_name, "B", 7.5)
         for index, width in enumerate(widths):
             x -= width
-            self._write_cell(x, y, width, line_height, line_height, headers[index], "C")
+            self._write_cell(x, y, width, line_height, line_height, headers[index], "C", base_dir="R")
         self.set_xy(self.l_margin, y + line_height)
 
     def _daily_table(self, days: list):
@@ -160,7 +165,11 @@ class RawPDF(FPDF):
             x = self.w - self.r_margin
             for index, (width, value) in enumerate(zip(widths, values)):
                 x -= width
-                self._write_cell(x, y, width, row_height, line_height, value, "R" if index == 0 else "C")
+                self._write_cell(
+                    x, y, width, row_height, line_height, value,
+                    "R" if index == 0 else "C",
+                    base_dir="R",
+                )
             self.set_xy(self.l_margin, y + row_height)
         self.ln(1)
 
