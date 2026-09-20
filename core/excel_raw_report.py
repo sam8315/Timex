@@ -54,7 +54,7 @@ def _write_title(ws, title: str, month_name: str, year: int, last_col: int):
 
 def _write_employee_header(ws, emp: dict):
     row = 4
-    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=7)
+    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=6)
     cell = ws.cell(
         row=row,
         column=1,
@@ -72,7 +72,7 @@ def _write_employee_header(ws, emp: dict):
     if emp.get('termination_date_j'):
         extra.append(f'تاریخ پایان: {emp["termination_date_j"]}')
     if extra:
-        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=7)
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=6)
         cell = ws.cell(row=row, column=1, value='    '.join(extra))
         cell.font = Font(size=10, name=FONT_NAME, color='555555')
         cell.alignment = Alignment(horizontal='right', vertical='center')
@@ -81,7 +81,7 @@ def _write_employee_header(ws, emp: dict):
 def _write_daily_table(ws, days: List[dict]):
     header_row = 6
     headers = [
-        'تاریخ', 'روز', 'وضعیت روز', 'عنوان تعطیلی',
+        'تاریخ', 'روز', 'وضعیت روز',
         'وضعیت فرد', 'نوع مرخصی / مرخصی ساعتی', 'ترددها (ورود → خروج)',
     ]
     for column, header in enumerate(headers, 1):
@@ -103,7 +103,6 @@ def _write_daily_table(ws, days: List[dict]):
             day['jalali_date'],
             day['day_name'],
             day['day_status'],
-            day.get('holiday_title') or '-',
             day['person_status_name'],
             leave_display,
             day['attendance_str'],
@@ -112,9 +111,8 @@ def _write_daily_table(ws, days: List[dict]):
             cell = ws.cell(row=row, column=column, value=value)
             cell.font = DATA_FONT
             cell.border = THIN
-            cell.alignment = RIGHT if column == 7 else CENTER
             cell.alignment = Alignment(
-                horizontal='right' if column == 7 else 'center',
+                horizontal='right' if column == 6 else 'center',
                 vertical='center',
                 wrap_text=True,
             )
@@ -160,11 +158,11 @@ def export_individual(report: dict, output) :
             f"گزارش خام - {emp['full_name']} ({emp['user_id']})",
             report['month_name'],
             report['year'],
-            7,
+            6,
         )
         _write_employee_header(ws, emp)
         _write_daily_table(ws, emp['days'])
-    _auto_width(ws, [14, 12, 12, 22, 16, 22, 40])
+    _auto_width(ws, [14, 12, 12, 16, 22, 40])
     return _save_workbook(workbook, output)
 
 
@@ -208,10 +206,10 @@ def export_group(report: dict, output) :
             f"گزارش خام - {emp['full_name']} ({emp['user_id']})",
             report['month_name'],
             report['year'],
-            7,
+            6,
         )
         _write_employee_header(ws_employee, emp)
         _write_daily_table(ws_employee, emp['days'])
-        _auto_width(ws_employee, [14, 12, 12, 22, 16, 22, 40])
+        _auto_width(ws_employee, [14, 12, 12, 16, 22, 40])
 
     return _save_workbook(workbook, output)

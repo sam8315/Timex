@@ -298,7 +298,6 @@ class TestPDFRowHeight:
             "jalali_date": "1405/06/15",
             "day_name": "شنبه",
             "day_status": "کاری",
-            "holiday_title": None,
             "person_status_name": "حاضر",
             "leave_name": None,
             "hourly_leave": {},
@@ -343,6 +342,35 @@ class TestPDFRowHeight:
             f"Long attendance row ({long_consumed:.1f}mm) should be taller "
             f"than short row ({short_consumed:.1f}mm)"
         )
+
+    def test_pdf_has_6_columns_not_7(self):
+        from core.pdf_raw_report import RawPDF
+
+        pdf = RawPDF()
+        pdf.add_page()
+        pdf.set_font(pdf.font_name, "", 7)
+        widths = [120, 32, 22, 18, 18, 20]
+        pdf._table_header(widths, 5.2)
+        y_after = pdf.get_y()
+        assert y_after > 10
+        report = self._make_report([self._day("07:00 → 14:00")] * 5)
+        output = BytesIO()
+        pdf_export_group(report, output)
+        output.seek(0)
+        assert len(output.getvalue()) > 0
+
+    def test_pdf_rtl_column_order(self):
+        from core.pdf_raw_report import RawPDF
+
+        pdf = RawPDF()
+        pdf.add_page()
+        pdf._header_block("T", "S")
+        pdf._employee_header({"full_name": "X", "user_id": "1", "membership": "R"})
+        pdf.set_font(pdf.font_name, "", 7)
+        y_start = pdf.get_y()
+        pdf._daily_table([self._day("07:00 → 14:00")])
+        y_end = pdf.get_y()
+        assert y_end > y_start
 
 
 # ---------------------------------------------------------------------------

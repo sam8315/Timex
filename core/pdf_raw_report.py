@@ -117,19 +117,19 @@ class RawPDF(FPDF):
 
     def _table_header(self, widths: List[float], line_height: float):
         headers = [
-            "تاریخ", "روز", "وضعیت روز", "عنوان تعطیلی",
-            "وضعیت فرد", "نوع مرخصی", "ترددها (ورود → خروج)",
+            "ترددها (ورود → خروج)", "نوع مرخصی", "وضعیت فرد",
+            "وضعیت روز", "روز", "تاریخ",
         ]
-        x = self.l_margin
+        x = self.w - self.r_margin
         y = self.get_y()
         self.set_font(self.font_name, "B", 7.5)
         for index, width in enumerate(widths):
+            x -= width
             self._write_cell(x, y, width, line_height, line_height, headers[index], "C")
-            x += width
         self.set_xy(self.l_margin, y + line_height)
 
     def _daily_table(self, days: list):
-        widths = [20, 18, 18, 34, 22, 32, 120]
+        widths = [120, 32, 22, 18, 18, 20]
         line_height = 5.2
         bottom_limit = self.h - self.b_margin - 8
         self._table_header(widths, line_height)
@@ -138,13 +138,12 @@ class RawPDF(FPDF):
             hourly_leave = day.get("hourly_leave") or {}
             leave_display = day.get("leave_name") or hourly_leave.get("display") or "-"
             values = [
-                day["jalali_date"],
-                day["day_name"],
-                day["day_status"],
-                day.get("holiday_title") or "-",
-                day["person_status_name"],
-                leave_display,
                 day["attendance_str"],
+                leave_display,
+                day["person_status_name"],
+                day["day_status"],
+                day["day_name"],
+                day["jalali_date"],
             ]
             max_lines = 1
             for index, (width, value) in enumerate(zip(widths, values)):
@@ -158,11 +157,11 @@ class RawPDF(FPDF):
                 self.add_page()
                 self._table_header(widths, line_height)
                 self.set_font(self.font_name, "", 7)
-            x = self.l_margin
             y = self.get_y()
+            x = self.w - self.r_margin
             for index, (width, value) in enumerate(zip(widths, values)):
-                self._write_cell(x, y, width, row_height, line_height, value, "R" if index == 6 else "C")
-                x += width
+                x -= width
+                self._write_cell(x, y, width, row_height, line_height, value, "R" if index == 0 else "C")
             self.set_xy(self.l_margin, y + row_height)
         self.ln(2)
 

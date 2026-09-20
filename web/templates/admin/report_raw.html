@@ -429,10 +429,9 @@
                 <th style="width: 11%">تاریخ</th>
                 <th style="width: 10%">روز</th>
                 <th style="width: 11%">وضعیت روز</th>
-                <th style="width: 15%">عنوان تعطیلی</th>
                 <th style="width: 15%">وضعیت فرد</th>
                 <th style="width: 17%">نوع مرخصی / مرخصی ساعتی</th>
-                <th style="width: 21%">ترددها (ورود → خروج)</th>
+                <th style="width: 36%">ترددها (ورود → خروج)</th>
             </tr>
             </thead>
             <tbody>
@@ -441,7 +440,6 @@
                 <td class="date-cell">{{ day.jalali_date }}</td>
                 <td>{{ day.day_name }}</td>
                 <td class="{% if day.day_status == 'تعطیل' %}day-off{% endif %}">{{ day.day_status }}</td>
-                <td>{{ day.holiday_title or '-' }}</td>
                 <td>{{ day.person_status_name }}</td>
                 <td class="leave-cell">
                     {% if day.leave_name %}{{ day.leave_name }}{% endif %}
