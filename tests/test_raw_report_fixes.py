@@ -669,12 +669,12 @@ class TestManualLabelPerPunch:
     def test_manual_entry_only_shows_dasti(self):
         atts = [_att(_dt(7, 0), 0, source="M", record_id=1)]
         display = format_attendance_display(atts)
-        assert "07:00 دستی → —" in display
+        assert "07:00 (M) → —" in display
 
     def test_manual_exit_only_shows_dasti(self):
         atts = [_att(_dt(14, 0), 1, source="M", record_id=1)]
         display = format_attendance_display(atts)
-        assert "— → 14:00 دستی" in display
+        assert "— → 14:00 (M)" in display
 
     def test_manual_pair_shows_dasti_on_both_sides(self):
         atts = [
@@ -682,7 +682,7 @@ class TestManualLabelPerPunch:
             _att(_dt(14, 0), 1, source="M", record_id=2),
         ]
         display = format_attendance_display(atts)
-        assert "07:00 دستی → 14:00 دستی" in display
+        assert "07:00 (M) → 14:00 (M)" in display
 
     def test_mixed_manual_and_device_pair(self):
         atts = [
@@ -690,7 +690,7 @@ class TestManualLabelPerPunch:
             _att(_dt(14, 0), 1, source="D", record_id=2),
         ]
         display = format_attendance_display(atts)
-        assert "07:00 دستی → 14:00" in display
+        assert "07:00 (M) → 14:00" in display
         assert "14:00 (M)" not in display
 
     def test_all_device_no_dasti(self):
@@ -708,8 +708,8 @@ class TestManualLabelPerPunch:
             _att(_dt(14, 30), 1, source="M", record_id=3),
         ]
         display = format_attendance_display(atts)
-        assert "07:00 دستی → —" in display
-        assert "07:10 دستی → 14:30 دستی" in display
+        assert "07:00 (M) → —" in display
+        assert "07:10 (M) → 14:30 (M)" in display
 
 
 # ---------------------------------------------------------------------------
@@ -759,7 +759,7 @@ class TestManualAttendanceIntegration:
         )
         assert resp.status_code == 200
         assert "(M)" in resp.text, (
-            "Raw report HTML must contain 'دستی' for the manual record"
+            "Raw report HTML must contain '(M)' for the manual record"
         )
 
 
