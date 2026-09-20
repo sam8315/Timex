@@ -23,9 +23,26 @@ FONT_PATHS = [
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
 ]
 
+# Attendance cells contain only numbers, arrows, parentheses and the (M)
+# marker. Use a font with reliable Unicode symbol coverage for that column.
+ATTENDANCE_FONT_PATHS = [
+    "C:/Windows/Fonts/segoeui.ttf",
+    "C:/Windows/Fonts/tahoma.ttf",
+    "C:/Windows/Fonts/arial.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+]
+
 
 def _find_font() -> str:
     for path in FONT_PATHS:
+        candidate = Path(path)
+        if candidate.exists():
+            return str(candidate)
+    return ""
+
+
+def _find_attendance_font() -> str:
+    for path in ATTENDANCE_FONT_PATHS:
         candidate = Path(path)
         if candidate.exists():
             return str(candidate)
@@ -52,9 +69,16 @@ class RawPDF(FPDF):
         self.set_margins(8, 8, 8)
         self.font_path = _find_font()
         self.font_name = "Persian" if self.font_path else "Helvetica"
+        self.attendance_font_path = _find_attendance_font()
+        self.attendance_font_name = (
+            "AttendanceUnicode" if self.attendance_font_path else self.font_name
+        )
         if self.font_path:
             self.add_font(self.font_name, "", self.font_path)
             self.add_font(self.font_name, "B", self.font_path)
+        if self.attendance_font_path and self.attendance_font_name != self.font_name:
+            self.add_font(self.attendance_font_name, "", self.attendance_font_path)
+            self.add_font(self.attendance_font_name, "B", self.attendance_font_path)
 
     def header(self):
         if self.page_no() == 1:
@@ -157,9 +181,48 @@ class RawPDF(FPDF):
                 result.append(current)
         return result or [""]
 
+    @staticmethod
+    def _format_attendance_segment(segment: dict) -> str:
+        kind = segment.get("kind")
+        if kind == "pair":
+            enter = segment["enter"]
+            exit_record = segment["exit"]
+            left = fmt_time(enter.get("time"))
+            right = fmt_time(exit_record.get("time"))
+            if enter.get("is_manual"):
+                left += " (M)"
+            if exit_record.get("is_manual"):
+                right += " (M)"
+            return f"{left} → {right}"
+        record = segment.get("record", {})
+        value = fmt_time(record.get("time"))
+        if record.get("is_manual"):
+            value += " (M)"
+        if kind == "entry_only":
+            return f"{value} → —"
+        if kind == "exit_only":
+            return f"— → {value}"
+        return value
+
+    @classmethod
+    def _attendance_text_for_pdf(cls, day: dict) -> str:
+        segments = day.get("attendance_segments") or []
+        if segments:
+            return " | ".join(
+                cls._format_attendance_segment(segment) for segment in segments
+            )
+        # Keep tests/legacy datasets compatible while normalizing the old label.
+        return str(day.get("attendance_str") or "—").replace("دستی", "(M)")
+
     def _write_cell(self, x: float, y: float, width: float, row_height: float,
                     line_height: float, text, align: str = "C",
                     base_dir: str = "R"):
+        style = "B" if getattr(self, "font_style", "") == "B" else ""
+        self.set_font(
+            self.attendance_font_name if base_dir == "L" else self.font_name,
+            style,
+            self.font_size_pt,
+        )
         lines = self._cell_lines(text, width, base_dir=base_dir)
         self.rect(x, y, width, row_height)
         content_height = len(lines) * line_height
@@ -216,7 +279,7 @@ class RawPDF(FPDF):
                 day["day_status"],
                 day["person_status_name"],
                 leave_display,
-                day["attendance_str"],
+                self._attendance_text_for_pdf(day),
             ]
             max_lines = 1
             for index, (width, value) in enumerate(zip(widths, values)):
