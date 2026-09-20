@@ -169,7 +169,7 @@ class RawPDF(FPDF):
                 self._write_cell(
                     x, y, width, row_height, line_height, value,
                     "R" if index == 0 else "C",
-                    base_dir="L" if index == 0 else "R",
+                    base_dir="R",
                 )
             self.set_xy(self.l_margin, y + row_height)
         self.ln(1)
