@@ -111,16 +111,21 @@ def fmt_time(value) -> str:
     return str(value)
 
 
-def is_manual_source(source) -> bool:
-    return source == 'M'
+def is_manual_source(source, status=None) -> bool:
+    """رکورد دستی را با source استاندارد یا status قدیمی/دستی تشخیص می‌دهد."""
+    return source == 'M' or status == 15
 
 
 def _record_dict(record: Attendance) -> dict:
     return {
         'time': record.timestamp,
-        'is_manual': is_manual_source(record.source),
+        'is_manual': is_manual_source(
+            getattr(record, 'source', None),
+            getattr(record, 'status', None),
+        ),
         'punch': record.punch,
-        'source': record.source,
+        'source': getattr(record, 'source', None),
+        'status': getattr(record, 'status', None),
     }
 
 
