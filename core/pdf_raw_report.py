@@ -121,18 +121,28 @@ class RawPDF(FPDF):
         )
 
     def _table_header(self, widths: List[float], line_height: float):
-        # RTL physical order: rightmost -> leftmost.
+        # Physical RTL order: the first column is on the RIGHT,
+        # and each following column moves toward the LEFT.
         headers = [
-            "تاریخ", "روز", "وضعیت روز", "وضعیت فرد",
-            "نوع مرخصی / مرخصی ساعتی", "ترددها (ورود → خروج)",
+            "تاریخ",
+            "روز",
+            "وضعیت روز",
+            "وضعیت فرد",
+            "نوع مرخصی\nمرخصی ساعتی",
+            "ترددها\n(ورود → خروج)",
         ]
         x = self.w - self.r_margin
         y = self.get_y()
-        self.set_font(self.font_name, "B", 7.5)
+        self.set_font(self.font_name, "B", 7.2)
         for index, width in enumerate(widths):
             x -= width
-            header_height = 9 if index == 4 else line_height
-            self._write_cell(x, y, width, header_height, line_height, headers[index], "C", base_dir="R")
+            header_height = 9 if index in (4, 5) else line_height
+            align = "R" if index in (0, 1, 2, 3, 4) else "C"
+            base_dir = "R"
+            self._write_cell(
+                x, y, width, header_height, line_height,
+                headers[index], align, base_dir=base_dir
+            )
         self.set_xy(self.l_margin, y + 9)
 
     def _daily_table(self, days: list):
