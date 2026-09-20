@@ -1,0 +1,581 @@
+{% extends "base.html" %}
+{% block title %}گزارش خام | پنل مدیریت{% endblock %}
+
+{% block extra_css %}
+<style>
+    .raw-report-toolbar {
+        background: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    }
+    .raw-report-toolbar .form-label {
+        font-size: 0.82rem;
+        font-weight: 600;
+        margin-bottom: 0.25rem;
+    }
+    .user-search-wrapper {
+        position: relative;
+        width: 100%;
+    }
+    .user-search-results {
+        position: absolute;
+        top: calc(100% + 4px);
+        right: 0;
+        left: 0;
+        z-index: 1060;
+        display: none;
+        max-height: 320px;
+        overflow-y: auto;
+        background: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+    }
+    .user-search-results.show {
+        display: block;
+    }
+    .user-search-count {
+        padding: 7px 12px;
+        font-size: 0.75rem;
+        color: #6c757d;
+        background: #f8f9fa;
+        border-bottom: 1px solid #dee2e6;
+    }
+    .user-search-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 9px 12px;
+        cursor: pointer;
+        border-bottom: 1px solid #f0f0f0;
+        transition: background 0.15s ease;
+    }
+    .user-search-item:last-child {
+        border-bottom: 0;
+    }
+    .user-search-item:hover,
+    .user-search-item.highlighted {
+        background: #e9ecef;
+    }
+    .user-search-item .user-info {
+        min-width: 0;
+        flex: 1;
+    }
+    .user-search-item .user-name {
+        font-size: 0.88rem;
+        font-weight: 600;
+        color: #212529;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .user-search-item .user-id {
+        margin-top: 2px;
+        font-size: 0.74rem;
+        color: #6c757d;
+        direction: ltr;
+        text-align: right;
+    }
+    .user-search-item .user-dept {
+        flex-shrink: 0;
+        max-width: 120px;
+        padding: 2px 8px;
+        font-size: 0.72rem;
+        color: #495057;
+        background: #e9ecef;
+        border-radius: 10px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .user-search-no-result {
+        padding: 16px;
+        color: #6c757d;
+        text-align: center;
+    }
+    #userSearchInput.user-selected {
+        border-color: #198754;
+        background-color: #f0fff4;
+    }
+    .raw-report-export-bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 14px;
+    }
+    .raw-employee-report {
+        margin-bottom: 24px;
+        background: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    }
+    .raw-employee-header {
+        padding: 14px 16px 12px;
+        border-bottom: 2px solid #212529;
+        background: #fff;
+    }
+    .raw-employee-title {
+        margin: 0 0 8px;
+        font-size: 1.08rem;
+        font-weight: 700;
+    }
+    .raw-employee-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 16px;
+        margin: 0;
+        font-size: 0.86rem;
+    }
+    .raw-employee-meta strong {
+        font-weight: 700;
+    }
+    .raw-table-wrap {
+        overflow-x: auto;
+    }
+    .raw-table {
+        width: 100%;
+        margin: 0;
+        border-collapse: collapse;
+        font-size: 0.82rem;
+    }
+    .raw-table th,
+    .raw-table td {
+        border: 1px solid #adb5bd;
+        padding: 5px 7px;
+        vertical-align: middle;
+        line-height: 1.35;
+    }
+    .raw-table th {
+        font-weight: 700;
+        background: #f8f9fa;
+        white-space: nowrap;
+        text-align: center;
+    }
+    .raw-table td {
+        background: #fff;
+    }
+    .raw-table tbody tr:nth-child(even) td {
+        background: #fafafa;
+    }
+    .raw-table .day-off {
+        font-weight: 700;
+    }
+    .raw-table .attendance-cell {
+        min-width: 210px;
+        direction: ltr;
+        unicode-bidi: plaintext;
+        text-align: left;
+        white-space: normal;
+        word-break: normal;
+        font-variant-numeric: tabular-nums;
+    }
+    .raw-table .date-cell {
+        direction: ltr;
+        unicode-bidi: plaintext;
+        text-align: center;
+        white-space: nowrap;
+    }
+    .raw-table .leave-cell {
+        white-space: nowrap;
+    }
+    .raw-empty-state {
+        padding: 32px 16px;
+        color: #6c757d;
+        text-align: center;
+    }
+    .raw-print-legend {
+        margin-top: 10px;
+        padding-top: 8px;
+        border-top: 1px solid #adb5bd;
+        font-size: 0.76rem;
+        color: #212529;
+    }
+
+    @media (max-width: 767.98px) {
+        .raw-report-toolbar .row > * {
+            min-width: 100%;
+        }
+        .raw-report-toolbar .raw-submit-col {
+            margin-top: 0.5rem;
+        }
+    }
+
+    @media print {
+        @page {
+            size: A4 landscape;
+            margin: 9mm;
+        }
+        html,
+        body {
+            width: 100%;
+            margin: 0;
+            padding: 0;
+            background: #fff;
+            color: #000;
+            font-family: Vazirmatn, Tahoma, sans-serif;
+        }
+        .app-sidebar,
+        .app-topbar,
+        .sidebar-overlay,
+        .no-print,
+        .raw-report-toolbar,
+        .raw-report-export-bar,
+        .raw-print-actions {
+            display: none !important;
+        }
+        .app-content {
+            width: 100%;
+            max-width: none;
+            margin: 0;
+            padding: 0;
+        }
+        .raw-employee-report {
+            margin: 0 0 8mm;
+            padding: 0;
+            border: 1px solid #000;
+            border-radius: 0;
+            box-shadow: none;
+            break-inside: avoid;
+            page-break-inside: avoid;
+        }
+        .raw-employee-report + .raw-employee-report {
+            page-break-before: always;
+            break-before: page;
+        }
+        .raw-employee-header {
+            padding: 5mm 4mm 3mm;
+            border-bottom: 1.5px solid #000;
+            background: #fff;
+        }
+        .raw-employee-title {
+            margin-bottom: 2mm;
+            font-size: 12pt;
+        }
+        .raw-employee-meta {
+            gap: 2mm 8mm;
+            font-size: 8.5pt;
+        }
+        .raw-table-wrap {
+            overflow: visible;
+        }
+        .raw-table {
+            width: 100%;
+            table-layout: fixed;
+            font-size: 7.2pt;
+            color: #000;
+        }
+        .raw-table th,
+        .raw-table td {
+            padding: 1.6mm 1.5mm;
+            border: 0.6pt solid #000;
+            line-height: 1.15;
+            background: #fff !important;
+            color: #000;
+        }
+        .raw-table th {
+            font-size: 7.1pt;
+            font-weight: 700;
+        }
+        .raw-table .attendance-cell {
+            min-width: 0;
+            font-size: 6.9pt;
+            overflow-wrap: anywhere;
+        }
+        .raw-table thead {
+            display: table-header-group;
+        }
+        .raw-table tr {
+            break-inside: avoid;
+            page-break-inside: avoid;
+        }
+        .raw-print-legend {
+            margin-top: 3mm;
+            padding-top: 2mm;
+            border-top: 0.6pt solid #000;
+            font-size: 7pt;
+            color: #000;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+{% if request.query_params.get('error') %}
+<div class="alert alert-danger alert-dismissible fade show no-print" role="alert">
+    <i class="bi bi-exclamation-triangle"></i> {{ request.query_params.get('error') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="بستن"></button>
+</div>
+{% endif %}
+
+<div class="d-flex justify-content-between align-items-center mb-3 no-print">
+    <h4 class="mb-0"><i class="bi bi-table text-primary"></i> گزارش خام</h4>
+    <a href="/reports" class="btn btn-outline-primary btn-sm">
+        <i class="bi bi-arrow-right"></i> بازگشت به گزارشات
+    </a>
+</div>
+
+<div class="raw-report-toolbar no-print mb-4">
+    <div class="card-body">
+        <form method="post" action="/reports/raw" class="row g-3 align-items-end" id="rawReportForm">
+            <div class="col-md-4">
+                <label class="form-label" for="userSearchInput">کارمند</label>
+                <div class="user-search-wrapper">
+                    <div class="input-group">
+                        <span class="input-group-text"><i class="bi bi-search"></i></span>
+                        <input type="text"
+                               class="form-control"
+                               id="userSearchInput"
+                               value="{{ selected_user_name if selected_user_name else '' }}"
+                               placeholder="جستجوی نام، کد کاربری یا کد ملی"
+                               autocomplete="off">
+                        <button type="button"
+                                class="btn btn-outline-danger"
+                                id="clearUserBtn"
+                                style="{% if not selected_user_id %}display: none;{% endif %}">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                    <input type="hidden" name="target_user_id" id="targetUserId" value="{{ selected_user_id if selected_user_id else '' }}">
+                    <div class="user-search-results" id="userSearchResults"></div>
+                </div>
+                <div class="form-text">برای گزارش گروهی، فیلد کارمند را خالی بگذارید و نوع عضویت را انتخاب کنید.</div>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label" for="reportYear">سال</label>
+                <select name="year" id="reportYear" class="form-select" required>
+                    {% for year_value in available_years %}
+                    <option value="{{ year_value }}" {% if selected_year == year_value %}selected{% endif %}>{{ year_value }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label" for="reportMonth">ماه</label>
+                <select name="month" id="reportMonth" class="form-select" required>
+                    {% for month_value, month_name in jalali_months.items() %}
+                    <option value="{{ month_value }}" {% if selected_month == month_value %}selected{% endif %}>{{ month_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label" for="employmentType">نوع عضویت</label>
+                <select name="employment_type" id="employmentType" class="form-select">
+                    {% for value, label in employment_type_options %}
+                    <option value="{{ value }}" {% if selected_employment_type == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-1">
+                <label class="form-label" for="statusFilter">وضعیت</label>
+                <select name="status_filter" id="statusFilter" class="form-select">
+                    {% for value, label in status_filter_options %}
+                    <option value="{{ value }}" {% if selected_status_filter == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-1 raw-submit-col">
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="bi bi-lightning"></i> تولید
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if report %}
+<div class="raw-report-export-bar no-print">
+    <div>
+        <span class="text-muted small">{{ report.month_name }} {{ report.year }}</span>
+        {% if report.mode == 'individual' and report.employees %}
+        <span class="badge bg-primary ms-2">{{ report.employees[0].full_name }}</span>
+        {% elif report.mode == 'group' %}
+        <span class="badge bg-secondary ms-2">{{ report.employees|length }} کارمند</span>
+        {% endif %}
+    </div>
+    <div class="raw-print-actions">
+        <a class="btn btn-outline-dark btn-sm" href="javascript:window.print()">
+            <i class="bi bi-printer"></i> چاپ
+        </a>
+        <a class="btn btn-outline-success btn-sm" href="/reports/raw/excel?year={{ report.year }}&month={{ report.month }}&employment_type={{ report.employment_type }}&status_filter={{ report.status_filter }}{% if report.employee_user_id %}&target_user_id={{ report.employee_user_id | urlencode }}{% endif %}">
+            <i class="bi bi-file-earmark-excel"></i> خروجی Excel
+        </a>
+        <a class="btn btn-outline-danger btn-sm" href="/reports/raw/pdf?year={{ report.year }}&month={{ report.month }}&employment_type={{ report.employment_type }}&status_filter={{ report.status_filter }}{% if report.employee_user_id %}&target_user_id={{ report.employee_user_id | urlencode }}{% endif %}">
+            <i class="bi bi-file-earmark-pdf"></i> خروجی PDF
+        </a>
+    </div>
+</div>
+
+{% if report.employees %}
+{% for employee in report.employees %}
+<section class="raw-employee-report">
+    <div class="raw-employee-header">
+        <h5 class="raw-employee-title">گزارش خام</h5>
+        <div class="raw-employee-meta">
+            <span>نام و نام خانوادگی: <strong>{{ employee.full_name }}</strong></span>
+            <span>کد پرسنلی: <strong>{{ employee.user_id }}</strong></span>
+            <span>نوع عضویت: <strong>{{ employee.membership }}</strong></span>
+            <span>بازه گزارش: <strong>{{ report.month_name }} {{ report.year }}</strong></span>
+        </div>
+    </div>
+    <div class="raw-table-wrap">
+        <table class="raw-table">
+            <thead>
+            <tr>
+                <th style="width: 11%">تاریخ</th>
+                <th style="width: 10%">روز</th>
+                <th style="width: 11%">وضعیت روز</th>
+                <th style="width: 15%">عنوان تعطیلی</th>
+                <th style="width: 15%">وضعیت فرد</th>
+                <th style="width: 17%">نوع مرخصی / مرخصی ساعتی</th>
+                <th style="width: 21%">ترددها (ورود → خروج)</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for day in employee.days %}
+            <tr>
+                <td class="date-cell">{{ day.jalali_date }}</td>
+                <td>{{ day.day_name }}</td>
+                <td class="{% if day.day_status == 'تعطیل' %}day-off{% endif %}">{{ day.day_status }}</td>
+                <td>{{ day.holiday_title or '-' }}</td>
+                <td>{{ day.person_status_name }}</td>
+                <td class="leave-cell">
+                    {% if day.leave_name %}{{ day.leave_name }}{% endif %}
+                    {% if day.leave_name and day.hourly_leave and day.hourly_leave.display %}<br>{% endif %}
+                    {% if day.hourly_leave and day.hourly_leave.display %}مرخصی ساعتی: {{ day.hourly_leave.display }}{% endif %}
+                    {% if not day.leave_name and (not day.hourly_leave or not day.hourly_leave.display) %}-{% endif %}
+                </td>
+                <td class="attendance-cell">{{ day.attendance_str }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="raw-print-legend">راهنما: ستون ترددها به‌ترتیب زمانی نمایش داده می‌شود؛ سمت چپ ورود و سمت راست خروج است. «دستی» فقط برای رکورد واردشده دستی نمایش داده می‌شود.</div>
+</section>
+{% endfor %}
+{% else %}
+<div class="card border-0 shadow-sm">
+    <div class="raw-empty-state">برای فیلتر انتخاب‌شده، کارمند یا روزی یافت نشد.</div>
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const employeesData = {{ employees_data | tojson }};
+let highlightedIndex = -1;
+let filteredEmployees = [];
+const searchInput = document.getElementById('userSearchInput');
+const searchResults = document.getElementById('userSearchResults');
+const targetUserId = document.getElementById('targetUserId');
+const clearUserBtn = document.getElementById('clearUserBtn');
+
+function searchEmployees(query) {
+    if (!query.trim()) return employeesData.slice(0, 80);
+    const q = query.trim().toLowerCase();
+    return employeesData.filter(emp => {
+        const values = [
+            emp.full_name || '',
+            emp.user_id || '',
+            emp.national_code || '',
+            emp.card || '',
+            emp.department || '',
+        ];
+        return values.some(value => String(value).toLowerCase().includes(q));
+    }).slice(0, 80);
+}
+
+function renderResults(employees) {
+    filteredEmployees = employees;
+    highlightedIndex = -1;
+    if (!employees.length) {
+        searchResults.innerHTML = '<div class="user-search-no-result">کاربری یافت نشد</div>';
+        searchResults.classList.add('show');
+        return;
+    }
+    let html = '<div class="user-search-count">' + employees.length + ' کاربر یافت شد</div>';
+    employees.forEach((emp, index) => {
+        html += '<div class="user-search-item" data-index="' + index + '" data-user-id="' + emp.user_id + '">' +
+            '<div class="user-info"><div class="user-name">' + emp.full_name + '</div>' +
+            '<div class="user-id">کد کاربری: ' + emp.user_id + (emp.national_code ? ' | کد ملی: ' + emp.national_code : '') + '</div></div>' +
+            '<span class="user-dept">' + emp.department + '</span></div>';
+    });
+    searchResults.innerHTML = html;
+    searchResults.classList.add('show');
+    searchResults.querySelectorAll('.user-search-item').forEach(item => {
+        item.addEventListener('click', () => selectEmployee(filteredEmployees[parseInt(item.dataset.index)]));
+        item.addEventListener('mouseenter', () => highlightItem(parseInt(item.dataset.index)));
+    });
+}
+
+function highlightItem(index) {
+    const items = searchResults.querySelectorAll('.user-search-item');
+    items.forEach(item => item.classList.remove('highlighted'));
+    if (index >= 0 && index < items.length) {
+        items[index].classList.add('highlighted');
+        items[index].scrollIntoView({ block: 'nearest' });
+        highlightedIndex = index;
+    }
+}
+
+function selectEmployee(emp) {
+    if (!emp) return;
+    targetUserId.value = emp.user_id;
+    searchInput.value = emp.full_name;
+    searchInput.classList.add('user-selected');
+    clearUserBtn.style.display = 'inline-flex';
+    searchResults.classList.remove('show');
+}
+
+function clearSelection() {
+    targetUserId.value = '';
+    searchInput.value = '';
+    searchInput.classList.remove('user-selected');
+    clearUserBtn.style.display = 'none';
+    searchInput.focus();
+}
+
+if (searchInput) {
+    searchInput.addEventListener('input', () => {
+        if (targetUserId.value) {
+            targetUserId.value = '';
+            searchInput.classList.remove('user-selected');
+        }
+        renderResults(searchEmployees(searchInput.value));
+        clearUserBtn.style.display = targetUserId.value ? 'inline-flex' : 'none';
+    });
+    searchInput.addEventListener('focus', () => {
+        if (!targetUserId.value) renderResults(searchEmployees(searchInput.value));
+    });
+    searchInput.addEventListener('keydown', event => {
+        const items = searchResults.querySelectorAll('.user-search-item');
+        if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            if (highlightedIndex < items.length - 1) highlightItem(highlightedIndex + 1);
+        } else if (event.key === 'ArrowUp') {
+            event.preventDefault();
+            if (highlightedIndex > 0) highlightItem(highlightedIndex - 1);
+        } else if (event.key === 'Enter') {
+            event.preventDefault();
+            if (highlightedIndex >= 0 && filteredEmployees[highlightedIndex]) {
+                selectEmployee(filteredEmployees[highlightedIndex]);
+            } else if (filteredEmployees.length) {
+                selectEmployee(filteredEmployees[0]);
+            }
+        } else if (event.key === 'Escape') {
+            searchResults.classList.remove('show');
+        }
+    });
+    if (clearUserBtn) clearUserBtn.addEventListener('click', clearSelection);
+}
+document.addEventListener('click', event => {
+    if (!event.target.closest('.user-search-wrapper')) searchResults.classList.remove('show');
+});
+</script>
+{% endblock %}
