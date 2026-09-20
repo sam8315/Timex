@@ -588,3 +588,95 @@ class TestNoHolidayTitle:
         thead_section = html.split("<thead>")[1].split("</thead>")[0] if "<thead>" in html else ""
         th_count = thead_section.count("<th ")
         assert th_count == 6, f"HTML raw table should have 6 <th> columns, got {th_count}"
+
+
+# ---------------------------------------------------------------------------
+# 11. RTL text isolation in HTML headers
+# ---------------------------------------------------------------------------
+class TestHTMLRTLFix:
+    def test_leave_header_has_isolation(self):
+        with open("web/templates/admin/report_raw.html", encoding="utf-8") as f:
+            html = f.read()
+        assert "unicode-bidi: isolate" in html, (
+            "HTML should use unicode-bidi: isolate to prevent RTL corruption"
+        )
+
+    def test_leave_header_contains_slash(self):
+        with open("web/templates/admin/report_raw.html", encoding="utf-8") as f:
+            html = f.read()
+        assert "نوع مرخصی / مرخصی ساعتی" in html, (
+            "Header should contain the full Persian text with / separator"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 12. Filter form alignment
+# ---------------------------------------------------------------------------
+class TestFilterFormAlignment:
+    def test_hint_not_inside_col_md_4(self):
+        with open("web/templates/admin/report_raw.html", encoding="utf-8") as f:
+            html = f.read()
+        form_section = html.split('<form method="post"')[1].split('</form>')[0]
+        col_md4_end = form_section.split('</div>')[0]
+        assert "برای گزارش گروهی" not in col_md4_end, (
+            "Helper text should not be inside the employee col-md-4"
+        )
+
+    def test_hint_outside_form_row(self):
+        with open("web/templates/admin/report_raw.html", encoding="utf-8") as f:
+            html = f.read()
+        form_end_idx = html.index('</form>')
+        after_form = html[form_end_idx:form_end_idx + 500]
+        assert "برای گزارش گروهی" in after_form, (
+            "Helper text should appear after the form closing tag"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 13. Manual label per-punch (both entry and exit get 'دستی')
+# ---------------------------------------------------------------------------
+class TestManualLabelPerPunch:
+    def test_manual_entry_only_shows_dasti(self):
+        atts = [_att(_dt(7, 0), 0, source="M", record_id=1)]
+        display = format_attendance_display(atts)
+        assert "07:00 دستی → —" in display
+
+    def test_manual_exit_only_shows_dasti(self):
+        atts = [_att(_dt(14, 0), 1, source="M", record_id=1)]
+        display = format_attendance_display(atts)
+        assert "— → 14:00 دستی" in display
+
+    def test_manual_pair_shows_dasti_on_both_sides(self):
+        atts = [
+            _att(_dt(7, 0), 0, source="M", record_id=1),
+            _att(_dt(14, 0), 1, source="M", record_id=2),
+        ]
+        display = format_attendance_display(atts)
+        assert "07:00 دستی → 14:00 دستی" in display
+
+    def test_mixed_manual_and_device_pair(self):
+        atts = [
+            _att(_dt(7, 0), 0, source="M", record_id=1),
+            _att(_dt(14, 0), 1, source="D", record_id=2),
+        ]
+        display = format_attendance_display(atts)
+        assert "07:00 دستی → 14:00" in display
+        assert "14:00 دستی" not in display
+
+    def test_all_device_no_dasti(self):
+        atts = [
+            _att(_dt(7, 0), 0, source="D", record_id=1),
+            _att(_dt(14, 0), 1, source="D", record_id=2),
+        ]
+        display = format_attendance_display(atts)
+        assert "دستی" not in display
+
+    def test_multiple_segments_manual_labeled(self):
+        atts = [
+            _att(_dt(7, 0), 0, source="M", record_id=1),
+            _att(_dt(7, 10), 0, source="M", record_id=2),
+            _att(_dt(14, 30), 1, source="M", record_id=3),
+        ]
+        display = format_attendance_display(atts)
+        assert "07:00 دستی → —" in display
+        assert "07:10 دستی → 14:30 دستی" in display

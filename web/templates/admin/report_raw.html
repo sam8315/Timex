@@ -183,6 +183,7 @@
     }
     .raw-table .leave-cell {
         white-space: nowrap;
+        unicode-bidi: isolate;
     }
     .raw-empty-state {
         padding: 32px 16px;
@@ -344,7 +345,6 @@
                     <input type="hidden" name="target_user_id" id="targetUserId" value="{{ selected_user_id if selected_user_id else '' }}">
                     <div class="user-search-results" id="userSearchResults"></div>
                 </div>
-                <div class="form-text">برای گزارش گروهی، فیلد کارمند را خالی بگذارید و نوع عضویت را انتخاب کنید.</div>
             </div>
             <div class="col-md-2">
                 <label class="form-label" for="reportYear">سال</label>
@@ -384,6 +384,7 @@
                 </button>
             </div>
         </form>
+        <div class="form-text mt-2" style="font-size: 0.78rem;">برای گزارش گروهی، فیلد کارمند را خالی بگذارید و نوع عضویت را انتخاب کنید.</div>
     </div>
 </div>
 
@@ -430,7 +431,7 @@
                 <th style="width: 8%">روز</th>
                 <th style="width: 8%">وضعیت روز</th>
                 <th style="width: 10%">وضعیت فرد</th>
-                <th style="width: 10%">نوع مرخصی / مرخصی ساعتی</th>
+                <th style="width: 10%; unicode-bidi: isolate;">نوع مرخصی / مرخصی ساعتی</th>
                 <th style="width: 55%">ترددها (ورود → خروج)</th>
             </tr>
             </thead>
