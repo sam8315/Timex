@@ -2,6 +2,7 @@
 سرویس مدیریت آدرس‌های کارمندان
 """
 import logging
+import re
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Optional, List
@@ -55,10 +56,22 @@ def _validate_residence_status(residence_status: str) -> str:
     return normalized
 
 
+# نگاشت ارقام فارسی و عربی به ارقام ASCII (مطابق CHECK دیتابیس: [0-9])
+_DIGIT_TRANSLATION = str.maketrans(
+    "۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩",
+    "01234567890123456789",
+)
+
+
 def _validate_postal_code(postal_code: str) -> str:
-    """اعتبارسنجی کد پستی"""
-    normalized = postal_code.strip()
-    if not normalized.isdigit() or len(normalized) != 10:
+    """اعتبارسنجی کد پستی.
+
+    ارقام فارسی/عربی به ASCII تبدیل و فاصله‌های اطراف حذف می‌شود؛ نتیجه
+    باید دقیقاً ۱۰ رقم ASCII باشد (همان CHECK دیتابیس). صفرهای ابتدایی
+    حفظ می‌شوند.
+    """
+    normalized = postal_code.translate(_DIGIT_TRANSLATION).strip()
+    if not re.fullmatch(r"[0-9]{10}", normalized):
         raise AddressServiceError("کد پستی باید دقیقاً ۱۰ رقم عددی باشد")
     return normalized
 

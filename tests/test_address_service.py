@@ -32,6 +32,7 @@ from web.services.address_service import (
     set_primary_address,
     get_primary_address,
     get_effective_home_address,
+    _validate_postal_code,
     _UNSET,
 )
 
@@ -835,3 +836,63 @@ def test_historical_non_primary_never_effective(db, make_user):
         db, user["user_id"], date(2020, 6, 1)).id == primary.id
     assert get_effective_home_address(
         db, user["user_id"], date(2024, 6, 1)) is None
+
+
+# ---------------------------------------------------------------------------
+# Postal code digit normalization (ASCII-only DB CHECK)
+# ---------------------------------------------------------------------------
+
+def test_postal_ascii_unchanged():
+    """Normal ASCII code passes through untouched."""
+    assert _validate_postal_code("0123456789") == "0123456789"
+
+
+def test_postal_persian_normalized():
+    """Persian digits normalize to ASCII."""
+    assert _validate_postal_code("۰۱۲۳۴۵۶۷۸۹") == "0123456789"
+
+
+def test_postal_arabic_indic_normalized():
+    """Arabic-Indic digits normalize to ASCII."""
+    assert _validate_postal_code("٠١٢٣٤٥٦٧٨٩") == "0123456789"
+
+
+def test_postal_whitespace_accepted():
+    """Surrounding whitespace is stripped."""
+    assert _validate_postal_code("  1234567890  ") == "1234567890"
+    assert _validate_postal_code("  ۱۲۳۴۵۶۷۸۹۰  ") == "1234567890"
+
+
+@pytest.mark.parametrize("bad", [
+    "12345",            # too short
+    "12345678901",      # too long
+    "12345ABCDE",       # letters
+    "۱۲۳۴۵ABCDE",       # mixed Persian digits and letters
+    "123456789 ",       # stripped -> only 9 digits
+    "1234-567890",      # separator
+    "",                 # empty
+    "   ",              # whitespace only
+])
+def test_postal_invalid_rejected(bad):
+    """Wrong length or non-numeric content is rejected."""
+    with pytest.raises(AddressServiceError, match="کد پستی"):
+        _validate_postal_code(bad)
+
+
+def test_create_stores_normalized_postal(db, make_user):
+    """create_address stores the normalized ASCII code (leading zero kept)."""
+    user = make_user(role="user", balance_al=None)
+    addr = _create_addr(db, user["user_id"], postal_code="۰۱۲۳۴۵۶۷۸۹")
+    assert addr.postal_code == "0123456789"
+    db.expire_all()
+    assert db.query(EmployeeAddress).filter(
+        EmployeeAddress.id == addr.id).one().postal_code == "0123456789"
+
+
+def test_update_stores_normalized_postal(db, make_user):
+    """update_address stores the normalized ASCII code."""
+    user = make_user(role="user", balance_al=None)
+    addr = _create_addr(db, user["user_id"], postal_code="9999999931")
+    updated = update_address(
+        db, user["user_id"], addr.id, postal_code="٠٩٨٧٦٥٤٣٢١")
+    assert updated.postal_code == "0987654321"
