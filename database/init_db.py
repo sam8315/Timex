@@ -90,6 +90,55 @@ def migrate_time_columns() -> None:
         print(f"  ~ column leave_requests.{column_name} converted to TIME")
 
 
+def migrate_employee_address_city_id(bind_engine=None) -> None:
+    """
+    Production-safe migration for the Phase 6 city_id normalization.
+
+    Base.metadata.create_all() only creates missing tables — it does NOT add
+    columns, indexes or FK constraints to tables that already exist. For an
+    existing employee_addresses table this ensures (idempotently):
+      - city_id column exists (nullable, existing rows untouched)
+      - index on employee_addresses.city_id exists
+      - FK employee_addresses.city_id -> cities.id with ON DELETE RESTRICT
+    Safe to run repeatedly; never modifies existing city_id data.
+    """
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
+    if "employee_addresses" not in inspector.get_table_names():
+        return
+
+    with target.connect() as conn:
+        columns = {row["name"] for row in inspector.get_columns("employee_addresses")}
+        if "city_id" not in columns:
+            conn.execute(text('ALTER TABLE "employee_addresses" ADD COLUMN "city_id" INTEGER NULL'))
+            conn.commit()
+            print("  + column employee_addresses.city_id added")
+
+        index_names = {idx["name"] for idx in inspector.get_indexes("employee_addresses")}
+        if "ix_employee_addresses_city_id" not in index_names:
+            conn.execute(text(
+                'CREATE INDEX "ix_employee_addresses_city_id" '
+                'ON "employee_addresses" ("city_id")'
+            ))
+            conn.commit()
+            print("  + index ix_employee_addresses_city_id added")
+
+        has_fk = any(
+            fk.get("referred_table") == "cities"
+            and fk.get("referred_columns") == ["id"]
+            and "city_id" in (fk.get("constrained_columns") or [])
+            for fk in inspector.get_foreign_keys("employee_addresses")
+        )
+        if not has_fk:
+            conn.execute(text(
+                'ALTER TABLE "employee_addresses" '
+                'ADD CONSTRAINT "employee_addresses_city_id_fkey" '
+                'FOREIGN KEY ("city_id") REFERENCES "cities" ("id") ON DELETE RESTRICT'
+            ))
+            conn.commit()
+            print("  + fk employee_addresses.city_id -> cities.id added")
+
+
 def migrate_data_fixes(bind_engine=None) -> None:
     """
     پاک‌سازی داده‌های قدیمی بدون آسیب به رکوردها.
@@ -229,6 +278,7 @@ def create_tables() -> None:
     try:
         migrate_missing_columns()
         Base.metadata.create_all(bind=engine)
+        migrate_employee_address_city_id()
         migrate_time_columns()
         migrate_data_fixes()
         seed_travel_leave_policy_rules()

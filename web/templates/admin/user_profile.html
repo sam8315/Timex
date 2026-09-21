@@ -757,6 +757,10 @@
                                 {% for c in cities %}
                                 <option value="{{ c.id }}" data-name="{{ c.name }}" data-province="{{ c.province or '' }}"{% if addr.city_id == c.id %} selected{% endif %}>{{ c.province }} — {{ c.name }}</option>
                                 {% endfor %}
+                                {% set linked = inactive_linked.get(addr.id) %}
+                                {% if linked %}
+                                <option value="{{ linked.id }}" data-name="{{ linked.name }}" data-province="{{ linked.province or '' }}" selected>غیرفعال — {{ linked.province }} — {{ linked.name }}</option>
+                                {% endif %}
                             </select>
                             <small class="text-muted">انتخاب شهر، نام شهر را همگام می‌کند؛ مختصات تغییر نمی‌کند.</small>
                         </div>

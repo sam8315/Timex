@@ -1707,6 +1707,16 @@ async def admin_view_profile(
             )
         except Exception:
             addr.valid_to_j = ""
+    # شهرهای غیرفعالِ مرتبط با آدرس موجود: فقط برای نمایش در فرم ویرایش همان آدرس
+    active_city_ids = {c.id for c in cities}
+    orphan_city_ids = {a.city_id for a in target_addresses
+                       if a.city_id and a.city_id not in active_city_ids}
+    inactive_linked = {}
+    if orphan_city_ids:
+        for linked in db.query(City).filter(City.id.in_(orphan_city_ids)).all():
+            for addr in target_addresses:
+                if addr.city_id == linked.id:
+                    inactive_linked[addr.id] = linked
 
     return templates.TemplateResponse(request, "admin/user_profile.html", {
         "user": user,
@@ -1728,6 +1738,7 @@ async def admin_view_profile(
         "address_types": ADDRESS_TYPES,
         "residence_statuses": RESIDENCE_STATUSES,
         "cities": cities,
+        "inactive_linked": inactive_linked,
     })
 
 

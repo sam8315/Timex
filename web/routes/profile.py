@@ -130,6 +130,16 @@ async def profile_page(
             )
         except Exception:
             addr.valid_to_j = ""
+    # شهرهای غیرفعالِ مرتبط با آدرس موجود: فقط برای نمایش در فرم ویرایش همان آدرس
+    active_city_ids = {c.id for c in cities}
+    orphan_city_ids = {a.city_id for a in addresses
+                       if a.city_id and a.city_id not in active_city_ids}
+    inactive_linked = {}
+    if orphan_city_ids:
+        for linked in db.query(City).filter(City.id.in_(orphan_city_ids)).all():
+            for addr in addresses:
+                if addr.city_id == linked.id:
+                    inactive_linked[addr.id] = linked
 
     return templates.TemplateResponse(request, "profile.html", {
         "user": user,
@@ -148,4 +158,5 @@ async def profile_page(
         "phones": phones,
         "addresses": addresses,
         "cities": cities,
+        "inactive_linked": inactive_linked,
     })

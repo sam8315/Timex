@@ -118,6 +118,29 @@ def _validate_city_id(db: Session, city_id) -> Optional[int]:
     return cid
 
 
+def _validate_city_id_for_update(
+    db: Session, city_id, current_id: Optional[int]
+) -> Optional[int]:
+    """اعتبارسنجی city_id هنگام ویرایش.
+
+    انتخاب جدید (متفاوت از مقدار فعلی) باید شهر فعال باشد؛ اما حفظ
+    همان ارجاع قبلی — حتی اگر شهر بعداً غیرفعال شده باشد — مجاز است
+    تا ویرایش فیلدهای دیگر، پیوند موجود را پاک نکند.
+    """
+    if city_id is None:
+        return None
+    try:
+        cid = int(city_id)
+    except (TypeError, ValueError):
+        raise AddressServiceError("شناسه شهر نامعتبر است")
+    if current_id is not None and cid == current_id:
+        from models.city import City
+        if not db.query(City).filter(City.id == cid).first():
+            raise AddressServiceError("شهر یافت نشد")
+        return cid
+    return _validate_city_id(db, cid)
+
+
 def _get_address_for_user(
     db: Session, user_id: str, address_id: int
 ) -> EmployeeAddress:
@@ -272,7 +295,7 @@ def update_address(
     if gnaf_id is not _UNSET:
         addr.gnaf_id = gnaf_id.strip() if gnaf_id else None
     if city_id is not _UNSET:
-        addr.city_id = _validate_city_id(db, city_id)
+        addr.city_id = _validate_city_id_for_update(db, city_id, addr.city_id)
 
     db.commit()
     db.refresh(addr)
