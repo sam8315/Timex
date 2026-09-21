@@ -111,6 +111,15 @@ def _validate_date_range(
             )
 
 
+def _get_city_or_raise(db: Session, cid: int):
+    """بازیابی شهر مرجع یا خطا"""
+    from models.city import City
+    city = db.query(City).filter(City.id == cid).first()
+    if not city:
+        raise AddressServiceError("شهر یافت نشد")
+    return city
+
+
 def _validate_city_id(db: Session, city_id) -> Optional[int]:
     """اعتبارسنجی مرجع شهر (اختیاری؛ فقط شهر فعال قابل انتخاب است)"""
     if city_id is None:
@@ -119,36 +128,18 @@ def _validate_city_id(db: Session, city_id) -> Optional[int]:
         cid = int(city_id)
     except (TypeError, ValueError):
         raise AddressServiceError("شناسه شهر نامعتبر است")
-    from models.city import City
-    city = db.query(City).filter(City.id == cid).first()
-    if not city:
-        raise AddressServiceError("شهر یافت نشد")
+    city = _get_city_or_raise(db, cid)
     if not city.is_active:
         raise AddressServiceError("شهر غیرفعال است و قابل انتخاب نیست")
     return cid
 
 
-def _validate_city_id_for_update(
-    db: Session, city_id, current_id: Optional[int]
-) -> Optional[int]:
-    """اعتبارسنجی city_id هنگام ویرایش.
-
-    انتخاب جدید (متفاوت از مقدار فعلی) باید شهر فعال باشد؛ اما حفظ
-    همان ارجاع قبلی — حتی اگر شهر بعداً غیرفعال شده باشد — مجاز است
-    تا ویرایش فیلدهای دیگر، پیوند موجود را پاک نکند.
-    """
-    if city_id is None:
-        return None
-    try:
-        cid = int(city_id)
-    except (TypeError, ValueError):
-        raise AddressServiceError("شناسه شهر نامعتبر است")
-    if current_id is not None and cid == current_id:
-        from models.city import City
-        if not db.query(City).filter(City.id == cid).first():
-            raise AddressServiceError("شهر یافت نشد")
-        return cid
-    return _validate_city_id(db, cid)
+def _master_snapshot(city):
+    """اسنپ‌شات متنی از ردیف مرجع شهر (مقادیر دستی ناسازگار نادیده گرفته می‌شود)"""
+    return (
+        city.province.strip() if city.province and city.province.strip() else None,
+        city.name,
+    )
 
 
 def _get_address_for_user(
@@ -203,7 +194,11 @@ def create_address(
     gnaf_id: Optional[str] = None,
     city_id: Optional[int] = None,
 ) -> EmployeeAddress:
-    """ایجاد آدرس جدید"""
+    """ایجاد آدرس جدید
+
+    وقتی city_id انتخاب شده باشد، اسنپ‌شات متنی province/city از ردیف
+    مرجع City ساخته می‌شود و مقادیر ارسالی ناسازگار نادیده گرفته می‌شود.
+    """
     _validate_user_exists(db, user_id)
     address_type = _validate_address_type(address_type)
     residence_status = _validate_residence_status(residence_status)
@@ -212,6 +207,14 @@ def create_address(
     longitude = _validate_longitude(longitude)
     _validate_date_range(valid_from, valid_to)
     city_id = _validate_city_id(db, city_id)
+    if city_id is not None:
+        master = _get_city_or_raise(db, city_id)
+        master_province, master_name = _master_snapshot(master)
+        province = master_province or _validate_required_text(province, "استان")
+        city = master_name
+    else:
+        province = _validate_required_text(province, "استان")
+        city = _validate_required_text(city, "شهر")
 
     if is_primary:
         db.query(EmployeeAddress).filter(
@@ -223,8 +226,8 @@ def create_address(
         user_id=user_id,
         address_type=address_type,
         residence_status=residence_status,
-        province=_validate_required_text(province, "استان"),
-        city=_validate_required_text(city, "شهر"),
+        province=province,
+        city=city,
         district=district.strip() if district else None,
         postal_code=postal_code,
         address=_validate_required_text(address_text, "آدرس کامل"),
@@ -271,6 +274,11 @@ def update_address(
 
     Required fields (province, city, address_text) never accept None
     or empty/whitespace — matching the database NOT NULL rules.
+
+    When city_id selects a new/changed active city, the province/city
+    snapshot is rebuilt from the City master row; conflicting submitted
+    values are ignored. Retaining the same inactive link preserves the
+    stored snapshot untouched.
     """
     _validate_user_exists(db, user_id)
     addr = _get_address_for_user(db, user_id, address_id)
@@ -295,10 +303,36 @@ def update_address(
     effective_to = valid_to if valid_to is not _UNSET else addr.valid_to
     _validate_date_range(effective_from, effective_to)
 
-    if province is not _UNSET:
-        addr.province = _validate_required_text(province, "استان")
-    if city is not _UNSET:
-        addr.city = _validate_required_text(city, "شهر")
+    refresh_master = None
+    preserve_snapshot = False
+    if city_id is not _UNSET:
+        if city_id is None:
+            addr.city_id = None
+        else:
+            try:
+                new_cid = int(city_id)
+            except (TypeError, ValueError):
+                raise AddressServiceError("شناسه شهر نامعتبر است")
+            if addr.city_id is not None and new_cid == addr.city_id:
+                master = _get_city_or_raise(db, new_cid)
+                if master.is_active:
+                    refresh_master = master
+                else:
+                    preserve_snapshot = True
+            else:
+                addr.city_id = _validate_city_id(db, new_cid)
+                refresh_master = _get_city_or_raise(db, addr.city_id)
+
+    if refresh_master is not None:
+        master_province, master_name = _master_snapshot(refresh_master)
+        if master_province:
+            addr.province = master_province
+        addr.city = master_name
+    elif not preserve_snapshot:
+        if province is not _UNSET:
+            addr.province = _validate_required_text(province, "استان")
+        if city is not _UNSET:
+            addr.city = _validate_required_text(city, "شهر")
     if district is not _UNSET:
         addr.district = district.strip() if district else None
     if address_text is not _UNSET:
@@ -307,8 +341,6 @@ def update_address(
         addr.notes = notes.strip() if notes else None
     if gnaf_id is not _UNSET:
         addr.gnaf_id = gnaf_id.strip() if gnaf_id else None
-    if city_id is not _UNSET:
-        addr.city_id = _validate_city_id_for_update(db, city_id, addr.city_id)
 
     db.commit()
     db.refresh(addr)

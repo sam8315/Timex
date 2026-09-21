@@ -249,7 +249,7 @@ def test_user_form_loads_active_cities(client, db, make_user):
 
 
 def test_edit_form_preselects_city_id(client, db, make_user):
-    """Edit modal preselects the linked city; text snapshot preserved."""
+    """Edit modal preselects the linked city; snapshot matches master."""
     me = make_user(role="user", balance_al=None)
     login_as(client, me["national_code"])
     city = _active_city(db)
@@ -260,7 +260,21 @@ def test_edit_form_preselects_city_id(client, db, make_user):
     assert resp.status_code == 200
     body = resp.text
     assert f'value="{city.id}"' in body
-    assert 'value="TehranCustom"' in body
+    # conflicting submitted text was replaced by the master snapshot
+    assert f'value="{city.name}"' in body
+    assert 'value="TehranCustom"' not in body
+
+
+def test_edit_form_keeps_manual_snapshot_without_link(client, db, make_user):
+    """Without city_id the manual text snapshot is shown as-is."""
+    me = make_user(role="user", balance_al=None)
+    login_as(client, me["national_code"])
+    _make_addr(db, me["user_id"], postal_code="7777777778",
+               city="TehranCustom")
+
+    resp = client.get("/profile", headers=HTML_ACCEPT)
+    assert resp.status_code == 200
+    assert 'value="TehranCustom"' in resp.text
 
 
 # ---------------------------------------------------------------------------
@@ -350,3 +364,94 @@ def test_user_update_route_clears_city_id(client, db, make_user):
         EmployeeAddress.id == addr.id).one()
     assert row.city_id is None
     assert row.city == "Tehran"
+
+
+# ---------------------------------------------------------------------------
+# city_id authoritative snapshot (server-side, JS-independent)
+# ---------------------------------------------------------------------------
+
+def test_create_city_overrides_conflicting_text(db, make_user):
+    """Create with city_id + conflicting texts stores the master snapshot."""
+    user = make_user(role="user", balance_al=None)
+    city = _active_city(db)
+    addr = _make_addr(db, user["user_id"], postal_code="9999999901",
+                      province="WrongProv", city="WrongCity",
+                      city_id=city.id)
+    assert addr.city_id == city.id
+    assert addr.province == city.province
+    assert addr.city == city.name
+
+
+def test_create_city_null_keeps_manual_snapshot(db, make_user):
+    """Create without city_id stores validated manual texts."""
+    user = make_user(role="user", balance_al=None)
+    addr = _make_addr(db, user["user_id"], postal_code="9999999902",
+                      province="Gilan", city="Rasht")
+    assert addr.city_id is None
+    assert addr.province == "Gilan"
+    assert addr.city == "Rasht"
+
+
+def test_update_changed_city_refreshes_snapshot(db, make_user):
+    """Changed city_id replaces the snapshot from the new master row."""
+    user = make_user(role="user", balance_al=None)
+    tehran = _active_city(db, "Tehran")
+    mashhad = _active_city(db, "Mashhad")
+    addr = _make_addr(db, user["user_id"], postal_code="9999999903",
+                      city_id=tehran.id)
+    assert addr.city == tehran.name
+
+    updated = update_address(
+        db, user["user_id"], addr.id, city_id=mashhad.id,
+        province="WrongProv", city="WrongCity")
+    assert updated.city_id == mashhad.id
+    assert updated.province == mashhad.province
+    assert updated.city == mashhad.name
+
+
+def test_update_same_inactive_city_preserves_snapshot(db, make_user):
+    """Retained inactive link keeps the stored snapshot untouched."""
+    user = make_user(role="user", balance_al=None)
+    city = City(name="PreserveSnapCity", province="PreserveSnapProv",
+                latitude=11.0, longitude=22.0, is_active=True)
+    db.add(city)
+    db.commit()
+    db.refresh(city)
+    addr = _make_addr(db, user["user_id"], postal_code="9999999904",
+                      city_id=city.id)
+    stored_province, stored_city = addr.province, addr.city
+    assert stored_province == "PreserveSnapProv"
+    db.query(City).filter(City.id == city.id).update({"is_active": False})
+    db.commit()
+    try:
+        updated = update_address(
+            db, user["user_id"], addr.id, city_id=city.id,
+            province="WrongProv", city="WrongCity")
+        assert updated.city_id == city.id
+        assert updated.province == stored_province
+        assert updated.city == stored_city
+    finally:
+        _cleanup_city(db, city)
+
+
+def test_crafted_post_cannot_break_snapshot(client, db, make_user):
+    """Inconsistent city_id/province/city POST is corrected server-side."""
+    me = make_user(role="user", balance_al=None)
+    login_as(client, me["national_code"])
+    city = _active_city(db)
+    addr = _make_addr(db, me["user_id"], postal_code="9999999905")
+
+    resp = client.post(
+        f"/profile/addresses/{addr.id}/update",
+        data=_addr_form(city_id=str(city.id), postal_code="9999999905") | {
+            "province": "HackedProv", "city": "HackedCity"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 302
+    db.expire_all()
+    row = db.query(EmployeeAddress).filter(
+        EmployeeAddress.id == addr.id).one()
+    assert row.city_id == city.id
+    assert row.province == city.province
+    assert row.city == city.name
+    assert "Hacked" not in (row.province + row.city)
