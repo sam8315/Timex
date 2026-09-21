@@ -199,6 +199,10 @@ def create_address(
 
     وقتی city_id انتخاب شده باشد، اسنپ‌شات متنی province/city از ردیف
     مرجع City ساخته می‌شود و مقادیر ارسالی ناسازگار نادیده گرفته می‌شود.
+
+    اگر آدرس جدید primary باشد، primary قبلی همین کاربر از حالت primary
+    خارج می‌شود؛ is_primary یعنی «اصلیِ فعلی» و historical بودن سطر قبلی
+    را تغییر نمی‌دهد (valid_from/valid_to آن دست نخورده می‌ماند).
     """
     _validate_user_exists(db, user_id)
     address_type = _validate_address_type(address_type)
@@ -364,7 +368,7 @@ def delete_address(db: Session, user_id: str, address_id: int) -> None:
 def set_primary_address(
     db: Session, user_id: str, address_id: int
 ) -> EmployeeAddress:
-    """تنظیم آدرس اصلی"""
+    """تنظیم آدرس اصلیِ فعلی (primary قبلی خلع می‌شود؛ تاریخچه آن حفظ می‌شود)"""
     _validate_user_exists(db, user_id)
     addr = _get_address_for_user(db, user_id, address_id)
 
@@ -382,7 +386,7 @@ def set_primary_address(
 def get_primary_address(
     db: Session, user_id: str
 ) -> Optional[EmployeeAddress]:
-    """دریافت آدرس اصلی کاربر"""
+    """دریافت آدرس اصلیِ فعلی کاربر (بدون توجه به بازه اعتبار)"""
     _validate_user_exists(db, user_id)
     return (
         db.query(EmployeeAddress)
@@ -407,6 +411,10 @@ def get_effective_home_address(
     در صورت نبود گزینه معتبر None برمی‌گرداند. اگر به‌طور غیرمنتظره
     بیش از یک ردیف شرط را داشته باشد (نقض ایندکس یکتایی)، هشدار ثبت
     و None برگردانده می‌شود تا حدس زده نشود.
+
+    توجه: primary بودن به‌تنهایی کافی نیست؛ پنجره اعتبار آدرس اصلی
+    نیز باید تاریخ درخواستی را پوشش دهد. سطرهای تاریخیِ غیراصلی هرگز
+    به‌صورت خودکار effective نمی‌شوند.
     """
     _validate_user_exists(db, user_id)
     matches = (

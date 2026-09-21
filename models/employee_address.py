@@ -3,6 +3,13 @@
 - پشتیبانی از چند آدرس برای هر کاربر (1:N)
 - امکان مشخص کردن یک آدرس اصلی (primary) به ازای هر کاربر
 - پشتیبانی از تاریخچه آدرس با valid_from / valid_to
+
+معناشناسی پرچم‌ها:
+- is_primary یعنی «آدرس اصلیِ فعلیِ کارمند»؛ یک پرچم تاریخی نیست و در هر
+  لحظه حداکثر یک آدرس برای هر کاربر می‌تواند is_primary=True داشته باشد
+  (ایندکس یکتای جزئی).
+- valid_from / valid_to بازه اعتبار/تاریخچه هر آدرس را مستقل از is_primary
+  توصیف می‌کنند؛ سطرهای تاریخی ملزم به primary ماندن نیستند.
 """
 from datetime import date
 from decimal import Decimal
@@ -74,7 +81,7 @@ class EmployeeAddress(TimestampMixin, Base):
     postal_code: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
     address: Mapped[str] = mapped_column(Text, nullable=False)
 
-    # آیا این آدرس اصلی است؟
+    # آدرس اصلیِ فعلی کارمند (نه پرچم تاریخی)؛ حداکثر یکی به ازای هر کاربر
     is_primary: Mapped[bool] = mapped_column(
         Boolean,
         default=False,
@@ -86,6 +93,7 @@ class EmployeeAddress(TimestampMixin, Base):
     gnaf_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     latitude: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 7), nullable=True)
     longitude: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 7), nullable=True)
+    # بازه اعتبار/تاریخچه؛ مستقل از is_primary (سطر تاریخی لازم نیست primary بماند)
     valid_from: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     valid_to: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

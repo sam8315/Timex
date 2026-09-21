@@ -766,3 +766,72 @@ def test_effective_duplicates_not_guessed(db, make_user, caplog):
             "uq_employee_address_primary_per_user "
             "ON employee_addresses (user_id) WHERE is_primary = true"))
         db.commit()
+
+
+# ---------------------------------------------------------------------------
+# is_primary vs validity semantics (documented, not historical flag)
+# ---------------------------------------------------------------------------
+
+def test_two_historical_non_primary_coexist(db, make_user):
+    """Two non-primary HOME rows with different ranges coexist."""
+    user = make_user(role="user", balance_al=None)
+    _create_addr(db, user["user_id"], postal_code="9999999921",
+                 is_primary=False,
+                 valid_from=date(2020, 1, 1), valid_to=date(2020, 12, 31))
+    second = _create_addr(db, user["user_id"], postal_code="9999999922",
+                           address_type="HOME", is_primary=False,
+                           valid_from=date(2021, 1, 1),
+                           valid_to=date(2021, 12, 31))
+    assert second.is_primary is False
+    assert db.query(EmployeeAddress).filter(
+        EmployeeAddress.user_id == user["user_id"]).count() == 2
+
+
+def test_exactly_one_primary_at_a_time(db, make_user):
+    """Service keeps a single is_primary=True per user."""
+    user = make_user(role="user", balance_al=None)
+    _create_addr(db, user["user_id"], postal_code="9999999923",
+                 is_primary=True)
+    _create_addr(db, user["user_id"], postal_code="9999999924",
+                 address_type="WORK", is_primary=True)
+    assert db.query(EmployeeAddress).filter(
+        EmployeeAddress.user_id == user["user_id"],
+        EmployeeAddress.is_primary == True).count() == 1
+
+
+def test_new_primary_keeps_history_dates(db, make_user):
+    """Replacing primary unsets the flag but keeps history dates."""
+    user = make_user(role="user", balance_al=None)
+    old = _create_addr(db, user["user_id"], postal_code="9999999925",
+                       is_primary=True,
+                       valid_from=date(2020, 1, 1),
+                       valid_to=date(2020, 12, 31))
+    new = _create_addr(db, user["user_id"], postal_code="9999999926",
+                       address_type="WORK", is_primary=True,
+                       valid_from=date(2024, 1, 1))
+
+    db.expire_all()
+    reloaded_old = db.query(EmployeeAddress).filter(
+        EmployeeAddress.id == old.id).one()
+    assert reloaded_old.is_primary is False
+    assert reloaded_old.valid_from == date(2020, 1, 1)
+    assert reloaded_old.valid_to == date(2020, 12, 31)
+    assert new.is_primary is True
+
+
+def test_historical_non_primary_never_effective(db, make_user):
+    """Non-primary history rows never become effective_home automatically."""
+    user = make_user(role="user", balance_al=None)
+    primary = _create_addr(db, user["user_id"], postal_code="9999999927",
+                           is_primary=True,
+                           valid_from=date(2020, 1, 1),
+                           valid_to=date(2020, 12, 31))
+    _create_addr(db, user["user_id"], postal_code="9999999928",
+                 is_primary=False,
+                 valid_from=date(2024, 1, 1),
+                 valid_to=date(2024, 12, 31))
+    # current primary only effective inside its own window
+    assert get_effective_home_address(
+        db, user["user_id"], date(2020, 6, 1)).id == primary.id
+    assert get_effective_home_address(
+        db, user["user_id"], date(2024, 6, 1)) is None
