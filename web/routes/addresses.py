@@ -4,6 +4,7 @@
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
+import jdatetime
 from fastapi import APIRouter, Request, Depends, Form, Query
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
@@ -36,13 +37,25 @@ def _parse_decimal(value: str):
 
 
 def _parse_date(value: str):
-    """تبدیل رشته به date"""
+    """تبدیل رشته تاریخ به date (میلادی ISO یا شمسی YYYY/MM/DD).
+
+    رشته خالی => None (فیلد اختیاری پاک می‌شود).
+    فرمت شمسی (حاوی /) => تبدیل به میلادی.
+    فرمت ISO (YYYY-MM-DD) => مستقیم.
+    """
     if not value or not value.strip():
         return None
+    text = value.strip()
+    # شمسی: 1405/06/30
+    if "/" in text:
+        try:
+            return jdatetime.datetime.strptime(text, "%Y/%m/%d").date().togregorian()
+        except ValueError:
+            raise AddressServiceError("فرمت تاریخ نامعتبر است (مثال: 1405/06/30)")
     try:
-        return date.fromisoformat(value.strip())
+        return date.fromisoformat(text)
     except ValueError:
-        raise AddressServiceError("فرمت تاریخ نامعتبر است (مثال: 2024-01-15)")
+        raise AddressServiceError("فرمت تاریخ نامعتبر است (مثال: 1405/06/30)")
 
 
 # ============================================
@@ -287,6 +300,7 @@ async def admin_update_address(
     district: str = Form(""),
     postal_code: str = Form(...),
     address_text: str = Form(...),
+    is_primary: bool = Form(False),
     latitude: str = Form(""),
     longitude: str = Form(""),
     valid_from: str = Form(""),
@@ -299,6 +313,8 @@ async def admin_update_address(
     """ویرایش آدرس کاربر (توسط ادمین)"""
     enforce_permission(db, user, 'edit_profile')
     try:
+        # فرم ویرایش همیشه همه فیلدها را ارسال می‌کند؛
+        # رشته خالی => پاک کردن فیلد اختیاری (None).
         update_address(
             db=db,
             user_id=target_user_id,
@@ -317,6 +333,8 @@ async def admin_update_address(
             notes=notes or None,
             gnaf_id=gnaf_id or None,
         )
+        if is_primary:
+            set_primary_address(db, target_user_id, address_id)
         return RedirectResponse(
             url=f"/admin/profile/{target_user_id}?success=آدرس با موفقیت ویرایش شد",
             status_code=302,

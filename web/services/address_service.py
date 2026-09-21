@@ -13,6 +13,12 @@ from models.employee_address import (
 )
 from models.user import User
 
+
+# ---------------------------------------------------------------------------
+# Sentinel: distinguishes "field not provided" from "explicitly set to None"
+# ---------------------------------------------------------------------------
+_UNSET = object()
+
 logger = logging.getLogger(__name__)
 
 
@@ -188,57 +194,61 @@ def update_address(
     db: Session,
     user_id: str,
     address_id: int,
-    address_type: Optional[str] = None,
-    residence_status: Optional[str] = None,
-    province: Optional[str] = None,
-    city: Optional[str] = None,
-    district: Optional[str] = None,
-    postal_code: Optional[str] = None,
-    address_text: Optional[str] = None,
-    latitude: Optional[Decimal] = None,
-    longitude: Optional[Decimal] = None,
-    valid_from: Optional[date] = None,
-    valid_to: Optional[date] = None,
-    notes: Optional[str] = None,
-    gnaf_id: Optional[str] = None,
+    address_type: Optional[str] = _UNSET,
+    residence_status: Optional[str] = _UNSET,
+    province: Optional[str] = _UNSET,
+    city: Optional[str] = _UNSET,
+    district: Optional[str] = _UNSET,
+    postal_code: Optional[str] = _UNSET,
+    address_text: Optional[str] = _UNSET,
+    latitude: Optional[Decimal] = _UNSET,
+    longitude: Optional[Decimal] = _UNSET,
+    valid_from: Optional[date] = _UNSET,
+    valid_to: Optional[date] = _UNSET,
+    notes: Optional[str] = _UNSET,
+    gnaf_id: Optional[str] = _UNSET,
 ) -> EmployeeAddress:
-    """ویرایش آدرس"""
+    """ویرایش آدرس
+
+    Param defaults use _UNSET sentinel so callers can:
+      - omit a param  => keep existing value
+      - pass None     => clear the field
+      - pass a value  => update the field
+    """
     _validate_user_exists(db, user_id)
     addr = _get_address_for_user(db, user_id, address_id)
 
-    if address_type is not None:
+    if address_type is not _UNSET:
         addr.address_type = _validate_address_type(address_type)
-    if residence_status is not None:
+    if residence_status is not _UNSET:
         addr.residence_status = _validate_residence_status(residence_status)
-    if postal_code is not None:
+    if postal_code is not _UNSET:
         addr.postal_code = _validate_postal_code(postal_code)
-    if latitude is not None or province is not None:
-        # Only validate latitude if explicitly changing it
-        if latitude is not None:
-            addr.latitude = _validate_latitude(latitude)
-    if longitude is not None:
+    if latitude is not _UNSET:
+        addr.latitude = _validate_latitude(latitude)
+    if longitude is not _UNSET:
         addr.longitude = _validate_longitude(longitude)
 
-    if valid_from is not None:
+    if valid_from is not _UNSET:
         addr.valid_from = valid_from
-    if valid_to is not None:
+    if valid_to is not _UNSET:
         addr.valid_to = valid_to
 
-    effective_from = valid_from if valid_from is not None else addr.valid_from
-    effective_to = valid_to if valid_to is not None else addr.valid_to
+    effective_from = valid_from if valid_from is not _UNSET else addr.valid_from
+    effective_to = valid_to if valid_to is not _UNSET else addr.valid_to
     _validate_date_range(effective_from, effective_to)
 
-    if province is not None:
-        addr.province = province.strip()
-    if city is not None:
-        addr.city = city.strip()
-    if district is not None:
+    if province is not _UNSET:
+        addr.province = province.strip() if province else None
+    if city is not _UNSET:
+        addr.city = city.strip() if city else None
+    if district is not _UNSET:
         addr.district = district.strip() if district else None
-    if address_text is not None:
-        addr.address = address_text.strip()
-    if notes is not None:
+    if address_text is not _UNSET:
+        addr.address = address_text.strip() if address_text else None
+    if notes is not _UNSET:
         addr.notes = notes.strip() if notes else None
-    if gnaf_id is not None:
+    if gnaf_id is not _UNSET:
         addr.gnaf_id = gnaf_id.strip() if gnaf_id else None
 
     db.commit()

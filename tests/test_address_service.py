@@ -28,6 +28,7 @@ from web.services.address_service import (
     delete_address,
     set_primary_address,
     get_primary_address,
+    _UNSET,
 )
 
 
@@ -485,3 +486,82 @@ def test_address_type_uppercase_normalization(db, make_user):
         address_text="test",
     )
     assert addr.address_type == "HOME"
+
+
+# ---------------------------------------------------------------------------
+# Sentinel: _UNSET vs None distinction
+# ---------------------------------------------------------------------------
+
+def test_update_unset_keeps_existing_value(db, make_user):
+    """Omitting a param (default _UNSET) keeps existing value."""
+    user = make_user(role="user", balance_al=None)
+    addr = _create_addr(db, user["user_id"], postal_code="1111111111", province="Tehran", district="Central")
+
+    updated = update_address(db, user["user_id"], addr.id)  # no params => all _UNSET
+    assert updated.province == "Tehran"
+    assert updated.district == "Central"
+    assert updated.postal_code == "1111111111"
+
+
+def test_update_none_clears_optional_field(db, make_user):
+    """Passing None explicitly clears an optional field."""
+    user = make_user(role="user", balance_al=None)
+    addr = _create_addr(db, user["user_id"], postal_code="1111111111", district="Central")
+
+    updated = update_address(db, user["user_id"], addr.id, district=None)
+    assert updated.district is None
+
+
+def test_update_none_clears_latitude_longitude(db, make_user):
+    """Passing None clears latitude/longitude."""
+    user = make_user(role="user", balance_al=None)
+    addr = _create_addr(db, user["user_id"], postal_code="1111111111", latitude=35.6892, longitude=51.3890)
+
+    updated = update_address(db, user["user_id"], addr.id, latitude=None, longitude=None)
+    assert updated.latitude is None
+    assert updated.longitude is None
+
+
+def test_update_none_clears_valid_dates(db, make_user):
+    """Passing None clears valid_from/valid_to."""
+    user = make_user(role="user", balance_al=None)
+    addr = _create_addr(db, user["user_id"], postal_code="1111111111",
+                        valid_from=date(2024, 1, 1), valid_to=date(2024, 12, 31))
+
+    updated = update_address(db, user["user_id"], addr.id, valid_from=None, valid_to=None)
+    assert updated.valid_from is None
+    assert updated.valid_to is None
+
+
+def test_update_none_clears_notes_gnaf(db, make_user):
+    """Passing None clears notes and gnaf_id."""
+    user = make_user(role="user", balance_al=None)
+    addr = _create_addr(db, user["user_id"], postal_code="1111111111", notes="Some note", gnaf_id="GNAF123")
+
+    updated = update_address(db, user["user_id"], addr.id, notes=None, gnaf_id=None)
+    assert updated.notes is None
+    assert updated.gnaf_id is None
+
+
+def test_update_value_overrides_unset(db, make_user):
+    """Passing an explicit value overrides the _UNSET default."""
+    user = make_user(role="user", balance_al=None)
+    addr = _create_addr(db, user["user_id"], postal_code="1111111111", province="Tehran")
+
+    updated = update_address(db, user["user_id"], addr.id, province="Isfahan")
+    assert updated.province == "Isfahan"
+    # Other fields unchanged
+    assert updated.city == "Tehran"
+    assert updated.postal_code == "1111111111"
+
+
+def test_update_keep_dates_when_not_passed(db, make_user):
+    """valid_from/valid_to keep existing values when not passed."""
+    user = make_user(role="user", balance_al=None)
+    addr = _create_addr(db, user["user_id"], postal_code="1111111111",
+                        valid_from=date(2024, 1, 1), valid_to=date(2024, 12, 31))
+
+    updated = update_address(db, user["user_id"], addr.id, province="Isfahan")
+    assert updated.valid_from == date(2024, 1, 1)
+    assert updated.valid_to == date(2024, 12, 31)
+    assert updated.province == "Isfahan"

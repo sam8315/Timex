@@ -1675,6 +1675,30 @@ async def admin_view_profile(
         EmployeePhone.user_id == target_user_id
     ).order_by(EmployeePhone.is_default.desc(), EmployeePhone.created_at).all()
 
+    # 🆕 دریافت آدرس‌های کاربر مورد نظر از طریق سرویس
+    from models.employee_address import ADDRESS_TYPES, RESIDENCE_STATUSES
+    from web.services.address_service import list_addresses
+    try:
+        target_addresses = list_addresses(db, target_user_id)
+    except Exception:
+        target_addresses = []
+    # تاریخ‌های شمسی برای نمایش در قالب
+    for addr in target_addresses:
+        try:
+            addr.valid_from_j = (
+                jdatetime.date.fromgregorian(date=addr.valid_from).strftime('%Y/%m/%d')
+                if addr.valid_from else ""
+            )
+        except Exception:
+            addr.valid_from_j = ""
+        try:
+            addr.valid_to_j = (
+                jdatetime.date.fromgregorian(date=addr.valid_to).strftime('%Y/%m/%d')
+                if addr.valid_to else ""
+            )
+        except Exception:
+            addr.valid_to_j = ""
+
     return templates.TemplateResponse(request, "admin/user_profile.html", {
         "user": user,
         "target_user": target_user,
@@ -1690,6 +1714,9 @@ async def admin_view_profile(
         "is_admin": True,
         "is_super_admin": user.is_super_admin,
         "target_phones": target_phones,
+        "target_addresses": target_addresses,
+        "address_types": ADDRESS_TYPES,
+        "residence_statuses": RESIDENCE_STATUSES,
     })
 
 
