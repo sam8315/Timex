@@ -186,6 +186,10 @@ with test_engine.connect() as _conn:
         ADD COLUMN IF NOT EXISTS start_time TIME,
         ADD COLUMN IF NOT EXISTS end_time TIME
     """))
+    _conn.execute(_sql_text("""
+        ALTER TABLE employee_addresses
+        ALTER COLUMN district DROP NOT NULL
+    """))
     _conn.commit()
 
 

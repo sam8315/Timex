@@ -70,7 +70,7 @@ class EmployeeAddress(TimestampMixin, Base):
     # اطلاعات آدرس
     province: Mapped[str] = mapped_column(String(100), nullable=False)
     city: Mapped[str] = mapped_column(String(100), nullable=False)
-    district: Mapped[str] = mapped_column(String(100), nullable=False)
+    district: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     postal_code: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
     address: Mapped[str] = mapped_column(Text, nullable=False)
 
