@@ -6,6 +6,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Optional, List
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from models.employee_address import (
@@ -391,3 +392,46 @@ def get_primary_address(
         )
         .first()
     )
+
+
+def get_effective_home_address(
+    db: Session, user_id: str, effective_date: date
+) -> Optional[EmployeeAddress]:
+    """آدرس HOME اصلیِ معتبر در یک تاریخ مشخص.
+
+    شرایط:
+      - address_type == HOME و is_primary == True
+      - valid_from خالی یا <= تاریخ
+      - valid_to خالی یا >= تاریخ
+
+    در صورت نبود گزینه معتبر None برمی‌گرداند. اگر به‌طور غیرمنتظره
+    بیش از یک ردیف شرط را داشته باشد (نقض ایندکس یکتایی)، هشدار ثبت
+    و None برگردانده می‌شود تا حدس زده نشود.
+    """
+    _validate_user_exists(db, user_id)
+    matches = (
+        db.query(EmployeeAddress)
+        .filter(
+            EmployeeAddress.user_id == user_id,
+            EmployeeAddress.address_type == "HOME",
+            EmployeeAddress.is_primary == True,
+            or_(
+                EmployeeAddress.valid_from == None,  # noqa: E711
+                EmployeeAddress.valid_from <= effective_date,
+            ),
+            or_(
+                EmployeeAddress.valid_to == None,  # noqa: E711
+                EmployeeAddress.valid_to >= effective_date,
+            ),
+        )
+        .order_by(EmployeeAddress.id.asc())
+        .all()
+    )
+    if len(matches) > 1:
+        logger.warning(
+            "Multiple effective primary HOME addresses for user %s "
+            "on %s; returning None instead of guessing",
+            user_id, effective_date,
+        )
+        return None
+    return matches[0] if matches else None

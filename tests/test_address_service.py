@@ -16,7 +16,10 @@ Covers:
 """
 from datetime import date
 
+import logging
+
 import pytest
+from sqlalchemy import text as sa_text
 
 from models.employee_address import EmployeeAddress
 from web.services.address_service import (
@@ -28,8 +31,11 @@ from web.services.address_service import (
     delete_address,
     set_primary_address,
     get_primary_address,
+    get_effective_home_address,
     _UNSET,
 )
+
+from .conftest import test_engine
 
 
 # ---------------------------------------------------------------------------
@@ -631,3 +637,132 @@ def test_update_optional_fields_still_clearable(db, make_user):
     assert updated.province == "Tehran"
     assert updated.city == "Tehran"
     assert updated.address == "خیابان آزادی، تهران"
+
+
+# ---------------------------------------------------------------------------
+# Effective primary HOME address for a given date
+# ---------------------------------------------------------------------------
+
+def test_effective_home_returned(db, make_user):
+    """In-range primary HOME is effective (boundaries inclusive)."""
+    user = make_user(role="user", balance_al=None)
+    addr = _create_addr(db, user["user_id"], postal_code="1111111111",
+                      is_primary=True,
+                      valid_from=date(2024, 1, 1),
+                      valid_to=date(2024, 12, 31))
+    assert get_effective_home_address(
+        db, user["user_id"], date(2024, 6, 15)).id == addr.id
+    assert get_effective_home_address(
+        db, user["user_id"], date(2024, 1, 1)).id == addr.id
+    assert get_effective_home_address(
+        db, user["user_id"], date(2024, 12, 31)).id == addr.id
+
+
+def test_effective_ignores_non_primary_home(db, make_user):
+    """Non-primary HOME is never effective."""
+    user = make_user(role="user", balance_al=None)
+    _create_addr(db, user["user_id"], postal_code="1111111111",
+               is_primary=False)
+    assert get_effective_home_address(
+        db, user["user_id"], date(2024, 6, 15)) is None
+
+
+def test_effective_ignores_work_primary(db, make_user):
+    """Primary of another type is ignored."""
+    user = make_user(role="user", balance_al=None)
+    _create_addr(db, user["user_id"], postal_code="1111111111",
+               address_type="WORK", is_primary=True)
+    assert get_effective_home_address(
+        db, user["user_id"], date(2024, 6, 15)) is None
+
+
+def test_effective_future_valid_from_ignored(db, make_user):
+    """valid_from after the date => not effective."""
+    user = make_user(role="user", balance_al=None)
+    _create_addr(db, user["user_id"], postal_code="1111111111",
+               is_primary=True, valid_from=date(2025, 1, 1))
+    assert get_effective_home_address(
+        db, user["user_id"], date(2024, 6, 15)) is None
+
+
+def test_effective_past_valid_to_ignored(db, make_user):
+    """valid_to before the date => not effective."""
+    user = make_user(role="user", balance_al=None)
+    _create_addr(db, user["user_id"], postal_code="1111111111",
+               is_primary=True, valid_to=date(2023, 12, 31))
+    assert get_effective_home_address(
+        db, user["user_id"], date(2024, 6, 15)) is None
+
+
+def test_effective_open_ended_validity(db, make_user):
+    """valid_from set + valid_to NULL covers later dates."""
+    user = make_user(role="user", balance_al=None)
+    addr = _create_addr(db, user["user_id"], postal_code="1111111111",
+                      is_primary=True, valid_from=date(2024, 1, 1))
+    assert get_effective_home_address(
+        db, user["user_id"], date(2030, 5, 5)).id == addr.id
+    assert get_effective_home_address(
+        db, user["user_id"], date(2023, 5, 5)) is None
+
+
+def test_effective_without_date_limits(db, make_user):
+    """Primary HOME with no dates is always effective."""
+    user = make_user(role="user", balance_al=None)
+    addr = _create_addr(db, user["user_id"], postal_code="1111111111",
+                      is_primary=True)
+    assert get_effective_home_address(
+        db, user["user_id"], date(1999, 1, 1)).id == addr.id
+    assert get_effective_home_address(
+        db, user["user_id"], date(2050, 1, 1)).id == addr.id
+
+
+def test_effective_nonexistent_user_raises(db):
+    """Unknown user raises AddressServiceError."""
+    with pytest.raises(AddressServiceError, match="کاربر یافت نشد"):
+        get_effective_home_address(db, "NONEXISTENT", date(2024, 6, 15))
+
+
+def test_effective_other_user_not_returned(db, make_user):
+    """User scoping: another user's HOME is never returned."""
+    me = make_user(role="user", balance_al=None)
+    other = make_user(role="user", balance_al=None)
+    _create_addr(db, other["user_id"], postal_code="2222222222",
+               is_primary=True)
+    assert get_effective_home_address(
+        db, me["user_id"], date(2024, 6, 15)) is None
+
+
+def test_effective_duplicates_not_guessed(db, make_user, caplog):
+    """Artificial duplicate primaries => warning + None (no guessing)."""
+    user = make_user(role="user", balance_al=None)
+    a1 = _create_addr(db, user["user_id"], postal_code="1111111111",
+                    is_primary=False)
+    a2 = _create_addr(db, user["user_id"], postal_code="2222222222",
+                    address_type="HOME", is_primary=False)
+    # NOTE: DDL runs on the same session/transaction to avoid
+    # self-deadlock with the session's idle transaction.
+    db.execute(sa_text(
+        "DROP INDEX IF EXISTS uq_employee_address_primary_per_user"))
+    db.commit()
+    try:
+        db.query(EmployeeAddress).filter(
+            EmployeeAddress.id.in_([a1.id, a2.id])).update(
+                {EmployeeAddress.is_primary: True},
+                synchronize_session=False)
+        db.commit()
+        with caplog.at_level(
+                logging.WARNING, logger="web.services.address_service"):
+            result = get_effective_home_address(
+                db, user["user_id"], date(2024, 6, 15))
+        assert result is None
+        assert "Multiple effective primary HOME" in caplog.text
+    finally:
+        db.query(EmployeeAddress).filter(
+            EmployeeAddress.id.in_([a1.id, a2.id])).delete(
+                synchronize_session=False)
+        db.commit()
+        db.execute(sa_text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS "
+            "uq_employee_address_primary_per_user "
+            "ON employee_addresses (user_id) WHERE is_primary = true"))
+        db.commit()

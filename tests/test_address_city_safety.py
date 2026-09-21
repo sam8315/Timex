@@ -97,6 +97,9 @@ def _addr_form(city_id="", postal_code="9000000001"):
 
 def test_migration_creates_index_and_fk_when_missing(db):
     """Dropped index/FK are recreated by the migration."""
+    # End any idle session transaction first: DDL on another connection
+    # would otherwise wait on the session's table locks (self-deadlock).
+    db.commit()
     with test_engine.connect() as conn:
         conn.execute(sa_text(
             'ALTER TABLE employee_addresses '
