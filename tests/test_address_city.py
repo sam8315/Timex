@@ -160,9 +160,9 @@ def test_update_omitted_preserves_city_id(db, make_user):
     addr = _make_addr(db, user["user_id"], postal_code="4444444444",
                       city_id=city.id)
 
-    updated = update_address(db, user["user_id"], addr.id, province="Fars")
+    updated = update_address(db, user["user_id"], addr.id, notes="n")
     assert updated.city_id == city.id
-    assert updated.province == "Fars"
+    assert updated.notes == "n"
 
 
 def test_update_none_clears_city_id(db, make_user):
@@ -455,3 +455,87 @@ def test_crafted_post_cannot_break_snapshot(client, db, make_user):
     assert row.province == city.province
     assert row.city == city.name
     assert "Hacked" not in (row.province + row.city)
+
+
+# ---------------------------------------------------------------------------
+# Omitted city_id never splits the linked snapshot
+# ---------------------------------------------------------------------------
+
+def test_omitted_city_id_ignores_conflicting_texts(db, make_user):
+    """Linked + omitted + conflicting texts => all three unchanged."""
+    user = make_user(role="user", balance_al=None)
+    city = _active_city(db)
+    addr = _make_addr(db, user["user_id"], postal_code="9999999911",
+                      city_id=city.id)
+
+    updated = update_address(
+        db, user["user_id"], addr.id,
+        province="WrongProv", city="WrongCity")
+    assert updated.city_id == city.id
+    assert updated.province == city.province
+    assert updated.city == city.name
+
+
+def test_omitted_city_id_inactive_link_unchanged(db, make_user):
+    """Inactive link + omitted + conflicting texts => all three unchanged."""
+    user = make_user(role="user", balance_al=None)
+    city = City(name="OmitSnapCity", province="OmitSnapProv",
+                latitude=13.0, longitude=24.0, is_active=True)
+    db.add(city)
+    db.commit()
+    db.refresh(city)
+    addr = _make_addr(db, user["user_id"], postal_code="9999999912",
+                      city_id=city.id)
+    stored = (addr.province, addr.city)
+    db.query(City).filter(City.id == city.id).update({"is_active": False})
+    db.commit()
+    try:
+        updated = update_address(
+            db, user["user_id"], addr.id,
+            province="WrongProv", city="WrongCity")
+        assert updated.city_id == city.id
+        assert (updated.province, updated.city) == stored
+    finally:
+        _cleanup_city(db, city)
+
+
+def test_omitted_city_id_null_link_updates_manual(db, make_user):
+    """NULL link + omitted + valid texts => manual snapshot updated."""
+    user = make_user(role="user", balance_al=None)
+    addr = _make_addr(db, user["user_id"], postal_code="9999999913")
+
+    updated = update_address(
+        db, user["user_id"], addr.id,
+        province="Gilan", city="Rasht")
+    assert updated.city_id is None
+    assert updated.province == "Gilan"
+    assert updated.city == "Rasht"
+
+
+def test_omitted_city_id_with_empty_texts_no_failure(db, make_user):
+    """Linked + omitted + empty texts => snapshot kept, no error."""
+    user = make_user(role="user", balance_al=None)
+    city = _active_city(db)
+    addr = _make_addr(db, user["user_id"], postal_code="9999999914",
+                      city_id=city.id)
+
+    updated = update_address(
+        db, user["user_id"], addr.id, province="", city=None)
+    assert updated.city_id == city.id
+    assert updated.province == city.province
+    assert updated.city == city.name
+
+
+def test_explicit_none_then_manual_snapshot(db, make_user):
+    """Explicit None clears the link; submitted texts become the snapshot."""
+    user = make_user(role="user", balance_al=None)
+    city = _active_city(db)
+    addr = _make_addr(db, user["user_id"], postal_code="9999999915",
+                      city_id=city.id)
+
+    updated = update_address(
+        db, user["user_id"], addr.id, city_id=None,
+        province="Gilan", city="Rasht")
+    assert updated.city_id is None
+    assert updated.province == "Gilan"
+    assert updated.city == "Rasht"

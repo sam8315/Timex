@@ -278,7 +278,9 @@ def update_address(
     When city_id selects a new/changed active city, the province/city
     snapshot is rebuilt from the City master row; conflicting submitted
     values are ignored. Retaining the same inactive link preserves the
-    stored snapshot untouched.
+    stored snapshot untouched. With city_id omitted, a linked address
+    keeps city_id/province/city unchanged and submitted province/city
+    values are ignored.
     """
     _validate_user_exists(db, user_id)
     addr = _get_address_for_user(db, user_id, address_id)
@@ -304,7 +306,10 @@ def update_address(
     _validate_date_range(effective_from, effective_to)
 
     refresh_master = None
-    preserve_snapshot = False
+    # A linked snapshot is authoritative: with city_id omitted, a linked
+    # address keeps city_id/province/city untouched and submitted
+    # province/city values are ignored (never partially overwritten).
+    preserve_snapshot = city_id is _UNSET and addr.city_id is not None
     if city_id is not _UNSET:
         if city_id is None:
             addr.city_id = None
