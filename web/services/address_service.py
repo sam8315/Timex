@@ -62,6 +62,16 @@ def _validate_postal_code(postal_code: str) -> str:
     return normalized
 
 
+def _validate_required_text(value, field_label: str) -> str:
+    """اعتبارسنجی فیلد متنی الزامی (مطابق NOT NULL دیتابیس).
+
+    None یا رشته خالی/فقط-فاصله پذیرفته نیست.
+    """
+    if value is None or not str(value).strip():
+        raise AddressServiceError(f"{field_label} نمی‌تواند خالی باشد")
+    return str(value).strip()
+
+
 def _validate_latitude(value: Optional[Decimal]) -> Optional[Decimal]:
     """اعتبارسنجی عرض جغرافیایی"""
     if value is None:
@@ -213,11 +223,11 @@ def create_address(
         user_id=user_id,
         address_type=address_type,
         residence_status=residence_status,
-        province=province.strip(),
-        city=city.strip(),
+        province=_validate_required_text(province, "استان"),
+        city=_validate_required_text(city, "شهر"),
         district=district.strip() if district else None,
         postal_code=postal_code,
-        address=address_text.strip(),
+        address=_validate_required_text(address_text, "آدرس کامل"),
         is_primary=is_primary,
         latitude=latitude,
         longitude=longitude,
@@ -256,8 +266,11 @@ def update_address(
 
     Param defaults use _UNSET sentinel so callers can:
       - omit a param  => keep existing value
-      - pass None     => clear the field
+      - pass None     => clear the field (optional fields only)
       - pass a value  => update the field
+
+    Required fields (province, city, address_text) never accept None
+    or empty/whitespace — matching the database NOT NULL rules.
     """
     _validate_user_exists(db, user_id)
     addr = _get_address_for_user(db, user_id, address_id)
@@ -283,13 +296,13 @@ def update_address(
     _validate_date_range(effective_from, effective_to)
 
     if province is not _UNSET:
-        addr.province = province.strip() if province else None
+        addr.province = _validate_required_text(province, "استان")
     if city is not _UNSET:
-        addr.city = city.strip() if city else None
+        addr.city = _validate_required_text(city, "شهر")
     if district is not _UNSET:
         addr.district = district.strip() if district else None
     if address_text is not _UNSET:
-        addr.address = address_text.strip() if address_text else None
+        addr.address = _validate_required_text(address_text, "آدرس کامل")
     if notes is not _UNSET:
         addr.notes = notes.strip() if notes else None
     if gnaf_id is not _UNSET:

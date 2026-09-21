@@ -565,3 +565,69 @@ def test_update_keep_dates_when_not_passed(db, make_user):
     assert updated.valid_from == date(2024, 1, 1)
     assert updated.valid_to == date(2024, 12, 31)
     assert updated.province == "Isfahan"
+
+
+# ---------------------------------------------------------------------------
+# Required fields (province / city / address_text match NOT NULL rules)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("field,label", [
+    ("province", "استان"),
+    ("city", "شهر"),
+    ("address_text", "آدرس کامل"),
+])
+@pytest.mark.parametrize("bad", [None, "", "   "])
+def test_create_rejects_empty_required_field(db, make_user, field, label, bad):
+    """create rejects None/empty/whitespace for required fields."""
+    user = make_user(role="user", balance_al=None)
+    with pytest.raises(AddressServiceError, match=label):
+        _create_addr(db, user["user_id"], **{field: bad})
+
+
+@pytest.mark.parametrize("field", ["province", "city", "address_text"])
+@pytest.mark.parametrize("bad", [None, "", "   "])
+def test_update_rejects_empty_required_field(db, make_user, field, bad):
+    """update rejects None/empty for required fields; old value kept."""
+    user = make_user(role="user", balance_al=None)
+    addr = _create_addr(db, user["user_id"], postal_code="1111111111")
+    with pytest.raises(AddressServiceError):
+        update_address(db, user["user_id"], addr.id, **{field: bad})
+    db.expire_all()
+    kept = db.query(EmployeeAddress).filter(
+        EmployeeAddress.id == addr.id).one()
+    assert kept.province == "Tehran"
+    assert kept.city == "Tehran"
+    assert kept.address == "خیابان آزادی، تهران"
+
+
+def test_update_omitted_required_fields_preserved(db, make_user):
+    """Omitting required fields keeps existing values."""
+    user = make_user(role="user", balance_al=None)
+    addr = _create_addr(db, user["user_id"], postal_code="1111111111",
+                        province="Fars", city="Shiraz",
+                        address_text="نشانی ثابت")
+
+    updated = update_address(db, user["user_id"], addr.id, notes="new note")
+    assert updated.province == "Fars"
+    assert updated.city == "Shiraz"
+    assert updated.address == "نشانی ثابت"
+    assert updated.notes == "new note"
+
+
+def test_update_optional_fields_still_clearable(db, make_user):
+    """Optional clearing behavior is unchanged by required validation."""
+    user = make_user(role="user", balance_al=None)
+    addr = _create_addr(
+        db, user["user_id"], postal_code="1111111111",
+        district="Markazi", notes="note", gnaf_id="G1")
+
+    updated = update_address(
+        db, user["user_id"], addr.id,
+        district=None, notes="", gnaf_id=None)
+    assert updated.district is None
+    assert updated.notes is None
+    assert updated.gnaf_id is None
+    # required snapshots untouched
+    assert updated.province == "Tehran"
+    assert updated.city == "Tehran"
+    assert updated.address == "خیابان آزادی، تهران"
