@@ -1,5 +1,12 @@
 {% extends "base.html" %}
 {% block title %}پروفایل {{ employee.full_name if employee else target_user.name }} | مدیریت{% endblock %}
+{% block extra_css %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+    .address-map { height: 300px; border-radius: 12px; z-index: 0; }
+    @media (max-width: 576px) { .address-map { height: 260px; } }
+</style>
+{% endblock %}
 {% block content %}
 
 <!-- پیام‌های موفقیت -->
@@ -643,13 +650,24 @@
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">عرض جغرافیایی</label>
-                            <input type="text" name="latitude" class="form-control" dir="ltr"
+                            <input type="text" id="adminAddLat" name="latitude" class="form-control" dir="ltr"
                                    placeholder="مثال: 35.6892" inputmode="decimal">
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">طول جغرافیایی</label>
-                            <input type="text" name="longitude" class="form-control" dir="ltr"
+                            <input type="text" id="adminAddLng" name="longitude" class="form-control" dir="ltr"
                                    placeholder="مثال: 51.3890" inputmode="decimal">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">انتخاب موقعیت روی نقشه</label>
+                            <div id="adminAddMap" class="address-map"></div>
+                            <small class="text-muted d-block mt-1">برای ثبت موقعیت، روی نقشه کلیک کنید یا نشانگر را جابه‌جا کنید.</small>
+                            <div class="d-flex flex-wrap gap-2 mt-2 align-items-center">
+                                <button type="button" class="btn btn-outline-primary btn-sm" id="adminAddGeo">
+                                    <i class="bi bi-crosshair"></i> استفاده از موقعیت فعلی
+                                </button>
+                                <small class="text-danger" id="adminAddMsg"></small>
+                            </div>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">از تاریخ</label>
@@ -750,13 +768,24 @@
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">عرض جغرافیایی</label>
-                            <input type="text" name="latitude" class="form-control" dir="ltr"
+                            <input type="text" id="adminEditLat-{{ addr.id }}" name="latitude" class="form-control" dir="ltr"
                                    placeholder="مثال: 35.6892" inputmode="decimal" value="{{ addr.latitude if addr.latitude is not none else '' }}">
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">طول جغرافیایی</label>
-                            <input type="text" name="longitude" class="form-control" dir="ltr"
+                            <input type="text" id="adminEditLng-{{ addr.id }}" name="longitude" class="form-control" dir="ltr"
                                    placeholder="مثال: 51.3890" inputmode="decimal" value="{{ addr.longitude if addr.longitude is not none else '' }}">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">انتخاب موقعیت روی نقشه</label>
+                            <div id="adminEditMap-{{ addr.id }}" class="address-map"></div>
+                            <small class="text-muted d-block mt-1">برای ثبت موقعیت، روی نقشه کلیک کنید یا نشانگر را جابه‌جا کنید.</small>
+                            <div class="d-flex flex-wrap gap-2 mt-2 align-items-center">
+                                <button type="button" class="btn btn-outline-primary btn-sm" id="adminEditGeo-{{ addr.id }}">
+                                    <i class="bi bi-crosshair"></i> استفاده از موقعیت فعلی
+                                </button>
+                                <small class="text-danger" id="adminEditMsg-{{ addr.id }}"></small>
+                            </div>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">از تاریخ</label>
@@ -809,4 +838,27 @@
 </div>
 {% endif %}
 
+{% endblock %}
+{% block extra_js %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="/static/js/address_map.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    if (!window.TimexAddressMap) return;
+    TimexAddressMap.bindPicker({
+        modalId: 'adminAddAddressModal', mapId: 'adminAddMap',
+        latId: 'adminAddLat', lngId: 'adminAddLng',
+        geoId: 'adminAddGeo', msgId: 'adminAddMsg'
+    });
+    {% if target_addresses %}
+    {% for addr in target_addresses %}
+    TimexAddressMap.bindPicker({
+        modalId: 'adminEditAddressModal-{{ addr.id }}', mapId: 'adminEditMap-{{ addr.id }}',
+        latId: 'adminEditLat-{{ addr.id }}', lngId: 'adminEditLng-{{ addr.id }}',
+        geoId: 'adminEditGeo-{{ addr.id }}', msgId: 'adminEditMsg-{{ addr.id }}'
+    });
+    {% endfor %}
+    {% endif %}
+});
+</script>
 {% endblock %}
