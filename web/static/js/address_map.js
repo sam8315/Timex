@@ -184,3 +184,23 @@ var TimexAddressMap = (function () {
 
     return { bindPicker: bindPicker };
 })();
+
+/* همگام‌سازی متن شهر/استان با انتخاب شهر مرجع (بدون دست‌کاری مختصات)
+ *
+ * - انتخاب شهر => متن شهر با نام شهر مرجع همگام می‌شود (اقدام صریح کاربر)
+ * - استان فقط وقتی پر می‌شود که خالی باشد (مقدار دستی حفظ می‌شود)
+ * - انتخاب گزینه خالی => متن‌های موجود دست نمی‌خورند
+ */
+function timexSyncCity(sel) {
+    if (!sel) return;
+    var opt = sel.options[sel.selectedIndex];
+    if (!opt || !opt.value) return;
+    var cityInput = document.getElementById(sel.getAttribute('data-city-target'));
+    var provInput = document.getElementById(sel.getAttribute('data-province-target'));
+    var name = opt.getAttribute('data-name');
+    var province = opt.getAttribute('data-province');
+    if (cityInput && name) cityInput.value = name;
+    if (provInput && province && String(provInput.value).trim() === '') {
+        provInput.value = province;
+    }
+}

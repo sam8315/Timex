@@ -58,6 +58,16 @@ def _parse_date(value: str):
         raise AddressServiceError("فرمت تاریخ نامعتبر است (مثال: 1405/06/30)")
 
 
+def _parse_city_id(value: str):
+    """تبدیل رشته شناسه شهر به int؛ رشته خالی => None (بدون ارتباط)."""
+    if value is None or not str(value).strip():
+        return None
+    try:
+        return int(str(value).strip())
+    except ValueError:
+        raise AddressServiceError("شناسه شهر نامعتبر است")
+
+
 # ============================================
 # بخش کاربر - مدیریت آدرس‌های خود
 # ============================================
@@ -79,6 +89,7 @@ async def add_address(
     valid_to: str = Form(""),
     notes: str = Form(""),
     gnaf_id: str = Form(""),
+    city_id: str = Form(""),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -101,6 +112,7 @@ async def add_address(
             valid_to=_parse_date(valid_to),
             notes=notes or None,
             gnaf_id=gnaf_id or None,
+            city_id=_parse_city_id(city_id),
         )
         return RedirectResponse(
             url="/profile?success=آدرس با موفقیت اضافه شد",
@@ -188,6 +200,7 @@ async def update_own_address(
     valid_to: str = Form(""),
     notes: str = Form(""),
     gnaf_id: str = Form(""),
+    city_id: str = Form(""),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -210,6 +223,7 @@ async def update_own_address(
             valid_to=_parse_date(valid_to),
             notes=notes or None,
             gnaf_id=gnaf_id or None,
+            city_id=_parse_city_id(city_id),
         )
         if is_primary:
             set_primary_address(db, user.user_id, address_id)
@@ -251,6 +265,7 @@ async def admin_add_address(
     valid_to: str = Form(""),
     notes: str = Form(""),
     gnaf_id: str = Form(""),
+    city_id: str = Form(""),
     user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
@@ -274,6 +289,7 @@ async def admin_add_address(
             valid_to=_parse_date(valid_to),
             notes=notes or None,
             gnaf_id=gnaf_id or None,
+            city_id=_parse_city_id(city_id),
         )
         return RedirectResponse(
             url=f"/admin/profile/{target_user_id}?success=آدرس با موفقیت اضافه شد",
@@ -366,6 +382,7 @@ async def admin_update_address(
     valid_to: str = Form(""),
     notes: str = Form(""),
     gnaf_id: str = Form(""),
+    city_id: str = Form(""),
     user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
@@ -391,6 +408,7 @@ async def admin_update_address(
             valid_to=_parse_date(valid_to),
             notes=notes or None,
             gnaf_id=gnaf_id or None,
+            city_id=_parse_city_id(city_id),
         )
         if is_primary:
             set_primary_address(db, target_user_id, address_id)

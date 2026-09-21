@@ -190,6 +190,28 @@ with test_engine.connect() as _conn:
         ALTER TABLE employee_addresses
         ALTER COLUMN district DROP NOT NULL
     """))
+    _conn.execute(_sql_text("""
+        ALTER TABLE employee_addresses
+        ADD COLUMN IF NOT EXISTS city_id INTEGER
+    """))
+    _conn.execute(_sql_text("""
+        CREATE INDEX IF NOT EXISTS ix_employee_addresses_city_id
+        ON employee_addresses (city_id)
+    """))
+    _conn.execute(_sql_text("""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'employee_addresses_city_id_fkey'
+            ) THEN
+                ALTER TABLE employee_addresses
+                ADD CONSTRAINT employee_addresses_city_id_fkey
+                FOREIGN KEY (city_id) REFERENCES cities(id) ON DELETE RESTRICT;
+            END IF;
+        END
+        $$;
+    """))
     _conn.commit()
 
 

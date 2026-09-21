@@ -458,13 +458,23 @@
                                 <option value="unknown">نامشخص</option>
                             </select>
                         </div>
+                        <div class="col-12">
+                            <label class="form-label">شهر مرجع (ساخت‌یافته)</label>
+                            <select name="city_id" class="form-select" data-city-target="userAddCity" data-province-target="userAddProvince" onchange="timexSyncCity(this)">
+                                <option value="">— بدون ارتباط (دستی) —</option>
+                                {% for c in cities %}
+                                <option value="{{ c.id }}" data-name="{{ c.name }}" data-province="{{ c.province or '' }}">{{ c.province }} — {{ c.name }}</option>
+                                {% endfor %}
+                            </select>
+                            <small class="text-muted">انتخاب شهر، نام شهر را همگام می‌کند؛ مختصات تغییر نمی‌کند.</small>
+                        </div>
                         <div class="col-md-4">
                             <label class="form-label">استان <span class="text-danger">*</span></label>
-                            <input type="text" name="province" class="form-control" required maxlength="100">
+                            <input type="text" id="userAddProvince" name="province" class="form-control" required maxlength="100">
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">شهر <span class="text-danger">*</span></label>
-                            <input type="text" name="city" class="form-control" required maxlength="100">
+                            <input type="text" id="userAddCity" name="city" class="form-control" required maxlength="100">
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">شهرستان/منطقه</label>
@@ -576,13 +586,23 @@
                                 <option value="unknown" {% if addr.residence_status == 'unknown' %}selected{% endif %}>نامشخص</option>
                             </select>
                         </div>
+                        <div class="col-12">
+                            <label class="form-label">شهر مرجع (ساخت‌یافته)</label>
+                            <select name="city_id" class="form-select" data-city-target="userEditCity-{{ addr.id }}" data-province-target="userEditProvince-{{ addr.id }}" onchange="timexSyncCity(this)">
+                                <option value="">— بدون ارتباط (دستی) —</option>
+                                {% for c in cities %}
+                                <option value="{{ c.id }}" data-name="{{ c.name }}" data-province="{{ c.province or '' }}"{% if addr.city_id == c.id %} selected{% endif %}>{{ c.province }} — {{ c.name }}</option>
+                                {% endfor %}
+                            </select>
+                            <small class="text-muted">انتخاب شهر، نام شهر را همگام می‌کند؛ مختصات تغییر نمی‌کند.</small>
+                        </div>
                         <div class="col-md-4">
                             <label class="form-label">استان <span class="text-danger">*</span></label>
-                            <input type="text" name="province" class="form-control" required maxlength="100" value="{{ addr.province }}">
+                            <input type="text" id="userEditProvince-{{ addr.id }}" name="province" class="form-control" required maxlength="100" value="{{ addr.province }}">
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">شهر <span class="text-danger">*</span></label>
-                            <input type="text" name="city" class="form-control" required maxlength="100" value="{{ addr.city }}">
+                            <input type="text" id="userEditCity-{{ addr.id }}" name="city" class="form-control" required maxlength="100" value="{{ addr.city }}">
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">شهرستان/منطقه</label>

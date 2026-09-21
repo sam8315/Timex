@@ -101,6 +101,23 @@ def _validate_date_range(
             )
 
 
+def _validate_city_id(db: Session, city_id) -> Optional[int]:
+    """اعتبارسنجی مرجع شهر (اختیاری؛ فقط شهر فعال قابل انتخاب است)"""
+    if city_id is None:
+        return None
+    try:
+        cid = int(city_id)
+    except (TypeError, ValueError):
+        raise AddressServiceError("شناسه شهر نامعتبر است")
+    from models.city import City
+    city = db.query(City).filter(City.id == cid).first()
+    if not city:
+        raise AddressServiceError("شهر یافت نشد")
+    if not city.is_active:
+        raise AddressServiceError("شهر غیرفعال است و قابل انتخاب نیست")
+    return cid
+
+
 def _get_address_for_user(
     db: Session, user_id: str, address_id: int
 ) -> EmployeeAddress:
@@ -151,6 +168,7 @@ def create_address(
     valid_to: Optional[date] = None,
     notes: Optional[str] = None,
     gnaf_id: Optional[str] = None,
+    city_id: Optional[int] = None,
 ) -> EmployeeAddress:
     """ایجاد آدرس جدید"""
     _validate_user_exists(db, user_id)
@@ -160,6 +178,7 @@ def create_address(
     latitude = _validate_latitude(latitude)
     longitude = _validate_longitude(longitude)
     _validate_date_range(valid_from, valid_to)
+    city_id = _validate_city_id(db, city_id)
 
     if is_primary:
         db.query(EmployeeAddress).filter(
@@ -183,6 +202,7 @@ def create_address(
         valid_to=valid_to,
         notes=notes.strip() if notes else None,
         gnaf_id=gnaf_id.strip() if gnaf_id else None,
+        city_id=city_id,
     )
     db.add(new_addr)
     db.commit()
@@ -207,6 +227,7 @@ def update_address(
     valid_to: Optional[date] = _UNSET,
     notes: Optional[str] = _UNSET,
     gnaf_id: Optional[str] = _UNSET,
+    city_id: Optional[int] = _UNSET,
 ) -> EmployeeAddress:
     """ویرایش آدرس
 
@@ -250,6 +271,8 @@ def update_address(
         addr.notes = notes.strip() if notes else None
     if gnaf_id is not _UNSET:
         addr.gnaf_id = gnaf_id.strip() if gnaf_id else None
+    if city_id is not _UNSET:
+        addr.city_id = _validate_city_id(db, city_id)
 
     db.commit()
     db.refresh(addr)

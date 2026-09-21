@@ -90,8 +90,18 @@ class EmployeeAddress(TimestampMixin, Base):
     valid_to: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
+    # مرجع ساخت‌یافته شهر (master data) — اختیاری؛ متن‌ها snapshot می‌مانند
+    # همانند employee_service_locations؛ حذف شهرِ ارجاع‌شده ممنوع است
+    city_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("cities.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True
+    )
+
     # Relationships
     user = relationship("User", backref="addresses")
+    city_ref = relationship("City")
 
     # Constraints
     __table_args__ = (
@@ -166,6 +176,7 @@ class EmployeeAddress(TimestampMixin, Base):
             'residence_status_name': self.residence_status_name,
             'province': self.province,
             'city': self.city,
+            'city_id': self.city_id,
             'district': self.district,
             'postal_code': self.postal_code,
             'address': self.address,

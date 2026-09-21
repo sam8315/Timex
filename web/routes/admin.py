@@ -1679,8 +1679,11 @@ async def admin_view_profile(
     ).order_by(EmployeePhone.is_default.desc(), EmployeePhone.created_at).all()
 
     # 🆕 دریافت آدرس‌های کاربر مورد نظر از طریق سرویس
+    from models.city import City
     from models.employee_address import ADDRESS_TYPES, RESIDENCE_STATUSES
     from web.services.address_service import list_addresses
+    cities = db.query(City).filter(City.is_active == True).order_by(
+        City.province, City.name).all()
     addresses_error = None
     try:
         target_addresses = list_addresses(db, target_user_id)
@@ -1724,6 +1727,7 @@ async def admin_view_profile(
         "addresses_error": addresses_error,
         "address_types": ADDRESS_TYPES,
         "residence_statuses": RESIDENCE_STATUSES,
+        "cities": cities,
     })
 
 

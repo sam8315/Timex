@@ -109,8 +109,11 @@ async def profile_page(
     ).order_by(EmployeePhone.is_default.desc(), EmployeePhone.created_at).all()
 
     # 🆕 دریافت آدرس‌های کاربر از طریق سرویس
+    from models.city import City
     from web.services.address_service import list_addresses
     addresses = list_addresses(db, user.user_id)
+    cities = db.query(City).filter(City.is_active == True).order_by(
+        City.province, City.name).all()
     # تاریخ‌های شمسی برای نمایش در قالب (مشابه پنل ادمین)
     for addr in addresses:
         try:
@@ -144,4 +147,5 @@ async def profile_page(
         "last_login_display": last_login_display,
         "phones": phones,
         "addresses": addresses,
+        "cities": cities,
     })
