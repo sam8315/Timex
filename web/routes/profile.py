@@ -108,6 +108,26 @@ async def profile_page(
         EmployeePhone.user_id == user.user_id
     ).order_by(EmployeePhone.is_default.desc(), EmployeePhone.created_at).all()
 
+    # 🆕 دریافت آدرس‌های کاربر از طریق سرویس
+    from web.services.address_service import list_addresses
+    addresses = list_addresses(db, user.user_id)
+    # تاریخ‌های شمسی برای نمایش در قالب (مشابه پنل ادمین)
+    for addr in addresses:
+        try:
+            addr.valid_from_j = (
+                jdatetime.date.fromgregorian(date=addr.valid_from).strftime('%Y/%m/%d')
+                if addr.valid_from else ""
+            )
+        except Exception:
+            addr.valid_from_j = ""
+        try:
+            addr.valid_to_j = (
+                jdatetime.date.fromgregorian(date=addr.valid_to).strftime('%Y/%m/%d')
+                if addr.valid_to else ""
+            )
+        except Exception:
+            addr.valid_to_j = ""
+
     return templates.TemplateResponse(request, "profile.html", {
         "user": user,
         "employee": employee,
@@ -123,4 +143,5 @@ async def profile_page(
         "photo_path": employee.photo_path if employee else None,
         "last_login_display": last_login_display,
         "phones": phones,
+        "addresses": addresses,
     })

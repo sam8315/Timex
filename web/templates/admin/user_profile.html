@@ -70,6 +70,12 @@
     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
 </div>
 {% endif %}
+{% if request.query_params.get('success') %}
+<div class="alert alert-success alert-dismissible fade show">
+    <i class="bi bi-check-circle"></i> {{ request.query_params.get('success') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
 <!-- هدر -->
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h4>
@@ -498,6 +504,11 @@
         </button>
     </div>
     <div class="card-body">
+        {% if addresses_error %}
+        <div class="alert alert-danger">
+            <i class="bi bi-exclamation-triangle"></i> {{ addresses_error }}
+        </div>
+        {% endif %}
         {% if target_addresses %}
         <div class="list-group">
             {% for addr in target_addresses %}

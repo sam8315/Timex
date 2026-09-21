@@ -2,6 +2,19 @@
 {% block title %}پروفایل من{% endblock %}
 {% block content %}
 
+{% if request.query_params.get('success') %}
+<div class="alert alert-success alert-dismissible fade show">
+    <i class="bi bi-check-circle"></i> {{ request.query_params.get('success') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+{% if request.query_params.get('error') %}
+<div class="alert alert-danger alert-dismissible fade show">
+    <i class="bi bi-exclamation-triangle"></i> {{ request.query_params.get('error') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
 <!-- هدر پروفایل -->
 <div class="card mb-4 overflow-hidden">
     <div class="card-body p-0">
@@ -322,6 +335,303 @@
         {% endif %}
     </div>
 </div>
+
+    <!-- 🆕 بخش آدرس‌های من -->
+<div class="card mb-4">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h6 class="mb-0"><i class="bi bi-geo-alt"></i> آدرس‌های من</h6>
+        <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#addAddressModal">
+            <i class="bi bi-plus-circle"></i> افزودن آدرس
+        </button>
+    </div>
+    <div class="card-body">
+        {% if addresses %}
+        <div class="list-group">
+            {% for addr in addresses %}
+            <div class="list-group-item">
+                <div class="d-flex justify-content-between align-items-start gap-2">
+                    <div class="flex-grow-1" style="min-width: 0;">
+                        <div class="mb-1">
+                            <i class="bi bi-house text-primary"></i>
+                            {% if addr.address_type == 'HOME' %}<span class="badge bg-secondary ms-1">منزل</span>
+                            {% elif addr.address_type == 'WORK' %}<span class="badge bg-secondary ms-1">محل کار</span>
+                            {% elif addr.address_type == 'MAILING' %}<span class="badge bg-secondary ms-1">پستی</span>
+                            {% else %}<span class="badge bg-secondary ms-1">سایر</span>{% endif %}
+                            {% if addr.residence_status == 'owner' %}<span class="badge bg-info ms-1">مالک</span>
+                            {% elif addr.residence_status == 'tenant' %}<span class="badge bg-info ms-1">مستأجر</span>
+                            {% elif addr.residence_status == 'family' %}<span class="badge bg-info ms-1">منزل خانواده/پدری</span>
+                            {% elif addr.residence_status == 'org_housing' %}<span class="badge bg-info ms-1">مسکن سازمانی</span>
+                            {% elif addr.residence_status == 'provided' %}<span class="badge bg-info ms-1">رایگان/در اختیار</span>
+                            {% elif addr.residence_status == 'other' %}<span class="badge bg-info ms-1">سایر</span>
+                            {% else %}<span class="badge bg-info ms-1">نامشخص</span>{% endif %}
+                            {% if addr.is_primary %}
+                            <span class="badge bg-primary ms-1">⭐ اصلی</span>
+                            {% endif %}
+                        </div>
+                        <div class="small text-muted">
+                            {{ addr.province }}، {{ addr.city }}{% if addr.district %}، {{ addr.district }}{% endif %}
+                            | کد پستی: <span dir="ltr">{{ addr.postal_code }}</span>
+                        </div>
+                        <div class="mt-1 text-break" style="max-width: 100%;">{{ addr.address }}</div>
+                        {% if addr.latitude is not none and addr.longitude is not none %}
+                        <div class="small text-muted mt-1">
+                            <i class="bi bi-pin-map"></i>
+                            <span dir="ltr">{{ addr.latitude }}، {{ addr.longitude }}</span>
+                        </div>
+                        {% endif %}
+                        {% if addr.valid_from_j or addr.valid_to_j %}
+                        <div class="small text-muted mt-1">
+                            <i class="bi bi-calendar-range"></i>
+                            {% if addr.valid_from_j %}از {{ addr.valid_from_j }}{% endif %}
+                            {% if addr.valid_to_j %} تا {{ addr.valid_to_j }}{% endif %}
+                        </div>
+                        {% endif %}
+                    </div>
+                    <div class="btn-group btn-group-sm flex-shrink-0">
+                        <button type="button" class="btn btn-outline-secondary" title="ویرایش"
+                                data-bs-toggle="modal" data-bs-target="#editAddressModal-{{ addr.id }}">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                        {% if not addr.is_primary %}
+                        <form method="post" action="/profile/addresses/{{ addr.id }}/set-primary" class="d-inline">
+                            <button type="submit" class="btn btn-outline-primary" title="تنظیم به عنوان اصلی">
+                                <i class="bi bi-star"></i>
+                            </button>
+                        </form>
+                        {% endif %}
+                        <form method="post" action="/profile/addresses/{{ addr.id }}/delete" class="d-inline"
+                              onsubmit="return confirm('آیا مطمئن هستید؟ این آدرس حذف می‌شود.');">
+                            <button type="submit" class="btn btn-outline-danger" title="حذف">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-center py-4">
+            <i class="bi bi-geo-alt display-6 text-muted"></i>
+            <p class="text-muted mt-2 mb-0">هیچ آدرسی برای شما ثبت نشده است</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+    <!-- 🆕 مودال افزودن آدرس -->
+    <div class="modal fade" id="addAddressModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form method="post" action="/profile/addresses/add">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-plus-circle"></i> افزودن آدرس</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">نوع آدرس <span class="text-danger">*</span></label>
+                            <select name="address_type" class="form-select" required>
+                                <option value="HOME" selected>منزل</option>
+                                <option value="WORK">محل کار</option>
+                                <option value="MAILING">پستی</option>
+                                <option value="OTHER">سایر</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">وضعیت سکونت <span class="text-danger">*</span></label>
+                            <select name="residence_status" class="form-select" required>
+                                <option value="owner" selected>مالک</option>
+                                <option value="tenant">مستأجر</option>
+                                <option value="family">منزل خانواده/پدری</option>
+                                <option value="org_housing">مسکن سازمانی</option>
+                                <option value="provided">رایگان/در اختیار</option>
+                                <option value="other">سایر</option>
+                                <option value="unknown">نامشخص</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">استان <span class="text-danger">*</span></label>
+                            <input type="text" name="province" class="form-control" required maxlength="100">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">شهر <span class="text-danger">*</span></label>
+                            <input type="text" name="city" class="form-control" required maxlength="100">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">شهرستان/منطقه</label>
+                            <input type="text" name="district" class="form-control" maxlength="100">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">کد پستی <span class="text-danger">*</span></label>
+                            <input type="text" name="postal_code" class="form-control" dir="ltr"
+                                   placeholder="1234567890" required pattern="[0-9]{10}" maxlength="10" inputmode="numeric">
+                            <small class="text-muted">۱۰ رقم عددی</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">GNAF ID</label>
+                            <input type="text" name="gnaf_id" class="form-control" dir="ltr" maxlength="50">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">آدرس کامل <span class="text-danger">*</span></label>
+                            <textarea name="address_text" class="form-control" rows="2" required></textarea>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">عرض جغرافیایی</label>
+                            <input type="text" name="latitude" class="form-control" dir="ltr"
+                                   placeholder="مثال: 35.6892" inputmode="decimal">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">طول جغرافیایی</label>
+                            <input type="text" name="longitude" class="form-control" dir="ltr"
+                                   placeholder="مثال: 51.3890" inputmode="decimal">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">از تاریخ</label>
+                            <input type="text" name="valid_from" class="form-control" dir="ltr"
+                                   placeholder="1405/06/30" pattern="[0-9]{4}/[0-9]{2}/[0-9]{2}">
+                            <small class="text-muted">شمسی: 1405/06/30</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">تا تاریخ</label>
+                            <input type="text" name="valid_to" class="form-control" dir="ltr"
+                                   placeholder="1405/06/30" pattern="[0-9]{4}/[0-9]{2}/[0-9]{2}">
+                            <small class="text-muted">شمسی: 1405/06/30</small>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">توضیحات</label>
+                            <textarea name="notes" class="form-control" rows="2"></textarea>
+                        </div>
+                        <div class="col-12">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="is_primary" id="userAddressIsPrimary">
+                                <label class="form-check-label" for="userAddressIsPrimary">
+                                    ⭐ به عنوان آدرس اصلی
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="bi bi-plus-circle"></i> افزودن
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+    <!-- 🆕 مودال‌های ویرایش آدرس -->
+    {% if addresses %}
+    {% for addr in addresses %}
+    <div class="modal fade" id="editAddressModal-{{ addr.id }}" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form method="post" action="/profile/addresses/{{ addr.id }}/update">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-pencil"></i> ویرایش آدرس</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">نوع آدرس <span class="text-danger">*</span></label>
+                            <select name="address_type" class="form-select" required>
+                                <option value="HOME" {% if addr.address_type == 'HOME' %}selected{% endif %}>منزل</option>
+                                <option value="WORK" {% if addr.address_type == 'WORK' %}selected{% endif %}>محل کار</option>
+                                <option value="MAILING" {% if addr.address_type == 'MAILING' %}selected{% endif %}>پستی</option>
+                                <option value="OTHER" {% if addr.address_type == 'OTHER' %}selected{% endif %}>سایر</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">وضعیت سکونت <span class="text-danger">*</span></label>
+                            <select name="residence_status" class="form-select" required>
+                                <option value="owner" {% if addr.residence_status == 'owner' %}selected{% endif %}>مالک</option>
+                                <option value="tenant" {% if addr.residence_status == 'tenant' %}selected{% endif %}>مستأجر</option>
+                                <option value="family" {% if addr.residence_status == 'family' %}selected{% endif %}>منزل خانواده/پدری</option>
+                                <option value="org_housing" {% if addr.residence_status == 'org_housing' %}selected{% endif %}>مسکن سازمانی</option>
+                                <option value="provided" {% if addr.residence_status == 'provided' %}selected{% endif %}>رایگان/در اختیار</option>
+                                <option value="other" {% if addr.residence_status == 'other' %}selected{% endif %}>سایر</option>
+                                <option value="unknown" {% if addr.residence_status == 'unknown' %}selected{% endif %}>نامشخص</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">استان <span class="text-danger">*</span></label>
+                            <input type="text" name="province" class="form-control" required maxlength="100" value="{{ addr.province }}">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">شهر <span class="text-danger">*</span></label>
+                            <input type="text" name="city" class="form-control" required maxlength="100" value="{{ addr.city }}">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">شهرستان/منطقه</label>
+                            <input type="text" name="district" class="form-control" maxlength="100" value="{{ addr.district or '' }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">کد پستی <span class="text-danger">*</span></label>
+                            <input type="text" name="postal_code" class="form-control" dir="ltr"
+                                   placeholder="1234567890" required pattern="[0-9]{10}" maxlength="10" inputmode="numeric" value="{{ addr.postal_code }}">
+                            <small class="text-muted">۱۰ رقم عددی</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">GNAF ID</label>
+                            <input type="text" name="gnaf_id" class="form-control" dir="ltr" maxlength="50" value="{{ addr.gnaf_id or '' }}">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">آدرس کامل <span class="text-danger">*</span></label>
+                            <textarea name="address_text" class="form-control" rows="2" required>{{ addr.address }}</textarea>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">عرض جغرافیایی</label>
+                            <input type="text" name="latitude" class="form-control" dir="ltr"
+                                   placeholder="مثال: 35.6892" inputmode="decimal" value="{{ addr.latitude if addr.latitude is not none else '' }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">طول جغرافیایی</label>
+                            <input type="text" name="longitude" class="form-control" dir="ltr"
+                                   placeholder="مثال: 51.3890" inputmode="decimal" value="{{ addr.longitude if addr.longitude is not none else '' }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">از تاریخ</label>
+                            <input type="text" name="valid_from" class="form-control" dir="ltr"
+                                   placeholder="1405/06/30" pattern="[0-9]{4}/[0-9]{2}/[0-9]{2}" value="{{ addr.valid_from_j or '' }}">
+                            <small class="text-muted">شمسی: 1405/06/30</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">تا تاریخ</label>
+                            <input type="text" name="valid_to" class="form-control" dir="ltr"
+                                   placeholder="1405/06/30" pattern="[0-9]{4}/[0-9]{2}/[0-9]{2}" value="{{ addr.valid_to_j or '' }}">
+                            <small class="text-muted">شمسی: 1405/06/30</small>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">توضیحات</label>
+                            <textarea name="notes" class="form-control" rows="2">{{ addr.notes or '' }}</textarea>
+                        </div>
+                        <div class="col-12">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="is_primary" id="userAddressIsPrimary-{{ addr.id }}" {% if addr.is_primary %}checked{% endif %}>
+                                <label class="form-check-label" for="userAddressIsPrimary-{{ addr.id }}">
+                                    ⭐ به عنوان آدرس اصلی
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-circle"></i> ذخیره تغییرات
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+    {% endfor %}
+    {% endif %}
 
 <!-- 🔐 فرم افزودن شماره با تأیید کد -->
 <div class="card border-0 shadow-sm mt-4">

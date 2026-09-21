@@ -170,6 +170,65 @@ async def set_own_primary_address(
         )
 
 
+@router.post("/profile/addresses/{address_id}/update")
+async def update_own_address(
+    request: Request,
+    address_id: int,
+    address_type: str = Form(...),
+    residence_status: str = Form(...),
+    province: str = Form(...),
+    city: str = Form(...),
+    district: str = Form(""),
+    postal_code: str = Form(...),
+    address_text: str = Form(...),
+    is_primary: bool = Form(False),
+    latitude: str = Form(""),
+    longitude: str = Form(""),
+    valid_from: str = Form(""),
+    valid_to: str = Form(""),
+    notes: str = Form(""),
+    gnaf_id: str = Form(""),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """ویرایش آدرس کاربر (رشته خالی => پاک کردن فیلد اختیاری)"""
+    try:
+        update_address(
+            db=db,
+            user_id=user.user_id,
+            address_id=address_id,
+            address_type=address_type,
+            residence_status=residence_status,
+            province=province,
+            city=city,
+            district=district or None,
+            postal_code=postal_code,
+            address_text=address_text,
+            latitude=_parse_decimal(latitude),
+            longitude=_parse_decimal(longitude),
+            valid_from=_parse_date(valid_from),
+            valid_to=_parse_date(valid_to),
+            notes=notes or None,
+            gnaf_id=gnaf_id or None,
+        )
+        if is_primary:
+            set_primary_address(db, user.user_id, address_id)
+        return RedirectResponse(
+            url="/profile?success=آدرس با موفقیت ویرایش شد",
+            status_code=302,
+        )
+    except AddressServiceError as e:
+        return RedirectResponse(
+            url=f"/profile?error={str(e)}",
+            status_code=302,
+        )
+    except Exception as e:
+        return RedirectResponse(
+            url=f"/profile?error=خطا: {str(e)}",
+            status_code=302,
+        )
+
+
 # ============================================
 # بخش ادمین - مدیریت آدرس‌های کاربران
 # ============================================

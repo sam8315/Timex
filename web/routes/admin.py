@@ -1,6 +1,9 @@
 """پنل مدیریت"""
+import logging
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
+
+logger = logging.getLogger(__name__)
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
 from sqlalchemy.orm import Session
@@ -1678,10 +1681,13 @@ async def admin_view_profile(
     # 🆕 دریافت آدرس‌های کاربر مورد نظر از طریق سرویس
     from models.employee_address import ADDRESS_TYPES, RESIDENCE_STATUSES
     from web.services.address_service import list_addresses
+    addresses_error = None
     try:
         target_addresses = list_addresses(db, target_user_id)
-    except Exception:
+    except Exception as e:
+        logger.exception("Failed to load addresses for %s", target_user_id)
         target_addresses = []
+        addresses_error = f"خطا در بارگذاری آدرس‌ها: {e}"
     # تاریخ‌های شمسی برای نمایش در قالب
     for addr in target_addresses:
         try:
@@ -1715,6 +1721,7 @@ async def admin_view_profile(
         "is_super_admin": user.is_super_admin,
         "target_phones": target_phones,
         "target_addresses": target_addresses,
+        "addresses_error": addresses_error,
         "address_types": ADDRESS_TYPES,
         "residence_statuses": RESIDENCE_STATUSES,
     })
