@@ -12,6 +12,7 @@ from models.holiday import Holiday
 from models.daily_status import DailyStatus
 from models.employee import Employee
 from models.employee_phone import EmployeePhone
+from models.employee_address import EmployeeAddress
 from models.education import Education
 from models.leave_carry_forward_request import LeaveCarryForwardRequest
 from models.user_permission import UserPermission, UserPermissionHistory
@@ -31,7 +32,7 @@ __all__ = [
     'HourlyLeavePolicy', 'HourlyLeaveResolution', 'HourlyLeaveTransaction',
     'Contract', 'LeaveBalance', 'LeaveTransaction',
     'LeaveRequest', 'LeaveCarryForwardRequest', 'Holiday', 'DailyStatus',
-    'EmployeePhone', 'Education', 'UserPermission', 'UserPermissionHistory', 'BaleUser',
+    'EmployeePhone', 'EmployeeAddress', 'Education', 'UserPermission', 'UserPermissionHistory', 'BaleUser',
     'Employee', 'Region', 'Policy', 'PolicyValue', 'PolicyAuditLog',
     'EmployeeRegion',
     'City', 'EmployeeServiceLocation', 'TravelLeaveDetail', 'TravelLeavePolicy',
