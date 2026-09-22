@@ -20,6 +20,7 @@ from web.services.address_service import (
 from database.init_db import (
     migrate_employee_address_coords_pair,
     migrate_employee_address_nan_check,
+    migrate_employee_address_range_check,
 )
 
 from .conftest import test_engine
@@ -386,3 +387,131 @@ def _has_nan_check(name: str):
             f"SELECT 1 FROM pg_constraint "
             f"WHERE conname = '{name}' "
             f"AND conrelid = 'employee_addresses'::regclass")).scalar()
+
+
+def _has_range_check(name: str):
+    with test_engine.connect() as conn:
+        return conn.execute(sa_text(
+            f"SELECT 1 FROM pg_constraint "
+            f"WHERE conname = '{name}' "
+            f"AND conrelid = 'employee_addresses'::regclass")).scalar()
+
+
+# ---------------------------------------------------------------------------
+# Migration regression (Phase 25)
+# ---------------------------------------------------------------------------
+
+def test_migration_nan_creates_check_when_missing(db):
+    """A missing NaN CHECK is added by the migration."""
+    db.execute(sa_text(
+        "ALTER TABLE employee_addresses "
+        "DROP CONSTRAINT IF EXISTS ck_employee_address_latitude_not_nan"))
+    db.execute(sa_text(
+        "ALTER TABLE employee_addresses "
+        "DROP CONSTRAINT IF EXISTS ck_employee_address_longitude_not_nan"))
+    db.commit()
+    assert _has_nan_check("ck_employee_address_latitude_not_nan") is None
+    assert _has_nan_check("ck_employee_address_longitude_not_nan") is None
+
+    migrate_employee_address_nan_check(bind_engine=test_engine)
+    assert _has_nan_check("ck_employee_address_latitude_not_nan") is not None
+    assert _has_nan_check("ck_employee_address_longitude_not_nan") is not None
+
+
+def test_migration_range_creates_check_when_missing(db):
+    """Missing range CHECKs are added by the migration."""
+    db.execute(sa_text(
+        "ALTER TABLE employee_addresses "
+        "DROP CONSTRAINT IF EXISTS ck_employee_address_latitude_range"))
+    db.execute(sa_text(
+        "ALTER TABLE employee_addresses "
+        "DROP CONSTRAINT IF EXISTS ck_employee_address_longitude_range"))
+    db.commit()
+    assert _has_range_check("ck_employee_address_latitude_range") is None
+    assert _has_range_check("ck_employee_address_longitude_range") is None
+
+    migrate_employee_address_range_check(bind_engine=test_engine)
+    assert _has_range_check("ck_employee_address_latitude_range") is not None
+    assert _has_range_check("ck_employee_address_longitude_range") is not None
+
+
+def test_migration_range_detects_out_of_range(db, make_user):
+    """Out-of-range coordinates block the range migration; rows untouched."""
+    user = make_user(role="user", balance_al=None)
+    for c in [
+        "ck_employee_address_latitude_range",
+        "ck_employee_address_longitude_range",
+        "ck_employee_address_coords_pair",
+        "ck_employee_address_latitude_not_nan",
+        "ck_employee_address_longitude_not_nan",
+    ]:
+        db.execute(sa_text(
+            f"ALTER TABLE employee_addresses "
+            f"DROP CONSTRAINT IF EXISTS {c}"))
+    db.commit()
+    db.execute(sa_text(
+        "INSERT INTO employee_addresses "
+        "(user_id, address_type, residence_status, province, city, "
+        " postal_code, address, is_primary, latitude, longitude) "
+        "VALUES (:uid, 'HOME', 'owner', 'Tehran', 'Tehran', "
+        " '8888888888', 'x', false, 91.0, 51.0)"),
+        {"uid": user["user_id"]})
+    db.commit()
+    try:
+        with pytest.raises(RuntimeError, match="out-of-range"):
+            migrate_employee_address_range_check(bind_engine=test_engine)
+        row = db.query(EmployeeAddress).filter(
+            EmployeeAddress.postal_code == "8888888888").one()
+        assert float(row.latitude) == 91.0
+        assert float(row.longitude) == 51.0
+        assert _has_range_check("ck_employee_address_latitude_range") is None
+        assert _has_range_check("ck_employee_address_longitude_range") is None
+    finally:
+        db.query(EmployeeAddress).filter(
+            EmployeeAddress.postal_code == "8888888888").delete(
+                synchronize_session=False)
+        db.commit()
+        migrate_employee_address_range_check(bind_engine=test_engine)
+        assert _has_range_check("ck_employee_address_latitude_range") is not None
+        assert _has_range_check("ck_employee_address_longitude_range") is not None
+
+
+def test_migration_range_is_idempotent(db):
+    """Repeated range migration runs are safe once constraints exist."""
+    migrate_employee_address_range_check(bind_engine=test_engine)
+    migrate_employee_address_range_check(bind_engine=test_engine)
+    with test_engine.connect() as conn:
+        lat_count = conn.execute(sa_text(
+            "SELECT COUNT(*) FROM pg_constraint "
+            "WHERE conname = 'ck_employee_address_latitude_range'")).scalar_one()
+        lon_count = conn.execute(sa_text(
+            "SELECT COUNT(*) FROM pg_constraint "
+            "WHERE conname = 'ck_employee_address_longitude_range'")).scalar_one()
+    assert lat_count == 1
+    assert lon_count == 1
+
+
+def test_migration_nan_missing_then_added_and_idempotent(db):
+    """NaN migration: missing → added → idempotent."""
+    db.execute(sa_text(
+        "ALTER TABLE employee_addresses "
+        "DROP CONSTRAINT IF EXISTS ck_employee_address_latitude_not_nan"))
+    db.execute(sa_text(
+        "ALTER TABLE employee_addresses "
+        "DROP CONSTRAINT IF EXISTS ck_employee_address_longitude_not_nan"))
+    db.commit()
+
+    migrate_employee_address_nan_check(bind_engine=test_engine)
+    assert _has_nan_check("ck_employee_address_latitude_not_nan") is not None
+    assert _has_nan_check("ck_employee_address_longitude_not_nan") is not None
+
+    migrate_employee_address_nan_check(bind_engine=test_engine)
+    with test_engine.connect() as conn:
+        lat_count = conn.execute(sa_text(
+            "SELECT COUNT(*) FROM pg_constraint "
+            "WHERE conname = 'ck_employee_address_latitude_not_nan'")).scalar_one()
+        lon_count = conn.execute(sa_text(
+            "SELECT COUNT(*) FROM pg_constraint "
+            "WHERE conname = 'ck_employee_address_longitude_not_nan'")).scalar_one()
+    assert lat_count == 1
+    assert lon_count == 1
