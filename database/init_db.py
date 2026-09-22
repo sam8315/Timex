@@ -225,7 +225,7 @@ def migrate_employee_address_nan_check(bind_engine=None) -> None:
                 conn.execute(text(
                     f'ALTER TABLE "employee_addresses" '
                     f'ADD CONSTRAINT "{constraint_name}" '
-                    f'CHECK ({column} IS NULL OR {column} = {column})'
+                    f"CHECK ({column} IS NULL OR {column} <> 'NaN'::numeric)"
                 ))
                 conn.commit()
                 print(f"  + check {constraint_name} added")
