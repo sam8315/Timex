@@ -96,6 +96,7 @@ from database.init_db import (  # noqa: E402
     migrate_employee_address_city_id,
     migrate_employee_address_history,
     migrate_employee_address_coords_pair,
+    migrate_employee_address_nan_check,
 )
 from sqlalchemy import text as _sql_text
 
@@ -225,6 +226,8 @@ migrate_employee_address_history(bind_engine=test_engine)
 # Coordinate pairs must be complete: add the CHECK using the real migration
 # (the persistent test database holds no partial-coordinate rows).
 migrate_employee_address_coords_pair(bind_engine=test_engine)
+# NaN coordinates must be rejected at the DB level.
+migrate_employee_address_nan_check(bind_engine=test_engine)
 
 
 def _seed_regions() -> None:

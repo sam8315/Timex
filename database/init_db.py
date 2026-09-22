@@ -186,6 +186,51 @@ def migrate_employee_address_coords_pair(bind_engine=None) -> None:
             print("  + check ck_employee_address_coords_pair added")
 
 
+def migrate_employee_address_nan_check(bind_engine=None) -> None:
+    """
+    Reject NaN in latitude/longitude via CHECK constraints.
+
+    - Detects rows containing NaN in either coordinate.
+      Such rows block the migration (no data is modified).
+    - Adds the CHECK only when existing data is safe.
+    - Idempotent; repeated execution is safe (skips existing constraints).
+    """
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
+    if "employee_addresses" not in inspector.get_table_names():
+        return
+
+    with target.connect() as conn:
+        nan_count = conn.execute(text(
+            "SELECT COUNT(*) FROM employee_addresses "
+            "WHERE latitude = 'NaN' OR longitude = 'NaN'"
+        )).scalar_one()
+        if nan_count:
+            raise RuntimeError(
+                f"employee_addresses has {nan_count} row(s) with NaN "
+                "coordinates. Clean them up manually before this "
+                "migration can add the NaN CHECK constraints."
+            )
+
+        for column, constraint_name in [
+            ("latitude", "ck_employee_address_latitude_not_nan"),
+            ("longitude", "ck_employee_address_longitude_not_nan"),
+        ]:
+            exists = conn.execute(text(
+                "SELECT 1 FROM pg_constraint "
+                "WHERE conname = :name "
+                "AND conrelid = 'employee_addresses'::regclass"
+            ), {"name": constraint_name}).scalar()
+            if not exists:
+                conn.execute(text(
+                    f'ALTER TABLE "employee_addresses" '
+                    f'ADD CONSTRAINT "{constraint_name}" '
+                    f'CHECK ({column} IS NULL OR {column} = {column})'
+                ))
+                conn.commit()
+                print(f"  + check {constraint_name} added")
+
+
 def migrate_employee_address_history(bind_engine=None) -> None:
     """
     Audit tables must survive deletions: employee_address_history keeps no
@@ -358,6 +403,7 @@ def create_tables() -> None:
         migrate_employee_address_city_id()
         migrate_employee_address_history()
         migrate_employee_address_coords_pair()
+        migrate_employee_address_nan_check()
         migrate_time_columns()
         migrate_data_fixes()
         seed_travel_leave_policy_rules()

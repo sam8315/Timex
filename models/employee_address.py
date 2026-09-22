@@ -134,6 +134,15 @@ class EmployeeAddress(TimestampMixin, Base):
             "(latitude IS NOT NULL AND longitude IS NOT NULL)",
             name="ck_employee_address_coords_pair"
         ),
+        # NaN مقادیر نامعتبر است — مقایسه NaN با خودش نامعتبر است
+        CheckConstraint(
+            "latitude IS NULL OR latitude = latitude",
+            name="ck_employee_address_latitude_not_nan"
+        ),
+        CheckConstraint(
+            "longitude IS NULL OR longitude = longitude",
+            name="ck_employee_address_longitude_not_nan"
+        ),
         # valid_to نباید قبل از valid_from باشد (وقتی هر دو مقدار داشته باشند)
         CheckConstraint(
             "valid_to IS NULL OR valid_from IS NULL OR valid_to >= valid_from",

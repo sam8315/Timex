@@ -8,6 +8,8 @@ Covers:
 - model CHECK constraint exists
 - migration is idempotent and fails safely on partial data
 """
+import math
+
 import pytest
 from sqlalchemy import text as sa_text
 
@@ -15,7 +17,10 @@ from models.employee_address import EmployeeAddress
 from web.services.address_service import (
     AddressServiceError, create_address, update_address,
 )
-from database.init_db import migrate_employee_address_coords_pair
+from database.init_db import (
+    migrate_employee_address_coords_pair,
+    migrate_employee_address_nan_check,
+)
 
 from .conftest import test_engine
 
@@ -236,3 +241,148 @@ def test_migration_ignores_same_named_constraint_elsewhere(db):
         db.commit()
         migrate_employee_address_coords_pair(bind_engine=test_engine)
         assert _has_pair_check() is not None
+
+
+# ---------------------------------------------------------------------------
+# DB-level NaN rejection (Phase 21 / 22)
+# ---------------------------------------------------------------------------
+
+def test_db_rejects_nan_latitude(db, make_user):
+    """Direct DB insertion of NaN latitude is rejected by CHECK."""
+    from sqlalchemy import exc as sa_exc
+    user = make_user(role="user", balance_al=None)
+    with pytest.raises(sa_exc.DatabaseError):
+        db.execute(sa_text(
+            "INSERT INTO employee_addresses "
+            "(user_id, address_type, residence_status, province, city, "
+            "postal_code, address, is_primary, latitude, longitude) "
+            "VALUES (:uid, 'HOME', 'owner', 'Tehran', 'Tehran', "
+            "'1234567890', 'test', false, 'NaN', NULL)"
+        ), {"uid": user["user_id"]})
+        db.commit()
+
+
+def test_db_rejects_nan_longitude(db, make_user):
+    """Direct DB insertion of NaN longitude is rejected by CHECK."""
+    from sqlalchemy import exc as sa_exc
+    user = make_user(role="user", balance_al=None)
+    with pytest.raises(sa_exc.DatabaseError):
+        db.execute(sa_text(
+            "INSERT INTO employee_addresses "
+            "(user_id, address_type, residence_status, province, city, "
+            "postal_code, address, is_primary, latitude, longitude) "
+            "VALUES (:uid, 'HOME', 'owner', 'Tehran', 'Tehran', "
+            "'1234567891', 'test', false, NULL, 'NaN')"
+        ), {"uid": user["user_id"]})
+        db.commit()
+
+
+def test_db_accepts_null_coordinates(db, make_user):
+    """NULL coordinates remain valid via the DB CHECK."""
+    user = make_user(role="user", balance_al=None)
+    db.execute(sa_text(
+        "INSERT INTO employee_addresses "
+        "(user_id, address_type, residence_status, province, city, "
+        "postal_code, address, is_primary, latitude, longitude) "
+        "VALUES (:uid, 'HOME', 'owner', 'Tehran', 'Tehran', "
+        "'1234567892', 'test', false, NULL, NULL)"
+    ), {"uid": user["user_id"]})
+    db.commit()
+    count = db.execute(sa_text(
+        "SELECT COUNT(*) FROM employee_addresses "
+        "WHERE postal_code = '1234567892'"
+    )).scalar_one()
+    assert count == 1
+
+
+def test_db_accepts_valid_finite_pair(db, make_user):
+    """Valid finite coordinate pairs remain valid via the DB CHECK."""
+    user = make_user(role="user", balance_al=None)
+    db.execute(sa_text(
+        "INSERT INTO employee_addresses "
+        "(user_id, address_type, residence_status, province, city, "
+        "postal_code, address, is_primary, latitude, longitude) "
+        "VALUES (:uid, 'HOME', 'owner', 'Tehran', 'Tehran', "
+        "'1234567893', 'test', false, 35.6892, 51.3890)"
+    ), {"uid": user["user_id"]})
+    db.commit()
+    count = db.execute(sa_text(
+        "SELECT COUNT(*) FROM employee_addresses "
+        "WHERE postal_code = '1234567893'"
+    )).scalar_one()
+    assert count == 1
+
+
+def test_migration_detects_existing_nan(db, make_user):
+    """Migration fails clearly when NaN rows exist; rows are not modified."""
+    user = make_user(role="user", balance_al=None)
+    # Drop ALL coordinate constraints to allow NaN insertion for testing
+    for c in [
+        "ck_employee_address_latitude_range",
+        "ck_employee_address_longitude_range",
+        "ck_employee_address_coords_pair",
+        "ck_employee_address_latitude_not_nan",
+        "ck_employee_address_longitude_not_nan",
+    ]:
+        db.execute(sa_text(
+            f"ALTER TABLE employee_addresses "
+            f"DROP CONSTRAINT IF EXISTS {c}"))
+    db.commit()
+    db.execute(sa_text(
+        "INSERT INTO employee_addresses "
+        "(user_id, address_type, residence_status, province, city, "
+        " postal_code, address, is_primary, latitude, longitude) "
+        "VALUES (:uid, 'HOME', 'owner', 'Tehran', 'Tehran', "
+        " '7777777777', 'x', false, 'NaN', 51.0)"),
+        {"uid": user["user_id"]})
+    db.commit()
+    try:
+        with pytest.raises(RuntimeError, match="NaN"):
+            migrate_employee_address_nan_check(bind_engine=test_engine)
+        # row untouched
+        row = db.query(EmployeeAddress).filter(
+            EmployeeAddress.postal_code == "7777777777").one()
+        assert math.isnan(float(row.latitude))
+        assert float(row.longitude) == 51.0
+        # constraints still absent
+        with test_engine.connect() as conn:
+            lat_check = conn.execute(sa_text(
+                "SELECT 1 FROM pg_constraint "
+                "WHERE conname = 'ck_employee_address_latitude_not_nan'")).scalar()
+            lon_check = conn.execute(sa_text(
+                "SELECT 1 FROM pg_constraint "
+                "WHERE conname = 'ck_employee_address_longitude_not_nan'")).scalar()
+        assert lat_check is None
+        assert lon_check is None
+    finally:
+        db.query(EmployeeAddress).filter(
+            EmployeeAddress.postal_code == "7777777777").delete(
+                synchronize_session=False)
+        db.commit()
+        # restore constraints so other tests are not affected
+        migrate_employee_address_nan_check(bind_engine=test_engine)
+        assert _has_nan_check("ck_employee_address_latitude_not_nan")
+        assert _has_nan_check("ck_employee_address_longitude_not_nan")
+
+
+def test_migration_nan_is_idempotent(db):
+    """Repeated migration runs are safe once constraints exist."""
+    migrate_employee_address_nan_check(bind_engine=test_engine)
+    migrate_employee_address_nan_check(bind_engine=test_engine)
+    with test_engine.connect() as conn:
+        lat_count = conn.execute(sa_text(
+            "SELECT COUNT(*) FROM pg_constraint "
+            "WHERE conname = 'ck_employee_address_latitude_not_nan'")).scalar_one()
+        lon_count = conn.execute(sa_text(
+            "SELECT COUNT(*) FROM pg_constraint "
+            "WHERE conname = 'ck_employee_address_longitude_not_nan'")).scalar_one()
+    assert lat_count == 1
+    assert lon_count == 1
+
+
+def _has_nan_check(name: str):
+    with test_engine.connect() as conn:
+        return conn.execute(sa_text(
+            f"SELECT 1 FROM pg_constraint "
+            f"WHERE conname = '{name}' "
+            f"AND conrelid = 'employee_addresses'::regclass")).scalar()
