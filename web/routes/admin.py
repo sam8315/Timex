@@ -1,6 +1,9 @@
 """پنل مدیریت"""
+import logging
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
+
+logger = logging.getLogger(__name__)
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
 from sqlalchemy.orm import Session
@@ -1675,6 +1678,76 @@ async def admin_view_profile(
         EmployeePhone.user_id == target_user_id
     ).order_by(EmployeePhone.is_default.desc(), EmployeePhone.created_at).all()
 
+    # 🆕 دریافت آدرس‌های کاربر مورد نظر از طریق سرویس
+    from models.city import City
+    from models.employee_address import ADDRESS_TYPES, RESIDENCE_STATUSES
+    from web.services.address_service import list_addresses
+    cities = db.query(City).filter(City.is_active == True).order_by(
+        City.province, City.name).all()
+    addresses_error = None
+    try:
+        target_addresses = list_addresses(db, target_user_id)
+    except Exception as e:
+        logger.exception("Failed to load addresses for %s", target_user_id)
+        target_addresses = []
+        addresses_error = f"خطا در بارگذاری آدرس‌ها: {e}"
+    # تاریخ‌های شمسی برای نمایش در قالب
+    for addr in target_addresses:
+        try:
+            addr.valid_from_j = (
+                jdatetime.date.fromgregorian(date=addr.valid_from).strftime('%Y/%m/%d')
+                if addr.valid_from else ""
+            )
+        except Exception:
+            addr.valid_from_j = ""
+        try:
+            addr.valid_to_j = (
+                jdatetime.date.fromgregorian(date=addr.valid_to).strftime('%Y/%m/%d')
+                if addr.valid_to else ""
+            )
+        except Exception:
+            addr.valid_to_j = ""
+    # شهرهای غیرفعالِ مرتبط با آدرس موجود: فقط برای نمایش در فرم ویرایش همان آدرس
+    active_city_ids = {c.id for c in cities}
+    orphan_city_ids = {a.city_id for a in target_addresses
+                       if a.city_id and a.city_id not in active_city_ids}
+    inactive_linked = {}
+    if orphan_city_ids:
+        for linked in db.query(City).filter(City.id.in_(orphan_city_ids)).all():
+            for addr in target_addresses:
+                if addr.city_id == linked.id:
+                    inactive_linked[addr.id] = linked
+
+    # 🆕 تاریخچه ممیزی آدرس‌ها (فقط خواندنی؛ مشروط به دسترسی edit_profile)
+    from models.employee_address_history import EmployeeAddressHistory
+    address_history = []
+    history_cities = {}
+    history_truncated = False
+    if has_permission(db, user, "edit_profile"):
+        fetched = db.query(EmployeeAddressHistory).filter(
+            EmployeeAddressHistory.user_id == target_user_id
+        ).order_by(
+            EmployeeAddressHistory.changed_at.desc(),
+            EmployeeAddressHistory.id.desc()
+        ).limit(51).all()
+        if len(fetched) > 50:
+            history_truncated = True
+            fetched = fetched[:50]
+        for entry in fetched:
+            try:
+                entry.changed_at_j = jdatetime.datetime.fromgregorian(
+                    datetime=entry.changed_at).strftime('%Y/%m/%d %H:%M')
+            except Exception:
+                entry.changed_at_j = "-"
+        address_history = fetched
+        ref_ids = {e.city_id for e in fetched if e.city_id}
+        if ref_ids:
+            for ref in db.query(City).filter(City.id.in_(ref_ids)).all():
+                label = ref.name
+                if ref.province:
+                    label = f"{ref.province} — {ref.name}"
+                history_cities[ref.id] = label
+
     return templates.TemplateResponse(request, "admin/user_profile.html", {
         "user": user,
         "target_user": target_user,
@@ -1690,6 +1763,15 @@ async def admin_view_profile(
         "is_admin": True,
         "is_super_admin": user.is_super_admin,
         "target_phones": target_phones,
+        "target_addresses": target_addresses,
+        "addresses_error": addresses_error,
+        "address_types": ADDRESS_TYPES,
+        "residence_statuses": RESIDENCE_STATUSES,
+        "cities": cities,
+        "inactive_linked": inactive_linked,
+        "address_history": address_history,
+        "history_cities": history_cities,
+        "history_truncated": history_truncated,
     })
 
 

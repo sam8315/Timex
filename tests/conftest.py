@@ -92,6 +92,13 @@ TestingSessionLocal = sessionmaker(
 
 import models  # noqa: F401,E402  (register every mapped table)
 from models import Base  # noqa: E402
+from database.init_db import (  # noqa: E402
+    migrate_employee_address_city_id,
+    migrate_employee_address_history,
+    migrate_employee_address_coords_pair,
+    migrate_employee_address_nan_check,
+    migrate_employee_address_range_check,
+)
 from sqlalchemy import text as _sql_text
 
 # ---------------------------------------------------------------------------
@@ -186,7 +193,44 @@ with test_engine.connect() as _conn:
         ADD COLUMN IF NOT EXISTS start_time TIME,
         ADD COLUMN IF NOT EXISTS end_time TIME
     """))
+    _conn.execute(_sql_text("""
+        ALTER TABLE employee_addresses
+        ALTER COLUMN district DROP NOT NULL
+    """))
+    _conn.execute(_sql_text("""
+        ALTER TABLE employee_addresses
+        ADD COLUMN IF NOT EXISTS city_id INTEGER
+    """))
+    _conn.execute(_sql_text("""
+        CREATE INDEX IF NOT EXISTS ix_employee_addresses_city_id
+        ON employee_addresses (city_id)
+    """))
+    _conn.execute(_sql_text("""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'employee_addresses_city_id_fkey'
+            ) THEN
+                ALTER TABLE employee_addresses
+                ADD CONSTRAINT employee_addresses_city_id_fkey
+                FOREIGN KEY (city_id) REFERENCES cities(id) ON DELETE RESTRICT;
+            END IF;
+        END
+        $$;
+    """))
     _conn.commit()
+
+# Audit history must not be cascade-deleted: drop the legacy user_id FK
+# on the persistent test table using the real startup migration.
+migrate_employee_address_history(bind_engine=test_engine)
+# Coordinate pairs must be complete: add the CHECK using the real migration
+# (the persistent test database holds no partial-coordinate rows).
+migrate_employee_address_coords_pair(bind_engine=test_engine)
+# NaN coordinates must be rejected at the DB level.
+migrate_employee_address_nan_check(bind_engine=test_engine)
+# Coordinate ranges must be enforced at the DB level.
+migrate_employee_address_range_check(bind_engine=test_engine)
 
 
 def _seed_regions() -> None:

@@ -108,6 +108,39 @@ async def profile_page(
         EmployeePhone.user_id == user.user_id
     ).order_by(EmployeePhone.is_default.desc(), EmployeePhone.created_at).all()
 
+    # 🆕 دریافت آدرس‌های کاربر از طریق سرویس
+    from models.city import City
+    from web.services.address_service import list_addresses
+    addresses = list_addresses(db, user.user_id)
+    cities = db.query(City).filter(City.is_active == True).order_by(
+        City.province, City.name).all()
+    # تاریخ‌های شمسی برای نمایش در قالب (مشابه پنل ادمین)
+    for addr in addresses:
+        try:
+            addr.valid_from_j = (
+                jdatetime.date.fromgregorian(date=addr.valid_from).strftime('%Y/%m/%d')
+                if addr.valid_from else ""
+            )
+        except Exception:
+            addr.valid_from_j = ""
+        try:
+            addr.valid_to_j = (
+                jdatetime.date.fromgregorian(date=addr.valid_to).strftime('%Y/%m/%d')
+                if addr.valid_to else ""
+            )
+        except Exception:
+            addr.valid_to_j = ""
+    # شهرهای غیرفعالِ مرتبط با آدرس موجود: فقط برای نمایش در فرم ویرایش همان آدرس
+    active_city_ids = {c.id for c in cities}
+    orphan_city_ids = {a.city_id for a in addresses
+                       if a.city_id and a.city_id not in active_city_ids}
+    inactive_linked = {}
+    if orphan_city_ids:
+        for linked in db.query(City).filter(City.id.in_(orphan_city_ids)).all():
+            for addr in addresses:
+                if addr.city_id == linked.id:
+                    inactive_linked[addr.id] = linked
+
     return templates.TemplateResponse(request, "profile.html", {
         "user": user,
         "employee": employee,
@@ -123,4 +156,7 @@ async def profile_page(
         "photo_path": employee.photo_path if employee else None,
         "last_login_display": last_login_display,
         "phones": phones,
+        "addresses": addresses,
+        "cities": cities,
+        "inactive_linked": inactive_linked,
     })

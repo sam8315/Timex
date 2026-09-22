@@ -90,6 +90,229 @@ def migrate_time_columns() -> None:
         print(f"  ~ column leave_requests.{column_name} converted to TIME")
 
 
+def migrate_employee_address_city_id(bind_engine=None) -> None:
+    """
+    Production-safe migration for the Phase 6 city_id normalization.
+
+    Base.metadata.create_all() only creates missing tables — it does NOT add
+    columns, indexes or FK constraints to tables that already exist. For an
+    existing employee_addresses table this ensures (idempotently):
+      - city_id column exists (nullable, existing rows untouched)
+      - index on employee_addresses.city_id exists
+      - FK employee_addresses.city_id -> cities.id with ON DELETE RESTRICT
+    Safe to run repeatedly; never modifies existing city_id data.
+    """
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
+    if "employee_addresses" not in inspector.get_table_names():
+        return
+
+    with target.connect() as conn:
+        columns = {row["name"] for row in inspector.get_columns("employee_addresses")}
+        if "city_id" not in columns:
+            conn.execute(text('ALTER TABLE "employee_addresses" ADD COLUMN "city_id" INTEGER NULL'))
+            conn.commit()
+            print("  + column employee_addresses.city_id added")
+
+        index_names = {idx["name"] for idx in inspector.get_indexes("employee_addresses")}
+        if "ix_employee_addresses_city_id" not in index_names:
+            conn.execute(text(
+                'CREATE INDEX "ix_employee_addresses_city_id" '
+                'ON "employee_addresses" ("city_id")'
+            ))
+            conn.commit()
+            print("  + index ix_employee_addresses_city_id added")
+
+        has_fk = any(
+            fk.get("referred_table") == "cities"
+            and fk.get("referred_columns") == ["id"]
+            and "city_id" in (fk.get("constrained_columns") or [])
+            for fk in inspector.get_foreign_keys("employee_addresses")
+        )
+        if not has_fk:
+            conn.execute(text(
+                'ALTER TABLE "employee_addresses" '
+                'ADD CONSTRAINT "employee_addresses_city_id_fkey" '
+                'FOREIGN KEY ("city_id") REFERENCES "cities" ("id") ON DELETE RESTRICT'
+            ))
+            conn.commit()
+            print("  + fk employee_addresses.city_id -> cities.id added")
+
+
+def migrate_employee_address_coords_pair(bind_engine=None) -> None:
+    """
+    Enforce complete coordinate pairs on existing employee_addresses tables.
+
+    - Detects rows with exactly one of latitude/longitude set. Such rows
+      are NOT auto-fixed (the missing coordinate must not be invented):
+      the migration fails with a clear error so the data can be cleaned
+      up manually first.
+    - Otherwise adds the ck_employee_address_coords_pair CHECK if missing.
+    Idempotent; never modifies address data.
+    """
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
+    if "employee_addresses" not in inspector.get_table_names():
+        return
+
+    with target.connect() as conn:
+        partial = conn.execute(text(
+            "SELECT COUNT(*) FROM employee_addresses "
+            "WHERE (latitude IS NULL AND longitude IS NOT NULL) "
+            "OR (latitude IS NOT NULL AND longitude IS NULL)"
+        )).scalar_one()
+        if partial:
+            raise RuntimeError(
+                f"employee_addresses has {partial} row(s) with only one "
+                "of latitude/longitude set. Clean them up manually "
+                "(set both NULL or both valid) before this migration can "
+                "add the ck_employee_address_coords_pair CHECK constraint."
+            )
+        # Scope by table OID: a same-named constraint on another table
+        # must not satisfy this check.
+        exists = conn.execute(text(
+            "SELECT 1 FROM pg_constraint "
+            "WHERE conname = 'ck_employee_address_coords_pair' "
+            "AND conrelid = 'employee_addresses'::regclass"
+        )).scalar()
+        if not exists:
+            conn.execute(text(
+                'ALTER TABLE "employee_addresses" '
+                'ADD CONSTRAINT "ck_employee_address_coords_pair" '
+                'CHECK ((latitude IS NULL AND longitude IS NULL) OR '
+                '(latitude IS NOT NULL AND longitude IS NOT NULL))'
+            ))
+            conn.commit()
+            print("  + check ck_employee_address_coords_pair added")
+
+
+def migrate_employee_address_nan_check(bind_engine=None) -> None:
+    """
+    Reject NaN in latitude/longitude via CHECK constraints.
+
+    - Detects rows containing NaN in either coordinate.
+      Such rows block the migration (no data is modified).
+    - Adds the CHECK only when existing data is safe.
+    - Idempotent; repeated execution is safe (skips existing constraints).
+    """
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
+    if "employee_addresses" not in inspector.get_table_names():
+        return
+
+    with target.connect() as conn:
+        nan_count = conn.execute(text(
+            "SELECT COUNT(*) FROM employee_addresses "
+            "WHERE latitude = 'NaN' OR longitude = 'NaN'"
+        )).scalar_one()
+        if nan_count:
+            raise RuntimeError(
+                f"employee_addresses has {nan_count} row(s) with NaN "
+                "coordinates. Clean them up manually before this "
+                "migration can add the NaN CHECK constraints."
+            )
+
+        for column, constraint_name in [
+            ("latitude", "ck_employee_address_latitude_not_nan"),
+            ("longitude", "ck_employee_address_longitude_not_nan"),
+        ]:
+            exists = conn.execute(text(
+                "SELECT 1 FROM pg_constraint "
+                "WHERE conname = :name "
+                "AND conrelid = 'employee_addresses'::regclass"
+            ), {"name": constraint_name}).scalar()
+            if not exists:
+                conn.execute(text(
+                    f'ALTER TABLE "employee_addresses" '
+                    f'ADD CONSTRAINT "{constraint_name}" '
+                    f"CHECK ({column} IS NULL OR {column} <> 'NaN'::numeric)"
+                ))
+                conn.commit()
+                print(f"  + check {constraint_name} added")
+
+
+def migrate_employee_address_range_check(bind_engine=None) -> None:
+    """
+    Enforce coordinate range constraints on existing employee_addresses.
+
+    - Detects rows with out-of-range latitude (-90..90) or
+      longitude (-180..180). Such rows block the migration
+      (no data is modified).
+    - Adds the CHECK only when existing data is safe.
+    - Idempotent; repeated execution skips existing constraints.
+    """
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
+    if "employee_addresses" not in inspector.get_table_names():
+        return
+
+    with target.connect() as conn:
+        out_of_range = conn.execute(text(
+            "SELECT COUNT(*) FROM employee_addresses "
+            "WHERE (latitude IS NOT NULL AND "
+            "(latitude < -90 OR latitude > 90)) "
+            "OR (longitude IS NOT NULL AND "
+            "(longitude < -180 OR longitude > 180))"
+        )).scalar_one()
+        if out_of_range:
+            raise RuntimeError(
+                f"employee_addresses has {out_of_range} row(s) with "
+                "out-of-range coordinates. Clean them up manually "
+                "(set values within -90..90 for latitude and "
+                "-180..180 for longitude) before this migration "
+                "can add the range CHECK constraints."
+            )
+
+        for column, constraint_name, low, high in [
+            ("latitude", "ck_employee_address_latitude_range", -90, 90),
+            ("longitude", "ck_employee_address_longitude_range", -180, 180),
+        ]:
+            exists = conn.execute(text(
+                "SELECT 1 FROM pg_constraint "
+                "WHERE conname = :name "
+                "AND conrelid = 'employee_addresses'::regclass"
+            ), {"name": constraint_name}).scalar()
+            if not exists:
+                conn.execute(text(
+                    f'ALTER TABLE "employee_addresses" '
+                    f'ADD CONSTRAINT "{constraint_name}" '
+                    f'CHECK ({column} IS NULL OR '
+                    f'({column} >= {low} AND {column} <= {high}))'
+                ))
+                conn.commit()
+                print(f"  + check {constraint_name} added")
+
+
+def migrate_employee_address_history(bind_engine=None) -> None:
+    """
+    Audit tables must survive deletions: employee_address_history keeps no
+    FK on address_id or user_id. Tables created before the FK removal still
+    carry employee_address_history.user_id -> users.user_id — drop that
+    constraint when present. Idempotent; never touches history data.
+    """
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
+    if "employee_address_history" not in inspector.get_table_names():
+        return
+
+    stale = [
+        fk.get("name") for fk in inspector.get_foreign_keys(
+            "employee_address_history")
+        if "user_id" in (fk.get("constrained_columns") or [])
+    ]
+    if not stale:
+        return
+    with target.connect() as conn:
+        for name in stale:
+            if name:
+                conn.execute(text(
+                    f'ALTER TABLE "employee_address_history" '
+                    f'DROP CONSTRAINT "{name}"'
+                ))
+        conn.commit()
+        print(f"  - fk dropped from employee_address_history.user_id: {stale}")
+
+
 def migrate_data_fixes(bind_engine=None) -> None:
     """
     پاک‌سازی داده‌های قدیمی بدون آسیب به رکوردها.
@@ -229,6 +452,11 @@ def create_tables() -> None:
     try:
         migrate_missing_columns()
         Base.metadata.create_all(bind=engine)
+        migrate_employee_address_city_id()
+        migrate_employee_address_history()
+        migrate_employee_address_coords_pair()
+        migrate_employee_address_nan_check()
+        migrate_employee_address_range_check()
         migrate_time_columns()
         migrate_data_fixes()
         seed_travel_leave_policy_rules()
