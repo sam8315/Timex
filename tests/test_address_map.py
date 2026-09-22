@@ -10,6 +10,7 @@ Verifies (without browser automation):
 - user/admin flows remain scoped (permission + ownership)
 """
 import re
+from decimal import Decimal
 
 from models.employee_address import EmployeeAddress
 from web.services.address_service import (
@@ -279,3 +280,78 @@ def test_user_cannot_set_primary_of_other_user(client, db, make_user):
     db.expire_all()
     assert db.query(EmployeeAddress).filter(
         EmployeeAddress.id == addr.id).one().is_primary is False
+
+
+# ---------------------------------------------------------------------------
+# Frontend: city sync + date picker (Phase 25)
+# ---------------------------------------------------------------------------
+
+def test_city_sync_overwrites_province(client, db, make_user):
+    """timexSyncCity always overwrites province (no keep-old guard)."""
+    resp = client.get("/static/js/address_map.js")
+    assert resp.status_code == 200
+    body = resp.text
+    # The province assignment must exist without an empty-check guard
+    assert "provInput.value = province" in body
+    # Comment says both name and province sync
+    assert "همگام" in body
+
+
+def test_profile_add_form_has_jalali_dates(client, db, make_user):
+    """Add address form on /profile has jalali-date on valid_from/valid_to."""
+    user = make_user(role="user", balance_al=None)
+    _login(client, user)
+    resp = client.get("/profile", headers={"Accept": "text/html"})
+    assert resp.status_code == 200
+    body = resp.text
+    for name in ("valid_from", "valid_to"):
+        pattern = rf'name="{name}"[^>]*class="[^"]*jalali-date[^"]*"'
+        assert re.search(pattern, body), f"{name} missing jalali-date in add form"
+
+
+def test_profile_edit_form_has_jalali_dates(client, db, make_user):
+    """Edit address modals on /profile have jalali-date on valid_from/valid_to."""
+    me = make_user(role="user", balance_al=None)
+    _login(client, me)
+    addr = _make_addr(db, me["user_id"], postal_code="9900000100",
+                      latitude=Decimal("35.6892"),
+                      longitude=Decimal("51.3890"))
+    resp = client.get("/profile", headers={"Accept": "text/html"})
+    assert resp.status_code == 200
+    body = resp.text
+    for name in ("valid_from", "valid_to"):
+        pattern = rf'name="{name}"[^>]*class="[^"]*jalali-date[^"]*"'
+        assert re.search(pattern, body), f"{name} missing jalali-date in edit form"
+
+
+def test_admin_add_form_has_jalali_dates(client, db, make_user):
+    """Admin add address form has jalali-date on valid_from/valid_to."""
+    adm = make_user(role="super_admin")
+    _login(client, adm)
+    target = make_user(role="user", balance_al=None)
+    _make_addr(db, target["user_id"], postal_code="9900000100",
+                 latitude=Decimal("35.6892"),
+                 longitude=Decimal("51.3890"))
+    resp = client.get(f"/admin/profile/{target['user_id']}",
+                       headers={"Accept": "text/html"})
+    assert resp.status_code == 200
+    body = resp.text
+    for name in ("valid_from", "valid_to"):
+        pattern = rf'name="{name}"[^>]*class="[^"]*jalali-date[^"]*"'
+        assert re.search(pattern, body), f"{name} missing jalali-date in admin add"
+
+
+def test_admin_edit_form_has_jalali_dates(client, db, make_user):
+    """Admin edit address modal has jalali-date on valid_from/valid_to."""
+    adm = make_user(role="super_admin")
+    _login(client, adm)
+    target = make_user(role="user", balance_al=None)
+    addr = _make_addr(db, target["user_id"], postal_code="9900000101",
+                      latitude=Decimal("35.6892"),
+                      longitude=Decimal("51.3890"))
+    resp = client.get(f"/admin/profile/{target['user_id']}",
+                      headers={"Accept": "text/html"})
+    body = resp.text
+    for name in ("valid_from", "valid_to"):
+        pattern = rf'name="{name}"[^>]*class="[^"]*jalali-date[^"]*"'
+        assert re.search(pattern, body), f"{name} missing jalali-date in admin edit"

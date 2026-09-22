@@ -205,8 +205,7 @@ var TimexAddressMap = (function () {
 
 /* همگام‌سازی متن شهر/استان با انتخاب شهر مرجع (بدون دست‌کاری مختصات)
  *
- * - انتخاب شهر => متن شهر با نام شهر مرجع همگام می‌شود (اقدام صریح کاربر)
- * - استان فقط وقتی پر می‌شود که خالی باشد (مقدار دستی حفظ می‌شود)
+ * - انتخاب شهر => نام شهر و استان همگام می‌شوند (اقدام صریح کاربر)
  * - انتخاب گزینه خالی => متن‌های موجود دست نمی‌خورند
  */
 function timexSyncCity(sel) {
@@ -218,7 +217,5 @@ function timexSyncCity(sel) {
     var name = opt.getAttribute('data-name');
     var province = opt.getAttribute('data-province');
     if (cityInput && name) cityInput.value = name;
-    if (provInput && province && String(provInput.value).trim() === '') {
-        provInput.value = province;
-    }
+    if (provInput && province) provInput.value = province;
 }
