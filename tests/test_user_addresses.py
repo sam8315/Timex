@@ -12,9 +12,13 @@ Covers:
 - another user's address cannot be manipulated through user routes
 """
 from datetime import date
+from decimal import Decimal
+
+import pytest
 
 from models.employee_address import EmployeeAddress
-from web.services.address_service import create_address
+from web.routes.addresses import _parse_decimal
+from web.services.address_service import AddressServiceError, create_address
 
 from .conftest import login_as
 
@@ -340,3 +344,111 @@ def test_user_cannot_touch_other_users_address(client, db, make_user):
     db.expire_all()
     assert db.query(EmployeeAddress).filter(
         EmployeeAddress.id == addr.id).one().is_primary is False
+
+
+# ---------------------------------------------------------------------------
+# Coordinate digit normalization (route-level parsing)
+# ---------------------------------------------------------------------------
+
+def test_parse_decimal_ascii():
+    """Normal ASCII decimals parse unchanged."""
+    assert _parse_decimal("35.6892") == Decimal("35.6892")
+    assert _parse_decimal("  51.3890  ") == Decimal("51.3890")
+
+
+def test_parse_decimal_persian_digits():
+    """Persian digits normalize to ASCII."""
+    assert _parse_decimal("۳۵.۶۸۹۲") == Decimal("35.6892")
+
+
+def test_parse_decimal_arabic_indic_digits():
+    """Arabic-Indic digits normalize to ASCII."""
+    assert _parse_decimal("٣٥.٦٨٩٢") == Decimal("35.6892")
+
+
+def test_parse_decimal_persian_separator():
+    """Persian decimal separator normalizes to '.'."""
+    assert _parse_decimal("۳۵٫۶۸۹۲") == Decimal("35.6892")
+
+
+@pytest.mark.parametrize("empty", ["", "   ", None])
+def test_parse_decimal_empty_is_none(empty):
+    """Empty input means no coordinate (None)."""
+    assert _parse_decimal(empty) is None
+
+
+@pytest.mark.parametrize("bad", ["abc", "12.34.56", "--12", "۱۲a۳"])
+def test_parse_decimal_invalid_rejected(bad):
+    """Non-numeric text is rejected."""
+    with pytest.raises(AddressServiceError, match="مقدار عددی نامعتبر"):
+        _parse_decimal(bad)
+
+
+def test_user_add_persian_coords_stored(client, db, make_user):
+    """Persian-digit coords posted from the form are stored as Decimal."""
+    me = make_user(role="user", balance_al=None)
+    _login(client, me)
+
+    resp = client.post(
+        "/profile/addresses/add",
+        data={
+            "address_type": "HOME", "residence_status": "owner",
+            "province": "Tehran", "city": "Tehran", "district": "",
+            "postal_code": "9999999941", "address_text": "نقشه فارسی",
+            "latitude": "۳۵٫۶۸۹۲", "longitude": "۵۱.۳۸۹۰",
+            "valid_from": "", "valid_to": "", "notes": "", "gnaf_id": "",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 302
+    row = db.query(EmployeeAddress).filter(
+        EmployeeAddress.postal_code == "9999999941").one()
+    assert row.latitude == Decimal("35.6892")
+    assert row.longitude == Decimal("51.3890")
+
+
+def test_user_update_persian_coords_stored(client, db, make_user):
+    """Persian-digit coords on update are stored as Decimal."""
+    me = make_user(role="user", balance_al=None)
+    _login(client, me)
+    addr = _make_addr(db, me["user_id"], postal_code="9999999942")
+
+    resp = client.post(
+        f"/profile/addresses/{addr.id}/update",
+        data={
+            "address_type": "HOME", "residence_status": "owner",
+            "province": "Tehran", "city": "Tehran", "district": "",
+            "postal_code": "9999999942", "address_text": "x",
+            "latitude": "٣٦٫٢٩٧٢", "longitude": "٥٩٫٦٠٦٧",
+            "valid_from": "", "valid_to": "", "notes": "", "gnaf_id": "",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 302
+    db.expire_all()
+    row = db.query(EmployeeAddress).filter(
+        EmployeeAddress.id == addr.id).one()
+    assert row.latitude == Decimal("36.2972")
+    assert row.longitude == Decimal("59.6067")
+
+
+def test_user_add_out_of_range_coords_rejected(client, db, make_user):
+    """Out-of-range values still fail service validation after parsing."""
+    me = make_user(role="user", balance_al=None)
+    _login(client, me)
+
+    resp = client.post(
+        "/profile/addresses/add",
+        data={
+            "address_type": "HOME", "residence_status": "owner",
+            "province": "Tehran", "city": "Tehran", "district": "",
+            "postal_code": "9999999943", "address_text": "نامعتبر",
+            "latitude": "۹۱", "longitude": "۵۱",
+            "valid_from": "", "valid_to": "", "notes": "", "gnaf_id": "",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 302
+    assert "error=" in resp.headers["location"]
+    assert db.query(EmployeeAddress).filter(
+        EmployeeAddress.postal_code == "9999999943").first() is None

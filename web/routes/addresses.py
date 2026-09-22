@@ -26,12 +26,23 @@ from web.services.address_service import (
 router = APIRouter(tags=["Addresses"])
 
 
+# نگاشت ارقام فارسی/عربی و جداکننده اعشار فارسی به معادل ASCII
+_DECIMAL_TRANSLATION = str.maketrans(
+    "۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩٫",
+    "01234567890123456789.",
+)
+
+
 def _parse_decimal(value: str):
-    """تبدیل رشته به Decimal"""
+    """تبدیل رشته به Decimal.
+
+    ارقام فارسی/عربی و جداکننده اعشار فارسی (٫) به ASCII تبدیل می‌شود؛
+    رشته خالی => None؛ مقدار نامعتبر => AddressServiceError.
+    """
     if not value or not value.strip():
         return None
     try:
-        return Decimal(value.strip())
+        return Decimal(str(value).translate(_DECIMAL_TRANSLATION).strip())
     except (InvalidOperation, ValueError):
         raise AddressServiceError("مقدار عددی نامعتبر است")
 
