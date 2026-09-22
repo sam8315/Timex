@@ -126,6 +126,15 @@ def _validate_date_range(
             )
 
 
+def _validate_coords_pair(latitude, longitude) -> None:
+    """مختصات فقط جفتی معتبر است: هر دو خالی یا هر دو مقدار (مطابق CHECK)."""
+    if (latitude is None) != (longitude is None):
+        raise AddressServiceError(
+            "عرض جغرافیایی و طول جغرافیایی باید با هم ثبت شوند؛ "
+            "هر دو خالی یا هر دو دارای مقدار باشند"
+        )
+
+
 def _get_city_or_raise(db: Session, cid: int):
     """بازیابی شهر مرجع یا خطا"""
     from models.city import City
@@ -262,6 +271,7 @@ def create_address(
     postal_code = _validate_postal_code(postal_code)
     latitude = _validate_latitude(latitude)
     longitude = _validate_longitude(longitude)
+    _validate_coords_pair(latitude, longitude)
     _validate_date_range(valid_from, valid_to)
     city_id = _validate_city_id(db, city_id)
     if city_id is not None:
@@ -373,6 +383,9 @@ def update_address(
         addr.latitude = _validate_latitude(latitude)
     if longitude is not _UNSET:
         addr.longitude = _validate_longitude(longitude)
+    if latitude is not _UNSET or longitude is not _UNSET:
+        # جفت مختصات باید کامل بماند؛ حالت موجودِ دست‌نخورده حفظ می‌شود
+        _validate_coords_pair(addr.latitude, addr.longitude)
 
     if valid_from is not _UNSET:
         addr.valid_from = valid_from

@@ -128,6 +128,12 @@ class EmployeeAddress(TimestampMixin, Base):
             "longitude IS NULL OR (longitude >= -180 AND longitude <= 180)",
             name="ck_employee_address_longitude_range"
         ),
+        # مختصات همیشه جفتی ذخیره می‌شود: هر دو خالی یا هر دو مقدار
+        CheckConstraint(
+            "(latitude IS NULL AND longitude IS NULL) OR "
+            "(latitude IS NOT NULL AND longitude IS NOT NULL)",
+            name="ck_employee_address_coords_pair"
+        ),
         # valid_to نباید قبل از valid_from باشد (وقتی هر دو مقدار داشته باشند)
         CheckConstraint(
             "valid_to IS NULL OR valid_from IS NULL OR valid_to >= valid_from",

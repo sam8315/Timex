@@ -95,6 +95,7 @@ from models import Base  # noqa: E402
 from database.init_db import (  # noqa: E402
     migrate_employee_address_city_id,
     migrate_employee_address_history,
+    migrate_employee_address_coords_pair,
 )
 from sqlalchemy import text as _sql_text
 
@@ -221,6 +222,9 @@ with test_engine.connect() as _conn:
 # Audit history must not be cascade-deleted: drop the legacy user_id FK
 # on the persistent test table using the real startup migration.
 migrate_employee_address_history(bind_engine=test_engine)
+# Coordinate pairs must be complete: add the CHECK using the real migration
+# (the persistent test database holds no partial-coordinate rows).
+migrate_employee_address_coords_pair(bind_engine=test_engine)
 
 
 def _seed_regions() -> None:

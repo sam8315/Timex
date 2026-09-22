@@ -139,6 +139,50 @@ def migrate_employee_address_city_id(bind_engine=None) -> None:
             print("  + fk employee_addresses.city_id -> cities.id added")
 
 
+def migrate_employee_address_coords_pair(bind_engine=None) -> None:
+    """
+    Enforce complete coordinate pairs on existing employee_addresses tables.
+
+    - Detects rows with exactly one of latitude/longitude set. Such rows
+      are NOT auto-fixed (the missing coordinate must not be invented):
+      the migration fails with a clear error so the data can be cleaned
+      up manually first.
+    - Otherwise adds the ck_employee_address_coords_pair CHECK if missing.
+    Idempotent; never modifies address data.
+    """
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
+    if "employee_addresses" not in inspector.get_table_names():
+        return
+
+    with target.connect() as conn:
+        partial = conn.execute(text(
+            "SELECT COUNT(*) FROM employee_addresses "
+            "WHERE (latitude IS NULL AND longitude IS NOT NULL) "
+            "OR (latitude IS NOT NULL AND longitude IS NULL)"
+        )).scalar_one()
+        if partial:
+            raise RuntimeError(
+                f"employee_addresses has {partial} row(s) with only one "
+                "of latitude/longitude set. Clean them up manually "
+                "(set both NULL or both valid) before this migration can "
+                "add the ck_employee_address_coords_pair CHECK constraint."
+            )
+        exists = conn.execute(text(
+            "SELECT 1 FROM pg_constraint "
+            "WHERE conname = 'ck_employee_address_coords_pair'"
+        )).scalar()
+        if not exists:
+            conn.execute(text(
+                'ALTER TABLE "employee_addresses" '
+                'ADD CONSTRAINT "ck_employee_address_coords_pair" '
+                'CHECK ((latitude IS NULL AND longitude IS NULL) OR '
+                '(latitude IS NOT NULL AND longitude IS NOT NULL))'
+            ))
+            conn.commit()
+            print("  + check ck_employee_address_coords_pair added")
+
+
 def migrate_employee_address_history(bind_engine=None) -> None:
     """
     Audit tables must survive deletions: employee_address_history keeps no
@@ -310,6 +354,7 @@ def create_tables() -> None:
         Base.metadata.create_all(bind=engine)
         migrate_employee_address_city_id()
         migrate_employee_address_history()
+        migrate_employee_address_coords_pair()
         migrate_time_columns()
         migrate_data_fixes()
         seed_travel_leave_policy_rules()
