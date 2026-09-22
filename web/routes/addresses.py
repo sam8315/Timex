@@ -109,6 +109,7 @@ async def add_address(
         create_address(
             db=db,
             user_id=user.user_id,
+            changed_by=user.user_id,
             address_type=address_type,
             residence_status=residence_status,
             province=province,
@@ -150,7 +151,8 @@ async def delete_own_address(
 ):
     """حذف آدرس کاربر"""
     try:
-        delete_address(db, user.user_id, address_id)
+        delete_address(db, user.user_id, address_id,
+                       changed_by=user.user_id)
         return RedirectResponse(
             url="/profile?success=آدرس حذف شد",
             status_code=302,
@@ -176,7 +178,8 @@ async def set_own_primary_address(
 ):
     """تنظیم آدرس اصلی"""
     try:
-        set_primary_address(db, user.user_id, address_id)
+        set_primary_address(db, user.user_id, address_id,
+                            changed_by=user.user_id)
         return RedirectResponse(
             url="/profile?success=آدرس اصلی تنظیم شد",
             status_code=302,
@@ -221,6 +224,7 @@ async def update_own_address(
             db=db,
             user_id=user.user_id,
             address_id=address_id,
+            changed_by=user.user_id,
             address_type=address_type,
             residence_status=residence_status,
             province=province,
@@ -237,7 +241,8 @@ async def update_own_address(
             city_id=_parse_city_id(city_id),
         )
         if is_primary:
-            set_primary_address(db, user.user_id, address_id)
+            set_primary_address(db, user.user_id, address_id,
+                                changed_by=user.user_id)
         return RedirectResponse(
             url="/profile?success=آدرس با موفقیت ویرایش شد",
             status_code=302,
@@ -286,6 +291,7 @@ async def admin_add_address(
         create_address(
             db=db,
             user_id=target_user_id,
+            changed_by=user.user_id,
             address_type=address_type,
             residence_status=residence_status,
             province=province,
@@ -329,7 +335,8 @@ async def admin_delete_address(
     """حذف آدرس کاربر (توسط ادمین)"""
     enforce_permission(db, user, 'edit_profile')
     try:
-        delete_address(db, target_user_id, address_id)
+        delete_address(db, target_user_id, address_id,
+                       changed_by=user.user_id)
         return RedirectResponse(
             url=f"/admin/profile/{target_user_id}?success=آدرس حذف شد",
             status_code=302,
@@ -357,7 +364,8 @@ async def admin_set_primary_address(
     """تنظیم آدرس اصلی کاربر (توسط ادمین)"""
     enforce_permission(db, user, 'edit_profile')
     try:
-        set_primary_address(db, target_user_id, address_id)
+        set_primary_address(db, target_user_id, address_id,
+                            changed_by=user.user_id)
         return RedirectResponse(
             url=f"/admin/profile/{target_user_id}?success=آدرس اصلی تنظیم شد",
             status_code=302,
@@ -406,6 +414,7 @@ async def admin_update_address(
             db=db,
             user_id=target_user_id,
             address_id=address_id,
+            changed_by=user.user_id,
             address_type=address_type,
             residence_status=residence_status,
             province=province,
@@ -422,7 +431,8 @@ async def admin_update_address(
             city_id=_parse_city_id(city_id),
         )
         if is_primary:
-            set_primary_address(db, target_user_id, address_id)
+            set_primary_address(db, target_user_id, address_id,
+                                changed_by=user.user_id)
         return RedirectResponse(
             url=f"/admin/profile/{target_user_id}?success=آدرس با موفقیت ویرایش شد",
             status_code=302,

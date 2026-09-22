@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from models.employee_address import (
     EmployeeAddress, ADDRESS_TYPES, RESIDENCE_STATUSES,
 )
+from models.employee_address_history import EmployeeAddressHistory
 from models.user import User
 
 
@@ -169,6 +170,40 @@ def _get_address_for_user(
     return addr
 
 
+# ---------------------------------------------------------------------------
+# Audit trail (append-only, same session/transaction as the mutation)
+# ---------------------------------------------------------------------------
+_SNAPSHOT_FIELDS = (
+    "address_type", "residence_status", "province", "city", "district",
+    "postal_code", "address", "is_primary", "city_id", "gnaf_id",
+    "latitude", "longitude", "valid_from", "valid_to", "notes",
+)
+
+
+def _address_snapshot(addr: EmployeeAddress) -> dict:
+    """اسنپ‌شات کامل وضعیت فعلی آدرس"""
+    return {field: getattr(addr, field) for field in _SNAPSHOT_FIELDS}
+
+
+def _record_history(
+    db: Session,
+    *,
+    address_id: int,
+    user_id: str,
+    action: str,
+    changed_by: Optional[str],
+    snapshot: dict,
+) -> None:
+    """افزودن ردیف تاریخچه بدون commit (هم‌تراکنش با تغییر اصلی)"""
+    db.add(EmployeeAddressHistory(
+        address_id=address_id,
+        user_id=user_id,
+        action=action,
+        changed_by_user_id=changed_by,
+        **snapshot,
+    ))
+
+
 def list_addresses(db: Session, user_id: str) -> List[EmployeeAddress]:
     """لیست آدرس‌های یک کاربر"""
     _validate_user_exists(db, user_id)
@@ -207,6 +242,7 @@ def create_address(
     notes: Optional[str] = None,
     gnaf_id: Optional[str] = None,
     city_id: Optional[int] = None,
+    changed_by: Optional[str] = None,
 ) -> EmployeeAddress:
     """ایجاد آدرس جدید
 
@@ -216,6 +252,9 @@ def create_address(
     اگر آدرس جدید primary باشد، primary قبلی همین کاربر از حالت primary
     خارج می‌شود؛ is_primary یعنی «اصلیِ فعلی» و historical بودن سطر قبلی
     را تغییر نمی‌دهد (valid_from/valid_to آن دست نخورده می‌ماند).
+
+    پس از commit موفق، یک ردیف CREATE و برای primary خلع‌شده (در صورت
+    وجود) یک ردیف UPDATE ثبت می‌شود؛ همه در یک تراکنش.
     """
     _validate_user_exists(db, user_id)
     address_type = _validate_address_type(address_type)
@@ -234,7 +273,15 @@ def create_address(
         province = _validate_required_text(province, "استان")
         city = _validate_required_text(city, "شهر")
 
+    unset_snapshots = []
     if is_primary:
+        previous = db.query(EmployeeAddress).filter(
+            EmployeeAddress.user_id == user_id,
+            EmployeeAddress.is_primary == True,
+        ).all()
+        unset_snapshots = [
+            (old.id, _address_snapshot(old)) for old in previous
+        ]
         db.query(EmployeeAddress).filter(
             EmployeeAddress.user_id == user_id,
             EmployeeAddress.is_primary == True,
@@ -259,6 +306,14 @@ def create_address(
         city_id=city_id,
     )
     db.add(new_addr)
+    db.flush()
+    for old_id, old_snapshot in unset_snapshots:
+        _record_history(db, address_id=old_id, user_id=user_id,
+                        action="UPDATE", changed_by=changed_by,
+                        snapshot=old_snapshot)
+    _record_history(db, address_id=new_addr.id, user_id=user_id,
+                    action="CREATE", changed_by=changed_by,
+                    snapshot=_address_snapshot(new_addr))
     db.commit()
     db.refresh(new_addr)
     return new_addr
@@ -282,6 +337,7 @@ def update_address(
     notes: Optional[str] = _UNSET,
     gnaf_id: Optional[str] = _UNSET,
     city_id: Optional[int] = _UNSET,
+    changed_by: Optional[str] = None,
 ) -> EmployeeAddress:
     """ویرایش آدرس
 
@@ -299,9 +355,13 @@ def update_address(
     stored snapshot untouched. With city_id omitted, a linked address
     keeps city_id/province/city unchanged and submitted province/city
     values are ignored.
+
+    وضعیت قبلی (OLD) فقط وقتی در تاریخچه ثبت می‌شود که واقعاً تغییری
+    رخ داده باشد؛ به‌روزرسانیِ بدون تغییر ردیفی ایجاد نمی‌کند.
     """
     _validate_user_exists(db, user_id)
     addr = _get_address_for_user(db, user_id, address_id)
+    old_snapshot = _address_snapshot(addr)
 
     if address_type is not _UNSET:
         addr.address_type = _validate_address_type(address_type)
@@ -365,25 +425,42 @@ def update_address(
     if gnaf_id is not _UNSET:
         addr.gnaf_id = gnaf_id.strip() if gnaf_id else None
 
+    if _address_snapshot(addr) != old_snapshot:
+        _record_history(db, address_id=addr.id, user_id=user_id,
+                        action="UPDATE", changed_by=changed_by,
+                        snapshot=old_snapshot)
     db.commit()
     db.refresh(addr)
     return addr
 
 
-def delete_address(db: Session, user_id: str, address_id: int) -> None:
-    """حذف آدرس"""
+def delete_address(
+    db: Session, user_id: str, address_id: int,
+    changed_by: Optional[str] = None,
+) -> None:
+    """حذف آدرس (وضعیت نهایی قبل از حذف در تاریخچه ثبت می‌شود)"""
     _validate_user_exists(db, user_id)
     addr = _get_address_for_user(db, user_id, address_id)
+    old_snapshot = _address_snapshot(addr)
     db.delete(addr)
+    _record_history(db, address_id=address_id, user_id=user_id,
+                    action="DELETE", changed_by=changed_by,
+                    snapshot=old_snapshot)
     db.commit()
 
 
 def set_primary_address(
-    db: Session, user_id: str, address_id: int
+    db: Session, user_id: str, address_id: int,
+    changed_by: Optional[str] = None,
 ) -> EmployeeAddress:
     """تنظیم آدرس اصلیِ فعلی (primary قبلی خلع می‌شود؛ تاریخچه آن حفظ می‌شود)"""
     _validate_user_exists(db, user_id)
     addr = _get_address_for_user(db, user_id, address_id)
+
+    candidates = db.query(EmployeeAddress).filter(
+        EmployeeAddress.user_id == user_id,
+    ).all()
+    old_snapshots = {row.id: _address_snapshot(row) for row in candidates}
 
     db.query(EmployeeAddress).filter(
         EmployeeAddress.user_id == user_id,
@@ -391,6 +468,14 @@ def set_primary_address(
     ).update({EmployeeAddress.is_primary: False})
 
     addr.is_primary = True
+    db.flush()
+    for row in candidates:
+        old = old_snapshots[row.id]
+        new_is_primary = (row.id == addr.id)
+        if bool(old["is_primary"]) != new_is_primary:
+            _record_history(db, address_id=row.id, user_id=user_id,
+                            action="UPDATE", changed_by=changed_by,
+                            snapshot=old)
     db.commit()
     db.refresh(addr)
     return addr
