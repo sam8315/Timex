@@ -38,7 +38,8 @@ def _has_pair_check():
     with test_engine.connect() as conn:
         return conn.execute(sa_text(
             "SELECT 1 FROM pg_constraint "
-            "WHERE conname = 'ck_employee_address_coords_pair'")).scalar()
+            "WHERE conname = 'ck_employee_address_coords_pair' "
+            "AND conrelid = 'employee_addresses'::regclass")).scalar()
 
 
 # ---------------------------------------------------------------------------
@@ -208,6 +209,30 @@ def test_migration_fails_safely_on_partial_data(db, make_user):
         db.query(EmployeeAddress).filter(
             EmployeeAddress.postal_code == "6666666610").delete(
                 synchronize_session=False)
+        db.commit()
+        migrate_employee_address_coords_pair(bind_engine=test_engine)
+        assert _has_pair_check() is not None
+
+
+def test_migration_ignores_same_named_constraint_elsewhere(db):
+    """A same-named CHECK on another table must not fool the migration."""
+    db.execute(sa_text(
+        "ALTER TABLE employee_addresses "
+        "DROP CONSTRAINT IF EXISTS ck_employee_address_coords_pair"))
+    db.commit()
+    db.execute(sa_text(
+        "CREATE TABLE tmp_pair_check_probe ("
+        "id INTEGER, "
+        "CONSTRAINT ck_employee_address_coords_pair CHECK (id > 0))"))
+    db.commit()
+    try:
+        # scoped check still reports the constraint as missing here ...
+        assert _has_pair_check() is None
+        migrate_employee_address_coords_pair(bind_engine=test_engine)
+        # ... and the migration adds it to employee_addresses regardless
+        assert _has_pair_check() is not None
+    finally:
+        db.execute(sa_text("DROP TABLE IF EXISTS tmp_pair_check_probe"))
         db.commit()
         migrate_employee_address_coords_pair(bind_engine=test_engine)
         assert _has_pair_check() is not None

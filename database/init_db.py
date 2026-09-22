@@ -168,9 +168,12 @@ def migrate_employee_address_coords_pair(bind_engine=None) -> None:
                 "(set both NULL or both valid) before this migration can "
                 "add the ck_employee_address_coords_pair CHECK constraint."
             )
+        # Scope by table OID: a same-named constraint on another table
+        # must not satisfy this check.
         exists = conn.execute(text(
             "SELECT 1 FROM pg_constraint "
-            "WHERE conname = 'ck_employee_address_coords_pair'"
+            "WHERE conname = 'ck_employee_address_coords_pair' "
+            "AND conrelid = 'employee_addresses'::regclass"
         )).scalar()
         if not exists:
             conn.execute(text(
