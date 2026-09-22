@@ -16,7 +16,7 @@ from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import (
-    Integer, String, Boolean, ForeignKey, Text, Date, DateTime, Numeric,
+    Integer, String, Boolean, Text, Date, DateTime, Numeric,
     CheckConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -38,11 +38,11 @@ class EmployeeAddressHistory(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
-    # پیوند به آدرس/کاربر هدف (بدون FK روی address تا سوابق حذف باقی بماند)
+    # پیوند به آدرس/کاربر هدف — عمداً بدون FK تا سوابق ممیزی با حذف
+    # آدرس یا کاربر از بین نرود و با user_id ذخیره‌شده قابل بازیابی بماند
     address_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     user_id: Mapped[str] = mapped_column(
         String(50),
-        ForeignKey("users.user_id", ondelete="CASCADE"),
         nullable=False,
         index=True
     )

@@ -139,6 +139,36 @@ def migrate_employee_address_city_id(bind_engine=None) -> None:
             print("  + fk employee_addresses.city_id -> cities.id added")
 
 
+def migrate_employee_address_history(bind_engine=None) -> None:
+    """
+    Audit tables must survive deletions: employee_address_history keeps no
+    FK on address_id or user_id. Tables created before the FK removal still
+    carry employee_address_history.user_id -> users.user_id — drop that
+    constraint when present. Idempotent; never touches history data.
+    """
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
+    if "employee_address_history" not in inspector.get_table_names():
+        return
+
+    stale = [
+        fk.get("name") for fk in inspector.get_foreign_keys(
+            "employee_address_history")
+        if "user_id" in (fk.get("constrained_columns") or [])
+    ]
+    if not stale:
+        return
+    with target.connect() as conn:
+        for name in stale:
+            if name:
+                conn.execute(text(
+                    f'ALTER TABLE "employee_address_history" '
+                    f'DROP CONSTRAINT "{name}"'
+                ))
+        conn.commit()
+        print(f"  - fk dropped from employee_address_history.user_id: {stale}")
+
+
 def migrate_data_fixes(bind_engine=None) -> None:
     """
     پاک‌سازی داده‌های قدیمی بدون آسیب به رکوردها.
@@ -279,6 +309,7 @@ def create_tables() -> None:
         migrate_missing_columns()
         Base.metadata.create_all(bind=engine)
         migrate_employee_address_city_id()
+        migrate_employee_address_history()
         migrate_time_columns()
         migrate_data_fixes()
         seed_travel_leave_policy_rules()

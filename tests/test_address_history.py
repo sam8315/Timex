@@ -216,3 +216,74 @@ def test_cross_user_routes_do_not_touch_history(client, db, make_user):
     assert len(rows) == 1
     assert rows[0].action == "CREATE"
     assert all(r.changed_by_user_id != me["user_id"] for r in rows)
+
+
+# ---------------------------------------------------------------------------
+# Audit retention (append-only: deletions never remove history)
+# ---------------------------------------------------------------------------
+
+def test_history_user_id_has_no_fk(db):
+    """History carries no FK so deletions cannot cascade into it."""
+    from sqlalchemy import inspect as sa_inspect
+    fks = sa_inspect(db.bind).get_foreign_keys("employee_address_history")
+    assert fks == []
+
+
+def test_delete_address_keeps_history(db, make_user):
+    """All CREATE/UPDATE/DELETE rows survive address deletion."""
+    user = make_user(role="user", balance_al=None)
+    addr = _make_addr(db, user["user_id"], postal_code="9999999951")
+    update_address(db, user["user_id"], addr.id, province="Fars")
+    addr_id, uid = addr.id, user["user_id"]
+    delete_address(db, uid, addr_id)
+
+    rows = _history(db, addr_id)
+    assert [r.action for r in rows] == ["CREATE", "UPDATE", "DELETE"]
+    # still queryable by the stored user_id
+    by_user = db.query(EmployeeAddressHistory).filter(
+        EmployeeAddressHistory.user_id == uid).all()
+    assert len(by_user) == 3
+
+
+def test_delete_user_keeps_history(db, make_user):
+    """Deleting the user (existing cascade mechanism) keeps history."""
+    from models.employee_address import EmployeeAddress
+    from models.user import User
+
+    user = make_user(role="user", balance_al=None)
+    addr = _make_addr(db, user["user_id"], postal_code="9999999952",
+                      province="Gilan")
+    update_address(db, user["user_id"], addr.id, province="Fars")
+    addr_id, uid = addr.id, user["user_id"]
+
+    db.query(User).filter(User.user_id == uid).delete(
+        synchronize_session=False)
+    db.commit()
+
+    # addresses are still cascade-deleted ...
+    assert db.query(EmployeeAddress).filter(
+        EmployeeAddress.id == addr_id).first() is None
+    # ... but the audit trail remains queryable by stored user_id
+    rows = _history(db, addr_id)
+    assert [r.action for r in rows] == ["CREATE", "UPDATE"]
+    assert all(r.user_id == uid for r in rows)
+    assert rows[1].province == "Gilan"  # snapshot preserved
+
+
+def test_operations_unaffected_by_fk_removal(db, make_user):
+    """Create/update/delete roundtrip still records a full trail."""
+    user = make_user(role="user", balance_al=None)
+    addr = _make_addr(db, user["user_id"], postal_code="9999999953",
+                      changed_by=user["user_id"])
+    update_address(db, user["user_id"], addr.id, city="Rasht",
+                   changed_by=user["user_id"])
+    addr_id = addr.id
+    delete_address(db, user["user_id"], addr_id,
+                   changed_by=user["user_id"])
+
+    rows = _history(db, addr_id)
+    assert [r.action for r in rows] == ["CREATE", "UPDATE", "DELETE"]
+    assert rows[0].city == "Tehran"
+    assert rows[1].city == "Tehran"
+    assert rows[2].city == "Rasht"
+    assert all(r.changed_by_user_id == user["user_id"] for r in rows)
