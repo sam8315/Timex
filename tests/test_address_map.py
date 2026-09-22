@@ -61,6 +61,28 @@ def test_map_helper_script_served(client):
     assert "geocod" not in body.lower()
 
 
+def test_map_helper_normalizes_persian_arabic_numerals(client):
+    """parseNum() normalizes Persian/Arabic digits and ٫ like the backend."""
+    import re
+    resp = client.get("/static/js/address_map.js")
+    assert resp.status_code == 200
+    body = resp.text
+    # digit tables + Persian decimal separator are present ...
+    assert "۰۱۲۳۴۵۶۷۸۹" in body
+    assert "٠١٢٣٤٥٦٧٨٩" in body
+    assert "٫" in body
+    # ... and parseNum() actually applies the normalization ...
+    block = re.search(
+        r"function parseNum\(text\) \{(.*?)\n    \}", body, re.S)
+    assert block is not None
+    assert "normalizeNumText" in block.group(1)
+    # ... while keeping the existing ASCII/comma handling
+    assert "replace(',', '.')" in body
+    # no geocoding / search integration
+    assert "nominatim" not in body.lower()
+    assert "geocod" not in body.lower()
+
+
 # ---------------------------------------------------------------------------
 # Admin page wiring
 # ---------------------------------------------------------------------------

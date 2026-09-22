@@ -29,9 +29,27 @@ var TimexAddressMap = (function () {
         return String(Math.round(v * 1e7) / 1e7);
     }
 
+    // ارقام فارسی/عربی و جداکننده اعشار فارسی (مشابه نرمال‌سازی بک‌اند)
+    var FA_DIGITS = '۰۱۲۳۴۵۶۷۸۹';
+    var AR_DIGITS = '٠١٢٣٤٥٦٧٨٩';
+
+    function normalizeNumText(text) {
+        var out = '';
+        for (var i = 0; i < text.length; i++) {
+            var ch = text[i];
+            var fi = FA_DIGITS.indexOf(ch);
+            if (fi !== -1) { out += fi; continue; }
+            var ai = AR_DIGITS.indexOf(ch);
+            if (ai !== -1) { out += ai; continue; }
+            if (ch === '٫') { out += '.'; continue; }
+            out += ch;
+        }
+        return out;
+    }
+
     function parseNum(text) {
         if (text === null || text === undefined) return null;
-        var t = String(text).trim().replace('،', '.').replace(',', '.');
+        var t = normalizeNumText(String(text).trim()).replace('،', '.').replace(',', '.');
         if (t === '') return null;
         var v = Number(t);
         return isFinite(v) ? v : NaN;
