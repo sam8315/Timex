@@ -97,6 +97,7 @@ from database.init_db import (  # noqa: E402
     migrate_employee_address_history,
     migrate_employee_address_coords_pair,
     migrate_employee_address_nan_check,
+    migrate_employee_address_range_check,
 )
 from sqlalchemy import text as _sql_text
 
@@ -228,6 +229,8 @@ migrate_employee_address_history(bind_engine=test_engine)
 migrate_employee_address_coords_pair(bind_engine=test_engine)
 # NaN coordinates must be rejected at the DB level.
 migrate_employee_address_nan_check(bind_engine=test_engine)
+# Coordinate ranges must be enforced at the DB level.
+migrate_employee_address_range_check(bind_engine=test_engine)
 
 
 def _seed_regions() -> None:

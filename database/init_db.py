@@ -231,6 +231,58 @@ def migrate_employee_address_nan_check(bind_engine=None) -> None:
                 print(f"  + check {constraint_name} added")
 
 
+def migrate_employee_address_range_check(bind_engine=None) -> None:
+    """
+    Enforce coordinate range constraints on existing employee_addresses.
+
+    - Detects rows with out-of-range latitude (-90..90) or
+      longitude (-180..180). Such rows block the migration
+      (no data is modified).
+    - Adds the CHECK only when existing data is safe.
+    - Idempotent; repeated execution skips existing constraints.
+    """
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
+    if "employee_addresses" not in inspector.get_table_names():
+        return
+
+    with target.connect() as conn:
+        out_of_range = conn.execute(text(
+            "SELECT COUNT(*) FROM employee_addresses "
+            "WHERE (latitude IS NOT NULL AND "
+            "(latitude < -90 OR latitude > 90)) "
+            "OR (longitude IS NOT NULL AND "
+            "(longitude < -180 OR longitude > 180))"
+        )).scalar_one()
+        if out_of_range:
+            raise RuntimeError(
+                f"employee_addresses has {out_of_range} row(s) with "
+                "out-of-range coordinates. Clean them up manually "
+                "(set values within -90..90 for latitude and "
+                "-180..180 for longitude) before this migration "
+                "can add the range CHECK constraints."
+            )
+
+        for column, constraint_name, low, high in [
+            ("latitude", "ck_employee_address_latitude_range", -90, 90),
+            ("longitude", "ck_employee_address_longitude_range", -180, 180),
+        ]:
+            exists = conn.execute(text(
+                "SELECT 1 FROM pg_constraint "
+                "WHERE conname = :name "
+                "AND conrelid = 'employee_addresses'::regclass"
+            ), {"name": constraint_name}).scalar()
+            if not exists:
+                conn.execute(text(
+                    f'ALTER TABLE "employee_addresses" '
+                    f'ADD CONSTRAINT "{constraint_name}" '
+                    f'CHECK ({column} IS NULL OR '
+                    f'({column} >= {low} AND {column} <= {high}))'
+                ))
+                conn.commit()
+                print(f"  + check {constraint_name} added")
+
+
 def migrate_employee_address_history(bind_engine=None) -> None:
     """
     Audit tables must survive deletions: employee_address_history keeps no
@@ -404,6 +456,7 @@ def create_tables() -> None:
         migrate_employee_address_history()
         migrate_employee_address_coords_pair()
         migrate_employee_address_nan_check()
+        migrate_employee_address_range_check()
         migrate_time_columns()
         migrate_data_fixes()
         seed_travel_leave_policy_rules()
