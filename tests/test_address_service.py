@@ -15,6 +15,7 @@ Covers:
 - address history fields (valid_from / valid_to)
 """
 from datetime import date
+from decimal import Decimal
 
 import logging
 
@@ -33,6 +34,8 @@ from web.services.address_service import (
     get_primary_address,
     get_effective_home_address,
     _validate_postal_code,
+    _validate_latitude,
+    _validate_longitude,
     _UNSET,
 )
 
@@ -178,6 +181,101 @@ def test_create_address_invalid_longitude_raises(db, make_user):
     user = make_user(role="user", balance_al=None)
     with pytest.raises(AddressServiceError, match="طول جغرافیایی"):
         _create_addr(db, user["user_id"], longitude=181)
+
+
+# ---------------------------------------------------------------------------
+# Non-finite coordinate rejection (Phase 21)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("bad_val", [
+    Decimal("NaN"),
+    Decimal("Infinity"),
+    Decimal("-Infinity"),
+])
+def test_create_rejects_nonfinite_latitude(db, make_user, bad_val):
+    """NaN, +Infinity, -Infinity latitude rejected at create."""
+    user = make_user(role="user", balance_al=None)
+    with pytest.raises(AddressServiceError, match="عرض جغرافیایی"):
+        _create_addr(db, user["user_id"], latitude=bad_val)
+
+
+@pytest.mark.parametrize("bad_val", [
+    Decimal("NaN"),
+    Decimal("Infinity"),
+    Decimal("-Infinity"),
+])
+def test_create_rejects_nonfinite_longitude(db, make_user, bad_val):
+    """NaN, +Infinity, -Infinity longitude rejected at create."""
+    user = make_user(role="user", balance_al=None)
+    with pytest.raises(AddressServiceError, match="طول جغرافیایی"):
+        _create_addr(db, user["user_id"], longitude=bad_val)
+
+
+@pytest.mark.parametrize("bad_val", [
+    Decimal("NaN"),
+    Decimal("Infinity"),
+    Decimal("-Infinity"),
+])
+def test_update_rejects_nonfinite_latitude(db, make_user, bad_val):
+    """NaN, +Infinity, -Infinity latitude rejected at update."""
+    user = make_user(role="user", balance_al=None)
+    addr = _create_addr(db, user["user_id"], postal_code="9000000001")
+    with pytest.raises(AddressServiceError, match="عرض جغرافیایی"):
+        update_address(db, user["user_id"], addr.id, latitude=bad_val)
+
+
+@pytest.mark.parametrize("bad_val", [
+    Decimal("NaN"),
+    Decimal("Infinity"),
+    Decimal("-Infinity"),
+])
+def test_update_rejects_nonfinite_longitude(db, make_user, bad_val):
+    """NaN, +Infinity, -Infinity longitude rejected at update."""
+    user = make_user(role="user", balance_al=None)
+    addr = _create_addr(db, user["user_id"], postal_code="9000000002")
+    with pytest.raises(AddressServiceError, match="طول جغرافیایی"):
+        update_address(db, user["user_id"], addr.id, longitude=bad_val)
+
+
+@pytest.mark.parametrize("bad_val", [
+    "NaN", "Infinity", "-Infinity",
+])
+def test_create_rejects_string_nonfinite_latitude(db, make_user, bad_val):
+    """String NaN/Infinity/-Infinity latitude rejected at create."""
+    user = make_user(role="user", balance_al=None)
+    with pytest.raises(AddressServiceError, match="عرض جغرافیایی"):
+        _create_addr(db, user["user_id"], latitude=bad_val)
+
+
+@pytest.mark.parametrize("bad_val", [
+    "NaN", "Infinity", "-Infinity",
+])
+def test_create_rejects_string_nonfinite_longitude(db, make_user, bad_val):
+    """String NaN/Infinity/-Infinity longitude rejected at create."""
+    user = make_user(role="user", balance_al=None)
+    with pytest.raises(AddressServiceError, match="طول جغرافیایی"):
+        _create_addr(db, user["user_id"], longitude=bad_val)
+
+
+def test_create_accepts_valid_decimal_coordinates(db, make_user):
+    """Normal valid Decimal values are still accepted."""
+    user = make_user(role="user", balance_al=None)
+    addr = _create_addr(db, user["user_id"], postal_code="9000000003",
+                          latitude=Decimal("35.6892"),
+                          longitude=Decimal("51.3890"))
+    assert float(addr.latitude) == 35.6892
+    assert float(addr.longitude) == 51.3890
+
+
+def test_update_accepts_valid_decimal_coordinates(db, make_user):
+    """Normal valid Decimal values are still accepted at update."""
+    user = make_user(role="user", balance_al=None)
+    addr = _create_addr(db, user["user_id"], postal_code="9000000004")
+    updated = update_address(db, user["user_id"], addr.id,
+                               latitude=Decimal("36.2972"),
+                               longitude=Decimal("59.6067"))
+    assert float(updated.latitude) == 36.2972
+    assert float(updated.longitude) == 59.6067
 
 
 def test_create_address_invalid_date_range_raises(db, make_user):

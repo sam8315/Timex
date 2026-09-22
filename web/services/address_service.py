@@ -2,6 +2,7 @@
 سرویس مدیریت آدرس‌های کارمندان
 """
 import logging
+import math
 import re
 from datetime import date
 from decimal import Decimal, InvalidOperation
@@ -96,6 +97,11 @@ def _validate_latitude(value: Optional[Decimal]) -> Optional[Decimal]:
             value = Decimal(value)
         except (InvalidOperation, ValueError):
             raise AddressServiceError("مقدار عرض جغرافیایی نامعتبر است")
+    if isinstance(value, Decimal):
+        if not value.is_finite():
+            raise AddressServiceError("مقدار عرض جغرافیایی نامعتبر است")
+    elif not math.isfinite(value):
+        raise AddressServiceError("مقدار عرض جغرافیایی نامعتبر است")
     if value < -90 or value > 90:
         raise AddressServiceError("عرض جغرافیایی باید بین -90 تا 90 باشد")
     return value
@@ -110,6 +116,11 @@ def _validate_longitude(value: Optional[Decimal]) -> Optional[Decimal]:
             value = Decimal(value)
         except (InvalidOperation, ValueError):
             raise AddressServiceError("مقدار طول جغرافیایی نامعتبر است")
+    if isinstance(value, Decimal):
+        if not value.is_finite():
+            raise AddressServiceError("مقدار طول جغرافیایی نامعتبر است")
+    elif not math.isfinite(value):
+        raise AddressServiceError("مقدار طول جغرافیایی نامعتبر است")
     if value < -180 or value > 180:
         raise AddressServiceError("طول جغرافیایی باید بین -180 تا 180 باشد")
     return value
