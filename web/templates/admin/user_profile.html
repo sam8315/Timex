@@ -590,6 +590,86 @@
     </div>
 </div>
 
+    <!-- 🆕 تاریخچه تغییرات آدرس (فقط خواندنی) -->
+    <div class="card mb-4">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h6 class="mb-0"><i class="bi bi-clock-history"></i> تاریخچه تغییرات آدرس</h6>
+        <span class="badge bg-secondary">فقط خواندنی</span>
+    </div>
+    <div class="card-body">
+        {% if address_history %}
+        {% if history_truncated %}
+        <div class="alert alert-info py-2">
+            <small><i class="bi bi-info-circle"></i> فقط ۵۰ مورد اخیر نمایش داده می‌شود.</small>
+        </div>
+        {% endif %}
+        <div class="list-group">
+            {% for h in address_history %}
+            <div class="list-group-item">
+                <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+                    <div>
+                        {% if h.action == 'CREATE' %}<span class="badge bg-success">ایجاد</span>
+                        {% elif h.action == 'UPDATE' %}<span class="badge bg-warning text-dark">ویرایش</span>
+                        {% else %}<span class="badge bg-danger">حذف</span>{% endif %}
+                        <small class="text-muted ms-2">
+                            <i class="bi bi-clock"></i> {{ h.changed_at_j or '-' }}
+                        </small>
+                    </div>
+                    <small class="text-muted">
+                        <i class="bi bi-person"></i>
+                        انجام‌دهنده: {{ h.changed_by_user_id or 'سیستم' }}
+                    </small>
+                </div>
+                <div class="small mt-1">
+                    {% if h.action == 'CREATE' %}
+                    <span class="badge bg-light text-dark border">اسنپ‌شات ایجادشده</span>
+                    {% else %}
+                    <span class="badge bg-light text-dark border">وضعیت قبل از تغییر</span>
+                    {% endif %}
+                    {% if h.address_type == 'HOME' %}<span class="badge bg-secondary ms-1">منزل</span>
+                    {% elif h.address_type == 'WORK' %}<span class="badge bg-secondary ms-1">محل کار</span>
+                    {% elif h.address_type == 'MAILING' %}<span class="badge bg-secondary ms-1">پستی</span>
+                    {% elif h.address_type %}<span class="badge bg-secondary ms-1">سایر</span>{% endif %}
+                    {% if h.residence_status == 'owner' %}<span class="badge bg-info ms-1">مالک</span>
+                    {% elif h.residence_status == 'tenant' %}<span class="badge bg-info ms-1">مستأجر</span>
+                    {% elif h.residence_status == 'family' %}<span class="badge bg-info ms-1">منزل خانواده/پدری</span>
+                    {% elif h.residence_status == 'org_housing' %}<span class="badge bg-info ms-1">مسکن سازمانی</span>
+                    {% elif h.residence_status == 'provided' %}<span class="badge bg-info ms-1">رایگان/در اختیار</span>
+                    {% elif h.residence_status == 'other' %}<span class="badge bg-info ms-1">سایر</span>
+                    {% elif h.residence_status == 'unknown' %}<span class="badge bg-info ms-1">نامشخص</span>{% endif %}
+                    {% if h.is_primary %}
+                    <span class="badge bg-primary ms-1">⭐ اصلی</span>
+                    {% else %}
+                    <span class="badge bg-light text-muted border ms-1">غیراصلی</span>
+                    {% endif %}
+                </div>
+                <div class="small text-muted mt-1">
+                    {{ h.province or '-' }}، {{ h.city or '-' }}{% if h.district %}، {{ h.district }}{% endif %}
+                    {% if h.postal_code %}| کد پستی: <span dir="ltr">{{ h.postal_code }}</span>{% endif %}
+                </div>
+                {% if h.address %}
+                <div class="mt-1 text-break small" style="max-width: 100%;">{{ h.address }}</div>
+                {% endif %}
+                <div class="small text-muted mt-1">
+                    {% if h.city_id and history_cities.get(h.city_id) %}
+                    <span><i class="bi bi-building"></i> شهر مرجع: {{ history_cities.get(h.city_id) }}</span>
+                    {% endif %}
+                    {% if h.latitude is not none and h.longitude is not none %}
+                    <span class="ms-2"><i class="bi bi-pin-map"></i> <span dir="ltr">{{ h.latitude }}، {{ h.longitude }}</span></span>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-center py-4">
+            <i class="bi bi-clock-history display-6 text-muted"></i>
+            <p class="text-muted mt-2 mb-0">تاریخچه‌ای برای آدرس‌ها ثبت نشده است</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
     <!-- 🆕 مودال افزودن آدرس (پنل ادمین) -->
     <div class="modal fade" id="adminAddAddressModal" tabindex="-1">
     <div class="modal-dialog modal-lg">

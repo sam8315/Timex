@@ -1718,6 +1718,36 @@ async def admin_view_profile(
                 if addr.city_id == linked.id:
                     inactive_linked[addr.id] = linked
 
+    # 🆕 تاریخچه ممیزی آدرس‌ها (فقط خواندنی؛ مشروط به دسترسی edit_profile)
+    from models.employee_address_history import EmployeeAddressHistory
+    address_history = []
+    history_cities = {}
+    history_truncated = False
+    if has_permission(db, user, "edit_profile"):
+        fetched = db.query(EmployeeAddressHistory).filter(
+            EmployeeAddressHistory.user_id == target_user_id
+        ).order_by(
+            EmployeeAddressHistory.changed_at.desc(),
+            EmployeeAddressHistory.id.desc()
+        ).limit(51).all()
+        if len(fetched) > 50:
+            history_truncated = True
+            fetched = fetched[:50]
+        for entry in fetched:
+            try:
+                entry.changed_at_j = jdatetime.datetime.fromgregorian(
+                    datetime=entry.changed_at).strftime('%Y/%m/%d %H:%M')
+            except Exception:
+                entry.changed_at_j = "-"
+        address_history = fetched
+        ref_ids = {e.city_id for e in fetched if e.city_id}
+        if ref_ids:
+            for ref in db.query(City).filter(City.id.in_(ref_ids)).all():
+                label = ref.name
+                if ref.province:
+                    label = f"{ref.province} — {ref.name}"
+                history_cities[ref.id] = label
+
     return templates.TemplateResponse(request, "admin/user_profile.html", {
         "user": user,
         "target_user": target_user,
@@ -1739,6 +1769,9 @@ async def admin_view_profile(
         "residence_statuses": RESIDENCE_STATUSES,
         "cities": cities,
         "inactive_linked": inactive_linked,
+        "address_history": address_history,
+        "history_cities": history_cities,
+        "history_truncated": history_truncated,
     })
 
 
