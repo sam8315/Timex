@@ -13,7 +13,9 @@ Covers:
 """
 import pytest
 
+from models.employee_address import EmployeeAddress
 from models.employee_address_history import EmployeeAddressHistory
+from decimal import Decimal
 from web.services.address_service import (
     AddressServiceError,
     create_address,
@@ -287,3 +289,112 @@ def test_operations_unaffected_by_fk_removal(db, make_user):
     assert rows[1].city == "Tehran"
     assert rows[2].city == "Rasht"
     assert all(r.changed_by_user_id == user["user_id"] for r in rows)
+
+
+# ---------------------------------------------------------------------------
+# Coordinate audit-history coverage
+# ---------------------------------------------------------------------------
+
+def test_create_stores_coords_in_history(db, make_user):
+    """CREATE history row captures latitude and longitude."""
+    user = make_user(role="user", balance_al=None)
+    addr = _make_addr(db, user["user_id"], postal_code="9000000101",
+                        latitude=Decimal("35.6892"),
+                        longitude=Decimal("51.3890"),
+                        changed_by=user["user_id"])
+
+    rows = _history(db, addr.id)
+    assert len(rows) == 1
+    assert rows[0].action == "CREATE"
+    assert rows[0].latitude == Decimal("35.6892")
+    assert rows[0].longitude == Decimal("51.3890")
+
+
+def test_update_stores_old_coords_in_history(db, make_user):
+    """UPDATE history row stores previous latitude/longitude, not new."""
+    user = make_user(role="user", balance_al=None)
+    addr = _make_addr(db, user["user_id"], postal_code="9000000102",
+                        latitude=Decimal("35.6892"),
+                        longitude=Decimal("51.3890"),
+                        changed_by=user["user_id"])
+
+    update_address(db, user["user_id"], addr.id,
+                   latitude=Decimal("36.2972"),
+                   longitude=Decimal("59.6067"),
+                   changed_by=user["user_id"])
+
+    rows = _history(db, addr.id)
+    assert len(rows) == 2
+    assert rows[1].action == "UPDATE"
+    assert rows[1].latitude == Decimal("35.6892")
+    assert rows[1].longitude == Decimal("51.3890")
+
+
+def test_update_clearing_coords_stores_old_pair(db, make_user):
+    """Clearing both coordinates stores the previous pair in UPDATE history."""
+    user = make_user(role="user", balance_al=None)
+    addr = _make_addr(db, user["user_id"], postal_code="9000000103",
+                        latitude=Decimal("35.6892"),
+                        longitude=Decimal("51.3890"),
+                        changed_by=user["user_id"])
+
+    update_address(db, user["user_id"], addr.id,
+                   latitude=None, longitude=None,
+                   changed_by=user["user_id"])
+
+    rows = _history(db, addr.id)
+    assert len(rows) == 2
+    assert rows[1].action == "UPDATE"
+    assert rows[1].latitude == Decimal("35.6892")
+    assert rows[1].longitude == Decimal("51.3890")
+    # current address should have NULL coords
+    db.expire_all()
+    refreshed = db.query(EmployeeAddress).filter(
+        EmployeeAddress.id == addr.id).one()
+    assert refreshed.latitude is None
+    assert refreshed.longitude is None
+
+
+def test_update_one_coord_stores_complete_old_pair(db, make_user):
+    """Changing one coordinate stores the complete previous pair."""
+    user = make_user(role="user", balance_al=None)
+    addr = _make_addr(db, user["user_id"], postal_code="9000000104",
+                        latitude=Decimal("35.6892"),
+                        longitude=Decimal("51.3890"),
+                        changed_by=user["user_id"])
+
+    update_address(db, user["user_id"], addr.id,
+                   latitude=Decimal("36.0"),
+                   changed_by=user["user_id"])
+
+    rows = _history(db, addr.id)
+    assert len(rows) == 2
+    assert rows[1].action == "UPDATE"
+    assert rows[1].latitude == Decimal("35.6892")
+    assert rows[1].longitude == Decimal("51.3890")
+    # verify the new value is stored on the address
+    db.expire_all()
+    refreshed = db.query(EmployeeAddress).filter(
+        EmployeeAddress.id == addr.id).one()
+    assert refreshed.latitude == Decimal("36.0")
+    assert refreshed.longitude == Decimal("51.3890")
+
+
+def test_noop_coord_update_no_extra_history(db, make_user):
+    """A no-op coordinate update creates no extra history row."""
+    user = make_user(role="user", balance_al=None)
+    addr = _make_addr(db, user["user_id"], postal_code="9000000105",
+                        latitude=Decimal("35.6892"),
+                        longitude=Decimal("51.3890"),
+                        changed_by=user["user_id"])
+
+    history_count_before = len(_history(db, addr.id))
+    update_address(db, user["user_id"], addr.id,
+                   latitude=Decimal("35.6892"),
+                   longitude=Decimal("51.3890"),
+                   changed_by=user["user_id"])
+    history_count_after = len(_history(db, addr.id))
+
+    assert history_count_before == history_count_after
+    assert history_count_after == 1
+    assert _history(db, addr.id)[0].action == "CREATE"
