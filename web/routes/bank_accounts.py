@@ -248,7 +248,12 @@ async def change_own_bank_verification(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """تغییر وضعیت تأیید سازمانی حساب کاربر فعلی"""
+    """تغییر وضعیت تأیید سازمانی حساب کاربر فعلی
+
+    تأیید سازمانی فقط از مسیر مجوز edit_profile (همانند مسیر ادمین)؛
+    کاربر عادی نمی‌تواند حساب خود را verified/rejected کند.
+    """
+    enforce_permission(db, user, "edit_profile")
     base = "/profile"
     try:
         change_verification_status(

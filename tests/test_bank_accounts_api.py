@@ -378,8 +378,32 @@ def test_activate_own(client, db, make_user):
 # Verification
 # ---------------------------------------------------------------------------
 
-def test_verification_status_change_own(client, db, make_user):
+def test_verification_status_change_own_requires_edit_profile(
+    client, db, make_user
+):
+    """Regular users must not self-verify (edit_profile required)."""
     me = make_user(role="user", balance_al=None)
+    _login(client, me)
+    acc = _create_acc(db, me["user_id"])
+    resp = client.post(
+        f"/profile/bank-accounts/{acc.id}/verification",
+        data={"status": "verified", "note": "ok"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 403
+    db.expire_all()
+    kept = db.query(EmployeeBankAccount).filter(
+        EmployeeBankAccount.id == acc.id
+    ).one()
+    assert kept.verification_status == "unverified"
+    assert kept.verified_by is None
+
+
+def test_verification_status_change_own_with_edit_profile(
+    client, db, make_user
+):
+    """Holder of edit_profile may change own verification via own endpoint."""
+    me = make_user(role="super_admin")
     _login(client, me)
     acc = _create_acc(db, me["user_id"])
     resp = client.post(
@@ -399,7 +423,7 @@ def test_verification_status_change_own(client, db, make_user):
 
 
 def test_verification_invalid_status_maps_to_error(client, db, make_user):
-    me = make_user(role="user", balance_al=None)
+    me = make_user(role="super_admin")
     _login(client, me)
     acc = _create_acc(db, me["user_id"])
     resp = client.post(
@@ -413,7 +437,7 @@ def test_verification_invalid_status_maps_to_error(client, db, make_user):
 def test_verification_rejected_then_unverified_clears_stamps(
     client, db, make_user
 ):
-    me = make_user(role="user", balance_al=None)
+    me = make_user(role="super_admin")
     _login(client, me)
     acc = _create_acc(db, me["user_id"])
     client.post(

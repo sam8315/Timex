@@ -132,16 +132,21 @@ def test_admin_profile_edit_form_prefilled(client, db, make_user):
     )
     assert 'value="5555555555"' in body
     assert 'value="شعبه مرکزی"' in body
-    # edit form may hold full sensitive values (consistent with Phase 5 API)
-    assert f'value="{VALID_CARD}"' in body
-    assert f'value="{VALID_SHEBA}"' in body
-    # list masks card/sheba (only last 4 visible outside the edit input)
-    # card_masked appears as *12 digits + last4
+    # Phase 7: full card/sheba must NOT appear in initial page source
+    assert f'value="{VALID_CARD}"' not in body
+    assert f'value="{VALID_SHEBA}"' not in body
+    assert VALID_CARD not in body
+    assert VALID_SHEBA not in body
+    # masked placeholders / list masks present
     assert "************0006" in body
+    # JS prefill from existing admin GET API on modal open
+    assert f"/admin/profile/{target['user_id']}/bank-accounts/{acc.id}" in body
+    assert 'name="card_number"' in body
+    assert 'name="sheba"' in body
 
 
 def test_list_masks_sensitive_fields(client, db, make_user):
-    """Full card/sheba must not appear as plain list text outside edit inputs."""
+    """Full card/sheba must not appear anywhere in rendered profile HTML."""
     _login_super(client, make_user)
     target = make_user(role="user", balance_al=None)
     _make_acc(db, target["user_id"], card_number=VALID_CARD, sheba=VALID_SHEBA)
@@ -149,10 +154,11 @@ def test_list_masks_sensitive_fields(client, db, make_user):
     body = _profile(client, target["user_id"])
     # sheba last-4 mask present
     assert "************4567" in body or "**************4567" in body
-    # full sheba appears only inside edit input value=
-    # count occurrences of full sheba: should be exactly in value="..."
-    assert body.count(VALID_SHEBA) == body.count(f'value="{VALID_SHEBA}"')
-    assert body.count(VALID_CARD) == body.count(f'value="{VALID_CARD}"')
+    # full values absent from page source entirely
+    assert VALID_CARD not in body
+    assert VALID_SHEBA not in body
+    # card last-4 mask present
+    assert "0006" in body
 
 
 def test_verification_badges_and_info(client, db, make_user):
