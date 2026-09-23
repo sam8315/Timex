@@ -444,6 +444,87 @@ def seed_travel_leave_policy_rules() -> None:
         print("  + contract-scoped travel_leave policies/rules/quotas seeded")
 
 
+# Canonical active Iranian bank reference set (Phase 12).
+# Ordered for deterministic sort_order. Codes are 3-char strings (leading zeros).
+# Excluded intentionally: merged/revoked banks, central bank, foreign banks,
+# non-bank credit institutions (Ansar, Ghavamin, Hekmat, Mehr Eghtesad, etc.).
+CANONICAL_BANKS = (
+    ("011", "بانک صنعت و معدن"),
+    ("012", "بانک ملت"),
+    ("013", "بانک رفاه کارگران"),
+    ("014", "بانک مسکن"),
+    ("015", "بانک سپه"),
+    ("016", "بانک کشاورزی"),
+    ("017", "بانک ملی ایران"),
+    ("018", "بانک تجارت"),
+    ("019", "بانک صادرات ایران"),
+    ("020", "بانک توسعه صادرات ایران"),
+    ("021", "پست بانک ایران"),
+    ("022", "بانک توسعه تعاون"),
+    ("053", "بانک کارآفرین"),
+    ("054", "بانک پارسیان"),
+    ("055", "بانک اقتصاد نوین"),
+    ("056", "بانک سامان"),
+    ("057", "بانک پاسارگاد"),
+    ("058", "بانک سرمایه"),
+    ("059", "بانک سینا"),
+    ("060", "بانک قرض‌الحسنه مهر ایران"),
+    ("061", "بانک شهر"),
+    ("064", "بانک گردشگری"),
+    ("066", "بانک دی"),
+    ("069", "بانک ایران‌زمین"),
+    ("070", "بانک قرض‌الحسنه رسالت"),
+    ("078", "بانک خاورمیانه"),
+    ("095", "بانک مشترک ایران و ونزوئلا"),
+)
+
+
+def seed_banks(bind_engine=None) -> None:
+    """
+    Synchronize the canonical Iranian bank reference set (idempotent upsert).
+
+    - Existing canonical code → update Persian name, country_code='IR',
+      is_active=true, sort_order from the canonical list order.
+    - Missing canonical bank → insert.
+    - Existing code NOT in the canonical active set → set is_active=false
+      (never delete: employee_bank_accounts.bank_id is a restrictive FK).
+    """
+    from sqlalchemy import text as _sql_text
+
+    target = bind_engine if bind_engine is not None else engine
+    canonical_codes = {code for code, _ in CANONICAL_BANKS}
+
+    with target.begin() as conn:
+        for sort_order, (code, name) in enumerate(CANONICAL_BANKS, start=1):
+            conn.execute(
+                _sql_text(
+                    """
+                    INSERT INTO banks (code, name, country_code, is_active, sort_order)
+                    VALUES (:code, :name, 'IR', TRUE, :sort_order)
+                    ON CONFLICT (code) DO UPDATE SET
+                        name = EXCLUDED.name,
+                        country_code = EXCLUDED.country_code,
+                        is_active = EXCLUDED.is_active,
+                        sort_order = EXCLUDED.sort_order
+                    """
+                ),
+                {"code": code, "name": name, "sort_order": sort_order},
+            )
+
+        existing_codes = [
+            row[0] for row in conn.execute(_sql_text("SELECT code FROM banks"))
+        ]
+        for code in existing_codes:
+            if code not in canonical_codes:
+                conn.execute(
+                    _sql_text(
+                        "UPDATE banks SET is_active = FALSE WHERE code = :code"
+                    ),
+                    {"code": code},
+                )
+        print(f"  + Iranian banks synchronized ({len(CANONICAL_BANKS)} active)")
+
+
 def create_tables() -> None:
     """
     ساخت تمام جداول تعریف شده در مدل‌ها
@@ -460,6 +541,7 @@ def create_tables() -> None:
         migrate_time_columns()
         migrate_data_fixes()
         seed_travel_leave_policy_rules()
+        seed_banks()
         print("✅ جداول دیتابیس با موفقیت ساخته/بررسی شدند")
     except Exception as e:
         print(f"❌ خطا در ساخت جداول: {e}")
