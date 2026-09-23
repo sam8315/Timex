@@ -6,10 +6,12 @@
 - تغییرات در یک تراکنش commit می‌شوند
 - is_primary با الگوی demote-اول-سپس-promote مدیریت می‌شود؛ ایندکس جزئی
   دیتابیس (user_id WHERE is_primary AND is_active) شبکه ایمنی نهایی است
-- اعتبارسنجی الگوریتمی کارت/شبا در این فاز وجود ندارد و با تأیید
-  سازمانی (verification_status) کاملاً جداست
+- اعتبارسنجی الگوریتمی محلی کارت (Luhn) و شبا (MOD-97) در create/update
+  اعمال می‌شود و کاملاً از تأیید سازمانی (verification_status) جداست؛
+  هیچ‌کدام از فیلدهای تأیید را تغییر نمی‌دهند
 """
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Optional, List
 
@@ -28,6 +30,12 @@ from models.user import User
 _UNSET = object()
 
 logger = logging.getLogger(__name__)
+
+# نگاشت ارقام فارسی و عربی به ارقام ASCII (همانند address_service)
+_DIGIT_TRANSLATION = str.maketrans(
+    "۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩",
+    "01234567890123456789",
+)
 
 
 class BankAccountServiceError(Exception):
@@ -55,6 +63,100 @@ def _normalize_optional_text(value) -> Optional[str]:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _luhn_ok(digits: str) -> bool:
+    """اعتبارسنجی چک‌سام Luhn (MOD-10) روی رشته ارقام ASCII."""
+    total = 0
+    for i, ch in enumerate(reversed(digits)):
+        d = ord(ch) - 48
+        if i % 2 == 1:
+            d *= 2
+            if d > 9:
+                d -= 9
+        total += d
+    return total % 10 == 0
+
+
+def _validate_card_number(card_number) -> str:
+    """اعتبارسنجی الگوریتمی شماره کارت بانکی ایرانی (محلی، بدون API).
+
+    - ارقام فارسی/عربی به ASCII تبدیل می‌شوند (الگوی address_service)
+    - فقط فاصله و خط تیرهٔ فرمت‌دهی حذف می‌شوند (الگوی phones.normalize_phone)
+    - پس از نرمال‌سازی باید دقیقاً ۱۶ رقم ASCII باشد؛ صفرهای ابتدایی حفظ می‌شوند
+    - چک‌سام Luhn بررسی می‌شود
+    - صحت مالکیت کارت بررسی نمی‌شود؛ فیلدهای verification تغییر نمی‌کنند
+    """
+    if card_number is None or not str(card_number).strip():
+        raise BankAccountServiceError("شماره کارت نمی‌تواند خالی باشد")
+    normalized = (
+        str(card_number)
+        .translate(_DIGIT_TRANSLATION)
+        .strip()
+        .replace(" ", "")
+        .replace("-", "")
+    )
+    if not re.fullmatch(r"[0-9]{16}", normalized):
+        raise BankAccountServiceError("شماره کارت باید دقیقاً ۱۶ رقم عددی باشد")
+    if not _luhn_ok(normalized):
+        raise BankAccountServiceError("شماره کارت نامعتبر است (چک‌سام نادرست)")
+    return normalized
+
+
+def _validate_sheba(sheba) -> str:
+    """اعتبارسنجی الگوریتمی شماره شبا/IBAN ایرانی (محلی، بدون API).
+
+    - ارقام فارسی/عربی به ASCII تبدیل می‌شوند
+    - فاصله‌های فرمت‌دهی حذف می‌شوند؛ پیشوند کشور به شکل IR (بزرگ) نرمال می‌شود
+    - ساختار: IR + ۲۴ رقم (طول کل ۲۶) — استاندارد IBAN ایران
+    - چک‌سام MOD-97 بررسی می‌شود
+    - رشته ذخیره‌شده رشته می‌ماند (صفرهای ابتدایی حفظ)؛ بدون API خارجی
+    - مالکیت حساب/بانک بررسی نمی‌شود؛ فیلدهای verification تغییر نمی‌کنند
+    """
+    if sheba is None or not str(sheba).strip():
+        raise BankAccountServiceError("شماره شبا نمی‌تواند خالی باشد")
+    normalized = (
+        str(sheba)
+        .translate(_DIGIT_TRANSLATION)
+        .strip()
+        .replace(" ", "")
+        .upper()
+    )
+    if not normalized.startswith("IR"):
+        raise BankAccountServiceError("شماره شبا باید با پیشوند IR شروع شود")
+
+    body = normalized[2:]
+    if not re.fullmatch(r"[0-9]{24}", body):
+        raise BankAccountServiceError(
+            "شماره شبا باید پس از IR دقیقاً ۲۴ رقم عددی باشد"
+        )
+
+    # IBAN MOD-97: چهار کاراکتر اول (IR + چک‌دیجیت) به انتها منتقل می‌شوند
+    full = "IR" + body
+    rearranged = full[4:] + full[:4]
+    numeric = "".join(
+        ch if ch.isdigit() else str(ord(ch) - ord("A") + 10)
+        for ch in rearranged
+    )
+    if int(numeric) % 97 != 1:
+        raise BankAccountServiceError("شماره شبا نامعتبر است (چک‌سام نادرست)")
+    return full
+
+
+def _validated_optional_card(value) -> Optional[str]:
+    """نرمال‌سازی و اعتبارسنجی اختیاری شماره کارت (None => None)."""
+    text = _normalize_optional_text(value)
+    if text is None:
+        return None
+    return _validate_card_number(text)
+
+
+def _validated_optional_sheba(value) -> Optional[str]:
+    """نرمال‌سازی و اعتبارسنجی اختیاری شبا (None => None)."""
+    text = _normalize_optional_text(value)
+    if text is None:
+        return None
+    return _validate_sheba(text)
 
 
 def _validate_verification_status(status) -> str:
@@ -169,11 +271,14 @@ def create_bank_account(
     می‌شود؛ سپس حساب درج می‌شود (demote-اول، الگوی address_service).
 
     حساب غیرفعال نمی‌تواند primary باشد.
-    شماره حساب/کارت/شبا رشته می‌مانند؛ بدون اعتبارسنجی الگوریتمی.
+    شماره حساب رشته می‌ماند. کارت/شبا در صورت ورود، اعتبارسنجی
+    الگوریتمی محلی می‌شوند (بدون تغییر verification_*).
     """
     _validate_user_exists(db, user_id)
     account_number = _validate_required_text(account_number, "شماره حساب")
     bank = _validate_new_bank_id(db, bank_id)
+    card_number = _validated_optional_card(card_number)
+    sheba = _validated_optional_sheba(sheba)
     if is_primary and not is_active:
         raise BankAccountServiceError("حساب غیرفعال نمی‌تواند اصلی باشد")
 
@@ -187,8 +292,8 @@ def create_bank_account(
         branch_name=_normalize_optional_text(branch_name),
         branch_code=_normalize_optional_text(branch_code),
         account_number=account_number,
-        card_number=_normalize_optional_text(card_number),
-        sheba=_normalize_optional_text(sheba),
+        card_number=card_number,
+        sheba=sheba,
         account_type=_normalize_optional_text(account_type),
         account_title=_normalize_optional_text(account_title),
         description=_normalize_optional_text(description),
@@ -231,6 +336,10 @@ def update_bank_account(
 
     is_primary / is_active / وضعیت تأیید با عملیات مخصوص خود تغییر
     می‌کنند و موضوع این تابع نیستند.
+
+    card_number / sheba در صورت ارسال (شامل None برای پاک‌کردن) با
+    اعتبارسنجی الگوریتمی محلی بررسی می‌شوند؛ فیلدهای verification
+    دست نمی‌خورند.
     """
     _validate_user_exists(db, user_id)
     account = _get_account_for_user(db, user_id, account_id)
@@ -255,9 +364,9 @@ def update_bank_account(
     if branch_code is not _UNSET:
         account.branch_code = _normalize_optional_text(branch_code)
     if card_number is not _UNSET:
-        account.card_number = _normalize_optional_text(card_number)
+        account.card_number = _validated_optional_card(card_number)
     if sheba is not _UNSET:
-        account.sheba = _normalize_optional_text(sheba)
+        account.sheba = _validated_optional_sheba(sheba)
     if account_type is not _UNSET:
         account.account_type = _normalize_optional_text(account_type)
     if account_title is not _UNSET:

@@ -12,6 +12,7 @@ Covers:
 - verification status transitions
 - string / leading-zero preservation
 - cross-user scoping and error behavior
+- local card Luhn / sheba MOD-97 validation (Phase 4)
 """
 import pytest
 
@@ -28,9 +29,19 @@ from web.services.bank_account_service import (
     set_primary_bank_account,
     set_active_bank_account,
     change_verification_status,
+    _validate_card_number,
+    _validate_sheba,
 )
 
 from .conftest import test_engine
+
+# Deterministic, Luhn-valid / MOD-97-valid fixtures (not real banking data)
+VALID_CARD = "6037990000000006"
+VALID_CARD_ZEROS = "0000111122223337"
+VALID_SHEBA = "IR940180000000000001234567"
+VALID_SHEBA_ZEROS = "IR320180000000000000000000"
+INVALID_CARD_LUHN = "6037990000000007"
+INVALID_SHEBA_MOD97 = "IR940180000000000001234560"
 
 
 # ---------------------------------------------------------------------------
@@ -180,16 +191,16 @@ def test_create_with_optional_fields(db, make_user):
         account_number="1111111111",
         branch_name="Branch A",
         branch_code="001",
-        card_number="6037991111111111",
-        sheba="IR000000000000000000000001",
+        card_number=VALID_CARD,
+        sheba=VALID_SHEBA,
         account_type="current",
         account_title="Test Title",
         description="note",
     )
     assert acc.branch_name == "Branch A"
     assert acc.branch_code == "001"
-    assert acc.card_number == "6037991111111111"
-    assert acc.sheba == "IR000000000000000000000001"
+    assert acc.card_number == VALID_CARD
+    assert acc.sheba == VALID_SHEBA
     assert acc.account_type == "current"
     assert acc.account_title == "Test Title"
     assert acc.description == "note"
@@ -275,18 +286,18 @@ def test_update_keeps_omitted_fields(db, make_user):
         db, user["user_id"],
         account_number="1111111111",
         branch_name="Branch A",
-        card_number="6037991111111111",
+        card_number=VALID_CARD,
     )
     updated = update_bank_account(db, user["user_id"], acc.id, branch_code="042")
     assert updated.account_number == "1111111111"
     assert updated.branch_name == "Branch A"
-    assert updated.card_number == "6037991111111111"
+    assert updated.card_number == VALID_CARD
     assert updated.branch_code == "042"
 
 
 def test_update_none_clears_optional_field(db, make_user):
     user = make_user(role="user", balance_al=None)
-    acc = _create_acc(db, user["user_id"], branch_name="Branch A", card_number="6037")
+    acc = _create_acc(db, user["user_id"], branch_name="Branch A", card_number=VALID_CARD)
     updated = update_bank_account(
         db, user["user_id"], acc.id, branch_name=None, card_number=None
     )
@@ -650,15 +661,15 @@ def test_create_preserves_leading_zeros(db, make_user):
     acc = _create_acc(
         db, user["user_id"],
         account_number="00123456789012",
-        card_number="0000111122223333",
-        sheba="IR000000000000000000000000",
+        card_number=VALID_CARD_ZEROS,
+        sheba=VALID_SHEBA_ZEROS,
     )
     db.expire_all()
     loaded = db.query(EmployeeBankAccount).filter(
         EmployeeBankAccount.id == acc.id).one()
     assert loaded.account_number == "00123456789012"
-    assert loaded.card_number == "0000111122223333"
-    assert loaded.sheba == "IR000000000000000000000000"
+    assert loaded.card_number == VALID_CARD_ZEROS
+    assert loaded.sheba == VALID_SHEBA_ZEROS
 
 
 def test_update_preserves_leading_zeros(db, make_user):
@@ -667,12 +678,12 @@ def test_update_preserves_leading_zeros(db, make_user):
     updated = update_bank_account(
         db, user["user_id"], acc.id,
         account_number="00987654321",
-        card_number="0000000000000001",
-        sheba="IR000000000000000000000002",
+        card_number=VALID_CARD_ZEROS,
+        sheba=VALID_SHEBA_ZEROS,
     )
     assert updated.account_number == "00987654321"
-    assert updated.card_number == "0000000000000001"
-    assert updated.sheba == "IR000000000000000000000002"
+    assert updated.card_number == VALID_CARD_ZEROS
+    assert updated.sheba == VALID_SHEBA_ZEROS
 
 
 # ---------------------------------------------------------------------------
@@ -701,3 +712,227 @@ def test_multiple_accounts_crud(db, make_user):
     remaining = list_bank_accounts(db, user["user_id"])
     assert len(remaining) == 2
     assert all(a.id != a1.id for a in remaining)
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: pure card validation (Luhn, local only)
+# ---------------------------------------------------------------------------
+
+def test_card_valid_known_number():
+    assert _validate_card_number(VALID_CARD) == VALID_CARD
+
+
+def test_card_valid_leading_zeros_preserved():
+    assert _validate_card_number(VALID_CARD_ZEROS) == VALID_CARD_ZEROS
+    assert VALID_CARD_ZEROS.startswith("0000")
+
+
+def test_card_invalid_checksum_rejected():
+    with pytest.raises(BankAccountServiceError, match="چک‌سام"):
+        _validate_card_number(INVALID_CARD_LUHN)
+
+
+def test_card_invalid_length_rejected():
+    with pytest.raises(BankAccountServiceError, match="۱۶ رقم"):
+        _validate_card_number("603799123456")
+    with pytest.raises(BankAccountServiceError, match="۱۶ رقم"):
+        _validate_card_number(VALID_CARD + "1")
+
+
+def test_card_non_numeric_rejected():
+    with pytest.raises(BankAccountServiceError, match="۱۶ رقم"):
+        _validate_card_number("abcdefghijklmnop")
+
+
+def test_card_persian_digits_normalized():
+    persian = VALID_CARD.translate(str.maketrans(
+        "0123456789", "۰۱۲۳۴۵۶۷۸۹"
+    ))
+    assert _validate_card_number(persian) == VALID_CARD
+
+
+def test_card_arabic_indic_digits_normalized():
+    arabic = VALID_CARD.translate(str.maketrans(
+        "0123456789", "٠١٢٣٤٥٦٧٨٩"
+    ))
+    assert _validate_card_number(arabic) == VALID_CARD
+
+
+def test_card_formatting_spaces_and_dashes_removed():
+    spaced = "6037 9900 0000 0006"
+    dashed = "6037-9900-0000-0006"
+    assert _validate_card_number(spaced) == VALID_CARD
+    assert _validate_card_number(dashed) == VALID_CARD
+
+
+def test_card_empty_rejected():
+    with pytest.raises(BankAccountServiceError, match="خالی"):
+        _validate_card_number(None)
+    with pytest.raises(BankAccountServiceError, match="خالی"):
+        _validate_card_number("   ")
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: pure sheba validation (MOD-97, local only)
+# ---------------------------------------------------------------------------
+
+def test_sheba_valid_known_iban():
+    assert _validate_sheba(VALID_SHEBA) == VALID_SHEBA
+
+
+def test_sheba_valid_leading_zeros_body():
+    assert _validate_sheba(VALID_SHEBA_ZEROS) == VALID_SHEBA_ZEROS
+
+
+def test_sheba_invalid_mod97_rejected():
+    with pytest.raises(BankAccountServiceError, match="چک‌سام"):
+        _validate_sheba(INVALID_SHEBA_MOD97)
+
+
+def test_sheba_invalid_length_rejected():
+    with pytest.raises(BankAccountServiceError, match="۲۴ رقم"):
+        _validate_sheba("IR9401800000000000012345")
+
+
+def test_sheba_invalid_country_prefix_rejected():
+    with pytest.raises(BankAccountServiceError, match="پیشوند IR"):
+        _validate_sheba("XX940180000000000001234567")
+    with pytest.raises(BankAccountServiceError, match="پیشوند IR"):
+        _validate_sheba("940180000000000001234567")
+
+
+def test_sheba_invalid_characters_rejected():
+    with pytest.raises(BankAccountServiceError):
+        _validate_sheba("IR9401800000000000012345AB")
+
+
+def test_sheba_persian_digits_normalized():
+    # Same as VALID_SHEBA with Persian digits in the numeric body
+    body = VALID_SHEBA[2:]
+    persian_body = body.translate(str.maketrans(
+        "0123456789", "۰۱۲۳۴۵۶۷۸۹"
+    ))
+    assert _validate_sheba("IR" + persian_body) == VALID_SHEBA
+
+
+def test_sheba_lowercase_prefix_normalized():
+    assert _validate_sheba(VALID_SHEBA.lower()) == VALID_SHEBA
+
+
+def test_sheba_formatting_spaces_removed():
+    spaced = "IR94 0180 0000 0000 0001 2345 67"
+    assert _validate_sheba(spaced) == VALID_SHEBA
+
+
+def test_sheba_empty_rejected():
+    with pytest.raises(BankAccountServiceError, match="خالی"):
+        _validate_sheba(None)
+    with pytest.raises(BankAccountServiceError, match="خالی"):
+        _validate_sheba("  ")
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: service integration
+# ---------------------------------------------------------------------------
+
+def test_create_accepts_valid_card_and_sheba(db, make_user):
+    user = make_user(role="user", balance_al=None)
+    acc = _create_acc(
+        db, user["user_id"],
+        card_number=VALID_CARD,
+        sheba=VALID_SHEBA,
+    )
+    assert acc.card_number == VALID_CARD
+    assert acc.sheba == VALID_SHEBA
+
+
+def test_create_rejects_invalid_card_checksum(db, make_user):
+    user = make_user(role="user", balance_al=None)
+    with pytest.raises(BankAccountServiceError, match="چک‌سام"):
+        _create_acc(db, user["user_id"], card_number=INVALID_CARD_LUHN)
+
+
+def test_create_rejects_invalid_sheba_checksum(db, make_user):
+    user = make_user(role="user", balance_al=None)
+    with pytest.raises(BankAccountServiceError, match="چک‌سام"):
+        _create_acc(db, user["user_id"], sheba=INVALID_SHEBA_MOD97)
+
+
+def test_update_accepts_valid_card_and_sheba(db, make_user):
+    user = make_user(role="user", balance_al=None)
+    acc = _create_acc(db, user["user_id"])
+    updated = update_bank_account(
+        db, user["user_id"], acc.id,
+        card_number=VALID_CARD,
+        sheba=VALID_SHEBA,
+    )
+    assert updated.card_number == VALID_CARD
+    assert updated.sheba == VALID_SHEBA
+
+
+def test_update_rejects_invalid_card(db, make_user):
+    user = make_user(role="user", balance_al=None)
+    acc = _create_acc(db, user["user_id"], card_number=VALID_CARD)
+    with pytest.raises(BankAccountServiceError, match="چک‌سام"):
+        update_bank_account(db, user["user_id"], acc.id, card_number=INVALID_CARD_LUHN)
+    db.expire_all()
+    kept = db.query(EmployeeBankAccount).filter(
+        EmployeeBankAccount.id == acc.id).one()
+    assert kept.card_number == VALID_CARD
+
+
+def test_update_rejects_invalid_sheba(db, make_user):
+    user = make_user(role="user", balance_al=None)
+    acc = _create_acc(db, user["user_id"], sheba=VALID_SHEBA)
+    with pytest.raises(BankAccountServiceError, match="چک‌سام"):
+        update_bank_account(db, user["user_id"], acc.id, sheba=INVALID_SHEBA_MOD97)
+    db.expire_all()
+    kept = db.query(EmployeeBankAccount).filter(
+        EmployeeBankAccount.id == acc.id).one()
+    assert kept.sheba == VALID_SHEBA
+
+
+def test_validation_does_not_alter_verification_fields(db, make_user):
+    user = make_user(role="user", balance_al=None)
+    acc = _create_acc(
+        db, user["user_id"],
+        card_number=VALID_CARD,
+        sheba=VALID_SHEBA,
+    )
+    assert acc.verification_status == "unverified"
+    assert acc.verified_at is None
+    assert acc.verified_by is None
+    assert acc.verification_note is None
+
+    updated = update_bank_account(
+        db, user["user_id"], acc.id,
+        card_number=VALID_CARD_ZEROS,
+        sheba=VALID_SHEBA_ZEROS,
+    )
+    assert updated.verification_status == "unverified"
+    assert updated.verified_at is None
+    assert updated.verified_by is None
+    assert updated.verification_note is None
+
+
+def test_create_rejection_leaves_no_row_and_no_verification_change(db, make_user):
+    user = make_user(role="user", balance_al=None)
+    existing = _create_acc(db, user["user_id"])
+    before = (
+        existing.verification_status,
+        existing.verified_at,
+        existing.verified_by,
+        existing.verification_note,
+    )
+    with pytest.raises(BankAccountServiceError, match="چک‌سام"):
+        _create_acc(db, user["user_id"], card_number=INVALID_CARD_LUHN)
+    db.expire_all()
+    kept = db.query(EmployeeBankAccount).filter(
+        EmployeeBankAccount.id == existing.id).one()
+    after = (
+        kept.verification_status,
+        kept.verified_at,
+        kept.verified_by,
+        kept.verification_note,
+    )
+    assert after == before
