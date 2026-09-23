@@ -456,6 +456,37 @@ def db():
         session.close()
 
 
+@pytest.fixture(autouse=True)
+def cleanup_test_db():
+    """Clean up test database before and after each test."""
+    from models.user import User
+    from models.employee import Employee
+    from models.employee_phone import EmployeePhone
+    from models.password_reset import PasswordResetRequest
+    
+    session = TestingSessionLocal()
+    try:
+        session.query(PasswordResetRequest).delete()
+        session.query(EmployeePhone).delete()
+        session.query(Employee).delete()
+        session.query(User).delete()
+        session.commit()
+    finally:
+        session.close()
+    
+    yield
+    
+    session = TestingSessionLocal()
+    try:
+        session.query(PasswordResetRequest).delete()
+        session.query(EmployeePhone).delete()
+        session.query(Employee).delete()
+        session.query(User).delete()
+        session.commit()
+    finally:
+        session.close()
+
+
 @pytest.fixture()
 def client():
     """HTTP client with get_db overridden to the test database."""
