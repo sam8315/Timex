@@ -84,7 +84,7 @@ def _validate_card_number(card_number) -> str:
     - ارقام فارسی/عربی به ASCII تبدیل می‌شوند (الگوی address_service)
     - فقط فاصله و خط تیرهٔ فرمت‌دهی حذف می‌شوند (الگوی phones.normalize_phone)
     - پس از نرمال‌سازی باید دقیقاً ۱۶ رقم ASCII باشد؛ صفرهای ابتدایی حفظ می‌شوند
-    - چک‌سام Luhn بررسی می‌شود
+    - چک‌سام Luhn بررسی می‌شود؛ شمارهٔ تمام‌صفر رد می‌شود
     - صحت مالکیت کارت بررسی نمی‌شود؛ فیلدهای verification تغییر نمی‌کنند
     """
     if card_number is None or not str(card_number).strip():
@@ -98,6 +98,8 @@ def _validate_card_number(card_number) -> str:
     )
     if not re.fullmatch(r"[0-9]{16}", normalized):
         raise BankAccountServiceError("شماره کارت باید دقیقاً ۱۶ رقم عددی باشد")
+    if normalized == "0" * 16:
+        raise BankAccountServiceError("شماره کارت نامعتبر است (چک‌سام نادرست)")
     if not _luhn_ok(normalized):
         raise BankAccountServiceError("شماره کارت نامعتبر است (چک‌سام نادرست)")
     return normalized

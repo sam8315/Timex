@@ -732,6 +732,12 @@ def test_card_invalid_checksum_rejected():
         _validate_card_number(INVALID_CARD_LUHN)
 
 
+def test_card_all_zeros_rejected():
+    """0000000000000000 passes Luhn but must still be rejected."""
+    with pytest.raises(BankAccountServiceError, match="چک‌سام"):
+        _validate_card_number("0000000000000000")
+
+
 def test_card_invalid_length_rejected():
     with pytest.raises(BankAccountServiceError, match="۱۶ رقم"):
         _validate_card_number("603799123456")
