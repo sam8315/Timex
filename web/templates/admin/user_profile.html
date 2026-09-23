@@ -670,6 +670,214 @@
     </div>
 </div>
 
+    <!-- 🆕 بخش حساب‌های بانکی (پنل ادمین) -->
+    <div class="card mb-4">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h6 class="mb-0"><i class="bi bi-bank"></i> حساب‌های بانکی</h6>
+        <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#adminAddBankAccountModal">
+            <i class="bi bi-plus-circle"></i> افزودن حساب بانکی
+        </button>
+    </div>
+    <div class="card-body">
+        {% if bank_accounts_error %}
+        <div class="alert alert-danger">
+            <i class="bi bi-exclamation-triangle"></i> {{ bank_accounts_error }}
+        </div>
+        {% endif %}
+        {% if target_bank_accounts %}
+        <div class="list-group">
+            {% for acc in target_bank_accounts %}
+            <div class="list-group-item {% if not acc.is_active %}text-muted{% endif %}">
+                <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+                    <div class="flex-grow-1" style="min-width: 0;">
+                        <div class="mb-1">
+                            <i class="bi bi-bank text-primary"></i>
+                            <strong class="ms-2">{{ acc.bank_name }}</strong>
+                            {% if acc.is_primary %}
+                            <span class="badge bg-primary ms-1">⭐ اصلی</span>
+                            {% endif %}
+                            {% if acc.is_active %}
+                            <span class="badge bg-success ms-1">فعال</span>
+                            {% else %}
+                            <span class="badge bg-danger ms-1">غیرفعال</span>
+                            {% endif %}
+                            {% if acc.verification_status == 'verified' %}
+                            <span class="badge bg-success ms-1">تأیید شده</span>
+                            {% elif acc.verification_status == 'rejected' %}
+                            <span class="badge bg-danger ms-1">رد شده</span>
+                            {% else %}
+                            <span class="badge bg-warning text-dark ms-1">در انتظار بررسی</span>
+                            {% endif %}
+                        </div>
+                        <div class="small text-muted">
+                            شماره حساب: <span dir="ltr">{{ acc.account_number }}</span>
+                            {% if acc.branch_name %}| شعبه: {{ acc.branch_name }}{% endif %}
+                            {% if acc.branch_code %}| کد شعبه: <span dir="ltr">{{ acc.branch_code }}</span>{% endif %}
+                        </div>
+                        {% if acc.card_number or acc.sheba %}
+                        <div class="small text-muted mt-1">
+                            {% if acc.card_number %}
+                            <span class="ms-2">کارت: <span dir="ltr">{{ acc.card_masked }}</span></span>
+                            {% endif %}
+                            {% if acc.sheba %}
+                            <span>شبا: <span dir="ltr">{{ acc.sheba_masked }}</span></span>
+                            {% endif %}
+                        </div>
+                        {% endif %}
+                        {% if acc.account_title %}
+                        <div class="small text-muted mt-1">به نام: {{ acc.account_title }}</div>
+                        {% endif %}
+                        {% if acc.verified_at_j or acc.verification_note %}
+                        <div class="small mt-1">
+                            {% if acc.verified_at_j %}
+                            <span class="text-muted"><i class="bi bi-clock"></i> آخرین بررسی: {{ acc.verified_at_j }}</span>
+                            {% endif %}
+                            {% if acc.verification_note %}
+                            <span class="text-muted ms-2"><i class="bi bi-chat-left-text"></i> {{ acc.verification_note }}</span>
+                            {% endif %}
+                        </div>
+                        {% endif %}
+                        {% if acc.description %}
+                        <div class="small text-muted mt-1 text-break">{{ acc.description }}</div>
+                        {% endif %}
+                    </div>
+                    <div class="btn-group btn-group-sm flex-shrink-0">
+                        <button type="button" class="btn btn-outline-secondary" title="ویرایش"
+                                data-bs-toggle="modal" data-bs-target="#adminEditBankAccountModal-{{ acc.id }}">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                        {% if acc.is_active and not acc.is_primary %}
+                        <form method="post" action="/admin/profile/{{ target_user.user_id }}/bank-accounts/{{ acc.id }}/set-primary" class="d-inline">
+                            <button type="submit" class="btn btn-outline-primary" title="تنظیم به عنوان اصلی">
+                                <i class="bi bi-star"></i>
+                            </button>
+                        </form>
+                        {% endif %}
+                        {% if acc.is_active %}
+                        <form method="post" action="/admin/profile/{{ target_user.user_id }}/bank-accounts/{{ acc.id }}/set-active" class="d-inline">
+                            <input type="hidden" name="active" value="false">
+                            <button type="submit" class="btn btn-outline-warning" title="غیرفعال کردن">
+                                <i class="bi bi-pause-circle"></i>
+                            </button>
+                        </form>
+                        {% else %}
+                        <form method="post" action="/admin/profile/{{ target_user.user_id }}/bank-accounts/{{ acc.id }}/set-active" class="d-inline">
+                            <input type="hidden" name="active" value="true">
+                            <button type="submit" class="btn btn-outline-success" title="فعال کردن">
+                                <i class="bi bi-play-circle"></i>
+                            </button>
+                        </form>
+                        {% endif %}
+                        <button type="button" class="btn btn-outline-info" title="تأیید/رد"
+                                data-bs-toggle="modal" data-bs-target="#adminBankVerifyModal-{{ acc.id }}">
+                            <i class="bi bi-clipboard-check"></i>
+                        </button>
+                        <form method="post" action="/admin/profile/{{ target_user.user_id }}/bank-accounts/{{ acc.id }}/delete" class="d-inline"
+                              onsubmit="return confirm('آیا مطمئن هستید؟ این حساب بانکی حذف می‌شود.');">
+                            <button type="submit" class="btn btn-outline-danger" title="حذف">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-center py-4">
+            <i class="bi bi-bank display-6 text-muted"></i>
+            <p class="text-muted mt-2 mb-0">هیچ حساب بانکی برای این کاربر ثبت نشده است</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+    <!-- 🆕 مودال افزودن حساب بانکی (پنل ادمین) -->
+    <div class="modal fade" id="adminAddBankAccountModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form method="post" action="/admin/profile/{{ target_user.user_id }}/bank-accounts/add">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-plus-circle"></i> افزودن حساب بانکی</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">بانک <span class="text-danger">*</span></label>
+                            <select name="bank_id" class="form-select" required>
+                                <option value="">— انتخاب بانک —</option>
+                                {% for b in banks %}
+                                <option value="{{ b.id }}">{{ b.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">شماره حساب <span class="text-danger">*</span></label>
+                            <input type="text" name="account_number" class="form-control" dir="ltr"
+                                   required maxlength="50">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">نام شعبه</label>
+                            <input type="text" name="branch_name" class="form-control" maxlength="100">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">کد شعبه</label>
+                            <input type="text" name="branch_code" class="form-control" dir="ltr" maxlength="20">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">شماره کارت</label>
+                            <input type="text" name="card_number" class="form-control" dir="ltr"
+                                   maxlength="16" inputmode="numeric" pattern="[0-9]{16}"
+                                   placeholder="6037990000000000">
+                            <small class="text-muted">۱۶ رقم (اعتبارسنجی چک‌سام سمت سرور)</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">شماره شبا</label>
+                            <input type="text" name="sheba" class="form-control" dir="ltr"
+                                   maxlength="26" pattern="IR[0-9]{24}"
+                                   placeholder="IR000000000000000000000000">
+                            <small class="text-muted">با پیشوند IR (اعتبارسنجی چک‌سام سمت سرور)</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">نوع حساب</label>
+                            <input type="text" name="account_type" class="form-control" maxlength="30">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">صاحب حساب</label>
+                            <input type="text" name="account_title" class="form-control" maxlength="100">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">توضیحات</label>
+                            <textarea name="description" class="form-control" rows="2"></textarea>
+                        </div>
+                        <div class="col-12">
+                            <div class="form-check me-3">
+                                <input class="form-check-input" type="checkbox" name="is_primary" id="adminBankIsPrimary">
+                                <label class="form-check-label" for="adminBankIsPrimary">
+                                    ⭐ به عنوان حساب اصلی
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="is_active" id="adminBankIsActive" checked>
+                                <label class="form-check-label" for="adminBankIsActive">
+                                    فعال
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="bi bi-plus-circle"></i> افزودن
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
     <!-- 🆕 مودال افزودن آدرس (پنل ادمین) -->
     <div class="modal fade" id="adminAddAddressModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
@@ -921,6 +1129,128 @@
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
                     <button type="submit" class="btn btn-primary">
                         <i class="bi bi-check-circle"></i> ذخیره تغییرات
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+    {% endfor %}
+    {% endif %}
+
+    <!-- 🆕 مودال‌های ویرایش حساب بانکی (پنل ادمین) -->
+    {% if target_bank_accounts %}
+    {% for acc in target_bank_accounts %}
+    <div class="modal fade" id="adminEditBankAccountModal-{{ acc.id }}" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form method="post" action="/admin/profile/{{ target_user.user_id }}/bank-accounts/{{ acc.id }}/update">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-pencil"></i> ویرایش حساب بانکی</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">بانک <span class="text-danger">*</span></label>
+                            <select name="bank_id" class="form-select" required>
+                                {% for b in banks %}
+                                <option value="{{ b.id }}" {% if acc.bank_id == b.id %}selected{% endif %}>{{ b.name }}</option>
+                                {% endfor %}
+                                {% if acc.bank_id not in active_bank_ids %}
+                                <option value="{{ acc.bank_id }}" selected>غیرفعال — {{ acc.bank_name }}</option>
+                                {% endif %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">شماره حساب <span class="text-danger">*</span></label>
+                            <input type="text" name="account_number" class="form-control" dir="ltr"
+                                   required maxlength="50" value="{{ acc.account_number }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">نام شعبه</label>
+                            <input type="text" name="branch_name" class="form-control" maxlength="100"
+                                   value="{{ acc.branch_name or '' }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">کد شعبه</label>
+                            <input type="text" name="branch_code" class="form-control" dir="ltr" maxlength="20"
+                                   value="{{ acc.branch_code or '' }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">شماره کارت</label>
+                            <input type="text" name="card_number" class="form-control" dir="ltr"
+                                   maxlength="16" inputmode="numeric" pattern="[0-9]{16}"
+                                   value="{{ acc.card_number or '' }}">
+                            <small class="text-muted">۱۶ رقم (اعتبارسنجی چک‌سام سمت سرور)</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">شماره شبا</label>
+                            <input type="text" name="sheba" class="form-control" dir="ltr"
+                                   maxlength="26" pattern="IR[0-9]{24}"
+                                   value="{{ acc.sheba or '' }}">
+                            <small class="text-muted">با پیشوند IR (اعتبارسنجی چک‌سام سمت سرور)</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">نوع حساب</label>
+                            <input type="text" name="account_type" class="form-control" maxlength="30"
+                                   value="{{ acc.account_type or '' }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">صاحب حساب</label>
+                            <input type="text" name="account_title" class="form-control" maxlength="100"
+                                   value="{{ acc.account_title or '' }}">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">توضیحات</label>
+                            <textarea name="description" class="form-control" rows="2">{{ acc.description or '' }}</textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-circle"></i> ذخیره تغییرات
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+    <!-- 🆕 مودال وضعیت تأیید حساب بانکی (پنل ادمین) -->
+    <div class="modal fade" id="adminBankVerifyModal-{{ acc.id }}" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="/admin/profile/{{ target_user.user_id }}/bank-accounts/{{ acc.id }}/verification">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-clipboard-check"></i> وضعیت تأیید حساب بانکی</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">وضعیت تأیید <span class="text-danger">*</span></label>
+                        <select name="status" class="form-select" required>
+                            <option value="unverified" {% if acc.verification_status == 'unverified' %}selected{% endif %}>در انتظار بررسی</option>
+                            <option value="verified" {% if acc.verification_status == 'verified' %}selected{% endif %}>تأیید شده</option>
+                            <option value="rejected" {% if acc.verification_status == 'rejected' %}selected{% endif %}>رد شده</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">یادداشت</label>
+                        <textarea name="note" class="form-control" rows="2">{{ acc.verification_note or '' }}</textarea>
+                    </div>
+                    {% if acc.verified_at_j %}
+                    <div class="small text-muted">
+                        <i class="bi bi-clock"></i> آخرین بررسی: {{ acc.verified_at_j }}
+                        {% if acc.verified_by %}| انجام‌دهنده: {{ acc.verified_by }}{% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-circle"></i> ثبت وضعیت
                     </button>
                 </div>
             </form>

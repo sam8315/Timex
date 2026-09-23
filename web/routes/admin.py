@@ -1748,6 +1748,41 @@ async def admin_view_profile(
                     label = f"{ref.province} — {ref.name}"
                 history_cities[ref.id] = label
 
+    # 🆕 حساب‌های بانکی کاربر + بانک‌های فعال (بخش UI فاز ۶)
+    from models.bank import Bank
+    from web.services.bank_account_service import list_bank_accounts
+
+    banks = db.query(Bank).filter(Bank.is_active == True).order_by(
+        Bank.sort_order, Bank.name).all()
+    active_bank_ids = {b.id for b in banks}
+    bank_accounts_error = None
+    try:
+        target_bank_accounts = list_bank_accounts(db, target_user_id)
+    except Exception as e:
+        logger.exception("Failed to load bank accounts for %s", target_user_id)
+        target_bank_accounts = []
+        bank_accounts_error = f"خطا در بارگذاری حساب‌های بانکی: {e}"
+
+    def _mask_tail(value):
+        if not value:
+            return ""
+        text = str(value)
+        if len(text) <= 4:
+            return "*" * len(text)
+        return "*" * (len(text) - 4) + text[-4:]
+
+    for acc in target_bank_accounts:
+        try:
+            acc.verified_at_j = (
+                jdatetime.datetime.fromgregorian(
+                    datetime=acc.verified_at).strftime('%Y/%m/%d %H:%M')
+                if acc.verified_at else ""
+            )
+        except Exception:
+            acc.verified_at_j = ""
+        acc.card_masked = _mask_tail(acc.card_number)
+        acc.sheba_masked = _mask_tail(acc.sheba)
+
     return templates.TemplateResponse(request, "admin/user_profile.html", {
         "user": user,
         "target_user": target_user,
@@ -1772,6 +1807,10 @@ async def admin_view_profile(
         "address_history": address_history,
         "history_cities": history_cities,
         "history_truncated": history_truncated,
+        "target_bank_accounts": target_bank_accounts,
+        "banks": banks,
+        "active_bank_ids": active_bank_ids,
+        "bank_accounts_error": bank_accounts_error,
     })
 
 
