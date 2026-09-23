@@ -4,6 +4,7 @@ Focused UX tests for the bank-account form fields on /profile (user) and
 
 Card (شماره کارت):
 - placeholder absent
+- no helper/checksum text (formatting or validation hints)
 - numeric input only (inputmode + JS digit-only normalization)
 - visual 4-4-4-4 grouping with '-'
 - submitted value contains no hyphens
@@ -12,7 +13,9 @@ Card (شماره کارت):
 
 Sheba (شماره شبا):
 - placeholder absent
+- no helper/checksum text
 - fixed, non-editable IR prefix (visible span + hidden composed field)
+- control forces LTR order (IR then digits) inside the RTL page
 - only numeric digits editable
 - max 24 editable digits
 - submitted value is IR + 24 digits
@@ -158,6 +161,27 @@ def _create_form_data(bank_id, **extra):
 # Card UI
 # ---------------------------------------------------------------------------
 
+def test_card_and_sheba_helper_text_absent(client, db, make_user):
+    """No visible formatting/validation hint under card or sheba fields."""
+    forbidden = (
+        "نمایش گروه‌بندی",
+        "گروه‌بندی 4-4-4-4",
+        "نمایش 4-4-4-4",
+        "اعتبارسنجی چک‌سام",
+        "چک‌سام سمت سرور",
+        "پیشوند IR ثابت است",
+        "۱۶ رقم",
+        "24 رقم؛",
+        "Luhn",
+        "MOD-97",
+        "چک‌سام",
+    )
+    for surf in _surfaces(client, db, make_user):
+        body = surf["body"]
+        for phrase in forbidden:
+            assert phrase not in body, (surf["name"], phrase)
+
+
 def test_card_placeholder_absent(client, db, make_user):
     for surf in _surfaces(client, db, make_user):
         tags = _input_tags(surf["body"], "card_number")
@@ -282,22 +306,42 @@ def test_sheba_placeholder_absent(client, db, make_user):
 def test_sheba_fixed_ir_prefix_and_hidden_composed_field(client, db, make_user):
     for surf in _surfaces(client, db, make_user):
         body = surf["body"]
+        assert "/static/css/bank_fields.css" in body, surf["name"]
         # fixed, visible IR prefix (not typed by the user)
-        assert re.search(
-            r'<span class="input-group-text">IR</span>', body
-        ), surf["name"]
+        assert body.count('<span class="bank-sheba-prefix">IR</span>') >= 2, (
+            surf["name"]
+        )
         # editable area carries no name → user text is never submitted raw
         digit_tags = _input_tags_with_attr(body, "data-sheba-digits")
         assert digit_tags, surf["name"]
         for tag in digit_tags:
             assert "name=" not in tag, (surf["name"], tag)
+            assert "placeholder" not in tag, (surf["name"], tag)
             assert 'aria-label="24 رقم شماره شبا"' in tag, (surf["name"], tag)
+            assert 'maxlength="24"' in tag, (surf["name"], tag)
         # the server-facing sheba field is the hidden composed input
         hidden_tags = _input_tags(body, "sheba")
         assert hidden_tags, surf["name"]
         for tag in hidden_tags:
             assert 'type="hidden"' in tag, (surf["name"], tag)
             assert "data-sheba-hidden" in tag, (surf["name"], tag)
+
+
+def test_sheba_ltr_order_inside_rtl_page(client, db, make_user):
+    """IR prefix renders before the digits, LTR, in the RTL Persian page."""
+    for surf in _surfaces(client, db, make_user):
+        body = surf["body"]
+        # the whole control is forced LTR (add + edit forms)
+        assert body.count('<div class="bank-sheba" dir="ltr">') >= 2, (
+            surf["name"]
+        )
+        # DOM order: IR prefix first, then the editable digits → visual `IR …`
+        assert body.index('class="bank-sheba-prefix"') < body.index(
+            "data-sheba-digits"
+        ), surf["name"]
+        # digits stay LTR and are not reversed by the page direction
+        for tag in _input_tags_with_attr(body, "data-sheba-digits"):
+            assert 'dir="rtl"' not in tag, (surf["name"], tag)
 
 
 def test_sheba_numeric_only_and_max_24_digits(client, db, make_user):
