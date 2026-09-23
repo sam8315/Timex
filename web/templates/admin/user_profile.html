@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}پروفایل {{ employee.full_name if employee else target_user.name }} | مدیریت{% endblock %}
 {% block extra_css %}
+<link rel="stylesheet" href="/static/css/bank_fields.css">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
     .address-map { height: 300px; border-radius: 12px; z-index: 0; }
@@ -830,18 +831,16 @@
                             <input type="text" name="card_number" class="form-control" dir="ltr"
                                    maxlength="19" inputmode="numeric" data-bank-card
                                    autocomplete="off">
-                            <small class="text-muted">۱۶ رقم (نمایش گروه‌بندی 4-4-4-4؛ اعتبارسنجی چک‌سام سمت سرور)</small>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">شماره شبا</label>
-                            <div class="input-group" dir="ltr">
-                                <span class="input-group-text">IR</span>
-                                <input type="text" class="form-control" data-sheba-digits
+                            <div class="bank-sheba" dir="ltr">
+                                <span class="bank-sheba-prefix">IR</span>
+                                <input type="text" class="form-control bank-sheba-input" data-sheba-digits
                                        maxlength="24" inputmode="numeric" autocomplete="off"
                                        aria-label="24 رقم شماره شبا">
                             </div>
                             <input type="hidden" name="sheba" data-sheba-hidden value="">
-                            <small class="text-muted">24 رقم؛ پیشوند IR ثابت است (اعتبارسنجی چک‌سام سمت سرور)</small>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">نوع حساب</label>
@@ -1189,18 +1188,16 @@
                             <input type="text" name="card_number" class="form-control" dir="ltr"
                                    maxlength="19" inputmode="numeric" data-bank-card
                                    value="" autocomplete="off">
-                            <small class="text-muted">۱۶ رقم؛ مقدار فعلی در باز شدن فرم بارگذاری می‌شود (نمایش 4-4-4-4؛ چک‌سام سمت سرور)</small>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">شماره شبا</label>
-                            <div class="input-group" dir="ltr">
-                                <span class="input-group-text">IR</span>
-                                <input type="text" class="form-control" data-sheba-digits
+                            <div class="bank-sheba" dir="ltr">
+                                <span class="bank-sheba-prefix">IR</span>
+                                <input type="text" class="form-control bank-sheba-input" data-sheba-digits
                                        maxlength="24" inputmode="numeric" value="" autocomplete="off"
                                        aria-label="24 رقم شماره شبا">
                             </div>
                             <input type="hidden" name="sheba" data-sheba-hidden value="">
-                            <small class="text-muted">24 رقم؛ پیشوند IR ثابت است؛ مقدار فعلی در باز شدن فرم بارگذاری می‌شود (چک‌سام سمت سرور)</small>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">نوع حساب</label>
