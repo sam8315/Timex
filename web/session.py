@@ -61,3 +61,54 @@ def check_csrf_token(token: str, user_id: str) -> bool:
     except (SignatureExpired, BadSignature):
         return False
     return data.get("csrf") == "1" and data.get("uid") == user_id
+
+
+# ---------------------------------------------------------------------------
+# ریست پسورد - زمینه موقت امضاشده
+# ---------------------------------------------------------------------------
+_RESET_SALT = "timex-reset"
+
+
+def create_reset_token(reset_request_id: int) -> str:
+    """توکن موقت امضاشده برای زمینه بازنشانی رمز عبور."""
+    import time
+    return serializer.dumps(
+        {"rid": reset_request_id, "ts": int(time.time())},
+        salt=_RESET_SALT,
+    )
+
+
+def verify_reset_token(token: str) -> Optional[Dict]:
+    """اعتبارسنجی توکن بازنشانی؛ None اگر منقضی یا نامعتبر باشد."""
+    if not token:
+        return None
+    try:
+        data = serializer.loads(token, salt=_RESET_SALT, max_age=WebConfig.RESET_CONTEXT_MAX_AGE)
+    except (SignatureExpired, BadSignature):
+        return None
+    return data
+
+
+def set_reset_cookie(response: Response, reset_request_id: int) -> None:
+    """ذخیره توکن بازنشانی در کوکی امضاشده."""
+    token = create_reset_token(reset_request_id)
+    response.set_cookie(
+        key=WebConfig.RESET_COOKIE_NAME,
+        value=token,
+        max_age=WebConfig.RESET_CONTEXT_MAX_AGE,
+        httponly=True,
+        samesite="lax",
+    )
+
+
+def clear_reset_cookie(response: Response) -> None:
+    """پاک‌سازی کوکی بازنشانی."""
+    response.delete_cookie(key=WebConfig.RESET_COOKIE_NAME)
+
+
+def get_reset_context(request: Request) -> Optional[Dict]:
+    """خواندن و اعتبارسنجی زمینه بازنشانی از کوکی."""
+    token = request.cookies.get(WebConfig.RESET_COOKIE_NAME)
+    if not token:
+        return None
+    return verify_reset_token(token)

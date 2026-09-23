@@ -8,6 +8,7 @@ load_dotenv()
 class WebConfig:
     SECRET_KEY = os.getenv("WEB_SECRET_KEY", "timex-change-this-secret-key-2026")
     SESSION_COOKIE_NAME = "timex_session"
+    RESET_COOKIE_NAME = "timex_reset_context"
     SESSION_MAX_AGE = 8 * 60 * 60  # 8 ساعت
     CSRF_MAX_AGE = 2 * 60 * 60  # اعتبار توکن CSRF: 2 ساعت
 
@@ -17,3 +18,5 @@ class WebConfig:
     ROLE_USER = "user"
     ROLE_ADMIN = "admin"
     ROLE_SUPER_ADMIN = "super_admin"
+
+    RESET_CONTEXT_MAX_AGE = 10 * 60  # 10 دقیقه - زمان اعتبار ماشه بازنشانی رمز
