@@ -114,6 +114,7 @@ async def add_own_bank_account(
     card_number: str = Form(""),
     sheba: str = Form(""),
     account_type: str = Form(""),
+    # account_title از رکورد Employee در سرویس مشتق می‌شود؛ ورودی کلاینت نادیده گرفته می‌شود
     account_title: str = Form(""),
     description: str = Form(""),
     is_primary: bool = Form(False),
@@ -134,7 +135,6 @@ async def add_own_bank_account(
             card_number=_opt(card_number),
             sheba=_opt(sheba),
             account_type=_opt(account_type),
-            account_title=_opt(account_title),
             description=_opt(description),
             is_primary=is_primary,
             is_active=is_active,
@@ -155,6 +155,7 @@ async def update_own_bank_account(
     card_number: str = Form(""),
     sheba: str = Form(""),
     account_type: str = Form(""),
+    # account_title در سرویس از Employee مشتق می‌شود؛ ورودی کلاینت نادیده گرفته می‌شود
     account_title: str = Form(""),
     description: str = Form(""),
     user: User = Depends(get_current_user),
@@ -169,10 +170,11 @@ async def update_own_bank_account(
         if account_number.strip():
             kwargs["account_number"] = account_number.strip()
         # فیلدهای اختیاری فقط وقتی در فرم آمده‌اند اعمال می‌شوند
+        # (account_title عمداً غایب است: سرویس آن را از Employee بازمشتق می‌کند)
         form = await request.form()
         optional_fields = (
             "branch_name", "branch_code", "card_number", "sheba",
-            "account_type", "account_title", "description",
+            "account_type", "description",
         )
         for field in optional_fields:
             if field in form:
@@ -317,6 +319,7 @@ async def admin_add_bank_account(
     card_number: str = Form(""),
     sheba: str = Form(""),
     account_type: str = Form(""),
+    # account_title از رکورد Employee در سرویس مشتق می‌شود؛ ورودی کلاینت نادیده گرفته می‌شود
     account_title: str = Form(""),
     description: str = Form(""),
     is_primary: bool = Form(False),
@@ -338,7 +341,6 @@ async def admin_add_bank_account(
             card_number=_opt(card_number),
             sheba=_opt(sheba),
             account_type=_opt(account_type),
-            account_title=_opt(account_title),
             description=_opt(description),
             is_primary=is_primary,
             is_active=is_active,
@@ -368,9 +370,10 @@ async def admin_update_bank_account(
         if account_number.strip():
             kwargs["account_number"] = account_number.strip()
         form = await request.form()
+        # account_title عمداً غایب است: سرویس آن را از Employee بازمشتق می‌کند
         optional_fields = (
             "branch_name", "branch_code", "card_number", "sheba",
-            "account_type", "account_title", "description",
+            "account_type", "description",
         )
         for field in optional_fields:
             if field in form:
