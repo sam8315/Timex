@@ -20,6 +20,7 @@ from models.education import Education
 from models.leave_carry_forward_request import LeaveCarryForwardRequest
 from models.user_permission import UserPermission, UserPermissionHistory
 from models.bale_user import BaleUser
+from models.password_reset import PasswordResetRequest
 from models.region import Region
 from models.policy import Policy, PolicyValue, PolicyAuditLog
 from models.employee_region import EmployeeRegion
@@ -41,4 +42,5 @@ __all__ = [
     'City', 'EmployeeServiceLocation', 'TravelLeaveDetail', 'TravelLeavePolicy',
     'TravelLeavePolicyRule', 'TravelLeaveQuotaSetting',
     'Bank', 'EmployeeBankAccount',
+    'PasswordResetRequest',
 ]
