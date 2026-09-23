@@ -18,6 +18,7 @@ from typing import Optional, List
 from sqlalchemy.orm import Session
 
 from models.bank import Bank
+from models.employee import Employee
 from models.employee_bank_account import (
     EmployeeBankAccount, VERIFICATION_STATUSES,
 )
@@ -211,6 +212,20 @@ def _get_account_for_user(
     return account
 
 
+def _derive_account_title(db: Session, user_id: str) -> Optional[str]:
+    """نام صاحب حساب فقط از رکورد Employee (first_name + last_name) مشتق می‌شود.
+
+    ورودی کلاینت هرگز ملاک نیست؛ فرم/HTTP نمی‌تواند account_title دلخواه
+    ثبت کند. اگر رکورد Employee موجود نباشد مقدار None برمی‌گردد.
+    """
+    employee = (
+        db.query(Employee).filter(Employee.user_id == user_id).first()
+    )
+    if employee is None:
+        return None
+    return employee.full_name.strip() or None
+
+
 def _demote_primaries(db: Session, user_id: str) -> None:
     """خلع همه primaryهای کاربر (بدون commit؛ هم‌تراکنش با عملیات بعدی)."""
     db.query(EmployeeBankAccount).filter(
@@ -259,7 +274,6 @@ def create_bank_account(
     card_number: Optional[str] = None,
     sheba: Optional[str] = None,
     account_type: Optional[str] = None,
-    account_title: Optional[str] = None,
     description: Optional[str] = None,
     is_primary: bool = False,
     is_active: bool = True,
@@ -268,6 +282,10 @@ def create_bank_account(
 
     bank_name به‌صورت خودکار از ردیف مرجع Bank اسنپ‌شات می‌شود
     (همانند شهر در address_service؛ ورودی دستی برای نام بانک گرفته نمی‌شود).
+
+    account_title نیز به‌صورت خودکار از رکورد Employee (نام کامل) مشتق
+    می‌شود؛ پارامتر ورودی برای آن وجود ندارد تا کلاینت نتواند عنوان
+    دلخواه ثبت کند.
 
     اگر حساب جدید primary باشد، primary قبلی همین کاربر ابتدا خلع
     می‌شود؛ سپس حساب درج می‌شود (demote-اول، الگوی address_service).
@@ -281,6 +299,7 @@ def create_bank_account(
     bank = _validate_new_bank_id(db, bank_id)
     card_number = _validated_optional_card(card_number)
     sheba = _validated_optional_sheba(sheba)
+    account_title = _derive_account_title(db, user_id)
     if is_primary and not is_active:
         raise BankAccountServiceError("حساب غیرفعال نمی‌تواند اصلی باشد")
 
@@ -297,7 +316,7 @@ def create_bank_account(
         card_number=card_number,
         sheba=sheba,
         account_type=_normalize_optional_text(account_type),
-        account_title=_normalize_optional_text(account_title),
+        account_title=account_title,
         description=_normalize_optional_text(description),
         is_primary=is_primary,
         is_active=bool(is_active),
@@ -320,7 +339,6 @@ def update_bank_account(
     card_number=_UNSET,
     sheba=_UNSET,
     account_type=_UNSET,
-    account_title=_UNSET,
     description=_UNSET,
 ) -> EmployeeBankAccount:
     """ویرایش حساب بانکی
@@ -342,6 +360,9 @@ def update_bank_account(
     card_number / sheba در صورت ارسال (شامل None برای پاک‌کردن) با
     اعتبارسنجی الگوریتمی محلی بررسی می‌شوند؛ فیلدهای verification
     دست نمی‌خورند.
+
+    account_title در هر ویرایش دوباره از رکورد Employee مشتق می‌شود؛
+    مقدار ارسالی کلاینت (در صورت وجود در فرم) نادیده گرفته می‌شود.
     """
     _validate_user_exists(db, user_id)
     account = _get_account_for_user(db, user_id, account_id)
@@ -371,10 +392,11 @@ def update_bank_account(
         account.sheba = _validated_optional_sheba(sheba)
     if account_type is not _UNSET:
         account.account_type = _normalize_optional_text(account_type)
-    if account_title is not _UNSET:
-        account.account_title = _normalize_optional_text(account_title)
     if description is not _UNSET:
         account.description = _normalize_optional_text(description)
+
+    # بازاشت خودکار نام صاحب حساب از Employee (همیشه، در هر ویرایش)
+    account.account_title = _derive_account_title(db, user_id)
 
     db.commit()
     db.refresh(account)

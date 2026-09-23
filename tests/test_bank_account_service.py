@@ -185,6 +185,8 @@ def test_create_snapshots_bank_name(db, make_user):
 
 
 def test_create_with_optional_fields(db, make_user):
+    from models.employee import Employee
+
     user = make_user(role="user", balance_al=None)
     acc = _create_acc(
         db, user["user_id"],
@@ -194,7 +196,6 @@ def test_create_with_optional_fields(db, make_user):
         card_number=VALID_CARD,
         sheba=VALID_SHEBA,
         account_type="current",
-        account_title="Test Title",
         description="note",
     )
     assert acc.branch_name == "Branch A"
@@ -202,8 +203,11 @@ def test_create_with_optional_fields(db, make_user):
     assert acc.card_number == VALID_CARD
     assert acc.sheba == VALID_SHEBA
     assert acc.account_type == "current"
-    assert acc.account_title == "Test Title"
     assert acc.description == "note"
+    # account_title is derived from the Employee record (no client input)
+    emp = db.query(Employee).filter(
+        Employee.user_id == user["user_id"]).one()
+    assert acc.account_title == emp.full_name
 
 
 def test_create_nonexistent_user_raises(db):
