@@ -141,6 +141,40 @@ async def profile_page(
                 if addr.city_id == linked.id:
                     inactive_linked[addr.id] = linked
 
+    # 🆕 حساب‌های بانکی کاربر + بانک‌های فعال (UI فاز ۱۰)
+    from models.bank import Bank
+    from web.services.bank_account_service import list_bank_accounts
+
+    banks = db.query(Bank).filter(Bank.is_active == True).order_by(
+        Bank.sort_order, Bank.name).all()
+    active_bank_ids = {b.id for b in banks}
+    bank_accounts_error = None
+    try:
+        bank_accounts = list_bank_accounts(db, user.user_id)
+    except Exception:
+        bank_accounts = []
+        bank_accounts_error = "خطا در بارگذاری حساب‌های بانکی"
+
+    def _mask_tail(value):
+        if not value:
+            return ""
+        text = str(value)
+        if len(text) <= 4:
+            return "*" * len(text)
+        return "*" * (len(text) - 4) + text[-4:]
+
+    for acc in bank_accounts:
+        try:
+            acc.verified_at_j = (
+                jdatetime.datetime.fromgregorian(
+                    datetime=acc.verified_at).strftime('%Y/%m/%d %H:%M')
+                if acc.verified_at else ""
+            )
+        except Exception:
+            acc.verified_at_j = ""
+        acc.card_masked = _mask_tail(acc.card_number)
+        acc.sheba_masked = _mask_tail(acc.sheba)
+
     return templates.TemplateResponse(request, "profile.html", {
         "user": user,
         "employee": employee,
@@ -159,4 +193,8 @@ async def profile_page(
         "addresses": addresses,
         "cities": cities,
         "inactive_linked": inactive_linked,
+        "bank_accounts": bank_accounts,
+        "banks": banks,
+        "active_bank_ids": active_bank_ids,
+        "bank_accounts_error": bank_accounts_error,
     })
