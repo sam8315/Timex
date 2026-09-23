@@ -14,6 +14,8 @@ from models.employee import Employee
 from models.employee_phone import EmployeePhone
 from models.employee_address import EmployeeAddress
 from models.employee_address_history import EmployeeAddressHistory
+from models.bank import Bank
+from models.employee_bank_account import EmployeeBankAccount
 from models.education import Education
 from models.leave_carry_forward_request import LeaveCarryForwardRequest
 from models.user_permission import UserPermission, UserPermissionHistory
@@ -38,4 +40,5 @@ __all__ = [
     'EmployeeRegion',
     'City', 'EmployeeServiceLocation', 'TravelLeaveDetail', 'TravelLeavePolicy',
     'TravelLeavePolicyRule', 'TravelLeaveQuotaSetting',
+    'Bank', 'EmployeeBankAccount',
 ]

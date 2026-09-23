@@ -444,6 +444,33 @@ def seed_travel_leave_policy_rules() -> None:
         print("  + contract-scoped travel_leave policies/rules/quotas seeded")
 
 
+def seed_banks(bind_engine=None) -> None:
+    """Seed the agreed Iranian bank reference rows (idempotent)."""
+    from sqlalchemy import text as _sql_text
+
+    target = bind_engine if bind_engine is not None else engine
+
+    banks = (
+        ("018", "Tejarat", 1),
+        ("056", "Saman", 2),
+        ("012", "Mellat", 3),
+    )
+
+    with target.begin() as conn:
+        for code, name, sort_order in banks:
+            conn.execute(
+                _sql_text(
+                    """
+                    INSERT INTO banks (code, name, country_code, is_active, sort_order)
+                    VALUES (:code, :name, 'IR', TRUE, :sort_order)
+                    ON CONFLICT (code) DO NOTHING
+                    """
+                ),
+                {"code": code, "name": name, "sort_order": sort_order},
+            )
+        print("  + Iranian banks seeded")
+
+
 def create_tables() -> None:
     """
     ساخت تمام جداول تعریف شده در مدل‌ها
@@ -460,6 +487,7 @@ def create_tables() -> None:
         migrate_time_columns()
         migrate_data_fixes()
         seed_travel_leave_policy_rules()
+        seed_banks()
         print("✅ جداول دیتابیس با موفقیت ساخته/بررسی شدند")
     except Exception as e:
         print(f"❌ خطا در ساخت جداول: {e}")
