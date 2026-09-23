@@ -181,7 +181,7 @@ def test_create_snapshots_bank_name(db, make_user):
     bank_id = _seeded_bank_id(db, "018")
     acc = _create_acc(db, user["user_id"], bank_id=bank_id)
     bank = db.query(Bank).filter(Bank.id == bank_id).one()
-    assert acc.bank_name == bank.name == "Tejarat"
+    assert acc.bank_name == bank.name == "بانک تجارت"
 
 
 def test_create_with_optional_fields(db, make_user):
@@ -321,11 +321,11 @@ def test_update_change_bank_resnapshots_name(db, make_user):
     tejarat = _seeded_bank_id(db, "018")
     saman = _seeded_bank_id(db, "056")
     acc = _create_acc(db, user["user_id"], bank_id=tejarat)
-    assert acc.bank_name == "Tejarat"
+    assert acc.bank_name == "بانک تجارت"
 
     updated = update_bank_account(db, user["user_id"], acc.id, bank_id=saman)
     assert updated.bank_id == saman
-    assert updated.bank_name == "Saman"
+    assert updated.bank_name == "بانک سامان"
 
 
 def test_update_nonexistent_bank_raises(db, make_user):

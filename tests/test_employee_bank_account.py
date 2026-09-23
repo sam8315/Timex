@@ -9,7 +9,7 @@ Validates:
 - active-primary uniqueness (partial unique index)
 - verification_status CHECK constraint
 - string storage for account_number / card_number / sheba
-- bank reference seed (Tejarat / Saman / Mellat)
+- bank reference seed (canonical active Iranian banks, Phase 12)
 """
 import pytest
 from sqlalchemy import inspect as sa_inspect
@@ -294,17 +294,142 @@ def test_leading_zero_account_number_roundtrip(db, make_user):
 
 
 # ---------------------------------------------------------------------------
-# Bank reference seed
+# Bank reference seed (Phase 12 — canonical active Iranian banks)
 # ---------------------------------------------------------------------------
 
-def test_bank_seed_agrees_iranian_banks(db):
-    """Seed creates exactly Tejarat / Saman / Mellat; idempotent."""
+EXCLUDED_OBSOLETE_BANK_NAMES = (
+    "بانک آینده",
+    "بانک انصار",
+    "بانک قوامین",
+    "بانک حکمت ایرانیان",
+    "بانک مهر اقتصاد",
+    "مؤسسه اعتباری کوثر",
+    "مؤسسه اعتباری توسعه",
+    "مؤسسه اعتباری نور",
+    "مؤسسه اعتباری ملل",
+    "بانک مرکزی جمهوری اسلامی ایران",
+)
+
+
+def test_bank_seed_canonical_active_set(db):
+    """All 27 canonical banks exist, active, IR, Persian names, ordered codes."""
+    from database.init_db import CANONICAL_BANKS
+
     seed_banks(bind_engine=test_engine)
     seed_banks(bind_engine=test_engine)
 
     rows = db.query(Bank).order_by(Bank.sort_order).all()
-    mapping = {b.code: b.name for b in rows}
-    assert mapping == {"018": "Tejarat", "056": "Saman", "012": "Mellat"}
-    assert all(b.country_code == "IR" for b in rows)
-    assert all(b.is_active for b in rows)
-    assert [b.name for b in rows] == ["Tejarat", "Saman", "Mellat"]
+    active = [b for b in rows if b.is_active]
+    mapping = {b.code: b.name for b in active}
+
+    assert len(CANONICAL_BANKS) == 27
+    assert mapping == dict(CANONICAL_BANKS)
+    assert all(b.country_code == "IR" for b in active)
+    assert all(b.is_active for b in active)
+    assert all(isinstance(b.code, str) and len(b.code) == 3 for b in active)
+    assert [b.code for b in active] == [c for c, _ in CANONICAL_BANKS]
+    assert [b.sort_order for b in active] == list(range(1, 28))
+    # Exact Persian names — no English short names in the active set.
+    assert "بانک تجارت" in mapping.values()
+    assert "بانک سامان" in mapping.values()
+    assert "بانک ملت" in mapping.values()
+    assert not any(n in mapping.values() for n in ("Tejarat", "Saman", "Mellat"))
+
+
+def test_bank_seed_idempotent_no_duplicates(db):
+    """Running the startup seed twice produces no duplicate rows."""
+    seed_banks(bind_engine=test_engine)
+    seed_banks(bind_engine=test_engine)
+
+    rows = db.query(Bank).all()
+    codes = [b.code for b in rows]
+    assert len(codes) == len(set(codes))
+    active = [b for b in rows if b.is_active]
+    assert len(active) == 27
+
+
+def test_bank_seed_corrects_english_names_to_persian(db):
+    """Existing canonical rows with old English names are corrected."""
+    seed_banks(bind_engine=test_engine)
+    bank = db.query(Bank).filter(Bank.code == "018").one()
+    bank.name = "Tejarat"
+    bank.country_code = "US"
+    bank.is_active = False
+    bank.sort_order = 1
+    db.commit()
+    bank_id = bank.id
+
+    seed_banks(bind_engine=test_engine)
+    db.expire_all()
+
+    fixed = db.query(Bank).filter(Bank.id == bank_id).one()
+    assert fixed.name == "بانک تجارت"
+    assert fixed.country_code == "IR"
+    assert fixed.is_active is True
+    assert fixed.sort_order == 8  # position of 018 in canonical list
+
+
+def test_bank_seed_deactivates_non_canonical_without_delete(db):
+    """Non-canonical bank codes are deactivated, never deleted (FK safety)."""
+    obsolete = db.query(Bank).filter(Bank.code == "062").first()
+    if obsolete is None:
+        obsolete = Bank(
+            code="062", name="بانک آینده", country_code="IR",
+            is_active=True, sort_order=900,
+        )
+        db.add(obsolete)
+    else:
+        obsolete.name = "بانک آینده"
+        obsolete.is_active = True
+        obsolete.sort_order = 900
+    db.commit()
+    obsolete_id = obsolete.id
+
+    seed_banks(bind_engine=test_engine)
+    db.expire_all()
+
+    row = db.query(Bank).filter(Bank.id == obsolete_id).first()
+    assert row is not None  # not deleted — FK may reference it
+    assert row.is_active is False
+    assert row.name == "بانک آینده"  # name not rewritten for non-canonical
+
+
+def test_bank_seed_excludes_obsolete_from_active_set(db):
+    """Merged/revoked/central/foreign banks never appear as active."""
+    seed_banks(bind_engine=test_engine)
+
+    active_names = {
+        b.name for b in db.query(Bank).filter(Bank.is_active == True)  # noqa: E712
+    }
+    active_codes = {
+        b.code for b in db.query(Bank).filter(Bank.is_active == True)  # noqa: E712
+    }
+
+    for name in EXCLUDED_OBSOLETE_BANK_NAMES:
+        assert name not in active_names
+    # Known obsolete/merged Sheba codes must not be in the active set.
+    for code in ("010", "051", "062", "063", "065"):
+        assert code not in active_codes
+
+
+def test_bank_seed_leaves_employee_accounts_untouched(db, make_user):
+    """Seed only touches banks; employee_bank_accounts rows are unchanged."""
+    user = make_user(role="user", balance_al=None)
+    seed_banks(bind_engine=test_engine)
+    bank_id = db.query(Bank).filter(Bank.code == "018").one().id
+
+    acc = _make_account(user["user_id"], bank_id)
+    acc.bank_name = "Legacy Snapshot"
+    db.add(acc)
+    db.commit()
+    acc_id = acc.id
+
+    seed_banks(bind_engine=test_engine)
+    db.expire_all()
+
+    loaded = db.query(EmployeeBankAccount).filter(
+        EmployeeBankAccount.id == acc_id
+    ).one()
+    assert loaded.bank_id == bank_id
+    assert loaded.bank_name == "Legacy Snapshot"
+    assert loaded.account_number == "123456789012345678901234"
