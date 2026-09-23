@@ -816,7 +816,7 @@
                         <div class="col-md-6">
                             <label class="form-label">شماره حساب <span class="text-danger">*</span></label>
                             <input type="text" name="account_number" class="form-control" dir="ltr"
-                                   required maxlength="50">
+                                   required maxlength="50" inputmode="numeric" data-account-number>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">نام شعبه</label>
@@ -1171,7 +1171,8 @@
                         <div class="col-md-6">
                             <label class="form-label">شماره حساب <span class="text-danger">*</span></label>
                             <input type="text" name="account_number" class="form-control" dir="ltr"
-                                   required maxlength="50" value="{{ acc.account_number }}">
+                                   required maxlength="50" inputmode="numeric" data-account-number
+                                   value="{{ acc.account_number }}">
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">نام شعبه</label>

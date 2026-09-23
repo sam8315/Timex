@@ -21,6 +21,13 @@ Sheba (شماره شبا):
 - submitted value is IR + 24 digits
 - leading zeros preserved
 
+Account number (شماره حساب):
+- numeric-only input (inputmode + JS digit normalization)
+- no placeholder / no helper text
+- max 50 digits (backend String(50) limit)
+- submitted value is a plain numeric string
+- leading zeros preserved
+
 Account owner (نام صاحب حساب):
 - form displays the Employee full name
 - owner field is read-only in the UI
@@ -421,6 +428,61 @@ def test_sheba_max_24_editable_digits_rejected_by_server(client, db, make_user):
             .first()
             is None
         )
+
+
+# ---------------------------------------------------------------------------
+# Account number (شماره حساب)
+# ---------------------------------------------------------------------------
+
+def test_account_number_numeric_only_attributes(client, db, make_user):
+    """All four forms: numeric keyboard, 50-digit cap, no placeholder/help."""
+    for surf in _surfaces(client, db, make_user):
+        tags = _input_tags(surf["body"], "account_number")
+        assert len(tags) >= 2, surf["name"]  # add + edit form
+        for tag in tags:
+            assert 'inputmode="numeric"' in tag, (surf["name"], tag)
+            assert "data-account-number" in tag, (surf["name"], tag)
+            assert 'maxlength="50"' in tag, (surf["name"], tag)
+            assert 'type="text"' in tag, (surf["name"], tag)
+            assert "placeholder" not in tag, (surf["name"], tag)
+        assert "شماره حساب" in surf["body"], surf["name"]
+        assert "فقط عدد" not in surf["body"], surf["name"]  # no helper text
+
+
+def test_account_number_js_digits_only(client, db, make_user):
+    js = _bank_js()
+    # digits-only normalization (Persian/Arabic → ASCII), 50-digit cap,
+    # stripped again right before submit → plain numeric string
+    assert "MAX_ACCOUNT_DIGITS = 50" in js
+    assert "accountNumberValue" in js
+    assert "toAsciiDigits(value).slice(0, MAX_ACCOUNT_DIGITS)" in js
+    assert "account.value = accountNumberValue(account.value)" in js
+    for surf in _surfaces(client, db, make_user):
+        assert "/static/js/bank_fields.js" in surf["body"], surf["name"]
+
+
+def test_account_number_leading_zeros_roundtrip(client, db, make_user):
+    """Plain numeric submission keeps leading zeros end-to-end."""
+    account_number = "0001234567890123456789"
+    bank_id = _seeded_bank_id(db)
+    for surf in _surfaces(client, db, make_user):
+        surf["login"]()
+        resp = client.post(
+            surf["add"],
+            data=_create_form_data(bank_id, account_number=account_number),
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302, surf["name"]
+        assert "success=" in resp.headers["location"], surf["name"]
+        row = (
+            db.query(EmployeeBankAccount)
+            .filter(EmployeeBankAccount.user_id == surf["owner_user_id"])
+            .order_by(EmployeeBankAccount.id.desc())
+            .first()
+        )
+        assert row.account_number == account_number
+        assert row.account_number.startswith("000")
+        assert row.account_number.isdigit()
 
 
 # ---------------------------------------------------------------------------

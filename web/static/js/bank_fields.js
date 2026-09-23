@@ -5,6 +5,8 @@
  *   هنگام ارسال فرم فقط 16 رقم بدون '-' روی سرور می‌رود.
  * - شماره شبا: پیشوند ثابت و غیرقابل ویرایش IR + حداکثر 24 رقم قابل ویرایش؛
  *   مقدار فیلد مخفی name="sheba" همیشه IR + ارقام است.
+ * - شماره حساب: فقط ارقام (حداکثر 50 رقم، مطابق String(50) دیتابیس)؛
+ *   حروف/فاصله/نشانه حذف و ارقام فارسی/عربی به ASCII تبدیل می‌شوند.
  * - ارقام فارسی/عربی به ASCII نرمال می‌شوند (همانند سمت سرور).
  *
  * بدون اعتبارسنجی چک‌سام (Luhn / MOD-97) در سمت کلاینت؛
@@ -16,6 +18,7 @@
     var PERSIAN_DIGITS = '۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩';
     var MAX_CARD_DIGITS = 16;
     var MAX_SHEBA_DIGITS = 24;
+    var MAX_ACCOUNT_DIGITS = 50;
 
     // فقط ارقام (با نرمال‌سازی فارسی/عربی)؛ کاراکترهای دیگر حذف می‌شوند
     function toAsciiDigits(value) {
@@ -54,6 +57,11 @@
 
     function shebaValue(digits) {
         return digits ? 'IR' + digits : '';
+    }
+
+    // شماره حساب: رشتهٔ سادهٔ عددی؛ صفرهای ابتدایی حفظ می‌شوند
+    function accountNumberValue(value) {
+        return toAsciiDigits(value).slice(0, MAX_ACCOUNT_DIGITS);
     }
 
     function caretAfterDigits(formatted, digitCount) {
@@ -99,7 +107,15 @@
         sync();
     }
 
-    // قبل از ارسال: کارت بدون '-' و شبا به شکل IR + 24 رقم
+    function bindAccountInput(input) {
+        function sync() {
+            input.value = accountNumberValue(input.value);
+        }
+        input.addEventListener('input', sync);
+        sync();
+    }
+
+    // قبل از ارسال: کارت بدون '-'، شبا به شکل IR + 24 رقم، شماره حساب فقط ارقام
     function prepareSubmit(form) {
         var card = form.querySelector('[data-bank-card]');
         if (card) {
@@ -109,6 +125,10 @@
         var hidden = form.querySelector('[data-sheba-hidden]');
         if (digits && hidden) {
             hidden.value = shebaValue(shebaDigits(digits.value));
+        }
+        var account = form.querySelector('[data-account-number]');
+        if (account) {
+            account.value = accountNumberValue(account.value);
         }
     }
 
@@ -128,12 +148,17 @@
         for (var j = 0; j < shebas.length; j++) {
             bindShebaInput(shebas[j]);
         }
+        var accounts = document.querySelectorAll('[data-account-number]');
+        for (var k = 0; k < accounts.length; k++) {
+            bindAccountInput(accounts[k]);
+        }
     });
 
     window.TimexBank = {
         formatCard: formatCard,
         cardDigits: cardDigits,
         shebaDigits: shebaDigits,
-        shebaValue: shebaValue
+        shebaValue: shebaValue,
+        accountNumberValue: accountNumberValue
     };
 })();
