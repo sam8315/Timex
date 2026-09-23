@@ -249,10 +249,17 @@ def test_admin_create_from_form(client, db, make_user):
     assert row.is_primary is True
     assert row.bank_name  # snapshot set by service
 
+    # title comes from the target's Employee record, not the posted value
+    from models.employee import Employee
+    emp = db.query(Employee).filter(
+        Employee.user_id == target["user_id"]).one()
+    assert row.account_title == emp.full_name
+
     body = _profile(client, target["user_id"])
     assert "1111111111" in body
     assert "شعبه تست" in body
-    assert "علی رضایی" in body
+    assert "علی رضایی" not in body
+    assert f"به نام: {emp.full_name}" in body
 
 
 def test_admin_update_from_form(client, db, make_user):
@@ -287,6 +294,12 @@ def test_admin_update_from_form(client, db, make_user):
     assert kept.account_type == "جاری"
     assert kept.card_number == VALID_CARD
     assert kept.verification_status == "unverified"
+    # client-sent account_title ignored; re-derived from Employee on update
+    from models.employee import Employee
+    emp = db.query(Employee).filter(
+        Employee.user_id == target["user_id"]).one()
+    assert kept.account_title == emp.full_name
+    assert kept.account_title != "عنوان"
 
 
 def test_admin_delete_from_form(client, db, make_user):

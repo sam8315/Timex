@@ -235,6 +235,12 @@ def test_user_create_from_form(client, db, make_user):
     ).one()
     assert row.account_number == "1111111111"
     assert row.is_primary is True
+    # client-sent account_title is ignored; value comes from Employee
+    from models.employee import Employee
+    emp = db.query(Employee).filter(
+        Employee.user_id == me["user_id"]).one()
+    assert row.account_title == emp.full_name
+    assert row.account_title != "علی رضایی"
 
 
 def test_user_update_from_form(client, db, make_user):
@@ -263,7 +269,11 @@ def test_user_update_from_form(client, db, make_user):
     assert acc.branch_name == "شعبه جدید"
     assert acc.branch_code == "042"
     assert acc.account_type == "جاری"
-    assert acc.account_title == "عنوان جدید"
+    # client-sent account_title is ignored; server re-derives from Employee
+    from models.employee import Employee
+    emp = db.query(Employee).filter(
+        Employee.user_id == me["user_id"]).one()
+    assert acc.account_title == emp.full_name
     assert acc.description == "توضیح"
 
 

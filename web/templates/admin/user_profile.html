@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}پروفایل {{ employee.full_name if employee else target_user.name }} | مدیریت{% endblock %}
 {% block extra_css %}
+<link rel="stylesheet" href="/static/css/bank_fields.css">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
     .address-map { height: 300px; border-radius: 12px; z-index: 0; }
@@ -815,7 +816,7 @@
                         <div class="col-md-6">
                             <label class="form-label">شماره حساب <span class="text-danger">*</span></label>
                             <input type="text" name="account_number" class="form-control" dir="ltr"
-                                   required maxlength="50">
+                                   required maxlength="50" inputmode="numeric" data-account-number>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">نام شعبه</label>
@@ -828,16 +829,18 @@
                         <div class="col-md-6">
                             <label class="form-label">شماره کارت</label>
                             <input type="text" name="card_number" class="form-control" dir="ltr"
-                                   maxlength="16" inputmode="numeric" pattern="[0-9]{16}"
-                                   placeholder="6037990000000000">
-                            <small class="text-muted">۱۶ رقم (اعتبارسنجی چک‌سام سمت سرور)</small>
+                                   maxlength="19" inputmode="numeric" data-bank-card
+                                   autocomplete="off">
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">شماره شبا</label>
-                            <input type="text" name="sheba" class="form-control" dir="ltr"
-                                   maxlength="26" pattern="IR[0-9]{24}"
-                                   placeholder="IR000000000000000000000000">
-                            <small class="text-muted">با پیشوند IR (اعتبارسنجی چک‌سام سمت سرور)</small>
+                            <div class="bank-sheba" dir="ltr">
+                                <span class="bank-sheba-prefix">IR</span>
+                                <input type="text" class="form-control bank-sheba-input" data-sheba-digits
+                                       maxlength="24" inputmode="numeric" autocomplete="off"
+                                       aria-label="24 رقم شماره شبا">
+                            </div>
+                            <input type="hidden" name="sheba" data-sheba-hidden value="">
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">نوع حساب</label>
@@ -845,7 +848,10 @@
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">صاحب حساب</label>
-                            <input type="text" name="account_title" class="form-control" maxlength="100">
+                            <input type="text" name="account_title" class="form-control" maxlength="100"
+                                   value="{{ employee.full_name if employee else '' }}"
+                                   readonly autocomplete="off">
+                            <small class="text-muted">به‌صورت خودکار از نام پروفایل کارمند ثبت می‌شود</small>
                         </div>
                         <div class="col-12">
                             <label class="form-label">توضیحات</label>
@@ -1165,7 +1171,8 @@
                         <div class="col-md-6">
                             <label class="form-label">شماره حساب <span class="text-danger">*</span></label>
                             <input type="text" name="account_number" class="form-control" dir="ltr"
-                                   required maxlength="50" value="{{ acc.account_number }}">
+                                   required maxlength="50" inputmode="numeric" data-account-number
+                                   value="{{ acc.account_number }}">
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">نام شعبه</label>
@@ -1180,18 +1187,18 @@
                         <div class="col-md-6">
                             <label class="form-label">شماره کارت</label>
                             <input type="text" name="card_number" class="form-control" dir="ltr"
-                                   maxlength="16" inputmode="numeric" pattern="[0-9]{16}"
-                                   value="" placeholder="{% if acc.card_masked %}{{ acc.card_masked }}{% else %}—{% endif %}"
-                                   autocomplete="off">
-                            <small class="text-muted">۱۶ رقم؛ مقدار فعلی در باز شدن فرم بارگذاری می‌شود (چک‌سام سمت سرور)</small>
+                                   maxlength="19" inputmode="numeric" data-bank-card
+                                   value="" autocomplete="off">
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">شماره شبا</label>
-                            <input type="text" name="sheba" class="form-control" dir="ltr"
-                                   maxlength="26" pattern="IR[0-9]{24}"
-                                   value="" placeholder="{% if acc.sheba_masked %}{{ acc.sheba_masked }}{% else %}—{% endif %}"
-                                   autocomplete="off">
-                            <small class="text-muted">با پیشوند IR؛ مقدار فعلی در باز شدن فرم بارگذاری می‌شود (چک‌سام سمت سرور)</small>
+                            <div class="bank-sheba" dir="ltr">
+                                <span class="bank-sheba-prefix">IR</span>
+                                <input type="text" class="form-control bank-sheba-input" data-sheba-digits
+                                       maxlength="24" inputmode="numeric" value="" autocomplete="off"
+                                       aria-label="24 رقم شماره شبا">
+                            </div>
+                            <input type="hidden" name="sheba" data-sheba-hidden value="">
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">نوع حساب</label>
@@ -1201,7 +1208,9 @@
                         <div class="col-md-6">
                             <label class="form-label">صاحب حساب</label>
                             <input type="text" name="account_title" class="form-control" maxlength="100"
-                                   value="{{ acc.account_title or '' }}">
+                                   value="{{ employee.full_name if employee else '' }}"
+                                   readonly autocomplete="off">
+                            <small class="text-muted">نام صاحب حساب از پروفایل کارمند خوانده می‌شود و قابل ویرایش نیست</small>
                         </div>
                         <div class="col-12">
                             <label class="form-label">توضیحات</label>
@@ -1278,6 +1287,7 @@
 {% block extra_js %}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="/static/js/address_map.js"></script>
+<script src="/static/js/bank_fields.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     if (!window.TimexAddressMap) return;
@@ -1311,10 +1321,12 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (!r.ok) throw new Error('load failed');
                 return r.json();
             }).then(function (data) {
-                var cardInput = modal.querySelector('form [name="card_number"]');
-                var shebaInput = modal.querySelector('form [name="sheba"]');
-                if (cardInput) cardInput.value = data.card_number || '';
-                if (shebaInput) shebaInput.value = data.sheba || '';
+                var cardInput = modal.querySelector('form [data-bank-card]');
+                var shebaInput = modal.querySelector('form [data-sheba-digits]');
+                var shebaHidden = modal.querySelector('form [data-sheba-hidden]');
+                if (cardInput) cardInput.value = TimexBank.formatCard(data.card_number || '');
+                if (shebaInput) shebaInput.value = TimexBank.shebaDigits(data.sheba || '');
+                if (shebaHidden) shebaHidden.value = TimexBank.shebaValue(TimexBank.shebaDigits(data.sheba || ''));
             }).catch(function () { /* keep empty; server remains authoritative */ });
         });
     })();
