@@ -41,6 +41,29 @@ DEPT_DEFAULT_ANNUAL = 30
 # کد منطقه پیش‌فرض که نباید حذف شود
 PROTECTED_REGION_CODES = ('NORMAL',)
 
+# ============================================
+# Hourly Mission global policy (Phase 1)
+# ============================================
+HOURLY_MISSION_POLICY_CATEGORY = 'hourly_mission'
+HOURLY_MISSION_PARAM_KEYS = (
+    'hourly_mission_enabled',
+    'hourly_mission_working_hours_only',
+    'hourly_mission_allowed_on_holidays',
+    'hourly_mission_deduct_from_required_minutes',
+)
+HOURLY_MISSION_DEFAULTS = {
+    'hourly_mission_enabled': True,
+    'hourly_mission_working_hours_only': True,
+    'hourly_mission_allowed_on_holidays': False,
+    'hourly_mission_deduct_from_required_minutes': True,
+}
+HOURLY_MISSION_PARAM_NOTES = {
+    'hourly_mission_enabled': 'مأموریت ساعتی فعال است',
+    'hourly_mission_working_hours_only': 'مأموریت ساعتی فقط در ساعات موظفی مجاز است',
+    'hourly_mission_allowed_on_holidays': 'مأموریت ساعتی در روز تعطیل مجاز است',
+    'hourly_mission_deduct_from_required_minutes': 'مدت مأموریت ساعتی از موظفی کسر می‌شود',
+}
+
 
 def build_redirect_url(referer: str, key: str, value: str) -> str:
     """ساخت URL بازگشت با رعایت query string موجود"""
@@ -62,6 +85,39 @@ def _get_leave_policy(db: Session) -> Policy:
         db.commit()
         db.refresh(policy)
     return policy
+
+
+def _get_hourly_mission_policy(db: Session) -> Policy:
+    """دریافت یا ایجاد سیاست مأموریت ساعتی"""
+    policy = db.query(Policy).filter(
+        Policy.category == HOURLY_MISSION_POLICY_CATEGORY).first()
+    if not policy:
+        policy = Policy(
+            category=HOURLY_MISSION_POLICY_CATEGORY,
+            name='سیاست مأموریت ساعتی',
+            description='تنظیمات کلی مأموریت ساعتی (فعال بودن، ساعات موظفی، روز تعطیل، کسر از موظفی)',
+            is_active=True,
+        )
+        db.add(policy)
+        db.commit()
+        db.refresh(policy)
+    return policy
+
+
+def _hourly_mission_flag_values(db: Session) -> dict:
+    """مقدار چهار تنظیم مأموریت ساعتی (پیش‌فرض در صورت نبود مقدار)"""
+    values = dict(HOURLY_MISSION_DEFAULTS)
+    policy = db.query(Policy).filter(
+        Policy.category == HOURLY_MISSION_POLICY_CATEGORY).first()
+    if policy:
+        rows = db.query(PolicyValue).filter(
+            PolicyValue.policy_id == policy.id,
+            PolicyValue.parameter_key.in_(HOURLY_MISSION_PARAM_KEYS),
+            PolicyValue.region_code.is_(None),
+        ).all()
+        for row in rows:
+            values[row.parameter_key] = row.parameter_value == 'true'
+    return values
 
 
 def _get_param(db: Session, policy_id: int, key: str, region_code: Optional[str] = None) -> Optional[PolicyValue]:
@@ -133,7 +189,43 @@ async def admin_policies(
         "is_admin": True,
         "is_super_admin": True,
         "sms_enabled": is_sms_enabled(db),
+        "hourly_mission": _hourly_mission_flag_values(db),
     })
+
+
+@router.post("/admin/policies/hourly-mission/save")
+async def admin_policies_hourly_mission_save(
+    request: Request,
+    hourly_mission_enabled: str = Form("off"),
+    hourly_mission_working_hours_only: str = Form("off"),
+    hourly_mission_allowed_on_holidays: str = Form("off"),
+    hourly_mission_deduct_from_required_minutes: str = Form("off"),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_super_admin)
+):
+    """ذخیره چهار تنظیم کلی مأموریت ساعتی"""
+    if not has_permission(db, user, 'manage_users'):
+        return RedirectResponse(url="/admin/", status_code=302)
+
+    policy = _get_hourly_mission_policy(db)
+    submitted = {
+        'hourly_mission_enabled': hourly_mission_enabled,
+        'hourly_mission_working_hours_only': hourly_mission_working_hours_only,
+        'hourly_mission_allowed_on_holidays': hourly_mission_allowed_on_holidays,
+        'hourly_mission_deduct_from_required_minutes': hourly_mission_deduct_from_required_minutes,
+    }
+    for key, raw in submitted.items():
+        value = 'true' if raw in ('on', 'true', '1') else 'false'
+        _set_param(db, policy, key, value,
+                   notes=HOURLY_MISSION_PARAM_NOTES[key],
+                   changed_by=user.user_id)
+    db.commit()
+
+    referer = request.headers.get("referer", "/admin/policies")
+    return RedirectResponse(
+        url=build_redirect_url(referer, "success", "saved"),
+        status_code=302
+    )
 
 
 @router.get("/admin/policies/sms", response_class=HTMLResponse)
