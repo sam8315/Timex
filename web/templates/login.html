@@ -10,6 +10,11 @@
                 <h3 class="mt-2">سامانه حضور و غیاب</h3>
                 <p class="text-muted">لطفاً وارد حساب کاربری خود شوید</p>
             </div>
+            {% if msg %}
+            <div class="alert alert-success" role="alert">
+                {{ msg }}
+            </div>
+            {% endif %}
             {% if error %}
             <div class="alert alert-danger">{{ error }}</div>
             {% endif %}

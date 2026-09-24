@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 class PasswordResetService:
     OTP_LIFETIME_MINUTES = 5
     MAX_ATTEMPTS = 5
-    RESEND_COOLDOWN_SECONDS = 60
+    RESEND_COOLDOWN_SECONDS = 120
     OTP_LENGTH = 6
 
     def __init__(self, db_session: Session):

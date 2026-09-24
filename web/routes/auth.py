@@ -28,7 +28,8 @@ async def login_page(request: Request):
     session = get_session_from_request(request)
     if session:
         return RedirectResponse(url="/dashboard", status_code=302)
-    return templates.TemplateResponse(request, "login.html", {"error": None})
+    msg = request.query_params.get("msg")
+    return templates.TemplateResponse(request, "login.html", {"error": None, "msg": msg})
 
 
 @router.post("/login")
