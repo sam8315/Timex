@@ -18,7 +18,11 @@ from models.leave_request import LeaveRequest  # 🆕
 from models.daily_status import DailyStatus
 from web.services.attendance_policy_service import compute_required_minutes_for_range
 from web.services.hourly_leave_service import get_approved_hl_minutes, format_hl_display
-from web.services.hourly_mission_service import get_approved_hourly_mission_minutes
+from web.services.hourly_mission_service import (
+    get_approved_hourly_mission_minutes,
+    get_approved_hourly_missions_for_display,
+    format_hm_display,
+)
 from web.services.travel_leave_service import build_leave_days_by_date
 
 router = APIRouter(tags=["Attendance"])
@@ -532,6 +536,12 @@ async def attendance_page(
         start_date=month_start_g, end_date=month_end_g
     )
 
+    # Phase 6A: Approved HM missions for display (independent of deduct policy)
+    hourly_missions_by_date = get_approved_hourly_missions_for_display(
+        db=db, employee=emp,
+        start_date=month_start_g, end_date=month_end_g
+    )
+
     # 🆕 دریافت وضعیت‌های روزانه (مأموریت و استراحت)
     daily_statuses = db.query(DailyStatus).filter(
         and_(
@@ -606,6 +616,8 @@ async def attendance_page(
             # 🕐 HL تایید شده برای نمایش (بدون تاثیر روی وضعیت اصلی/محاسبات)
             'hourly_leave_minutes': hourly_leave_minutes_by_date.get(current, 0),
             'hourly_leave_display': format_hl_display(hourly_leave_minutes_by_date.get(current, 0)),
+            # 🚗 HM تأییدشده برای نمایش (بدون تاثیر روی وضعیت اصلی/محاسبات)
+            'hourly_mission_display': format_hm_display(hourly_missions_by_date.get(current)),
         })
         current += timedelta(days=1)
     # 🆕 محاسبه کارکرد کل ماه قبل از اعمال فیلتر

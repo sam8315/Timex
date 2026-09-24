@@ -603,6 +603,9 @@
                             {% if day.hourly_leave_minutes %}
                             <br><span class="badge bg-success mt-1">🕐 {{ day.hourly_leave_display }}</span>
                             {% endif %}
+                            {% if day.hourly_mission_display %}
+                            <br><span class="badge bg-primary mt-1">🚗 {{ day.hourly_mission_display }}</span>
+                            {% endif %}
                         </td>
                         <td class="text-center">
                             {% if day.records | length > 0 %}
@@ -736,6 +739,8 @@
             <span class="badge bg-primary">🚗 مأموریت</span>
             <span class="badge bg-info">😴 استراحت</span>
             <span class="badge bg-info">🌴 مرخصی</span>
+            <span class="badge bg-success">🕐 مرخصی ساعتی</span>
+            <span class="badge bg-primary">🚗 مأموریت ساعتی</span>
         </div>
         <div class="d-flex flex-wrap gap-2 small text-muted align-items-center">
             <strong class="me-1">هشدارها:</strong>

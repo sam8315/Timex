@@ -467,6 +467,9 @@
                             {% if day.hourly_leave_minutes %}
                             <br><span class="badge bg-success mt-1">🕐 {{ day.hourly_leave_display }}</span>
                             {% endif %}
+                            {% if day.hourly_mission_display %}
+                            <br><span class="badge bg-primary mt-1">🚗 {{ day.hourly_mission_display }}</span>
+                            {% endif %}
                         </td>
                         <td class="text-center">
                             {% if day.records | length > 0 %}
@@ -543,7 +546,8 @@
         <small class="text-muted">
              <strong>راهنمای وضعیت‌ها:</strong>
              ✅ کامل | 🌙 شیفت شب | ⬅️ ورود بدون خروج | ➡️ خروج بدون ورود |
-             ❌ خطای ترتیب | ⚠️ عدم تعادل | ⚪ بدون تردد | 🚗 مأموریت | 😴 استراحت
+             ❌ خطای ترتیب | ⚠️ عدم تعادل | ⚪ بدون تردد | 🚗 مأموریت | 😴 استراحت |
+             🕐 مرخصی ساعتی | 🚗 مأموریت ساعتی
             <br>
             <strong>هشدارها:</strong>
             ⏱️ فاصله غیرعادی | 🔁 تردد تکراری | 🕐 ساعت غیرعادی | 🔢 تعداد زیاد | 🟡 جمعه‌کاری | 🔴 تعطیل‌کاری

@@ -425,6 +425,9 @@
                         {% if day.hourly_leave_minutes %}
                         <br><span class="badge bg-success status-badge">🕐 {{ day.hourly_leave_display }}</span>
                         {% endif %}
+                        {% if day.hourly_mission_display %}
+                        <br><span class="badge bg-primary status-badge">🚗 {{ day.hourly_mission_display }}</span>
+                        {% endif %}
                     </td>
                     <td>
                         {% if day.attendance_pairs %}
@@ -475,6 +478,8 @@
             <span><span class="badge bg-danger">قرمز</span> غایب</span>
             <span><span class="badge bg-warning text-dark">زرد</span> تعطیل کاری</span>
             <span><span class="badge bg-secondary">خاکستری</span> جمعه</span>
+            <span><span class="badge bg-success">🕐</span> مرخصی ساعتی</span>
+            <span><span class="badge bg-primary">🚗</span> مأموریت ساعتی</span>
         </div>
     </div>
 </div>

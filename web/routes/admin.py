@@ -44,7 +44,11 @@ from web.services.hourly_leave_service import (
     get_approved_hl_minutes_on_date,
     format_hl_display,
 )
-from web.services.hourly_mission_service import get_approved_hourly_mission_minutes
+from web.services.hourly_mission_service import (
+    get_approved_hourly_mission_minutes,
+    get_approved_hourly_missions_for_display,
+    format_hm_display,
+)
 from web.services.travel_leave_service import build_leave_days_by_date
 from models.daily_status import DailyStatus
 from web.permissions import has_permission, get_effective_permissions, enforce_permission
@@ -848,6 +852,13 @@ async def admin_attendance(
         # 🕐 دقایق مرخصی ساعتی تایید شده در این روز (فقط نمایش)
         hl_minutes = get_approved_hl_minutes_on_date(db, emp, target_date)
 
+        # 🚗 HM تأییدشده این روز (فقط نمایش — بدون اثر روی status/محاسبات)
+        hm_display = format_hm_display(
+            get_approved_hourly_missions_for_display(
+                db, emp, target_date, target_date
+            ).get(target_date)
+        )
+
         LEAVE_TYPE_NAMES_LOCAL = {
             'AL': 'استحقاقی',
             'SL': 'استعلاجی',
@@ -919,6 +930,8 @@ async def admin_attendance(
             # 🕐 HL تایید شده برای نمایش (بج جداگانه، بدون تغییر وضعیت اصلی)
             'hourly_leave_minutes': hl_minutes,
             'hourly_leave_display': format_hl_display(hl_minutes),
+            # 🚗 HM تأییدشده برای نمایش (بج جداگانه، بدون تغییر وضعیت اصلی)
+            'hourly_mission_display': hm_display,
         })
 
     # آمار
@@ -1152,6 +1165,12 @@ async def admin_user_attendance(
         start_date=month_start_g, end_date=month_end_g
     )
 
+    # Phase 6A: Approved HM missions for display (independent of deduct policy)
+    hourly_missions_by_date = get_approved_hourly_missions_for_display(
+        db=db, employee=target_employee,
+        start_date=month_start_g, end_date=month_end_g
+    )
+
     # 🆕 دریافت وضعیت‌های روزانه (مأموریت و استراحت)
     daily_statuses = db.query(DailyStatus).filter(
         and_(
@@ -1229,6 +1248,8 @@ async def admin_user_attendance(
              # 🕐 HL تایید شده برای نمایش (بدون تاثیر روی وضعیت اصلی/محاسبات)
             'hourly_leave_minutes': hourly_leave_minutes_by_date.get(current, 0),
             'hourly_leave_display': format_hl_display(hourly_leave_minutes_by_date.get(current, 0)),
+            # 🚗 HM تأییدشده برای نمایش (بدون تاثیر روی وضعیت اصلی/محاسبات)
+            'hourly_mission_display': format_hm_display(hourly_missions_by_date.get(current)),
         })
         current += timedelta(days=1)
 

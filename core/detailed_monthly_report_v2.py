@@ -20,6 +20,10 @@ from web.services.attendance_policy_service import (
     resolve_required_minutes,
 )
 from web.services.hourly_leave_service import get_approved_hl_minutes, format_hl_display
+from web.services.hourly_mission_service import (
+    get_approved_hourly_missions_for_display,
+    format_hm_display,
+)
 
 
 class DetailedMonthlyReportGeneratorV2:
@@ -124,6 +128,12 @@ class DetailedMonthlyReportGeneratorV2:
             start_date=g_start, end_date=g_end
         )
 
+        # Phase 6A: Approved HM missions for display only (no duty change here)
+        hm_by_date = get_approved_hourly_missions_for_display(
+            db=self.db, employee=employee,
+            start_date=g_start, end_date=g_end
+        )
+
         # ✅ ترکیب وضعیت‌ها: DailyStatus اولویت بالاتر دارد
         for leave_date, leave_type in leaves_by_date.items():
             if leave_date not in statuses_by_date:
@@ -212,6 +222,8 @@ class DetailedMonthlyReportGeneratorV2:
                 # 🕐 HL تایید شده برای نمایش (بدون تاثیر روی وضعیت فرد/موظفی)
                 'hourly_leave_minutes': hl_mins,
                 'hourly_leave_display': format_hl_display(hl_mins),
+                # 🚗 HM تأییدشده برای نمایش (بدون تاثیر روی وضعیت فرد/موظفی)
+                'hourly_mission_display': format_hm_display(hm_by_date.get(current)),
             })
 
             current += timedelta(days=1)

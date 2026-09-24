@@ -177,6 +177,9 @@
                             {% if r.hourly_leave_minutes %}
                             <br><span class="badge bg-success mt-1">🕐 {{ r.hourly_leave_display }}</span>
                             {% endif %}
+                            {% if r.hourly_mission_display %}
+                            <br><span class="badge bg-primary mt-1">🚗 {{ r.hourly_mission_display }}</span>
+                            {% endif %}
                         </td>
                         <td class="text-center">
                             {% if r.has_detail %}

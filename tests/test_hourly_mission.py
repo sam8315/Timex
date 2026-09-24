@@ -1,5 +1,5 @@
 """
-Phase 1+2+3+4+5 tests — hourly mission data model, scoped policies, validation service, daily-status form, admin approve/reject, required-minutes integration.
+Phase 1+2+3+4+5+6A tests — hourly mission data model, scoped policies, validation service, daily-status form, admin approve/reject, required-minutes integration, UI display.
 
 Phase 1:
 - model import / registration in Base.metadata
@@ -34,6 +34,14 @@ Phase 5 (required minutes integration):
 - clamp at 0; full-day M / leave / rest / holiday stay 0
 - multiple same-day missions sum; exact boundary → 0
 - no side effects on LeaveBalance / LeaveRequest / DailyStatus / HL
+
+Phase 6A (display in existing reports/UI):
+- format_hm_display exact strings (single + multiple ranges)
+- get_approved_hourly_missions_for_display: only status=A; independent of deduct policy
+- badge on /attendance, /admin/attendance, /admin/attendance/user, monthly reports
+- pending not shown as approved time in attendance UI
+- daily-status still shows all statuses (management view)
+- rendering does not alter required minutes / side-effect rows
 """
 from datetime import date, time, timedelta
 
@@ -58,6 +66,8 @@ from web.services.hourly_mission_service import (
     compute_mission_minutes,
     get_authorized_mission_minutes,
     get_approved_hourly_mission_minutes,
+    get_approved_hourly_missions_for_display,
+    format_hm_display,
     is_holiday_for_employee,
 )
 from web.services.attendance_policy_service import (
@@ -1980,3 +1990,284 @@ def test_hm_compute_creates_no_side_effect_rows(db, make_user):
         _cleanup_missions(db, creds["user_id"])
         _cleanup_policies(db)
         _cleanup_attendance_policies(db)
+
+
+# ---------------------------------------------------------------------------
+# Phase 6A — display hourly missions in existing reports/UI
+# ---------------------------------------------------------------------------
+def _workday_in_current_month():
+    """Non-Friday day in current Jalali month (for UI pages that filter by month)."""
+    today_j = jdatetime.date.today()
+    jy, jm = today_j.year, today_j.month
+    if jm == 12:
+        j_end = jdatetime.date(jy, 12, 29)
+    else:
+        j_end = jdatetime.date(jy, jm + 1, 1) - timedelta(days=1)
+    j_start = jdatetime.date(jy, jm, 1)
+    days_in_month = (j_end - j_start).days + 1
+    candidate = jdatetime.date(jy, jm, min(10, days_in_month))
+    while candidate.togregorian().weekday() == 4:
+        candidate += timedelta(days=1)
+        if candidate > j_end:
+            candidate = jdatetime.date(jy, jm, 1)
+            while candidate.togregorian().weekday() == 4:
+                candidate += timedelta(days=1)
+            break
+    return candidate
+
+
+def _html_row_containing(html, needle):
+    for chunk in html.split("<tr"):
+        if needle in chunk:
+            return chunk
+    return ""
+
+
+class TestFormatHmDisplay:
+    @pytest.mark.parametrize("starts_ends, expected", [
+        ([(time(9, 0), time(11, 0))], "مأموریت ساعتی 09:00 تا 11:00"),
+        ([(time(9, 0), time(11, 0)), (time(13, 0), time(14, 0))],
+         "مأموریت ساعتی 09:00 تا 11:00، 13:00 تا 14:00"),
+        ([(time(7, 30), time(8, 0))], "مأموریت ساعتی 07:30 تا 08:00"),
+    ])
+    def test_format_ranges(self, starts_ends, expected):
+        class FakeM:
+            def __init__(self, s, e):
+                self.start_time = s
+                self.end_time = e
+        missions = [FakeM(s, e) for s, e in starts_ends]
+        assert format_hm_display(missions) == expected
+
+    def test_format_empty(self):
+        assert format_hm_display(None) == ""
+        assert format_hm_display([]) == ""
+
+
+class TestDisplayHelper:
+    def test_only_approved_returned(self, db, make_user):
+        emp, creds = _employee(db, make_user)
+        try:
+            _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                                  start=time(9, 0), end=time(11, 0), status="A")
+            _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                                  start=time(13, 0), end=time(14, 0), status="P")
+            _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                                  start=time(15, 0), end=time(16, 0), status="R")
+            result = get_approved_hourly_missions_for_display(
+                db, emp, MONDAY, MONDAY)
+            assert MONDAY in result
+            assert len(result[MONDAY]) == 1
+            assert result[MONDAY][0].status == "A"
+            assert format_hm_display(result[MONDAY]) == \
+                "مأموریت ساعتی 09:00 تا 11:00"
+        finally:
+            _cleanup_missions(db, creds["user_id"])
+
+    def test_display_independent_of_deduct_policy(self, db, make_user):
+        """policy deduct off → still displays (Required stays original)."""
+        _cleanup_policies(db)
+        try:
+            emp, creds = _employee(db, make_user)
+            _seed_policy(db, employment_type_code="4",
+                         deduct_from_required_minutes=False)
+            _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                                  start=time(9, 0), end=time(11, 0), status="A")
+            display = get_approved_hourly_missions_for_display(
+                db, emp, MONDAY, MONDAY)
+            assert format_hm_display(display.get(MONDAY)) == \
+                "مأموریت ساعتی 09:00 تا 11:00"
+            assert get_approved_hourly_mission_minutes(
+                db, emp, MONDAY, MONDAY) == {}
+        finally:
+            _cleanup_missions(db, creds["user_id"])
+            _cleanup_policies(db)
+
+    def test_out_of_range_excluded(self, db, make_user):
+        emp, creds = _employee(db, make_user)
+        try:
+            _seed_pending_mission(db, creds["user_id"], day=date(2027, 3, 23),
+                                  start=time(9, 0), end=time(11, 0), status="A")
+            result = get_approved_hourly_missions_for_display(
+                db, emp, MONDAY, MONDAY)
+            assert result == {}
+        finally:
+            _cleanup_missions(db, creds["user_id"])
+
+
+class TestAttendanceUserHmBadge:
+    def test_user_attendance_shows_approved_hm(self, db, client, make_user):
+        admin = _as_super(client, make_user)
+        user = make_user(role="user", balance_al=None, department="4")
+        workday = _workday_in_current_month()
+        try:
+            _seed_pending_mission(db, user["user_id"],
+                                  day=workday.togregorian(),
+                                  start=time(9, 0), end=time(11, 0),
+                                  status="A")
+            login_as(client, admin["national_code"])
+            resp = client.get(
+                f"/admin/attendance/user/{user['user_id']}"
+                f"?year={workday.year}&month={workday.month}")
+            assert resp.status_code == 200
+            assert "مأموریت ساعتی 09:00 تا 11:00" in resp.text
+        finally:
+            _cleanup_missions(db, user["user_id"])
+
+    def test_pending_hm_not_shown_as_approved(self, db, client, make_user):
+        admin = _as_super(client, make_user)
+        user = make_user(role="user", balance_al=None, department="4")
+        workday = _workday_in_current_month()
+        try:
+            _seed_pending_mission(db, user["user_id"],
+                                  day=workday.togregorian(),
+                                  start=time(9, 0), end=time(11, 0),
+                                  status="P")
+            login_as(client, admin["national_code"])
+            resp = client.get(
+                f"/admin/attendance/user/{user['user_id']}"
+                f"?year={workday.year}&month={workday.month}")
+            assert resp.status_code == 200
+            assert "مأموریت ساعتی 09:00 تا 11:00" not in resp.text
+        finally:
+            _cleanup_missions(db, user["user_id"])
+
+
+class TestAdminDailyAttendanceHmBadge:
+    def test_admin_attendance_shows_hm(self, db, client, make_user):
+        admin = _as_super(client, make_user)
+        user = make_user(role="user", balance_al=None, department="4")
+        workday = _workday_in_current_month()
+        try:
+            _seed_pending_mission(db, user["user_id"],
+                                  day=workday.togregorian(),
+                                  start=time(9, 0), end=time(11, 0),
+                                  status="A")
+            login_as(client, admin["national_code"])
+            resp = client.get(
+                f"/admin/attendance?date_str={workday.strftime('%Y/%m/%d')}")
+            assert resp.status_code == 200
+            assert "مأموریت ساعتی 09:00 تا 11:00" in resp.text
+        finally:
+            _cleanup_missions(db, user["user_id"])
+
+
+class TestSelfAttendanceHmBadge:
+    def test_attendance_page_shows_hm(self, db, client, make_user):
+        user = make_user(role="user", balance_al=None, department="4")
+        workday = _workday_in_current_month()
+        try:
+            _seed_pending_mission(db, user["user_id"],
+                                  day=workday.togregorian(),
+                                  start=time(9, 0), end=time(11, 0),
+                                  status="A")
+            login_as(client, user["national_code"])
+            resp = client.get(
+                f"/attendance?year={workday.year}&month={workday.month}")
+            assert resp.status_code == 200
+            assert "مأموریت ساعتی 09:00 تا 11:00" in resp.text
+        finally:
+            _cleanup_missions(db, user["user_id"])
+
+
+class TestReportHmBadge:
+    def test_detailed_report_shows_hm(self, db, client, make_user, monkeypatch):
+        from tests.conftest import TestingSessionLocal
+        monkeypatch.setattr(
+            "core.detailed_monthly_report_v2.SessionLocal", TestingSessionLocal)
+        admin = _as_super(client, make_user)
+        user = make_user(role="user", balance_al=None, department="4")
+        workday = _workday_in_current_month()
+        try:
+            _seed_pending_mission(db, user["user_id"],
+                                  day=workday.togregorian(),
+                                  start=time(9, 0), end=time(11, 0),
+                                  status="A")
+            login_as(client, admin["national_code"])
+            resp = client.post("/reports/monthly-detailed", data={
+                "target_user_id": user["user_id"],
+                "year": workday.year,
+                "month": workday.month,
+            })
+            assert resp.status_code == 200
+            assert "مأموریت ساعتی 09:00 تا 11:00" in resp.text
+            # person_status must not be converted to full-day mission
+            row = _html_row_containing(
+                resp.text, workday.strftime("%Y/%m/%d"))
+            assert "مأموریت ساعتی" in row
+            assert "status-badge\">مرخصی" not in row
+        finally:
+            _cleanup_missions(db, user["user_id"])
+
+    def test_full_report_shows_hm(self, db, client, make_user, monkeypatch):
+        from tests.conftest import TestingSessionLocal
+        monkeypatch.setattr(
+            "core.detailed_monthly_report_v2.SessionLocal", TestingSessionLocal)
+        admin = _as_super(client, make_user)
+        user = make_user(role="user", balance_al=None, department="4")
+        workday = _workday_in_current_month()
+        try:
+            _seed_pending_mission(db, user["user_id"],
+                                  day=workday.togregorian(),
+                                  start=time(9, 0), end=time(11, 0),
+                                  status="A")
+            login_as(client, admin["national_code"])
+            resp = client.post("/reports/monthly-full", data={
+                "target_user_id": user["user_id"],
+                "year": workday.year,
+                "month": workday.month,
+            })
+            assert resp.status_code == 200
+            assert "مأموریت ساعتی 09:00 تا 11:00" in resp.text
+        finally:
+            _cleanup_missions(db, user["user_id"])
+
+
+class TestDailyStatusStillShowsAllStatuses:
+    def test_pending_still_visible_on_daily_status(self, db, client, make_user):
+        """Daily-status page continues to show P/A/R/D (management view)."""
+        _as_super(client, make_user)
+        target = make_user(role="user", balance_al=None)
+        try:
+            _seed_pending_mission(db, target["user_id"], status="P")
+            _seed_pending_mission(db, target["user_id"],
+                                  start=time(13, 0), end=time(14, 0),
+                                  status="A")
+            resp = client.get("/admin/daily-status")
+            assert resp.status_code == 200
+            assert "در انتظار تأیید" in resp.text
+            assert "تأیید شده" in resp.text
+            assert "درخواست‌های مأموریت ساعتی" in resp.text
+        finally:
+            _cleanup_missions(db, target["user_id"])
+
+
+class TestDisplayDoesNotChangeRequired:
+    def test_rendering_does_not_alter_required_minutes(self, db, client, make_user):
+        """UI display path must not change compute_required_minutes_for_range."""
+        emp, creds = _seed_hm_and_base(db, make_user)
+        admin = _as_super(client, make_user)
+        try:
+            _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                                  start=time(9, 0), end=time(11, 0),
+                                  status="A")
+            assert _hm_required(db, emp) == 360
+
+            # Hit UI page (display path) then re-check required
+            login_as(client, admin["national_code"])
+            workday = _workday_in_current_month()
+            client.get(
+                f"/admin/attendance/user/{creds['user_id']}"
+                f"?year={workday.year}&month={workday.month}")
+
+            db.expire_all()
+            assert _hm_required(db, emp) == 360
+            row = db.query(HourlyMission).filter(
+                HourlyMission.user_id == creds["user_id"]).first()
+            assert row.status == "A"
+            assert db.query(DailyStatus).filter(
+                DailyStatus.user_id == creds["user_id"]).count() == 0
+        finally:
+            _cleanup_missions(db, creds["user_id"])
+            _cleanup_policies(db)
+            _cleanup_attendance_policies(db)
+

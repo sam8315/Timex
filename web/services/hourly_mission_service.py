@@ -10,7 +10,7 @@ NOT Leave: no LeaveRequest, no leave balance, no attendance/punch.
 Duration is computed (end - start), never stored.
 """
 from datetime import date, time
-from typing import Optional, Dict, Tuple
+from typing import Optional, Dict, List, Tuple
 
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
@@ -167,6 +167,51 @@ def get_approved_hourly_mission_minutes(
         if minutes > 0:
             result[m.mission_date] = result.get(m.mission_date, 0) + minutes
     return result
+
+
+def get_approved_hourly_missions_for_display(
+    db: Session,
+    employee: Employee,
+    start_date: date,
+    end_date: date
+) -> Dict[date, List[HourlyMission]]:
+    """
+    مأموریت‌های ساعتی تأییدشده برای نمایش UI (فقط display — بدون اثر محاسباتی).
+
+    فقط status='A'. برخلاف get_approved_hourly_mission_minutes، به
+    deduct_from_required_minutes وابسته نیست (policy off → نمایش، Required اصلی).
+    Returns: dict[date] → list[HourlyMission] مرتب بر اساس start_time
+    """
+    missions = db.query(HourlyMission).filter(
+        and_(
+            HourlyMission.user_id == employee.user_id,
+            HourlyMission.status == 'A',
+            HourlyMission.mission_date >= start_date,
+            HourlyMission.mission_date <= end_date,
+        )
+    ).order_by(HourlyMission.start_time).all()
+
+    result: Dict[date, List[HourlyMission]] = {}
+    for m in missions:
+        result.setdefault(m.mission_date, []).append(m)
+    return result
+
+
+def format_hm_display(missions: Optional[List[HourlyMission]]) -> str:
+    """فرمت‌بندی مأموریت ساعتی تأییدشده فقط برای نمایش.
+
+    Examples:
+        [] / None → ''
+        [09:00→11:00] → 'مأموریت ساعتی 09:00 تا 11:00'
+        [09:00→11:00, 13:00→14:00] → 'مأموریت ساعتی 09:00 تا 11:00، 13:00 تا 14:00'
+    """
+    if not missions:
+        return ''
+    ranges = '، '.join(
+        f"{m.start_time.strftime('%H:%M')} تا {m.end_time.strftime('%H:%M')}"
+        for m in missions
+    )
+    return f'مأموریت ساعتی {ranges}'
 
 
 # ============================================

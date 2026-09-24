@@ -1,7 +1,7 @@
 # راهنمای پیاده‌سازی مأموریت ساعتی (Hourly Mission)
 
 > این فایل حافظه بلندمدت پروژه است. مدل بعدی باید با خواندن همین فایل + فایل‌های اشاره‌شده بتواند ادامه کار را بدون بررسی کل گفتگو انجام دهد.
-> آخرین به‌روزرسانی: پایان فاز ۴ (تأیید/رد مأموریت ساعتی توسط مدیر).
+> آخرین به‌روزرسانی: پایان فاز ۶A (نمایش HM در UI/گزارش‌های موجود).
 
 ---
 
@@ -53,6 +53,7 @@
 | **فاز ۳** | ثبت مأموریت ساعتی از فرم موجود `/admin/daily-status` (branch در همان POST → `HourlyMission(status='P')`) + تست‌ها | ✅ انجام شد |
 | **فاز ۴** | مشاهده درخواست‌ها + تأیید/رد مدیر (فقط P→A / P→R) در همان صفحه daily-status + تست‌ها — **بدون اتصال attendance/گزارش‌ها** | ✅ انجام شد |
 | **فاز ۵** | اتصال مأموریت تأییدشده (`status='A'`) به `compute_required_minutes_for_range` (`deduct_from_required_minutes`) + تست‌ها — **بدون UI/گزارش جدا/نوتیفیکیشن** | ✅ انجام شد |
+| **فاز ۶A** | نمایش HM در UI/گزارش‌های موجود (badge کنار HL در attendance + گزارش‌های ماهانه) + تست‌ها — **بدون PDF/Excel/Raw Report/طراحی مجدد/محاسبه مجدد** | ✅ انجام شد |
 
 > ترتیب فازها ممکن است با صلاحدید کاربر تغییر کند؛ اما هر فاز فقط در محدوده خودش کار کند.
 
@@ -60,15 +61,29 @@
 
 ## ۴. وضعیت فاز فعلی
 
-**فاز ۵ — تکمیل شده (اتصال به required minutes).**
+**فاز ۶A — تکمیل شده (نمایش در UI/گزارش‌های موجود).** ۱۰۰ تست.
+
+انجام شده در فاز ۶A:
+
+1. `web/services/hourly_mission_service.py` — دو helper نمایشی:
+   - `get_approved_hourly_missions_for_display(db, employee, start_date, end_date) -> Dict[date, List[HourlyMission]]` — فقط `status='A'`؛ **مستقل از** `deduct_from_required_minutes` (policy off → نمایش، Required اصلی).
+   - `format_hm_display(missions) -> str` — `'مأموریت ساعتی 09:00 تا 11:00'` (چند مأموریت با «،» جدا).
+2. اتصال به day dict در: `attendance.py` (`/attendance`)، `admin.py` (`/admin/attendance/user/{id}` + `/admin/attendance` روزانه)، `core/detailed_monthly_report_v2.py` (گزارش تفصیلی/کامل).
+3. Badge در templateها: `attendance.html`، `admin/user_attendance.html`، `admin/attendance.html`، `admin/report_monthly_detailed.html`، `admin/report_monthly_full.html` — الگوی HL (`bg-primary` + `🚗`).
+4. `/admin/daily-status` — کارت فاز ۴ از قبل کامل بود (ستون‌های کارمند/تاریخ/ساعت‌ها/مدت/توضیح/وضعیت/عملیات)؛ بدون تغییر.
+5. `tests/test_hourly_mission.py` — ~۱۵ تست Phase 6A (جمعاً ۱۰۰).
+6. اجرای سریال isolated: `tests/test_hourly_mission.py` → **100 passed**؛ regression 4-فایلی → **68 passed**؛ HL UI + reports → **48 passed**.
+7. به‌روزرسانی همین راهنما.
+
+**فاز ۵ — تکمیل شده (اتصال به required minutes).** ۸۵ تست.
 
 انجام شده در فاز ۵:
 
 1. `web/services/hourly_mission_service.py` — helper جدید `get_approved_hourly_mission_minutes(db, employee, start_date, end_date) -> Dict[date, int]` (الگوی `get_approved_hl_minutes`): فقط `status='A'`؛ resolve policy per date برای `deduct_from_required_minutes` (خاموش → 0)؛ جمع مأموریت‌های چندگانه یک روز؛ مدت از `start_time→end_time` (ذخیره نمی‌شود).
 2. `web/services/attendance_policy_service.py` — پارامتر اختیاری `hourly_mission_minutes_by_date` در `compute_required_minutes_for_range`؛ اگر `None` باشد helper داخلی صدا زده می‌شود (single source of truth). Pipeline: base required → full-day rules → HL → HM → `max(0, result)` — هرگز منفی.
 3. `web/routes/admin.py` + `web/routes/attendance.py` — fetch یک‌بارهٔ `get_approved_hourly_mission_minutes` در کنار HL و ارسال به همهٔ فراخوانی‌های `compute_required_minutes_for_range`.
-4. `tests/test_hourly_mission.py` — ~۱۶ تست Phase 5 (جمعاً ۸۵).
-5. اجرای سریال isolated: `tests/test_hourly_mission.py` → **85 passed**.
+4. `tests/test_hourly_mission.py` — ~۱۶ تست Phase 5.
+5. اجرای سریال isolated: `tests/test_hourly_mission.py` → **85 passed** (پیش از فاز ۶A).
 6. به‌روزرسانی همین راهنما.
 
 **فاز ۴ — تکمیل شده (تأیید/رد مدیر).** ۶۹ تست.
@@ -432,7 +447,7 @@ category = hourly_mission
 
 1. **این فایل را اول بخوان.** بعد فقط فایل‌های بخش ۶ را باز کن؛ پروژه را از صفر نگرد.
 2. اجرای تست: `.venv\Scripts\python.exe -m pytest` از ریشه. **هرگز دو pytest موازی** ( آلودگی DB مشترک) — و اجرای تکی را هم در یک batch تکرار نکن.
-3. **شاخه کاری:** `work` — commit فاز ۱: `Scope hourly mission policies by group and employee` (`afc210d`). — فاز ۲: `Add hourly mission validation service` (`a50d6b7`). — فاز ۳: `Add hourly mission to daily status form` (`79c6ee0`). — فاز ۴: `Add hourly mission approval and rejection` (`dd2b69f`). — فاز ۵: `Include hourly mission in required minutes`.
+3. **شاخه کاری:** `work` — commit فاز ۱: `Scope hourly mission policies by group and employee` (`afc210d`). — فاز ۲: `Add hourly mission validation service` (`a50d6b7`). — فاز ۳: `Add hourly mission to daily status form` (`79c6ee0`). — فاز ۴: `Add hourly mission approval and rejection` (`dd2b69f`). — فاز ۵: `Include hourly mission in required minutes` (`1eb3b92`). — فاز ۶A: `Display hourly missions in existing reports`.
 4. **سیاست مأموریت ساعتی باید برای گروه/نوع استخدام و employee override قابل تفکیک باشد و هرگز به‌عنوان یک policy global مشترک برای تمام کارکنان resolve نشود.**
 5. **هنگام ثبت مأموریت: فقط `validate_hourly_mission_request(db, employee, date, start, end, exclude_mission_id)` را صدا بزن.** تمام چک‌ها (enabled/ساعت/ساعات موظفی/holiday/غیرکاری/overlap) داخل آن است. `exclude_mission_id` را هنگام ویرایش رد کن تا خود-mأموریت overlap نگیرد.
 6. **هرگز در `LeaveRequest` یا `DailyStatus` رکورد مأموریت ساعتی نساز.** بدون LeaveBalance، بدون punch، بدون تغییر attendance.
@@ -446,17 +461,15 @@ category = hourly_mission
 
 ---
 
-## ۱۱. مواردی که عمداً در فاز ۵ انجام **نشد**
+## ۱۱. مواردی که عمداً در فاز ۶A انجام **نشد**
 
-- ❌ نمایش HM در UI روزانه/ماهانه (badge، فیلتر، جدول جدا) — فاز ۶ (گزارش‌ها/نمایش)
-- ❌ گزارش روزانه/ماهانه/خام/dashboard اختصاصی HM
-- ❌ نوتیفیکیشن / پیامک / API جداگانه (در صورت نیاز در فاز بعد)
-- ❌ تغییر `DailyStatus` / `LeaveRequest` / Leave Balance / punch / Attendance
-- ❌ re-validation policy هنگام approve (عمداً — بخش ۵.۵ter)
-- ❌ permission جدید
-- ❌ صفحه/route جدا برای مدیریت مأموریت ساعتی
-- ❌ cancel توسط کاربر/مدیر در این فاز (فقط approve/reject)
-- ❌ محدودیت حداقل/حداکثر دقیقه / cross-midnight (همچنان)
+- ❌ PDF / Excel / گزارش خام (`report_raw`) / dashboard اختصاصی HM — **فاز ۶B**
+- ❌ طراحی مجدد صفحات، فیلتر HM، جدول/صفحه/route جدا
+- ❌ محاسبه مجدد Required/Difference در template (فقط نمایش دادهٔ backend)
+- ❌ تغییر `compute_required_minutes_for_range` / مدل / policy / validation / approval
+- ❌ نمایش `P`/`R`/`D` به‌عنوان زمان approved در موظفی (فقط `A` در badgeهای attendance/گزارش)
+- ❌ نوتیفیکیشن / پیامک / API جدید / permission جدید
+- ❌ تبدیل HM به `DailyStatus`/`LeaveRequest`/punch/LeaveBalance
 
 ---
 
@@ -470,21 +483,27 @@ category = hourly_mission
 | ۱۴۰۵/۰۶ (2026-09-24) | ۳ | option «مأموریت ساعتی» در فرم موجود `/admin/daily-status` + فیلدهای ساعت شرطی + branch در همان POST → `HourlyMission(status='P')` + ~۱۵ تست (جمعاً ۵۴) + به‌روزرسانی راهنما |
 | ۱۴۰۵/۰۶ (2026-09-24) | ۴ | approve/reject در همان صفحه daily-status + state machine P→A/P→R + metadata + modal رد + ~۱۵ تست (جمعاً ۶۹) + به‌روزرسانی راهنما — بدون تغییر مدل/permission/attendance |
 | ۱۴۰۵/۰۶ (2026-09-24) | ۵ | helper `get_approved_hourly_mission_minutes` + اتصال به `compute_required_minutes_for_range` (auto-fetch اگر None) + اتصال در admin/attendance + ~۱۶ تست (جمعاً ۸۵) + به‌روزرسانی راهنما — بدون تغییر مدل/punch/DailyStatus/Leave/UI |
+| ۱۴۰۵/۰۶ (2026-09-24) | ۶A | helper نمایشی + badge در attendance/گزارش‌های موجود + ~۱۵ تست (جمعاً ۱۰۰) + به‌روزرسانی راهنما — بدون PDF/Excel/Raw/طراحی مجدد/محاسبه مجدد |
 
-**فایل‌های نهایی پس از فاز ۵ (در انتظار commit):**
+**فایل‌های نهایی پس از فاز ۶A:**
 
 ```
+M  core/detailed_monthly_report_v2.py
 M  tests/test_hourly_mission.py
 M  web/routes/admin.py
 M  web/routes/attendance.py
-M  web/services/attendance_policy_service.py
 M  web/services/hourly_mission_service.py
+M  web/templates/admin/attendance.html
+M  web/templates/admin/report_monthly_detailed.html
+M  web/templates/admin/report_monthly_full.html
+M  web/templates/admin/user_attendance.html
+M  web/templates/attendance.html
 M  docs/hourly_mission_implementation.md
 ```
 
-پیام commit: `Include hourly mission in required minutes`
+پیام commit: `Display hourly missions in existing reports`
 
-**قدم بعدی = فاز ۶ (در صورت نیاز):** گزارش‌ها/نمایش UI برای مأموریت ساعتی (badge، فیلتر، جدول). قبل از شروع، بخش‌های ۱، ۵.۵ter، ۵.۵quater (زیر)، ۶ و ۱۰ همین فایل را مرور کن.
+**قدم بعدی = فاز ۶B (در صورت نیاز):** PDF/Excel/گزارش خام/dashboard اختصاصی HM. قبل از شروع، بخش‌های ۱، ۵.۵ter، ۵.۵quater، ۶ و ۱۰ همین فایل را مرور کن.
 
 ### ۵.۵quater تصمیم‌های فاز ۵ (مهم)
 
@@ -496,13 +515,21 @@ M  docs/hourly_mission_implementation.md
 - **Aggregation:** مأموریت‌های چندگانه یک روز جمع می‌شوند؛ duration از `start_time→end_time` محاسبه و ذخیره نمی‌شود.
 - **بدون اثر جانبی:** compute هیچ رکوردی نمی‌سازد/تغییر نمی‌دهد (punch/DailyStatus/Leave/LeaveBalance).
 
+### ۵.۵quinquies تصمیم‌های فاز ۶A (مهم)
+
+- **دو helper مجزا:** محاسبات از `get_approved_hourly_mission_minutes` (وابسته به deduct policy)؛ نمایش از `get_approved_hourly_missions_for_display` (**مستقل از** deduct policy — policy off → نمایش، Required اصلی).
+- **فقط `status='A'`** در badgeهای attendance/گزارش؛ `P`/`R`/`D` فقط در کارت مدیریتی `/admin/daily-status`.
+- **بدون محاسبه مجدد در template:** فقط `hourly_mission_display` از backend؛ Required/Difference دست نمی‌خورد.
+- **الگوی HL تکرار شد:** fetch یک‌باره در route → day dict → badge در status column کنار HL.
+- **بدون طراحی مجدد/فیلتر/صفحه جدید/permission جدید.**
+
 ### Handoff کوتاه برای مدل بعدی
 
-فاز ۵ تمام شد: مأموریت ساعتی تأییدشده (`status='A'`) به محاسبه `compute_required_minutes_for_range` متصل شده است (`deduct_from_required_minutes` per date). Helper: `get_approved_hourly_mission_minutes` در `hourly_mission_service.py`. اگر `hourly_mission_minutes_by_date=None` باشد auto-fetch انجام می‌شود. ۸۵ تست isolated پاس؛ regression سریال 4-فایلی: 19 failed (pre-existing) / 154 passed.
+فاز ۶A تمام شد: مأموریت ساعتی تأییدشده به‌صورت badge در UI و گزارش‌های HTML موجود نمایش داده می‌شود (`مأموریت ساعتی 09:00 تا 11:00`). Helperهای نمایشی: `get_approved_hourly_missions_for_display` + `format_hm_display` در `hourly_mission_service.py` (مستقل از deduct policy؛ فقط `A`). اتصال در: `/attendance`، `/admin/attendance`، `/admin/attendance/user/{id}`، گزارش تفصیلی/کامل ماهانه. ۱۰۰ تست isolated پاس؛ regression 4-فایلی: 68 passed؛ HL UI + reports: 48 passed.
 
-**⚠️ فاز ۵ فقط محاسبهٔ required minutes را تغییر داده است. UI و نمایش آن در گزارش‌ها هنوز در فاز بعد انجام می‌شود.**
+**⚠️ فاز ۶B هنوز انجام نشده:** PDF/Excel/گزارش خام/dashboard اختصاصی HM.
 
-مأموریت ساعتی **Leave نیست** — بدون LeaveBalance/punch/تغییر attendance. درس‌های قبلی: `jdatetime.weekday()` شنبه=۰ — برای جمعه از `togregorian().weekday()==4`؛ پیام‌های redirect فارسی را با `unquote` assert کن؛ هرگز دو pytest موازی.
+مأموریت ساعتی **Leave نیست** — بدون LeaveBalance/punch/تغییر attendance. درس‌های قبلی: `jdatetime.weekday()` شنبه=۰ — برای جمعه از `togregorian().weekday()==4`؛ پیام‌های redirect فارسی را با `unquote` assert کن؛ هرگز دو pytest موازی؛ صفحه `/admin/attendance/user/{id}` با `require_admin` است (تست با super_admin).
 
 **⚠️ قاعده اجباری UI:**
 

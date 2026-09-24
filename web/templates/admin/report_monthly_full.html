@@ -308,6 +308,9 @@
                             {% if day.hourly_leave_minutes %}
                             <br><span class="badge bg-success status-pill">🕐 {{ day.hourly_leave_display }}</span>
                             {% endif %}
+                            {% if day.hourly_mission_display %}
+                            <br><span class="badge bg-primary status-pill">🚗 {{ day.hourly_mission_display }}</span>
+                            {% endif %}
                         </td>
 
                         <!-- 🎯 ۳ جفت ورود/خروج -->
