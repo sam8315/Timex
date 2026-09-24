@@ -52,7 +52,7 @@
 | **فاز ۲** | سرویس validation (policy/time/working-hours/holiday/non-working/overlap/duration) + تست‌ها | ✅ انجام شد |
 | **فاز ۳** | ثبت مأموریت ساعتی از فرم موجود `/admin/daily-status` (branch در همان POST → `HourlyMission(status='P')`) + تست‌ها | ✅ انجام شد |
 | **فاز ۴** | مشاهده درخواست‌ها + تأیید/رد مدیر (فقط P→A / P→R) در همان صفحه daily-status + تست‌ها — **بدون اتصال attendance/گزارش‌ها** | ✅ انجام شد |
-| فاز ۵ | اتصال attendance/گزارش‌ها (`deduct_from_required_minutes`) + نوتیفیکیشن در صورت نیاز | ⬜ |
+| **فاز ۵** | اتصال مأموریت تأییدشده (`status='A'`) به `compute_required_minutes_for_range` (`deduct_from_required_minutes`) + تست‌ها — **بدون UI/گزارش جدا/نوتیفیکیشن** | ✅ انجام شد |
 
 > ترتیب فازها ممکن است با صلاحدید کاربر تغییر کند؛ اما هر فاز فقط در محدوده خودش کار کند.
 
@@ -60,18 +60,18 @@
 
 ## ۴. وضعیت فاز فعلی
 
-**فاز ۴ — تکمیل شده (تأیید/رد مدیر).**
+**فاز ۵ — تکمیل شده (اتصال به required minutes).**
 
-انجام شده در فاز ۴:
+انجام شده در فاز ۵:
 
-1. `web/routes/admin_daily_status.py` — GET `/admin/daily-status` حالا `hourly_missions` (حداکثر ۱۰۰ اخیر) + `hm_pending_count` را به template می‌دهد؛ دو route جدید:
-   - `POST /daily-status/hourly-missions/{mission_id}/approve` — فقط `P→A` + `approved_by` + `approved_at`
-   - `POST /daily-status/hourly-missions/{mission_id}/reject` — فقط `P→R` + `approved_by` + `approved_at` + `rejection_reason` (اختیاری)
-   - هر دو: `require_admin` + `enforce_permission(..., "view_all_attendance")` + try/except با `db.rollback()` (transaction-safe) + redirect با success/error
-2. `web/templates/admin/daily_status.html` — کارت «درخواست‌های مأموریت ساعتی» با ستون‌های کارمند/تاریخ/شروع/پایان/مدت/توضیح/وضعیت/عملیات؛ دکمه تأیید + modal رد (با دلیل اختیاری) **فقط** برای `P`؛ badge فارسی برای هر چهار وضعیت
-3. `tests/test_hourly_mission.py` — ~۱۵ تست Phase 4 (جمعاً ۶۹)
-4. اجرای سریال isolated: `tests/test_hourly_mission.py` → **69 passed**
-5. به‌روزرسانی همین راهنما
+1. `web/services/hourly_mission_service.py` — helper جدید `get_approved_hourly_mission_minutes(db, employee, start_date, end_date) -> Dict[date, int]` (الگوی `get_approved_hl_minutes`): فقط `status='A'`؛ resolve policy per date برای `deduct_from_required_minutes` (خاموش → 0)؛ جمع مأموریت‌های چندگانه یک روز؛ مدت از `start_time→end_time` (ذخیره نمی‌شود).
+2. `web/services/attendance_policy_service.py` — پارامتر اختیاری `hourly_mission_minutes_by_date` در `compute_required_minutes_for_range`؛ اگر `None` باشد helper داخلی صدا زده می‌شود (single source of truth). Pipeline: base required → full-day rules → HL → HM → `max(0, result)` — هرگز منفی.
+3. `web/routes/admin.py` + `web/routes/attendance.py` — fetch یک‌بارهٔ `get_approved_hourly_mission_minutes` در کنار HL و ارسال به همهٔ فراخوانی‌های `compute_required_minutes_for_range`.
+4. `tests/test_hourly_mission.py` — ~۱۶ تست Phase 5 (جمعاً ۸۵).
+5. اجرای سریال isolated: `tests/test_hourly_mission.py` → **85 passed**.
+6. به‌روزرسانی همین راهنما.
+
+**فاز ۴ — تکمیل شده (تأیید/رد مدیر).** ۶۹ تست.
 
 **فاز ۳ — تکمیل شده (ثبت از فرم موجود daily-status).** ۵۴ تست.
 
@@ -266,6 +266,19 @@ DEFAULT_HOURLY_MISSION_SETTINGS = {
 
 **بدون تغییر مدل** (فیلدهای approval از فاز ۱ موجود بود)؛ **بدون permission جدید**؛ **بدون صفحه/route جدا**.
 
+### فاز ۵ (تغییر — اتصال به required minutes)
+
+| فایل | عمل |
+|------|-----|
+| `web/services/hourly_mission_service.py` | MODIFIED — `get_approved_hourly_mission_minutes` + به‌روزرسانی docstring `get_authorized_mission_minutes` |
+| `web/services/attendance_policy_service.py` | MODIFIED — پارامتر `hourly_mission_minutes_by_date` + auto-fetch اگر `None` + کم‌کردن HM در `compute_required_minutes_for_range` |
+| `web/routes/admin.py` | MODIFIED — fetch HM minutes + ارسال به هر ۵ فراخوانی `compute_required_minutes_for_range` |
+| `web/routes/attendance.py` | MODIFIED — fetch HM minutes + ارسال به هر ۲ فراخوانی `compute_required_minutes_for_range` |
+| `tests/test_hourly_mission.py` | MODIFIED — ~۱۶ تست Phase 5 (جمع: ۸۵) |
+| `docs/hourly_mission_implementation.md` | MODIFIED — همین فایل |
+
+**بدون تغییر مدل**؛ **بدون تغییر punch/Attendance/DailyStatus/Leave**؛ **بدون UI/گزارش جدا/نوتیفیکیشن**.
+
 ### فایل‌های مرجع (نخوانید مگر نیاز — فقط برای الگو)
 
 | فایل | چرا مهم است |
@@ -331,12 +344,12 @@ category = hourly_mission
 
 | دستور / محدوده | نتیجه |
 |----------------|--------|
-| `pytest tests/test_hourly_mission.py` (۶۹ تست = ۱۶ فاز ۱ + ۲۳ فاز ۲ + ۱۵ فاز ۳ + ۱۵ فاز ۴، **ایزوله**) | ✅ **69 passed** (~32s) |
-| `pytest tests/test_hourly_mission.py tests/test_daily_status.py tests/test_hourly_leave_integration.py tests/test_attendance_policy_service.py` (سریال) | ⚠️ **19 failed, 123+ passed** — هر ۱۹ شکست pre-existing در `test_attendance_policy_service` (خطای API قدیمی `required_minutes`/`compute_late`)؛ فایل‌های مأموریت/leave/daily_status صفر شکست |
+| `pytest tests/test_hourly_mission.py` (۸۵ تست = ۱۶ فاز ۱ + ۲۳ فاز ۲ + ۱۵ فاز ۳ + ۱۵ فاز ۴ + ۱۶ فاز ۵، **ایزوله**) | ✅ **85 passed** (~31s) |
+| `pytest tests/test_hourly_mission.py tests/test_daily_status.py tests/test_hourly_leave_integration.py tests/test_attendance_policy_service.py` (سریال) | ⚠️ **19 failed, 154 passed** — هر ۱۹ شکست pre-existing در `test_attendance_policy_service` (خطای API قدیمی `required_minutes`/`compute_late`)؛ فایل‌های مأموریت/leave/daily_status صفر شکست |
 | `pytest tests/test_policy.py tests/test_daily_status.py tests/test_hourly_leave_integration.py` روی درخت تمیز (git stash) | ⚠️ **15 failed, 50 passed** — شکست‌ها **pre-existing** ناشی از آلودگی DB مشترک بین تست‌ها |
 | `pytest` کل suite | ⚠️ ۲۱ تست ناموفق pre-existing شناخته‌شده (بخش زیر) |
 
-### تست‌های `tests/test_hourly_mission.py` (۶۹)
+### تست‌های `tests/test_hourly_mission.py` (۸۵)
 
 **فاز ۱ (۱۶):**
 
@@ -385,6 +398,20 @@ category = hourly_mission
 - plain user → 403؛ admin با revoke `view_all_attendance` → 403 و status دست‌نخورده `P`
 - isolation: approve هیچ `DailyStatus`/`Attendance`/`LeaveRequest`/`LeaveBalance` نمی‌سازد/تغییر نمی‌دهد
 
+**فاز ۵ — اتصال به required minutes (~۱۶):**
+
+- approved (`A`) + policy on: base 480 − HM 120 = 360
+- policy `deduct_from_required_minutes=false` → 480 (بدون کسر)
+- status `P`/`R`/`D` → 480 (فقط `A` کسر می‌شود)
+- clamp: HM بزرگ‌تر از base → 0 (هرگز منفی)
+- full-day `mission_dates` M → 0؛ leave → 0؛ rest → 0؛ holiday → 0 (با HM approved)
+- چند مأموریت یک روز: 60+90=150 → 330
+- boundary دقیق: HM == required → 0
+- مأموریت خارج از بازه → نادیده گرفته می‌شود
+- HL + HM هر دو کسر: 480 − 60 − 60 = 360
+- `hourly_mission_minutes_by_date=None` → auto-fetch (single source)
+- isolation: compute هیچ `DailyStatus`/`Attendance`/`LeaveRequest`/`LeaveBalance`/HL نمی‌سازد
+
 ### ⚠️ شکست‌های pre-existing (غیرمرتبط)
 
 تعدادی از تست‌های `test_policy.py` / `test_daily_status.py` / `test_hourly_leave_integration.py` در **اجرای ترکیبی** به‌دلیل آلودگی `timex_test_db` (StaleDataError / 307 / ObjectDeletedError) شکست می‌خورند؛ حتی با `git stash` روی درخت تمیز هم تکرار می‌شوند. **تست فاز ۱ باید ایزوله اجرا شود.**
@@ -405,7 +432,7 @@ category = hourly_mission
 
 1. **این فایل را اول بخوان.** بعد فقط فایل‌های بخش ۶ را باز کن؛ پروژه را از صفر نگرد.
 2. اجرای تست: `.venv\Scripts\python.exe -m pytest` از ریشه. **هرگز دو pytest موازی** ( آلودگی DB مشترک) — و اجرای تکی را هم در یک batch تکرار نکن.
-3. **شاخه کاری:** `work` — commit فاز ۱: `Scope hourly mission policies by group and employee` (`afc210d`). — فاز ۲: `Add hourly mission validation service` (`a50d6b7`). — فاز ۳: `Add hourly mission to daily status form` (`79c6ee0`). — فاز ۴: `Add hourly mission approval and rejection`.
+3. **شاخه کاری:** `work` — commit فاز ۱: `Scope hourly mission policies by group and employee` (`afc210d`). — فاز ۲: `Add hourly mission validation service` (`a50d6b7`). — فاز ۳: `Add hourly mission to daily status form` (`79c6ee0`). — فاز ۴: `Add hourly mission approval and rejection` (`dd2b69f`). — فاز ۵: `Include hourly mission in required minutes`.
 4. **سیاست مأموریت ساعتی باید برای گروه/نوع استخدام و employee override قابل تفکیک باشد و هرگز به‌عنوان یک policy global مشترک برای تمام کارکنان resolve نشود.**
 5. **هنگام ثبت مأموریت: فقط `validate_hourly_mission_request(db, employee, date, start, end, exclude_mission_id)` را صدا بزن.** تمام چک‌ها (enabled/ساعت/ساعات موظفی/holiday/غیرکاری/overlap) داخل آن است. `exclude_mission_id` را هنگام ویرایش رد کن تا خود-mأموریت overlap نگیرد.
 6. **هرگز در `LeaveRequest` یا `DailyStatus` رکورد مأموریت ساعتی نساز.** بدون LeaveBalance، بدون punch، بدون تغییر attendance.
@@ -419,13 +446,12 @@ category = hourly_mission
 
 ---
 
-## ۱۱. مواردی که عمداً در فاز ۴ انجام **نشد**
+## ۱۱. مواردی که عمداً در فاز ۵ انجام **نشد**
 
-- ❌ اتصال `deduct_from_required_minutes` به `compute_required_minutes_for_range` (فاز ۵)
-- ❌ اتصال مأموریت تأییدشده به attendance / تغییر punch / required minutes (فاز ۵)
-- ❌ گزارش روزانه/ماهانه/خام/dashboard
-- ❌ نوتیفیکیشن / پیامک / API جداگانه (فاز ۵)
-- ❌ تغییر `DailyStatus` / `LeaveRequest` / Leave Balance
+- ❌ نمایش HM در UI روزانه/ماهانه (badge، فیلتر، جدول جدا) — فاز ۶ (گزارش‌ها/نمایش)
+- ❌ گزارش روزانه/ماهانه/خام/dashboard اختصاصی HM
+- ❌ نوتیفیکیشن / پیامک / API جداگانه (در صورت نیاز در فاز بعد)
+- ❌ تغییر `DailyStatus` / `LeaveRequest` / Leave Balance / punch / Attendance
 - ❌ re-validation policy هنگام approve (عمداً — بخش ۵.۵ter)
 - ❌ permission جدید
 - ❌ صفحه/route جدا برای مدیریت مأموریت ساعتی
@@ -443,25 +469,38 @@ category = hourly_mission
 | ۱۴۰۵/۰۶ (2026-09-24) | ۲ | سرویس validation کامل (`validate_hourly_mission_request`) + helperهای duration/holiday + ۲۳ تست + به‌روزرسانی راهنما |
 | ۱۴۰۵/۰۶ (2026-09-24) | ۳ | option «مأموریت ساعتی» در فرم موجود `/admin/daily-status` + فیلدهای ساعت شرطی + branch در همان POST → `HourlyMission(status='P')` + ~۱۵ تست (جمعاً ۵۴) + به‌روزرسانی راهنما |
 | ۱۴۰۵/۰۶ (2026-09-24) | ۴ | approve/reject در همان صفحه daily-status + state machine P→A/P→R + metadata + modal رد + ~۱۵ تست (جمعاً ۶۹) + به‌روزرسانی راهنما — بدون تغییر مدل/permission/attendance |
+| ۱۴۰۵/۰۶ (2026-09-24) | ۵ | helper `get_approved_hourly_mission_minutes` + اتصال به `compute_required_minutes_for_range` (auto-fetch اگر None) + اتصال در admin/attendance + ~۱۶ تست (جمعاً ۸۵) + به‌روزرسانی راهنما — بدون تغییر مدل/punch/DailyStatus/Leave/UI |
 
-**فایل‌های نهایی پس از فاز ۴ (در انتظار commit):**
+**فایل‌های نهایی پس از فاز ۵ (در انتظار commit):**
 
 ```
 M  tests/test_hourly_mission.py
-M  web/routes/admin_daily_status.py
-M  web/templates/admin/daily_status.html
+M  web/routes/admin.py
+M  web/routes/attendance.py
+M  web/services/attendance_policy_service.py
+M  web/services/hourly_mission_service.py
 M  docs/hourly_mission_implementation.md
 ```
 
-پیام commit: `Add hourly mission approval and rejection`
+پیام commit: `Include hourly mission in required minutes`
 
-**قدم بعدی = فاز ۵:** اتصال مأموریت تأییدشده به محاسبه موظفی/attendance/گزارش‌ها (`deduct_from_required_minutes`) + نوتیفیکیشن در صورت نیاز. قبل از شروع، بخش‌های ۱، ۵.۶، ۵.۵bis، ۵.۵ter، ۶ و ۱۰ همین فایل را مرور کن.
+**قدم بعدی = فاز ۶ (در صورت نیاز):** گزارش‌ها/نمایش UI برای مأموریت ساعتی (badge، فیلتر، جدول). قبل از شروع، بخش‌های ۱، ۵.۵ter، ۵.۵quater (زیر)، ۶ و ۱۰ همین فایل را مرور کن.
+
+### ۵.۵quater تصمیم‌های فاز ۵ (مهم)
+
+- **فقط `status='A'`** در `get_approved_hourly_mission_minutes` مؤثر است؛ `P`/`R`/`D` صفر.
+- **دو policy مستقل** `working_hours_only` و `deduct_from_required_minutes` را یکی نکن؛ حالت working_hours_only=off + deduct=on مجاز است (deduct سقف‌دار با موظفی مؤثر).
+- **Policy هرگز hard-code نمی‌شود** — از resolver فاز ۱ (`resolve_hourly_mission_policy` / `get_effective_hourly_mission_settings` / `get_authorized_mission_minutes`) استفاده می‌شود.
+- **Pipeline:** base required → full-day rules → HL → HM → `max(0, result)`. اگر base از قبل 0 باشد (holiday/leave/rest/daily mission M/non-working) نتیجه همچنان 0.
+- **Auto-fetch:** اگر caller `hourly_mission_minutes_by_date` را پاس ندهد (`None`)، helper داخل `compute_required_minutes_for_range` صدا زده می‌شود — single source of truth برای همهٔ مسیرها.
+- **Aggregation:** مأموریت‌های چندگانه یک روز جمع می‌شوند؛ duration از `start_time→end_time` محاسبه و ذخیره نمی‌شود.
+- **بدون اثر جانبی:** compute هیچ رکوردی نمی‌سازد/تغییر نمی‌دهد (punch/DailyStatus/Leave/LeaveBalance).
 
 ### Handoff کوتاه برای مدل بعدی
 
-فاز ۴ تمام شد: مشاهده + تأیید/رد مأموریت ساعتی **در همان صفحه** `/admin/daily-status` (بدون صفحه جدا). فقط `P→A` یا `P→R` مجاز است (server-side)؛ metadata با فیلدهای موجود مدل (`approved_by`/`approved_at`/`rejection_reason`)؛ permission: `view_all_attendance` (بدون permission جدید)؛ rejection reason در modal اختیاری. Policy **فقط در create** بررسی می‌شود، نه در approve. ۶۹ تست isolated پاس.
+فاز ۵ تمام شد: مأموریت ساعتی تأییدشده (`status='A'`) به محاسبه `compute_required_minutes_for_range` متصل شده است (`deduct_from_required_minutes` per date). Helper: `get_approved_hourly_mission_minutes` در `hourly_mission_service.py`. اگر `hourly_mission_minutes_by_date=None` باشد auto-fetch انجام می‌شود. ۸۵ تست isolated پاس؛ regression سریال 4-فایلی: 19 failed (pre-existing) / 154 passed.
 
-**⚠️ فاز ۴ فقط مدیریت وضعیت مأموریت ساعتی توسط مدیر را اضافه کرده است. اتصال مأموریت تأییدشده به محاسبه موظفی، attendance و گزارش‌ها هنوز انجام نشده است.**
+**⚠️ فاز ۵ فقط محاسبهٔ required minutes را تغییر داده است. UI و نمایش آن در گزارش‌ها هنوز در فاز بعد انجام می‌شود.**
 
 مأموریت ساعتی **Leave نیست** — بدون LeaveBalance/punch/تغییر attendance. درس‌های قبلی: `jdatetime.weekday()` شنبه=۰ — برای جمعه از `togregorian().weekday()==4`؛ پیام‌های redirect فارسی را با `unquote` assert کن؛ هرگز دو pytest موازی.
 

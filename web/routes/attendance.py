@@ -18,6 +18,7 @@ from models.leave_request import LeaveRequest  # 🆕
 from models.daily_status import DailyStatus
 from web.services.attendance_policy_service import compute_required_minutes_for_range
 from web.services.hourly_leave_service import get_approved_hl_minutes, format_hl_display
+from web.services.hourly_mission_service import get_approved_hourly_mission_minutes
 from web.services.travel_leave_service import build_leave_days_by_date
 
 router = APIRouter(tags=["Attendance"])
@@ -525,6 +526,12 @@ async def attendance_page(
         start_date=month_start_g, end_date=month_end_g
     )
 
+    # Phase 5: Fetch approved hourly mission minutes by date
+    hourly_mission_minutes_by_date = get_approved_hourly_mission_minutes(
+        db=db, employee=emp,
+        start_date=month_start_g, end_date=month_end_g
+    )
+
     # 🆕 دریافت وضعیت‌های روزانه (مأموریت و استراحت)
     daily_statuses = db.query(DailyStatus).filter(
         and_(
@@ -650,6 +657,7 @@ async def attendance_page(
         leaves_by_date=leaves_by_date,
         hourly_leave_minutes_by_date=hourly_leave_minutes_by_date,
         mission_dates=mission_dates,
+        hourly_mission_minutes_by_date=hourly_mission_minutes_by_date,
     )
     monthly_duty_hours = monthly_required_minutes / 60
 
@@ -702,6 +710,7 @@ async def attendance_page(
         leaves_by_date=leaves_by_date,
         hourly_leave_minutes_by_date=hourly_leave_minutes_by_date,
         mission_dates=mission_dates,
+        hourly_mission_minutes_by_date=hourly_mission_minutes_by_date,
     )
     instant_duty_hours = instant_required_minutes / 60
 

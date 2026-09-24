@@ -122,14 +122,51 @@ def get_authorized_mission_minutes(
     end_time: time,
 ) -> int:
     """
-    دقایق مأموریت مجاز برای لایه محاسباتی (فاز ۴ — compute_required_minutes_for_range).
+    دقایق مأموریت مجاز برای لایه محاسباتی (compute_required_minutes_for_range).
 
     اگر deduct_from_required_minutes=False → 0
-    در این فاز فقط مقدار برمی‌گردد؛ گزارش/موظفی تغییر نمی‌کند.
     """
     if not settings.get('deduct_from_required_minutes', True):
         return 0
     return compute_mission_minutes(start_time, end_time)
+
+
+def get_approved_hourly_mission_minutes(
+    db: Session,
+    employee: Employee,
+    start_date: date,
+    end_date: date
+) -> Dict[date, int]:
+    """
+    مجموع دقایق مأموریت ساعتی تأییدشده برای هر تاریخ در بازه.
+
+    فقط status='A' (Pending/Rejected/Cancelled محاسبه نمی‌شوند).
+    policy deduct_from_required_minutes per date resolve می‌شود؛
+    خاموش → 0 برای آن مأموریت. مأموریت‌های چندگانه یک روز جمع می‌شوند.
+    Returns: dict[date] → minutes
+    """
+    missions = db.query(HourlyMission).filter(
+        and_(
+            HourlyMission.user_id == employee.user_id,
+            HourlyMission.status == 'A',
+            HourlyMission.mission_date >= start_date,
+            HourlyMission.mission_date <= end_date,
+        )
+    ).all()
+
+    result: Dict[date, int] = {}
+    settings_cache: Dict[date, Dict[str, bool]] = {}
+    for m in missions:
+        if m.mission_date not in settings_cache:
+            settings_cache[m.mission_date] = get_effective_hourly_mission_settings(
+                db, employee, m.mission_date
+            )
+        minutes = get_authorized_mission_minutes(
+            settings_cache[m.mission_date], m.start_time, m.end_time
+        )
+        if minutes > 0:
+            result[m.mission_date] = result.get(m.mission_date, 0) + minutes
+    return result
 
 
 # ============================================

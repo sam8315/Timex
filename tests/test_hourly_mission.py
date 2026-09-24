@@ -1,5 +1,5 @@
 """
-Phase 1+2+3+4 tests — hourly mission data model, scoped policies, validation service, daily-status form, admin approve/reject.
+Phase 1+2+3+4+5 tests — hourly mission data model, scoped policies, validation service, daily-status form, admin approve/reject, required-minutes integration.
 
 Phase 1:
 - model import / registration in Base.metadata
@@ -27,6 +27,13 @@ Phase 4 (admin approve/reject):
 - invalid transitions (A/R/D) rejected server-side
 - permission enforcement (require_admin + view_all_attendance)
 - isolation: no DailyStatus / Attendance / LeaveRequest / LeaveBalance side effects
+
+Phase 5 (required minutes integration):
+- approved HM deducts from compute_required_minutes_for_range when policy on
+- policy off / non-approved status → no deduction
+- clamp at 0; full-day M / leave / rest / holiday stay 0
+- multiple same-day missions sum; exact boundary → 0
+- no side effects on LeaveBalance / LeaveRequest / DailyStatus / HL
 """
 from datetime import date, time, timedelta
 
@@ -50,7 +57,11 @@ from web.services.hourly_mission_service import (
     validate_hourly_mission_request,
     compute_mission_minutes,
     get_authorized_mission_minutes,
+    get_approved_hourly_mission_minutes,
     is_holiday_for_employee,
+)
+from web.services.attendance_policy_service import (
+    compute_required_minutes_for_range,
 )
 
 
@@ -1679,3 +1690,293 @@ def test_approve_creates_no_daily_status_or_attendance_or_leave(client, db, make
         assert row.status == "A"
     finally:
         _cleanup_missions(db, target["user_id"])
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 — Approved hourly mission → compute_required_minutes_for_range
+# ---------------------------------------------------------------------------
+# Base attendance policy in these tests: Mon-Thu+Sat 07:00–15:00 → 480 min.
+# MONDAY = 2027-03-22 (working day). HM 09:00–11:00 = 120 min.
+
+
+def _seed_hm_and_base(db, make_user, **policy_kwargs):
+    """Employee + attendance policy (480min) + optional HM policy.
+    Returns (emp, creds). Always cleans HM/attendance policies first."""
+    _cleanup_policies(db)
+    _cleanup_attendance_policies(db, "4")
+    emp, creds = _employee(db, make_user)
+    _seed_attendance_policy(db, department="4",
+                            workday_start=time(7, 0),
+                            workday_end=time(15, 0))
+    _seed_policy(db, employment_type_code="4", **policy_kwargs)
+    return emp, creds
+
+
+def _hm_required(db, emp, day=MONDAY, **kwargs):
+    defaults = dict(
+        rest_dates=set(), holiday_dates={}, leaves_by_date={},
+        mission_dates=set(),
+    )
+    defaults.update(kwargs)
+    return compute_required_minutes_for_range(
+        db=db, employee=emp, start_date=day, end_date=day, **defaults
+    )
+
+
+def test_hm_approved_deducts_from_required(db, make_user):
+    """Base 480 − approved HM 120 = 360."""
+    emp, creds = _seed_hm_and_base(db, make_user)
+    try:
+        m = _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                                  start=time(9, 0), end=time(11, 0),
+                                  status="A")
+        assert _hm_required(db, emp) == 360
+        assert get_approved_hourly_mission_minutes(db, emp, MONDAY, MONDAY) == {
+            MONDAY: 120
+        }
+    finally:
+        _cleanup_missions(db, creds["user_id"])
+        _cleanup_policies(db)
+        _cleanup_attendance_policies(db)
+
+
+def test_hm_policy_deduct_disabled_no_reduction(db, make_user):
+    """deduct_from_required_minutes=False → full 480 despite approved HM."""
+    emp, creds = _seed_hm_and_base(
+        db, make_user, deduct_from_required_minutes=False
+    )
+    try:
+        _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                              start=time(9, 0), end=time(11, 0),
+                              status="A")
+        assert _hm_required(db, emp) == 480
+        assert get_approved_hourly_mission_minutes(db, emp, MONDAY, MONDAY) == {}
+    finally:
+        _cleanup_missions(db, creds["user_id"])
+        _cleanup_policies(db)
+        _cleanup_attendance_policies(db)
+
+
+@pytest.mark.parametrize("status", ["P", "R", "D"])
+def test_hm_non_approved_status_no_deduction(db, make_user, status):
+    """Only status='A' reduces required minutes."""
+    emp, creds = _seed_hm_and_base(db, make_user)
+    try:
+        _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                              start=time(9, 0), end=time(11, 0),
+                              status=status)
+        assert _hm_required(db, emp) == 480
+        assert get_approved_hourly_mission_minutes(db, emp, MONDAY, MONDAY) == {}
+    finally:
+        _cleanup_missions(db, creds["user_id"])
+        _cleanup_policies(db)
+        _cleanup_attendance_policies(db)
+
+
+def test_hm_deduct_clamped_at_zero(db, make_user):
+    """HM longer than required → 0, never negative (600 − 480 → 0)."""
+    emp, creds = _seed_hm_and_base(db, make_user)
+    try:
+        _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                              start=time(7, 0), end=time(17, 0),  # 600 min
+                              status="A")
+        assert _hm_required(db, emp) == 0
+    finally:
+        _cleanup_missions(db, creds["user_id"])
+        _cleanup_policies(db)
+        _cleanup_attendance_policies(db)
+
+
+def test_hm_on_full_day_mission_stays_zero(db, make_user):
+    """Full-day DailyStatus M → base 0; approved HM must not make it positive."""
+    emp, creds = _seed_hm_and_base(db, make_user)
+    try:
+        _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                              start=time(9, 0), end=time(11, 0),
+                              status="A")
+        assert _hm_required(db, emp, mission_dates={MONDAY}) == 0
+    finally:
+        _cleanup_missions(db, creds["user_id"])
+        _cleanup_policies(db)
+        _cleanup_attendance_policies(db)
+
+
+def test_hm_on_leave_stays_zero(db, make_user):
+    """Full-day leave → base 0; approved HM still 0 (never negative)."""
+    emp, creds = _seed_hm_and_base(db, make_user)
+    try:
+        _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                              start=time(9, 0), end=time(11, 0),
+                              status="A")
+        assert _hm_required(db, emp, leaves_by_date={MONDAY: "AL"}) == 0
+    finally:
+        _cleanup_missions(db, creds["user_id"])
+        _cleanup_policies(db)
+        _cleanup_attendance_policies(db)
+
+
+def test_hm_on_rest_stays_zero(db, make_user):
+    """Rest day → base 0; approved HM still 0."""
+    emp, creds = _seed_hm_and_base(db, make_user)
+    try:
+        _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                              start=time(9, 0), end=time(11, 0),
+                              status="A")
+        assert _hm_required(db, emp, rest_dates={MONDAY}) == 0
+    finally:
+        _cleanup_missions(db, creds["user_id"])
+        _cleanup_policies(db)
+        _cleanup_attendance_policies(db)
+
+
+def test_hm_on_holiday_stays_zero(db, make_user):
+    """Holiday → base 0; approved HM still 0."""
+    emp, creds = _seed_hm_and_base(db, make_user)
+    try:
+        _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                              start=time(9, 0), end=time(11, 0),
+                              status="A")
+        assert _hm_required(db, emp, holiday_dates={MONDAY: "تعطیل"}) == 0
+    finally:
+        _cleanup_missions(db, creds["user_id"])
+        _cleanup_policies(db)
+        _cleanup_attendance_policies(db)
+
+
+def test_hm_multiple_same_day_summed(db, make_user):
+    """Two approved missions same day: 60 + 90 = 150 → 480 − 150 = 330."""
+    emp, creds = _seed_hm_and_base(db, make_user)
+    try:
+        _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                              start=time(8, 0), end=time(9, 0),
+                              status="A")  # 60
+        _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                              start=time(10, 0), end=time(11, 30),
+                              status="A")  # 90
+        hm = get_approved_hourly_mission_minutes(db, emp, MONDAY, MONDAY)
+        assert hm == {MONDAY: 150}
+        assert _hm_required(db, emp) == 330
+    finally:
+        _cleanup_missions(db, creds["user_id"])
+        _cleanup_policies(db)
+        _cleanup_attendance_policies(db)
+
+
+def test_hm_exact_boundary_zero(db, make_user):
+    """HM duration == required (480) → 0 exactly."""
+    emp, creds = _seed_hm_and_base(db, make_user)
+    try:
+        _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                              start=time(7, 0), end=time(15, 0),  # 480
+                              status="A")
+        assert _hm_required(db, emp) == 0
+    finally:
+        _cleanup_missions(db, creds["user_id"])
+        _cleanup_policies(db)
+        _cleanup_attendance_policies(db)
+
+
+def test_hm_not_on_date_in_range_ignored(db, make_user):
+    """Mission on Tuesday does not affect Monday required."""
+    emp, creds = _seed_hm_and_base(db, make_user)
+    try:
+        _seed_pending_mission(db, creds["user_id"], day=date(2027, 3, 23),
+                              start=time(9, 0), end=time(11, 0),
+                              status="A")
+        assert _hm_required(db, emp) == 480
+        assert get_approved_hourly_mission_minutes(db, emp, MONDAY, MONDAY) == {}
+    finally:
+        _cleanup_missions(db, creds["user_id"])
+        _cleanup_policies(db)
+        _cleanup_attendance_policies(db)
+
+
+def test_hm_and_hl_both_deduct(db, make_user):
+    """HL 60 + HM 60 → 480 − 120 = 360 (same clamp pipeline)."""
+    emp, creds = _seed_hm_and_base(db, make_user)
+    try:
+        _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                              start=time(9, 0), end=time(10, 0),
+                              status="A")  # 60
+        result = compute_required_minutes_for_range(
+            db=db, employee=emp, start_date=MONDAY, end_date=MONDAY,
+            rest_dates=set(), holiday_dates={}, leaves_by_date={},
+            mission_dates=set(),
+            hourly_leave_minutes_by_date={MONDAY: 60},
+            hourly_mission_minutes_by_date={MONDAY: 60},
+        )
+        assert result == 360
+    finally:
+        _cleanup_missions(db, creds["user_id"])
+        _cleanup_policies(db)
+        _cleanup_attendance_policies(db)
+
+
+def test_hm_auto_fetch_when_param_none(db, make_user):
+    """Passing hourly_mission_minutes_by_date=None still deducts (single source)."""
+    emp, creds = _seed_hm_and_base(db, make_user)
+    try:
+        _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                              start=time(9, 0), end=time(11, 0),
+                              status="A")
+        result = compute_required_minutes_for_range(
+            db=db, employee=emp, start_date=MONDAY, end_date=MONDAY,
+            rest_dates=set(), holiday_dates={}, leaves_by_date={},
+            mission_dates=set(),
+            # hourly_mission_minutes_by_date omitted → auto-fetch
+        )
+        assert result == 360
+    finally:
+        _cleanup_missions(db, creds["user_id"])
+        _cleanup_policies(db)
+        _cleanup_attendance_policies(db)
+
+
+def test_hm_compute_creates_no_side_effect_rows(db, make_user):
+    """compute_required_minutes_for_range with approved HM must not write
+    DailyStatus / Attendance / LeaveRequest / LeaveBalance / HL rows."""
+    from models.attendance import Attendance
+    from models.leave_balance import LeaveBalance
+    from models.leave_request import LeaveRequest
+
+    emp, creds = _seed_hm_and_base(db, make_user)
+    try:
+        _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                              start=time(9, 0), end=time(11, 0),
+                              status="A")
+        before_ds = db.query(DailyStatus).filter(
+            DailyStatus.user_id == creds["user_id"]).count()
+        before_att = db.query(Attendance).filter(
+            Attendance.user_id == creds["user_id"]).count()
+        before_lr = db.query(LeaveRequest).filter(
+            LeaveRequest.user_id == creds["user_id"]).count()
+        before_lb = db.query(LeaveBalance).filter(
+            LeaveBalance.user_id == creds["user_id"]).count()
+        before_hl = db.query(LeaveRequest).filter(
+            LeaveRequest.user_id == creds["user_id"],
+            LeaveRequest.leave_type == "HL",
+        ).count()
+
+        assert _hm_required(db, emp) == 360
+
+        db.expire_all()
+        assert db.query(DailyStatus).filter(
+            DailyStatus.user_id == creds["user_id"]).count() == before_ds
+        assert db.query(Attendance).filter(
+            Attendance.user_id == creds["user_id"]).count() == before_att
+        assert db.query(LeaveRequest).filter(
+            LeaveRequest.user_id == creds["user_id"]).count() == before_lr
+        assert db.query(LeaveBalance).filter(
+            LeaveBalance.user_id == creds["user_id"]).count() == before_lb
+        assert db.query(LeaveRequest).filter(
+            LeaveRequest.user_id == creds["user_id"],
+            LeaveRequest.leave_type == "HL",
+        ).count() == before_hl
+        # HM row itself unchanged (still A)
+        row = db.query(HourlyMission).filter(
+            HourlyMission.user_id == creds["user_id"]).first()
+        assert row.status == "A"
+    finally:
+        _cleanup_missions(db, creds["user_id"])
+        _cleanup_policies(db)
+        _cleanup_attendance_policies(db)

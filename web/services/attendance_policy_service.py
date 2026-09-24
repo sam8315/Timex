@@ -333,6 +333,7 @@ def compute_required_minutes_for_range(
     leaves_by_date: dict,
     hourly_leave_minutes_by_date: dict = None,
     mission_dates: set = None,
+    hourly_mission_minutes_by_date: dict = None,
 ) -> int:
     """
     مجموع دقایق موظفی برای یک بازه تاریخی (بر اساس Policy)
@@ -346,6 +347,12 @@ def compute_required_minutes_for_range(
     Phase 7: hourly_leave_minutes_by_date (dict[date, int]) — approved HL minutes
     per date. Subtracted from base required minutes: effective = max(0, base - hl).
 
+    Phase 5 (hourly mission): hourly_mission_minutes_by_date (dict[date, int]) —
+    approved HourlyMission minutes per date (only status='A'; policy
+    deduct_from_required_minutes applied inside the helper). If None, fetched
+    automatically. Pipeline: base → full-day rules → HL → HM → max(0, result).
+    Never negative. Full-day Mission (DailyStatus 'M') still forces base=0.
+
     مأموریت (Mission) روزانه (status_code == 'M') مانند استراحت است:
     روز مأموریت موظفی ندارد (required_minutes = 0).
     """
@@ -353,6 +360,13 @@ def compute_required_minutes_for_range(
         hourly_leave_minutes_by_date = {}
     if mission_dates is None:
         mission_dates = set()
+    if hourly_mission_minutes_by_date is None:
+        from web.services.hourly_mission_service import (
+            get_approved_hourly_mission_minutes,
+        )
+        hourly_mission_minutes_by_date = get_approved_hourly_mission_minutes(
+            db, employee, start_date, end_date
+        )
     total = 0
     current = start_date
     while current <= end_date:
@@ -369,7 +383,9 @@ def compute_required_minutes_for_range(
 
         # Phase 7: subtract approved HL minutes from required (not from actual)
         hl_minutes = hourly_leave_minutes_by_date.get(current, 0)
-        effective_required = max(0, base_required - hl_minutes)
+        # Phase 5: subtract approved HourlyMission minutes from required
+        hm_minutes = hourly_mission_minutes_by_date.get(current, 0)
+        effective_required = max(0, base_required - hl_minutes - hm_minutes)
 
         total += effective_required
         current += timedelta(days=1)
