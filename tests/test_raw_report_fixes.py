@@ -66,6 +66,8 @@ def _normal_day(day_num, att_str="07:00 → 14:00"):
         "person_status_name": "حاضر",
         "leave_name": None,
         "hourly_leave": {},
+        "hourly_mission_display": "",
+        "hourly_missions": [],
         "attendance_str": att_str,
     }
 

@@ -78,6 +78,27 @@ def _write_employee_header(ws, emp: dict):
         cell.alignment = Alignment(horizontal='right', vertical='center')
 
 
+def _hourly_leave_and_mission_display(day: dict) -> str:
+    """ترکیب مرخصی/ساعتی + مأموریت ساعتی برای ستون «نوع مرخصی» اکسل."""
+    parts = []
+    leave_name = day.get('leave_name')
+    if leave_name:
+        parts.append(str(leave_name))
+    # Phase 6B: approved hourly mission with start/end/minutes (display only)
+    missions = day.get('hourly_missions') or []
+    if missions:
+        mission_lines = [
+            f"مأموریت ساعتی {m['start']}-{m['end']} ({m['minutes']} دقیقه)"
+            for m in missions
+        ]
+        parts.extend(mission_lines)
+    elif day.get('hourly_mission_display'):
+        parts.append(day['hourly_mission_display'])
+    if not parts:
+        return '-'
+    return '\n'.join(parts)
+
+
 def _write_daily_table(ws, days: List[dict]):
     header_row = 6
     headers = [
@@ -97,7 +118,7 @@ def _write_daily_table(ws, days: List[dict]):
         fill = OFF_FILL if day['day_status'] == 'تعطیل' else (
             EVEN_FILL if row_index % 2 == 0 else None
         )
-        leave_display = day.get('leave_name') or '-'
+        leave_display = _hourly_leave_and_mission_display(day)
         values = [
             day['jalali_date'],
             day['day_name'],

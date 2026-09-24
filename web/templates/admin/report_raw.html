@@ -449,7 +449,11 @@
                 <td class="{% if day.day_status == 'تعطیل' %}day-off{% endif %}">{{ day.day_status }}</td>
                 <td>{{ day.person_status_name }}</td>
                 <td class="leave-cell">
-                    {% if day.leave_name %}{{ day.leave_name }}{% else %}-{% endif %}
+                    {% if day.leave_name %}{{ day.leave_name }}{% endif %}
+                    {% if day.hourly_mission_display %}
+                        {% if day.leave_name %}<br>{% endif %}{{ day.hourly_mission_display }}
+                    {% endif %}
+                    {% if not day.leave_name and not day.hourly_mission_display %}-{% endif %}
                 </td>
                 <td class="attendance-cell">{{ day.attendance_str }}</td>
             </tr>

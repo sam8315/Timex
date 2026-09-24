@@ -11,7 +11,9 @@ from models.contract import CONTRACT_TYPES
 from models.daily_status import DailyStatus
 from models.employee import Employee
 from models.holiday import Holiday
+from models.hourly_mission import HourlyMission
 from models.leave_request import LeaveRequest
+from web.services.hourly_mission_service import format_hm_display
 from web.services.travel_leave_service import build_leave_days_by_date
 
 
@@ -269,6 +271,21 @@ class RawReportService:
             'display': '، '.join(ranges),
         }
 
+    @staticmethod
+    def _hourly_mission_export_detail(missions: List[HourlyMission]) -> List[dict]:
+        """ساختار نمایشی مأموریت‌های ساعتی برای خروجی (start/end/minutes)."""
+        detail = []
+        for mission in missions:
+            start = mission.start_time
+            end = mission.end_time
+            minutes = max(0, (end.hour * 60 + end.minute) - (start.hour * 60 + start.minute))
+            detail.append({
+                'start': start.strftime('%H:%M'),
+                'end': end.strftime('%H:%M'),
+                'minutes': minutes,
+            })
+        return detail
+
     def _build_day(
         self,
         day: date,
@@ -278,6 +295,7 @@ class RawReportService:
         leaves_by_date: Dict[date, str],
         hourly_leaves_by_date: Dict[date, List[LeaveRequest]],
         attendances: List[Attendance],
+        hourly_missions_by_date: Optional[Dict[date, List[HourlyMission]]] = None,
     ) -> dict:
         holiday = self._applicable_holiday(day, department, holidays_by_date)
         is_day_off = day.weekday() == 4 or holiday is not None
@@ -285,6 +303,12 @@ class RawReportService:
         daily_leave = leaves_by_date.get(day)
         hourly_leaves = hourly_leaves_by_date.get(day, [])
         has_attendance = bool(attendances)
+
+        # Phase 6B: approved HourlyMission (status='A') — display only.
+        # Does NOT change person_status cascade (M/leave/rest/holiday stay).
+        hourly_missions = (hourly_missions_by_date or {}).get(day, [])
+        hourly_mission_display = format_hm_display(hourly_missions)
+        hourly_mission_detail = self._hourly_mission_export_detail(hourly_missions)
 
         if daily_status == 'M':
             person_status = 'M'
@@ -330,6 +354,12 @@ class RawReportService:
             'leave_type': daily_leave if daily_leave in LEAVE_PERSON_STATUS else None,
             'leave_name': leave_name,
             'hourly_leave': hourly_leave_display,
+            # Phase 6B: hourly mission display (independent of leave / punches)
+            'hourly_mission_display': hourly_mission_display,
+            'hourly_missions': hourly_mission_detail,
+            'hourly_mission_minutes': sum(
+                item['minutes'] for item in hourly_mission_detail
+            ),
             'has_attendance': has_attendance,
             'punches': [_record_dict(record) for record in sorted(
                 attendances, key=lambda record: (record.timestamp, record.id or 0)
@@ -433,11 +463,28 @@ class RawReportService:
                 for mapped_date, mapped_type in mapped.items():
                     leaves_by_user.setdefault(leave.user_id, {})[mapped_date] = mapped_type
 
+        # Phase 6B: bulk-fetch approved HourlyMission for the whole range (no N+1).
+        hourly_missions_by_user: Dict[str, Dict[date, List[HourlyMission]]] = {}
+        if user_ids:
+            approved_missions = self.db.query(HourlyMission).filter(
+                and_(
+                    HourlyMission.user_id.in_(user_ids),
+                    HourlyMission.status == 'A',
+                    HourlyMission.mission_date >= start_g,
+                    HourlyMission.mission_date <= end_g,
+                )
+            ).order_by(HourlyMission.start_time).all()
+            for mission in approved_missions:
+                hourly_missions_by_user.setdefault(mission.user_id, {}).setdefault(
+                    mission.mission_date, []
+                ).append(mission)
+
         employee_reports = []
         for employee in employees:
             department = employee.department
             leaves_by_date = leaves_by_user.get(employee.user_id, {})
             hourly_leaves_by_date = hourly_leaves_by_user.get(employee.user_id, {})
+            hourly_missions_by_date = hourly_missions_by_user.get(employee.user_id, {})
             days = []
             for offset in range(days_count):
                 day = start_g + timedelta(days=offset)
@@ -449,6 +496,7 @@ class RawReportService:
                     leaves_by_date,
                     hourly_leaves_by_date,
                     attendances_by_user.get(employee.user_id, {}).get(day, []),
+                    hourly_missions_by_date,
                 ))
             employee_reports.append({
                 'user_id': employee.user_id,

@@ -1,5 +1,5 @@
 """
-Phase 1+2+3+4+5+6A tests — hourly mission data model, scoped policies, validation service, daily-status form, admin approve/reject, required-minutes integration, UI display.
+Phase 1+2+3+4+5+6A+6B tests — hourly mission data model, scoped policies, validation service, daily-status form, admin approve/reject, required-minutes integration, UI display, PDF/Excel/Raw exports.
 
 Phase 1:
 - model import / registration in Base.metadata
@@ -42,6 +42,14 @@ Phase 6A (display in existing reports/UI):
 - pending not shown as approved time in attendance UI
 - daily-status still shows all statuses (management view)
 - rendering does not alter required minutes / side-effect rows
+
+Phase 6B (PDF / Excel / Raw Report):
+- approved only (P/R/D excluded) in raw dataset + exports
+- format_hm_display / detail (start-end-minutes) in leave column
+- no synthetic punches; person_status cascade unchanged (M stays M)
+- multiple missions sorted by start_time; date-range filtered
+- group report: no mix across employees; bulk query (no N+1)
+- display independent of deduct policy; no required-minutes recompute
 """
 from datetime import date, time, timedelta
 
@@ -2270,4 +2278,381 @@ class TestDisplayDoesNotChangeRequired:
             _cleanup_missions(db, creds["user_id"])
             _cleanup_policies(db)
             _cleanup_attendance_policies(db)
+
+
+# ---------------------------------------------------------------------------
+# Phase 6B — hourly mission in PDF / Excel / Raw Report
+# ---------------------------------------------------------------------------
+# MONDAY = 2027-03-22 = 1406/01/02 (Farvardin). Raw report month: 1406/01.
+RAW_YEAR, RAW_MONTH = 1406, 1
+
+
+def _cleanup_daily_statuses(db, user_id):
+    db.query(DailyStatus).filter(
+        DailyStatus.user_id == user_id).delete()
+    db.commit()
+
+
+def _build_raw(db, user_id, year=RAW_YEAR, month=RAW_MONTH):
+    from core.raw_report import build_raw_report
+    return build_raw_report(db, year, month, employee_user_id=user_id)
+
+
+def _raw_day(report, user_id, g_date):
+    for emp in report["employees"]:
+        if emp["user_id"] == user_id:
+            for day in emp["days"]:
+                if day["date"] == g_date:
+                    return day
+    return None
+
+
+class TestRawReportHourlyMission:
+    def test_approved_shown_in_raw_day(self, db, make_user):
+        emp, creds = _employee(db, make_user)
+        try:
+            _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                                  start=time(9, 0), end=time(11, 0),
+                                  status="A")
+            report = _build_raw(db, creds["user_id"])
+            day = _raw_day(report, creds["user_id"], MONDAY)
+            assert day is not None
+            assert day["hourly_mission_display"] == \
+                "مأموریت ساعتی 09:00 تا 11:00"
+            assert day["hourly_mission_minutes"] == 120
+            assert day["hourly_missions"] == [
+                {"start": "09:00", "end": "11:00", "minutes": 120}
+            ]
+        finally:
+            _cleanup_missions(db, creds["user_id"])
+
+    @pytest.mark.parametrize("status", ["P", "R", "D"])
+    def test_non_approved_not_shown(self, db, make_user, status):
+        emp, creds = _employee(db, make_user)
+        try:
+            _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                                  start=time(9, 0), end=time(11, 0),
+                                  status=status)
+            report = _build_raw(db, creds["user_id"])
+            day = _raw_day(report, creds["user_id"], MONDAY)
+            assert day["hourly_mission_display"] == ""
+            assert day["hourly_missions"] == []
+            assert day["hourly_mission_minutes"] == 0
+        finally:
+            _cleanup_missions(db, creds["user_id"])
+
+    def test_daily_status_m_not_confused_with_hourly_mission(self, db, make_user):
+        """DailyStatus M → person_status M; HM is separate display field."""
+        emp, creds = _employee(db, make_user)
+        try:
+            db.add(DailyStatus(user_id=creds["user_id"],
+                               status_date=MONDAY, status_code="M"))
+            db.commit()
+            _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                                  start=time(13, 0), end=time(15, 0),
+                                  status="A")
+            report = _build_raw(db, creds["user_id"])
+            day = _raw_day(report, creds["user_id"], MONDAY)
+            assert day["person_status"] == "M"
+            assert day["person_status_name"] == "مأموریت"
+            # HM stays separate — not merged into person_status
+            assert day["hourly_mission_display"] == \
+                "مأموریت ساعتی 13:00 تا 15:00"
+        finally:
+            _cleanup_missions(db, creds["user_id"])
+            _cleanup_daily_statuses(db, creds["user_id"])
+
+    def test_hourly_mission_does_not_change_person_status(self, db, make_user):
+        """HM alone must not become person_status M/leave — cascade unchanged."""
+        emp, creds = _employee(db, make_user)
+        try:
+            _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                                  start=time(9, 0), end=time(11, 0),
+                                  status="A")
+            report = _build_raw(db, creds["user_id"])
+            day = _raw_day(report, creds["user_id"], MONDAY)
+            # No DailyStatus, no punches → not M; HM is only a display field
+            assert day["person_status"] != "M"
+            assert day["hourly_mission_display"]
+        finally:
+            _cleanup_missions(db, creds["user_id"])
+
+    def test_multiple_missions_sorted_by_start_time(self, db, make_user):
+        emp, creds = _employee(db, make_user)
+        try:
+            # Insert out of order — query orders by start_time
+            _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                                  start=time(13, 0), end=time(14, 0),
+                                  status="A")
+            _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                                  start=time(9, 0), end=time(11, 0),
+                                  status="A")
+            report = _build_raw(db, creds["user_id"])
+            day = _raw_day(report, creds["user_id"], MONDAY)
+            assert day["hourly_mission_display"] == \
+                "مأموریت ساعتی 09:00 تا 11:00، 13:00 تا 14:00"
+            assert len(day["hourly_missions"]) == 2
+            assert day["hourly_missions"][0]["start"] == "09:00"
+            assert day["hourly_missions"][1]["start"] == "13:00"
+            assert day["hourly_mission_minutes"] == 120 + 60
+        finally:
+            _cleanup_missions(db, creds["user_id"])
+
+    def test_mission_outside_date_range_excluded(self, db, make_user):
+        emp, creds = _employee(db, make_user)
+        outside = date(2026, 6, 15)  # not in 1406/01
+        try:
+            _seed_pending_mission(db, creds["user_id"], day=outside,
+                                  start=time(9, 0), end=time(11, 0),
+                                  status="A")
+            report = _build_raw(db, creds["user_id"])
+            day = _raw_day(report, creds["user_id"], outside)
+            assert day is None  # outside month days
+            # Also no HM leaked into any in-range day
+            for d in report["employees"][0]["days"]:
+                assert d["hourly_mission_display"] == ""
+        finally:
+            _cleanup_missions(db, creds["user_id"])
+
+    def test_no_synthetic_punches_from_mission(self, db, make_user):
+        emp, creds = _employee(db, make_user)
+        try:
+            _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                                  start=time(9, 0), end=time(11, 0),
+                                  status="A")
+            report = _build_raw(db, creds["user_id"])
+            day = _raw_day(report, creds["user_id"], MONDAY)
+            assert day["punches"] == []
+            assert day["attendance_segments"] == []
+            assert day["attendance_str"] == "—"
+            assert day["has_attendance"] is False
+        finally:
+            _cleanup_missions(db, creds["user_id"])
+
+    def test_group_report_no_employee_mix(self, db, make_user):
+        emp_a, creds_a = _employee(db, make_user)
+        emp_b, creds_b = _employee(db, make_user)
+        try:
+            _seed_pending_mission(db, creds_a["user_id"], day=MONDAY,
+                                  start=time(9, 0), end=time(11, 0),
+                                  status="A")
+            _seed_pending_mission(db, creds_b["user_id"], day=MONDAY,
+                                  start=time(14, 0), end=time(16, 0),
+                                  status="A")
+            from core.raw_report import build_raw_report
+            report = build_raw_report(db, RAW_YEAR, RAW_MONTH)
+            day_a = _raw_day(report, creds_a["user_id"], MONDAY)
+            day_b = _raw_day(report, creds_b["user_id"], MONDAY)
+            assert day_a["hourly_mission_display"] == \
+                "مأموریت ساعتی 09:00 تا 11:00"
+            assert day_b["hourly_mission_display"] == \
+                "مأموریت ساعتی 14:00 تا 16:00"
+            # No cross-contamination
+            assert "14:00" not in day_a["hourly_mission_display"]
+            assert "09:00" not in day_b["hourly_mission_display"]
+        finally:
+            _cleanup_missions(db, creds_a["user_id"])
+            _cleanup_missions(db, creds_b["user_id"])
+
+    def test_display_independent_of_deduct_policy(self, db, make_user):
+        """deduct=false → still displayed; required minutes helper stays empty."""
+        _cleanup_policies(db)
+        emp, creds = _employee(db, make_user)
+        try:
+            _seed_policy(db, employment_type_code="4",
+                         deduct_from_required_minutes=False)
+            _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                                  start=time(9, 0), end=time(11, 0),
+                                  status="A")
+            report = _build_raw(db, creds["user_id"])
+            day = _raw_day(report, creds["user_id"], MONDAY)
+            assert day["hourly_mission_display"] == \
+                "مأموریت ساعتی 09:00 تا 11:00"
+            # Deduction layer unchanged (display ≠ deduction)
+            assert get_approved_hourly_mission_minutes(
+                db, emp, MONDAY, MONDAY) == {}
+        finally:
+            _cleanup_missions(db, creds["user_id"])
+            _cleanup_policies(db)
+
+
+class TestExcelHourlyMission:
+    def test_excel_shows_mission_with_minutes(self, db, make_user):
+        from io import BytesIO
+        from openpyxl import load_workbook
+        from core.excel_raw_report import export_individual as excel_export_individual
+
+        emp, creds = _employee(db, make_user)
+        try:
+            _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                                  start=time(9, 0), end=time(11, 0),
+                                  status="A")
+            report = _build_raw(db, creds["user_id"])
+            output = BytesIO()
+            excel_export_individual(report, output)
+            output.seek(0)
+            wb = load_workbook(output)
+            ws = wb.active
+            found = False
+            for row in ws.iter_rows(min_row=7, values_only=True):
+                if row and row[0] and "1406/01/02" in str(row[0]):
+                    leave_cell = str(row[4] or "")
+                    assert "مأموریت ساعتی 09:00-11:00 (120 دقیقه)" in leave_cell
+                    # employee header present
+                    found = True
+            assert found, "Row for 1406/01/02 not found in Excel"
+            # Employee identity in header
+            header_text = str(ws.cell(row=4, column=1).value or "")
+            assert creds["user_id"] in header_text
+            # Format: 6 columns still
+            headers = [cell.value for cell in ws[6]]
+            assert len(headers) == 6
+        finally:
+            _cleanup_missions(db, creds["user_id"])
+
+    def test_excel_pending_not_shown(self, db, make_user):
+        from io import BytesIO
+        from openpyxl import load_workbook
+        from core.excel_raw_report import export_individual as excel_export_individual
+
+        emp, creds = _employee(db, make_user)
+        try:
+            _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                                  start=time(9, 0), end=time(11, 0),
+                                  status="P")
+            report = _build_raw(db, creds["user_id"])
+            output = BytesIO()
+            excel_export_individual(report, output)
+            output.seek(0)
+            wb = load_workbook(output)
+            ws = wb.active
+            for row in ws.iter_rows(min_row=7, values_only=True):
+                if row and row[0] and "1406/01/02" in str(row[0]):
+                    assert "مأموریت ساعتی" not in str(row[4] or "")
+        finally:
+            _cleanup_missions(db, creds["user_id"])
+
+    def test_excel_multiple_missions(self, db, make_user):
+        from io import BytesIO
+        from openpyxl import load_workbook
+        from core.excel_raw_report import export_individual as excel_export_individual
+
+        emp, creds = _employee(db, make_user)
+        try:
+            _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                                  start=time(13, 0), end=time(14, 0),
+                                  status="A")
+            _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                                  start=time(9, 0), end=time(11, 0),
+                                  status="A")
+            report = _build_raw(db, creds["user_id"])
+            output = BytesIO()
+            excel_export_individual(report, output)
+            output.seek(0)
+            wb = load_workbook(output)
+            ws = wb.active
+            for row in ws.iter_rows(min_row=7, values_only=True):
+                if row and row[0] and "1406/01/02" in str(row[0]):
+                    cell = str(row[4] or "")
+                    assert "مأموریت ساعتی 09:00-11:00 (120 دقیقه)" in cell
+                    assert "مأموریت ساعتی 13:00-14:00 (60 دقیقه)" in cell
+                    # 09:00 before 13:00
+                    assert cell.index("09:00") < cell.index("13:00")
+        finally:
+            _cleanup_missions(db, creds["user_id"])
+
+
+class TestPdfHourlyMission:
+    def test_pdf_export_includes_mission_text(self, db, make_user):
+        from io import BytesIO
+        from core.pdf_raw_report import export_individual as pdf_export_individual
+        from core.pdf_raw_report import RawPDF
+
+        emp, creds = _employee(db, make_user)
+        try:
+            _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                                  start=time(9, 0), end=time(11, 0),
+                                  status="A")
+            report = _build_raw(db, creds["user_id"])
+            day = _raw_day(report, creds["user_id"], MONDAY)
+            # leave cell text used by PDF includes HM
+            text = RawPDF._leave_and_mission_text(day)
+            assert "مأموریت ساعتی 09:00 تا 11:00" in text
+            output = BytesIO()
+            pdf_export_individual(report, output)
+            assert output.tell() > 0 or len(output.getvalue()) > 0
+        finally:
+            _cleanup_missions(db, creds["user_id"])
+
+    def test_pdf_mission_not_converted_to_punch(self, db, make_user):
+        from core.pdf_raw_report import RawPDF
+
+        emp, creds = _employee(db, make_user)
+        try:
+            _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                                  start=time(9, 0), end=time(11, 0),
+                                  status="A")
+            report = _build_raw(db, creds["user_id"])
+            day = _raw_day(report, creds["user_id"], MONDAY)
+            # Attendance cell stays empty — mission is not a punch pair
+            att_text = RawPDF._attendance_text_for_pdf(day)
+            assert att_text in ("—", "")
+            assert "09:00 → 11:00" not in att_text
+        finally:
+            _cleanup_missions(db, creds["user_id"])
+
+    def test_pdf_pending_not_in_leave_text(self, db, make_user):
+        from core.pdf_raw_report import RawPDF
+
+        emp, creds = _employee(db, make_user)
+        try:
+            _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                                  start=time(9, 0), end=time(11, 0),
+                                  status="P")
+            report = _build_raw(db, creds["user_id"])
+            day = _raw_day(report, creds["user_id"], MONDAY)
+            text = RawPDF._leave_and_mission_text(day)
+            assert "مأموریت ساعتی" not in text
+        finally:
+            _cleanup_missions(db, creds["user_id"])
+
+
+class TestRawReportHtmlHourlyMission:
+    def test_raw_html_shows_mission(self, db, client, make_user):
+        _as_super(client, make_user)
+        emp, creds = _employee(db, make_user)
+        try:
+            _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                                  start=time(9, 0), end=time(11, 0),
+                                  status="A")
+            resp = client.post("/reports/raw", data={
+                "target_user_id": creds["user_id"],
+                "year": str(RAW_YEAR),
+                "month": str(RAW_MONTH),
+                "employment_type": "all",
+                "status_filter": "all",
+            })
+            assert resp.status_code == 200
+            assert "مأموریت ساعتی 09:00 تا 11:00" in resp.text
+        finally:
+            _cleanup_missions(db, creds["user_id"])
+
+    def test_raw_html_pending_not_shown(self, db, client, make_user):
+        _as_super(client, make_user)
+        emp, creds = _employee(db, make_user)
+        try:
+            _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                                  start=time(9, 0), end=time(11, 0),
+                                  status="P")
+            resp = client.post("/reports/raw", data={
+                "target_user_id": creds["user_id"],
+                "year": str(RAW_YEAR),
+                "month": str(RAW_MONTH),
+                "employment_type": "all",
+                "status_filter": "all",
+            })
+            assert resp.status_code == 200
+            assert "مأموریت ساعتی 09:00 تا 11:00" not in resp.text
+        finally:
+            _cleanup_missions(db, creds["user_id"])
 

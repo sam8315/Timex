@@ -216,6 +216,20 @@ class RawPDF(FPDF):
         # Keep tests/legacy datasets compatible while normalizing the old label.
         return str(day.get("attendance_str") or "—").replace("دستی", "(M)")
 
+    @staticmethod
+    def _leave_and_mission_text(day: dict) -> str:
+        """نوع مرخصی + مأموریت ساعتی (فقط متن — بدون emoji برای سازگاری فونت PDF)."""
+        parts = []
+        leave_name = day.get("leave_name")
+        if leave_name:
+            parts.append(str(leave_name))
+        hm = day.get("hourly_mission_display") or ""
+        if hm:
+            parts.append(hm)
+        if not parts:
+            return "-"
+        return "\n".join(parts)
+
     def _write_cell(self, x: float, y: float, width: float, row_height: float,
                     line_height: float, text, align: str = "C",
                     base_dir: str = "R"):
@@ -274,7 +288,7 @@ class RawPDF(FPDF):
         self._table_header(widths, line_height)
         self.set_font(self.font_name, "", 7.8)
         for day in days:
-            leave_display = day.get("leave_name") or "-"
+            leave_display = self._leave_and_mission_text(day)
             values = [
                 day["jalali_date"],
                 day["day_name"],
