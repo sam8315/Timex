@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+{% block title %}{{ form_title }} | مدیریت{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4>
+        <i class="bi bi-geo-alt text-success"></i>
+        {{ form_title }}
+    </h4>
+    <a href="/admin/policies/hourly-mission" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-right"></i> بازگشت
+    </a>
+</div>
+
+{% if request.query_params.get('error') %}
+<div class="alert alert-danger alert-dismissible fade show" role="alert">
+    <i class="bi bi-exclamation-triangle"></i>
+    {{ request.query_params.get('error') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<form method="post" action="{{ form_action }}" class="needs-validation" novalidate>
+    <div class="row g-4">
+
+        <!-- Basic Info -->
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-header bg-light">
+                    <h6 class="mb-0"><i class="bi bi-info-circle"></i> اطلاعات پایه</h6>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <!-- Employment Type -->
+                        <div class="col-md-3">
+                            <label class="form-label fw-bold">نوع عضویت <span class="text-danger">*</span></label>
+                            <select name="employment_type_code" class="form-select" required>
+                                {% for code, name in dept_types %}
+                                <option value="{{ code }}" {% if policy and policy.employment_type_code == code %}selected{% endif %}>
+                                    {{ name }} (کد: {{ code }})
+                                </option>
+                                {% endfor %}
+                            </select>
+                            <div class="invalid-feedback">نوع عضویت را انتخاب کنید</div>
+                        </div>
+
+                        <!-- Employee Override -->
+                        <div class="col-md-3">
+                            <label class="form-label fw-bold">Override کارمند (اختیاری)</label>
+                            <input type="text" name="user_id_override" class="form-control"
+                                   list="employee-list" placeholder="کد پرسنلی یا نام"
+                                   value="{% if policy and policy.user_id %}{{ policy.user_id }}{% endif %}">
+                            <datalist id="employee-list">
+                                {% for emp in employees %}
+                                <option value="{{ emp.user_id }}">{{ emp.full_name }} ({{ emp.user_id }})</option>
+                                {% endfor %}
+                            </datalist>
+                            <div class="form-text">
+                                خالی = سیاست برای کل نوع عضویت. پر شده = فقط برای این کارمند.
+                            </div>
+                        </div>
+
+                        <!-- Effective From -->
+                        <div class="col-md-3">
+                            <label class="form-label fw-bold">شروع اعتبار <span class="text-danger">*</span></label>
+                            <input type="text" name="effective_from_date_str" class="form-control jalali-date"
+                                   placeholder="1405/01/01" autocomplete="off" required
+                                   value="{{ effective_from_j if effective_from_j else today_j }}">
+                            <div class="invalid-feedback">تاریخ شروع را وارد کنید</div>
+                        </div>
+
+                        <!-- Effective To -->
+                        <div class="col-md-3">
+                            <label class="form-label fw-bold">پایان اعتبار (اختیاری)</label>
+                            <input type="text" name="effective_to_date_str" class="form-control jalali-date"
+                                   placeholder="خالی = باز" autocomplete="off"
+                                   value="{{ effective_to_j if effective_to_j else '' }}">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Hourly Mission Rules -->
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-header bg-light">
+                    <h6 class="mb-0"><i class="bi bi-clock text-info"></i> قوانین مأموریت ساعتی</h6>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <!-- Enabled -->
+                        <div class="col-md-12">
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" name="enabled" id="hmEnabled"
+                                       {% if not policy or policy.enabled %}checked{% endif %}>
+                                <label class="form-check-label fw-bold" for="hmEnabled">
+                                    مأموریت ساعتی فعال است
+                                </label>
+                            </div>
+                            <div class="form-text">اگر غیرفعال باشد، ثبت درخواست مأموریت ساعتی مسدود می‌شود</div>
+                        </div>
+
+                        <!-- Working Hours Only -->
+                        <div class="col-md-12">
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" name="working_hours_only" id="hmWorking"
+                                       {% if not policy or policy.working_hours_only %}checked{% endif %}>
+                                <label class="form-check-label fw-bold" for="hmWorking">
+                                    مأموریت ساعتی فقط در ساعات موظفی مجاز است
+                                </label>
+                            </div>
+                            <div class="form-text">ساعت شروع/پایان باید داخل شیفت کاری همان روز باشد</div>
+                        </div>
+
+                        <!-- Allowed On Holidays -->
+                        <div class="col-md-12">
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" name="allowed_on_holidays" id="hmHolidays"
+                                       {% if policy and policy.allowed_on_holidays %}checked{% endif %}>
+                                <label class="form-check-label fw-bold" for="hmHolidays">
+                                    مأموریت ساعتی در روز تعطیل مجاز است
+                                </label>
+                            </div>
+                            <div class="form-text">امکان ثبت مأموریت ساعتی در تعطیلات را کنترل می‌کند</div>
+                        </div>
+
+                        <!-- Deduct From Required Minutes -->
+                        <div class="col-md-12">
+                            <div class="form-check form-switch mb-3">
+                                <input class="form-check-input" type="checkbox" name="deduct_from_required_minutes" id="hmDeduct"
+                                       {% if not policy or policy.deduct_from_required_minutes %}checked{% endif %}>
+                                <label class="form-check-label fw-bold" for="hmDeduct">
+                                    مدت مأموریت ساعتی از موظفی کسر می‌شود
+                                </label>
+                            </div>
+                            <div class="form-text">اگر true: مدت تأییدشده از موظفی مؤثر روز کم شود؛ اگر false: فقط گزارش شود</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Submit -->
+        <div class="col-12">
+            <div class="d-flex justify-content-end gap-2">
+                <a href="/admin/policies/hourly-mission" class="btn btn-outline-secondary">
+                    <i class="bi bi-x-circle"></i> انصراف
+                </a>
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-save"></i> {{ 'ذخیره تغییرات' if is_edit else 'ایجاد سیاست' }}
+                </button>
+            </div>
+        </div>
+    </div>
+</form>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Jalali date picker initialization
+document.addEventListener('DOMContentLoaded', function() {
+    if (typeof window.initPersianDatePicker === 'function') {
+        document.querySelectorAll('input.jalali-date').forEach(function(el) {
+            window.initPersianDatePicker(el);
+        });
+    }
+
+    // Form validation
+    (function() {
+        'use strict';
+        const form = document.querySelector('.needs-validation');
+        if (form) {
+            form.addEventListener('submit', function(event) {
+                if (!form.checkValidity()) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                }
+                form.classList.add('was-validated');
+            }, false);
+        }
+    })();
+});
+</script>
+{% endblock %}

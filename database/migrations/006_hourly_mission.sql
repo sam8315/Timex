@@ -1,10 +1,15 @@
 BEGIN;
 
 -- ============================================
--- Hourly Mission feature (Phase 1)
--- Adds: hourly_missions table
--- Seeds: hourly_mission global policy + 4 parameter keys
+-- Hourly Mission feature (Phase 1 — revised: scoped policies)
+-- Adds: hourly_missions, hourly_mission_policies
 -- Independent from LeaveRequest (hourly leave) and DailyStatus (daily mission)
+--
+-- NOTE: This migration existed only on the local `work` branch (never pushed
+--       to origin/work), so it is edited in place. The original global
+--       PolicyValue seed (category='hourly_mission') was abandoned in favor
+--       of scoped HourlyMissionPolicy rows (group + employee override).
+--       Cleanup statements below remove any local leftovers idempotently.
 -- ============================================
 
 CREATE TABLE IF NOT EXISTS hourly_missions (
@@ -30,33 +35,48 @@ CREATE INDEX IF NOT EXISTS ix_hourly_missions_mission_date ON hourly_missions(mi
 CREATE INDEX IF NOT EXISTS ix_hourly_missions_status ON hourly_missions(status);
 
 -- ============================================
--- Global policy container (idempotent)
+-- Scoped hourly-mission policies (mirrors hourly_leave_policies)
 -- ============================================
-INSERT INTO policies (category, name, description, is_active)
-SELECT 'hourly_mission', 'سیاست مأموریت ساعتی',
-       'تنظیمات کلی مأموریت ساعتی (فعال بودن، ساعات موظفی، روز تعطیل، کسر از موظفی)', TRUE
-WHERE NOT EXISTS (SELECT 1 FROM policies WHERE category = 'hourly_mission');
+CREATE TABLE IF NOT EXISTS hourly_mission_policies (
+    id SERIAL PRIMARY KEY,
+    employment_type_code VARCHAR(10) NOT NULL,
+    user_id VARCHAR(50),
+    effective_from_date DATE NOT NULL,
+    effective_to_date DATE,
+    is_active BOOLEAN DEFAULT TRUE NOT NULL,
 
--- Four global settings (idempotent: only missing keys are inserted)
-INSERT INTO policy_values (
-    policy_id, region_code, parameter_key, parameter_value, is_editable, notes
-)
-SELECT p.id, NULL, v.parameter_key, v.parameter_value, TRUE, v.notes
-FROM policies p
-CROSS JOIN (
-    VALUES
-        ('hourly_mission_enabled', 'true', 'مأموریت ساعتی فعال است'),
-        ('hourly_mission_working_hours_only', 'true', 'مأموریت ساعتی فقط در ساعات موظفی مجاز است'),
-        ('hourly_mission_allowed_on_holidays', 'false', 'مأموریت ساعتی در روز تعطیل مجاز است'),
-        ('hourly_mission_deduct_from_required_minutes', 'true', 'مدت مأموریت ساعتی از موظفی کسر می‌شود')
-) AS v(parameter_key, parameter_value, notes)
-WHERE p.category = 'hourly_mission'
-  AND NOT EXISTS (
-      SELECT 1 FROM policy_values pv
-      WHERE pv.policy_id = p.id
-        AND pv.parameter_key = v.parameter_key
-        AND pv.region_code IS NULL
-  );
+    -- Four boolean flags
+    enabled BOOLEAN DEFAULT TRUE NOT NULL,
+    working_hours_only BOOLEAN DEFAULT TRUE NOT NULL,
+    allowed_on_holidays BOOLEAN DEFAULT FALSE NOT NULL,
+    deduct_from_required_minutes BOOLEAN DEFAULT TRUE NOT NULL,
+
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+
+    CONSTRAINT fk_hourly_mission_policies_user FOREIGN KEY (user_id)
+        REFERENCES users(user_id) ON DELETE CASCADE
+);
+
+-- Indexes for efficient lookups (mirrors hourly_leave_policies)
+CREATE INDEX IF NOT EXISTS ix_hourly_mission_policies_emp_type ON hourly_mission_policies(employment_type_code);
+CREATE INDEX IF NOT EXISTS ix_hourly_mission_policies_user ON hourly_mission_policies(user_id);
+CREATE INDEX IF NOT EXISTS ix_hourly_mission_policies_from_date ON hourly_mission_policies(effective_from_date);
+CREATE INDEX IF NOT EXISTS ix_hourly_mission_policies_to_date ON hourly_mission_policies(effective_to_date);
+CREATE INDEX IF NOT EXISTS ix_hourly_mission_policies_active ON hourly_mission_policies(is_active);
+CREATE INDEX IF NOT EXISTS ix_hourly_mission_policies_emp_type_date ON hourly_mission_policies(employment_type_code, effective_from_date);
+CREATE INDEX IF NOT EXISTS ix_hourly_mission_policies_user_date ON hourly_mission_policies(user_id, effective_from_date);
+
+-- ============================================
+-- Cleanup of the abandoned global-key design (idempotent; no-op if absent)
+-- ============================================
+DELETE FROM policy_values WHERE parameter_key IN (
+    'hourly_mission_enabled',
+    'hourly_mission_working_hours_only',
+    'hourly_mission_allowed_on_holidays',
+    'hourly_mission_deduct_from_required_minutes'
+);
+DELETE FROM policies WHERE category = 'hourly_mission';
 
 -- ============================================
 -- Comments (Persian)
@@ -69,5 +89,13 @@ COMMENT ON COLUMN hourly_missions.destination IS 'مقصد مأموریت (اخ�
 COMMENT ON COLUMN hourly_missions.status IS 'وضعیت: P=در انتظار، A=تایید شده، R=رد شده، D=لغو شده';
 COMMENT ON COLUMN hourly_missions.approved_by IS 'شناسه تأییدکننده';
 COMMENT ON COLUMN hourly_missions.rejection_reason IS 'دلیل رد شدن درخواست';
+
+COMMENT ON TABLE hourly_mission_policies IS 'سیاست مأموریت ساعتی برای نوع عضویت یا override کارمند';
+COMMENT ON COLUMN hourly_mission_policies.employment_type_code IS 'کد نوع عضویت: 1=رسمی، 2=وظیفه، 3=خریدخدمت، 4=قراردادی، 5=پزشک';
+COMMENT ON COLUMN hourly_mission_policies.user_id IS 'اگر ست شده، این Policy فقط برای این کارمند اعمال می‌شود (Override)';
+COMMENT ON COLUMN hourly_mission_policies.enabled IS 'مأموریت ساعتی فعال است';
+COMMENT ON COLUMN hourly_mission_policies.working_hours_only IS 'مأموریت ساعتی فقط در ساعات موظفی مجاز است';
+COMMENT ON COLUMN hourly_mission_policies.allowed_on_holidays IS 'مأموریت ساعتی در روز تعطیل مجاز است';
+COMMENT ON COLUMN hourly_mission_policies.deduct_from_required_minutes IS 'مدت مأموریت ساعتی از موظفی کسر می‌شود';
 
 COMMIT;

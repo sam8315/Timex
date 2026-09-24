@@ -6,14 +6,6 @@
     <h4><i class="bi bi-gear-wide-connected text-primary"></i> ⚙️ سیاست کلی</h4>
 </div>
 
-{% if request.query_params.get('success') == 'saved' %}
-<div class="alert alert-success alert-dismissible fade show" role="alert">
-    <i class="bi bi-check-circle"></i>
-    تنظیمات مأموریت ساعتی با موفقیت ذخیره شد.
-    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-</div>
-{% endif %}
-
 <div class="row g-4">
     <!-- مرخصی -->
     <div class="col-md-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body text-center p-4">
@@ -65,82 +57,14 @@
         <h5 class="card-title mb-2">💰 اضافه‌کاری</h5><p class="card-text text-muted small">به‌زودی</p>
         <button class="btn btn-secondary btn-sm" disabled><i class="bi bi-lock"></i> به‌زودی</button>
     </div></div></div>
-</div>
 
-<!-- مأموریت ساعتی — تنظیمات کلی -->
-<div class="row g-4 mt-1">
-    <div class="col-lg-8">
-        <form method="post" action="/admin/policies/hourly-mission/save">
-            <div class="card shadow-sm">
-                <div class="card-header bg-white">
-                    <h6 class="mb-0"><i class="bi bi-geo-alt text-success"></i> 🚗 مأموریت ساعتی — تنظیمات کلی</h6>
-                </div>
-                <div class="card-body">
-                    <p class="text-muted small mb-3">
-                        <i class="bi bi-info-circle"></i>
-                        این تنظیمات رفتار درخواست و محاسبه مأموریت ساعتی را در فازهای بعد کنترل می‌کنند.
-                    </p>
-                    <div class="form-check mb-2">
-                        <input class="form-check-input" type="checkbox" name="hourly_mission_enabled"
-                               id="hmEnabled" {% if hourly_mission.hourly_mission_enabled %}checked{% endif %}>
-                        <label class="form-check-label fw-bold" for="hmEnabled">
-                            مأموریت ساعتی فعال است
-                        </label>
-                    </div>
-                    <div class="form-check mb-2">
-                        <input class="form-check-input" type="checkbox" name="hourly_mission_working_hours_only"
-                               id="hmWorking" {% if hourly_mission.hourly_mission_working_hours_only %}checked{% endif %}>
-                        <label class="form-check-label fw-bold" for="hmWorking">
-                            مأموریت ساعتی فقط در ساعات موظفی مجاز است
-                        </label>
-                    </div>
-                    <div class="form-check mb-2">
-                        <input class="form-check-input" type="checkbox" name="hourly_mission_allowed_on_holidays"
-                               id="hmHolidays" {% if hourly_mission.hourly_mission_allowed_on_holidays %}checked{% endif %}>
-                        <label class="form-check-label fw-bold" for="hmHolidays">
-                            مأموریت ساعتی در روز تعطیل مجاز است
-                        </label>
-                    </div>
-                    <div class="form-check mb-3">
-                        <input class="form-check-input" type="checkbox" name="hourly_mission_deduct_from_required_minutes"
-                               id="hmDeduct" {% if hourly_mission.hourly_mission_deduct_from_required_minutes %}checked{% endif %}>
-                        <label class="form-check-label fw-bold" for="hmDeduct">
-                            مدت مأموریت ساعتی از موظفی کسر می‌شود
-                        </label>
-                    </div>
-                    <div class="text-end">
-                        <button type="submit" class="btn btn-primary">
-                            <i class="bi bi-save"></i> ذخیره
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </form>
-    </div>
-
-    <div class="col-lg-4">
-        <div class="card shadow-sm">
-            <div class="card-header bg-white">
-                <h6 class="mb-0"><i class="bi bi-info-circle text-info"></i> راهنما</h6>
-            </div>
-            <div class="card-body">
-                <ul class="mb-0 small">
-                    <li class="mb-2">
-                        <strong>فعال بودن:</strong> اگر غیرفعال باشد، ثبت درخواست مأموریت ساعتی مسدود می‌شود.
-                    </li>
-                    <li class="mb-2">
-                        <strong>فقط ساعات موظفی:</strong> ساعت شروع/پایان باید داخل شیفت کاری همان روز باشد.
-                    </li>
-                    <li class="mb-2">
-                        <strong>روز تعطیل:</strong> امکان ثبت مأموریت ساعتی در تعطیلات را کنترل می‌کند.
-                    </li>
-                    <li>
-                        <strong>کسر از موظفی:</strong> مدت تأییدشده از موظفی مؤثر روز کم شود یا فقط گزارش شود.
-                    </li>
-                </ul>
-            </div>
-        </div>
-    </div>
+    <!-- مأموریت ساعتی -->
+    <div class="col-md-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body text-center p-4">
+        <div class="mb-3"><i class="bi bi-geo-alt" style="font-size: 3rem; color: #198754;"></i></div>
+        <h5 class="card-title mb-2">🚗 مأموریت ساعتی</h5>
+        <p class="card-text text-muted small">مدیریت سیاست‌های مأموریت ساعتی برای گروه‌ها و کاربران</p>
+        <a href="/admin/policies/hourly-mission" class="btn btn-primary btn-sm"><i class="bi bi-eye"></i> مدیریت سیاست</a>
+    </div></div></div>
 </div>
 
 {% endblock %}

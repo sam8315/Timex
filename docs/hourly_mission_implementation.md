@@ -1,7 +1,7 @@
 # راهنمای پیاده‌سازی مأموریت ساعتی (Hourly Mission)
 
 > این فایل حافظه بلندمدت پروژه است. مدل بعدی باید با خواندن همین فایل + فایل‌های اشاره‌شده بتواند ادامه کار را بدون بررسی کل گفتگو انجام دهد.
-> آخرین به‌روزرسانی: در پایان فاز ۱.
+> آخرین به‌روزرسانی: پایان اصلاح معماری فاز ۱ (سیاست‌های scoped).
 
 ---
 
@@ -20,12 +20,13 @@
 
 | لایه | تصمیم |
 |------|--------|
-| ذخیره‌سازی | جدول مستقل `hourly_missions` — **نه** داخل `LeaveRequest` و **نه** داخل `DailyStatus` |
-| مدل SQLAlchemy | `models/hourly_mission.py` → کلاس `HourlyMission` |
+| ذخیره‌سازی مأموریت | جدول مستقل `hourly_missions` — **نه** داخل `LeaveRequest` و **نه** داخل `DailyStatus` |
+| ذخیره‌سازی سیاست | جدول مستقل `hourly_mission_policies` (scoped: گروه/نوع عضویت + employee override) |
+| مدل SQLAlchemy | `models/hourly_mission.py` → `HourlyMission` + `HourlyMissionPolicy` |
 | مدت مأموریت | **محاسبه‌شده** (property `duration_minutes`) — ذخیره نمی‌شود |
-| سیاست کلی | چهار `PolicyValue` در دسته `hourly_mission` جدول‌های `policies`/`policy_values` (بدون جدول جدید) |
-| UI سیاست | بخشی از صفحه موجود `/admin/policies` (`web/templates/admin/policies.html`) — صفحه جدید ساخته **نشد** |
-| validation/service/route ثبت | **فازهای بعد** — در فاز ۱ ایجاد نشد |
+| resolve سیاست | `web/services/hourly_mission_service.py` — اولویت: override → گروه → default |
+| UI سیاست | صفحه اختصاصی `/admin/policies/hourly-mission` (لیست + فرم)؛ کارت لینک‌دار در `/admin/policies` |
+| validation/service/route ثبت | **فازهای بعد** |
 
 ### چرا DailyStatus نیست؟
 
@@ -35,16 +36,20 @@
 
 `LeaveRequest` مفهوم مرخصی است (days_count، LeaveBalance، تراکنش‌ها). مأموریت ساعتی تعادل مرخصی ندارد و منطق کسری متفاوتی (کسر از موظفی، نه از مرخصی) خواهد داشت.
 
+### چرا policy سراسری (PolicyValue) نیست؟
+
+چهار تنظیم مأموریت ساعتی باید **برای گروه/نوع عضویت و employee override قابل تفکیک** باشند. طراحی قبلی (چهار `PolicyValue` با `region_code=NULL` در category `hourly_mission`) یک policy سراسری مشترک برای تمام کارکنان می‌ساخت و امکان تفکیک نداشت. الگوی موجود مرخصی ساعتی (`HourlyLeavePolicy`) عیناً الگوبرداری شد.
+
 ---
 
 ## ۳. فازهای پروژه
 
 | فاز | محتوا | وضعیت |
 |-----|--------|--------|
-| **فاز ۱** | مدل داده + migration + چهار سیاست کلی + UI سیاست در صفحه «سیاست کلی» + ثبت دانش در همین فایل | ✅ انجام شد |
+| **فاز ۱** | مدل داده + migration + معماری سیاست scoped + UI CRUD + resolve + تست‌ها + همین راهنما | ✅ انجام شد (شامل اصلاح معماری) |
 | فاز ۲ | Route ثبت مأموریت ساعتی توسط کاربر + فرم + فراخوانی service validation پایه | ⬜ |
 | فاز ۳ | Route تأیید/رد توسط مدیر + سرویس validation کامل (overlap، ساعات موظفی، روز تعطیل) | ⬜ |
-| فاز ۴ | اتصال به attendance/گزارش‌ها (اعمال `hourly_mission_deduct_from_required_minutes` در محاسبه موظفی مؤثر) | ⬜ |
+| فاز ۴ | اتصال به attendance/گزارش‌ها (اعمال `deduct_from_required_minutes` در محاسبه موظفی مؤثر) | ⬜ |
 | فاز ۵ | نوتیفیکیشن + بهبود گزارش‌ها در صورت نیاز | ⬜ |
 
 > ترتیب فازها ممکن است با صلاحدید کاربر تغییر کند؛ اما هر فاز فقط در محدوده خودش کار کند.
@@ -53,18 +58,20 @@
 
 ## ۴. وضعیت فاز فعلی
 
-**فاز ۱ — تکمیل شده.**
+**فاز ۱ — تکمیل شده (با اصلاح معماری سیاست‌ها).**
 
 انجام شده:
 
 1. فایل راهنما (همین فایل)
-2. مدل `HourlyMission` در `models/hourly_mission.py`
-3. Migration: `database/migrations/006_hourly_mission.sql`
-4. ثبت مدل در `models/__init__.py`
-5. چهار Policy key در سیستم `Policy`/`PolicyValue` + UI در `/admin/policies`
-6. تست‌های فاز ۱ (`tests/test_hourly_mission.py`)
+2. مدل `HourlyMission` + `HourlyMissionPolicy` در `models/hourly_mission.py`
+3. Migration: `database/migrations/006_hourly_mission.sql` (ویرایش‌شده در محل — هرگز push نشده)
+4. ثبت مدل‌ها در `models/__init__.py`
+5. سرویس resolve: `web/services/hourly_mission_service.py`
+6. CRUD کامل سیاست در `web/routes/admin_policy.py` + قالب‌های لیست/فرم
+7. کارت لینک‌دار در صفحه `/admin/policies` (فرم سراسری قدیمی حذف شد)
+8. بازنویسی تست‌های `tests/test_hourly_mission.py` (۱۶ تست)
 
-انجام **نشده** (عمداً — فازهای بعد): بخش ۱۰.
+انجام **نشده** (عمداً — فازهای بعد): بخش ۱۱.
 
 ---
 
@@ -72,10 +79,9 @@
 
 ### ۵.۱ نام‌گذاری (بررسی شده با convention پروژه)
 
-- پیشنهاد اولیه: `models/employee_hourly_mission.py`
 - **نام نهایی:** `models/hourly_mission.py`
-- **کلاس:** `HourlyMission` — **جدول:** `hourly_missions`
-- دلیل: جدول‌های `employee_*` در این پروژه داده‌های اصلی/صفتی کارمند هستند (phone, address, bank_account, …)، در حالی که رکوردهای تراکنشی با نام قابلیت نام‌گذاری می‌شوند: `leave_request`، `daily_status`، `attendance`. مأموریت ساعتی یک رکورد تراکنشی/درخواستی است.
+- **کلاس‌ها:** `HourlyMission` → جدول `hourly_missions`؛ `HourlyMissionPolicy` → جدول `hourly_mission_policies`
+- دلیل: جدول‌های `employee_*` در این پروژه داده‌های اصلی/صفتی کارمند هستند؛ رکوردهای تراکنشی با نام قابلیت نام‌گذاری می‌شوند: `leave_request`، `daily_status`، `attendance`، `hourly_mission`.
 
 ### ۵.۲ وضعیت‌ها (Status)
 
@@ -88,9 +94,9 @@
 | `R` | rejected | رد شده |
 | `D` | cancelled | لغو شده |
 
-نکته: در `LeaveRequest` کد `D` معنای «حذف شده» دارد؛ اینجا «لغو شده» (cancel) پوشش داده می‌شود. cycle چهارگانه درخواست (pending/approved/rejected/cancelled) کامل است.
+نکته: در `LeaveRequest` کد `D` معنای «حذف شده» دارد؛ اینجا «لغو شده» (cancel) پوشش داده می‌شود.
 
-### ۵.۳ فیلدهای مدل
+### ۵.۳ فیلدهای مدل HourlyMission
 
 | فیلد | نوع | توضیح |
 |------|-----|--------|
@@ -100,160 +106,202 @@
 | `start_time` | Time NOT NULL | ساعت شروع |
 | `end_time` | Time NOT NULL | ساعت پایان |
 | `reason` | Text NULL | علت/توضیح |
-| `destination` | String(200) NULL | مقصد (متن ساده؛ نه city FK — سبک‌تر و کافی برای مأموریت ساعتی) |
+| `destination` | String(200) NULL | مقصد (متن ساده) |
 | `status` | String(1) default `'P'`, index | P/A/R/D |
 | `approved_by` | String(50) NULL | تأییدکننده |
 | `approved_at` | DateTime(timezone=True) NULL | زمان تأیید |
 | `rejection_reason` | Text NULL | دلیل رد |
 | `created_at` / `updated_at` | `TimestampMixin` | مطابق convention کل پروژه |
 
-- رابطه: `user = relationship("User", backref="hourly_missions")` (مثل `LeaveRequest`)
-- **مدت مأموریت ذخیره نمی‌شود** → property `duration_minutes` (دقیقه، محاسبه‌شده)
+- رابطه: `user = relationship("User", backref="hourly_missions")`
+- **مدت مأموریت ذخیره نمی‌شود** → property `duration_minutes`
 - Constraintهای DB:
   - `ck_hourly_missions_time_order` → `CHECK (start_time < end_time)`
   - `ck_hourly_missions_status` → `CHECK (status IN ('P','A','R','D'))`
-  - هر دو در مدل و migration هستند (نام‌گذاری `ck_*` مطابق `employee_address`)
 
-### ۵.۴ چهار Global Policy
+### ۵.۴ سیاست‌های Scoped (چهار تنظیم)
 
-دسته (category): **`hourly_mission`** — Policy container با نام «سیاست مأموریت ساعتی».
+جدول `hourly_mission_policies` — **آینه‌ای از `hourly_leave_policies`**:
 
-| Policy key | پیش‌فرض | معنی |
-|------------|---------|------|
-| `hourly_mission_enabled` | `true` | اگر false باشد، کاربر نمی‌تواند در فازهای بعد درخواست ثبت کند |
-| `hourly_mission_working_hours_only` | `true` | در فاز سرویس: start/end باید داخل ساعات موظفی همان روز (بر اساس `AttendancePolicy` واقعی کارمند — نه ساعت ثابت سراسری) باشد |
-| `hourly_mission_allowed_on_holidays` | `false` | آیا مأموریت ساعتی در روز تعطیل مجاز است |
-| `hourly_mission_deduct_from_required_minutes` | `true` | اگر true: مدت تأییدشده از موظفی مؤثر روز کسر می‌شود؛ اگر false: فقط گزارش می‌شود. **روی خود رکورد مأموریت اثری ندارد** — فقط محاسبه سرویس/گزارش را کنترل می‌کند |
+| ستون | نوع | توضیح |
+|------|-----|--------|
+| `employment_type_code` | String(10) NOT NULL, index | کد نوع عضویت: `1`=رسمی، `2`=وظیفه، `3`=خریدخدمت، `4`=قراردادی، `5`=پزشک |
+| `user_id` | String(50) NULL FK → users | اگر ست شده → **Override فقط برای این کاربر**؛ اگر NULL → سیاست **گروه** |
+| `effective_from_date` | Date NOT NULL | شروع اعتبار |
+| `effective_to_date` | Date NULL | پایان اعتبار (NULL = باز) |
+| `is_active` | Boolean default True | حذف نرم (soft delete) |
+| `enabled` | Boolean default **True** | مأموریت ساعتی فعال است |
+| `working_hours_only` | Boolean default **True** | فقط در ساعات موظفی مجاز |
+| `allowed_on_holidays` | Boolean default **False** | در روز تعطیل مجاز |
+| `deduct_from_required_minutes` | Boolean default **True** | مدت از موظفی کسر می‌شود |
 
-ذخیره‌سازی: `PolicyValue` با `region_code = NULL` (سراسری)، مقادیر رشته‌ای `'true'`/`'false'` (همان pattern پیامک `sms_enabled`).
+Index مرکب: `(employment_type_code, effective_from_date)` و `(user_id, effective_from_date)`.
 
-**نکته برای فازهای بعد:** خواندن مقدار → اگر `PolicyValue` نبود، از defaultهای بالا استفاده شود (کد مرجع: `_hourly_mission_flag_values` در `web/routes/admin_policy.py`).
+**resolve** (`resolve_hourly_mission_policy` در `web/services/hourly_mission_service.py`):
+
+1. اگر `employee.department` خالی بود → `None` (حتی override هم چک نمی‌شود — عین الگوی hourly leave)
+2. **Employee Override:** `user_id == employee.user_id` + `is_active` + بازه تاریخ → `order_by(effective_from_date.desc())`
+3. **Employment Type (گروه):** `employment_type_code == department` + `user_id IS NULL` + `is_active` + بازه تاریخ
+4. اگر هیچ‌کدام → `None` → `get_effective_hourly_mission_settings` مقدار `DEFAULT_HOURLY_MISSION_SETTINGS` را برمی‌گرداند
+
+```python
+DEFAULT_HOURLY_MISSION_SETTINGS = {
+    'enabled': True,
+    'working_hours_only': True,
+    'allowed_on_holidays': False,
+    'deduct_from_required_minutes': True,
+}
+```
+
+**⚠️ قاعده اجباری برای مدل بعدی:**
+
+> سیاست مأموریت ساعتی باید برای گروه/نوع استخدام و employee override قابل تفکیک باشد و هرگز به‌عنوان یک policy global مشترک برای تمام کارکنان resolve نشود.
 
 ### ۵.۵ تعریف Holiday در پروژه (برای فازهای بعد — مفهوم جدید نسازید)
 
 تعطیل بودن یک روز از **سه منبع** تشکیل شده (طبق `web/services/attendance_policy_service.py` و `core/holiday_manager.py`):
 
-1. **جمعه** — هفته کاری شمسی: `date.weekday() == 4` (در validation مرخصی ساعتی هم جدا بررسی می‌شود)
+1. **جمعه** — هفته کاری شمسی: `date.weekday() == 4`
 2. **جدول `holidays`** (`models/holiday.py`) — `holiday_date` + `group_id` (NULL = ملی/همه، یا کد گروه عضویت `'1'`..`'5'`)
 3. **`AttendancePolicyDay.is_working_day`** — روز غیرکاری در برنامه هفتگی سیاست حضور همان کارمند
 
-سرویس موجود: `resolve_attendance_policy()` + `resolve_policy_day()` از `web/services/attendance_policy_service.py` (نگاه کنید به نحوه استفاده در `validate_hourly_leave_request`).
+سرویس موجود: `resolve_attendance_policy()` + `resolve_policy_day()` از `web/services/attendance_policy_service.py`.
 
 ---
 
 ## ۶. فایل‌های مرتبط
 
-### فاز ۱ (ایجاد/تغییر)
+### فاز ۱ (ایجاد/تغییر — شامل اصلاح معماری)
 
 | فایل | عمل |
 |------|-----|
-| `docs/hourly_mission_implementation.md` | CREATED (همین فایل) |
-| `models/hourly_mission.py` | CREATED — مدل `HourlyMission` |
-| `models/__init__.py` | MODIFIED — import + `__all__` |
-| `database/migrations/006_hourly_mission.sql` | CREATED — جدول + seed چهار policy |
-| `web/routes/admin_policy.py` | MODIFIED — ثابت‌ها، helper خواندن، GET context، POST save |
-| `web/templates/admin/policies.html` | MODIFIED — بخش تنظیمات چهارگانه |
-| `tests/test_hourly_mission.py` | CREATED — تست‌های فاز ۱ |
+| `docs/hourly_mission_implementation.md` | CREATED/MODIFIED (همین فایل) |
+| `models/hourly_mission.py` | CREATED — `HourlyMission` + `HourlyMissionPolicy` |
+| `models/__init__.py` | MODIFIED — import + `__all__` هر دو مدل |
+| `database/migrations/006_hourly_mission.sql` | CREATED then EDITED in place — جدول‌ها + پاک‌سازی policy سراسری |
+| `web/services/hourly_mission_service.py` | CREATED — defaults + resolve + get_effective |
+| `web/routes/admin_policy.py` | MODIFIED — حذف ثابت‌های `HOURLY_MISSION_*` و فرم سراسری؛ افزودن CRUD کامل `/admin/policies/hourly-mission` |
+| `web/templates/admin/policies.html` | MODIFIED — حذف فرم چهار سوییچ؛ افزودن کارت لینک‌دار |
+| `web/templates/admin/policy_hourly_mission.html` | CREATED — صفحه لیست (گروه‌ها + Override‌ها) |
+| `web/templates/admin/policy_hourly_mission_form.html` | CREATED — فرم create/edit با چهار form-switch |
+| `tests/test_hourly_mission.py` | CREATED then REWRITTEN — ۱۶ تست |
 
 ### فایل‌های مرجع (نخوانید مگر نیاز — فقط برای الگو)
 
 | فایل | چرا مهم است |
 |------|-------------|
 | `models/leave_request.py` | الگوی status code های `P/A/R/D`، فیلدهای تأیید، `to_dict` |
-| `models/daily_status.py` | الگوی جدول روزانه + UniqueConstraint (که عمداً استفاده **نشد**) |
-| `models/policy.py` | ساختار `Policy` / `PolicyValue` / `PolicyAuditLog` |
-| `web/routes/admin_policy.py` | helperهای `_get_param` / `_set_param` / `_get_leave_policy` + الگوی صفحات سیاست |
-| `web/services/notification_service.py` | الگوی policy key سراسری با مقدار true/false (`sms_enabled`) |
-| `web/services/hourly_leave_service.py` | الگوی validation مرخصی ساعتی (ساعات موظفی، overlap، روز تعطیل) — برای فاز ۲/۳ |
+| `models/hourly_leave_policy.py` / `models/attendance.py` (`HourlyLeavePolicy`) | الگوی مستقیم سیاست scoped |
+| `web/services/hourly_leave_service.py` | الگوی resolve_hourly_leave_policy + validation مرخصی ساعتی — برای فاز ۲/۳ |
+| `web/routes/admin_policy.py` (بخش hourly-leave، خطوط ~۱۲۵۷–۱۶۵۳) | الگوی CRUD صفحه‌محور با overlap check |
 | `web/services/attendance_policy_service.py` | `resolve_policy` / `resolve_policy_day` / `time_to_minutes` / تعریف holiday |
-| `database/migrations/003_hourly_leave.sql` و `004_travel_leave.sql` | الگوی SQL migration (BEGIN/COMMIT، index، COMMENT) |
-| `database/migrations/001_service_regions_and_policies.sql` | الگوی seed کردن Policy + PolicyValue |
-| `tests/conftest.py` | fixtureهای تست (`db`, `client`, `make_user`, `login_as`)؛ **migrationهای SQL در تست اجرا نمی‌شوند** — فقط `create_all` |
+| `database/migrations/003_hourly_leave.sql` | الگوی SQL migration |
+| `tests/conftest.py` | fixture های `db`, `client`, `make_user`, `login_as`؛ **migration SQL در تست اجرا نمی‌شود** — فقط `create_all` |
 
 ---
 
 ## ۷. Migrationهای مرتبط
 
-- **شماره:** `006` (بعد از `005_travel_leave_policies.sql` — آخرین قبل از این فاز)
-- **فایل:** `database/migrations/006_hourly_mission.sql`
-- شامل: `CREATE TABLE hourly_missions` + ۲ CHECK + ۳ index + COMMENT + seed `policies` و چهار `policy_values` (idempotent با `IF NOT EXISTS` / `NOT EXISTS`)
-- اجرای migration: پروژه runner خودکار ندارد؛ مثل migrationهای قبلی **دستی** با psql/ادمین اجرا می‌شود.
-- **تست‌ها:** SQL migration اجرا نمی‌شود؛ جدول در تست‌ها با `Base.metadata.create_all` (در `tests/conftest.py`) ساخته می‌شود. پس **هر مدل جدید باید حتماً در `models/__init__.py` import شود** تا در metadata ثبت شود.
+- **شماره:** `006` — `database/migrations/006_hourly_mission.sql`
+- **وضعیت:** فقط محلی روی `work` (commit `356ad95` push نشده) → ویرایش مستقیم مجاز بود و انجام شد.
+- شامل:
+  - `CREATE TABLE hourly_missions` + ۲ CHECK + ۳ index
+  - `CREATE TABLE hourly_mission_policies` + FK + ۷ index (شامل ۲ composite)
+  - **پاک‌سازی idempotent** طراحی سراسری رها‌شده: `DELETE FROM policy_values WHERE parameter_key IN (چهار کلید hourly_mission_*)` و `DELETE FROM policies WHERE category = 'hourly_mission'`
+  - COMMENTهای فارسی
+- اجرای migration: دستی با psql (پروژه runner خودکار ندارد).
+- **تست‌ها:** SQL migration اجرا نمی‌شود؛ جدول‌ها با `Base.metadata.create_all` ساخته می‌شوند. پس **هر مدل جدید باید در `models/__init__.py` import شود**.
 
 ---
 
-## ۸. Policy keyهای استفاده‌شده
+## ۸. سیاست‌ها — جایگزین Policy keyهای سراسری
+
+### ❌ حذف‌شده (طراحی قدیمی فاز ۱ قبل از اصلاح)
 
 ```
 category = hourly_mission
-├── hourly_mission_enabled                      (پیش‌فرض: true)
-├── hourly_mission_working_hours_only           (پیش‌فرض: true)
-├── hourly_mission_allowed_on_holidays          (پیش‌فرض: false)
-└── hourly_mission_deduct_from_required_minutes (پیش‌فرض: true)
+├── hourly_mission_enabled
+├── hourly_mission_working_hours_only
+├── hourly_mission_allowed_on_holidays
+└── hourly_mission_deduct_from_required_minutes
 ```
 
-ثابت‌ها در: `web/routes/admin_policy.py` → `HOURLY_MISSION_POLICY_CATEGORY`, `HOURLY_MISSION_PARAM_KEYS`, `HOURLY_MISSION_DEFAULTS`, `HOURLY_MISSION_PARAM_NOTES`.
+- ثابت‌های `HOURLY_MISSION_POLICY_CATEGORY`, `HOURLY_MISSION_PARAM_KEYS`, `HOURLY_MISSION_DEFAULTS`, `HOURLY_MISSION_PARAM_NOTES` از `web/routes/admin_policy.py` **حذف شدند**.
+- helper `_hourly_mission_flag_values` و context `hourly_mission` در GET `/admin/policies` **حذف شدند**.
+- POST سراسری چهار فیلد در `/admin/policies` **حذف شد**.
+- فرم چهار سوییچ در `policies.html` **حذف شد** (جایگزین: کارت لینک‌دار).
 
-ذخیره در UI: POST `/admin/policies/hourly-mission/save` (فقط `super_admin` + permission `manage_users`) — از helper `_set_param` استفاده می‌کند که `PolicyAuditLog` هم ثبت می‌کند.
+### ✅ جایگزین
 
-خواندن در UI: `_hourly_mission_flag_values(db)` → dict از چهار کلید با در نظر گرفتن default.
+- جدول `hourly_mission_policies` (بخش ۵.۴)
+- خواندن: `resolve_hourly_mission_policy` / `get_effective_hourly_mission_settings` از `web/services/hourly_mission_service.py`
+- ذخیره در UI: POST `/admin/policies/hourly-mission/save` و `/{policy_id}/update` (فقط `super_admin` + permission `manage_users`)
+- **فرم‌ها:** هر چهار فیلد checkbox با `Form("off")` (نه `Form("on")`)؛ چون checkbox فقط هنگام checked ارسال می‌شود؛ وضعیت اولیه UI توسط template کنترل می‌شود:
+  - `enabled` / `working_hours_only` / `deduct_from_required_minutes`: `{% if not policy or policy.X %}checked{% endif %}`
+  - `allowed_on_holidays`: `{% if policy and policy.allowed_on_holidays %}checked{% endif %}`
+  - مقدار checked = `"on"`؛ مقایسه در route: `value == 'on'`
+- **حذف soft:** POST `/{policy_id}/delete` → `is_active = False`
+- **overlap:** هنگام save/update، بررسی همپوشانی بازه تاریخی برای همان scope (گروه یا همان user override)
 
 ---
 
 ## ۹. تست‌های انجام‌شده و نتیجه
 
-اجرای تست با: `.venv\Scripts\python.exe -m pytest` از ریشه پروژه (دیتابیس تست `timex_test_db` روی PostgreSQL محلی).
+اجرای تست: `.venv\Scripts\python.exe -m pytest` از ریشه (PowerShell — بدون head/tail).
 
 | دستور / محدوده | نتیجه |
 |----------------|--------|
-| `pytest tests/test_hourly_mission.py` (۱۰ تست جدید فاز ۱) | ✅ **10 passed** (~4s) |
-| `pytest tests/test_policy.py tests/test_daily_status.py tests/test_access.py tests/test_hourly_leave_integration.py` (تست‌های مرتبط قبلی) | ✅ **132 passed** (~72s) |
-| `pytest` کل test suite (۱۰۸۹ تست) | ⚠️ **1068 passed, 21 failed** (~13min) |
-| `pytest tests/test_hourly_mission.py tests/test_policy.py tests/test_daily_status.py` (اجرای نهایی قبل از commit) | ✅ **44 passed** |
+| `pytest tests/test_hourly_mission.py` (۱۶ تست، **ایزوله**) | ✅ **16 passed** (~5s) |
+| `pytest tests/test_policy.py tests/test_daily_status.py tests/test_hourly_leave_integration.py` روی درخت تمیز (git stash) | ⚠️ **15 failed, 50 passed** — شکست‌ها **pre-existing** ناشی از آلودگی DB مشترک بین تست‌ها |
+| `pytest` کل suite | ⚠️ ۲۱ تست ناموفق pre-existing شناخته‌شده (بخش زیر) |
 
-### تست‌های جدید فاز ۱ (`tests/test_hourly_mission.py`)
+### تست‌های `tests/test_hourly_mission.py` (۱۶)
 
-- import/ثبت مدل در `Base.metadata` و export از `models`
-- ساخته‌شدن جدول `hourly_missions` در دیتابیس تست (create_all)
-- ساخت + خواندن رکورد معتبر + بررسی `duration_minutes` / `status_name` / timestamps
-- رد شدن `start_time >= end_time` با `IntegrityError` (CHECK constraint)
-- رد شدن status نامعتبر (`X`) با `IntegrityError`
+- ثبت مدل‌ها در `Base.metadata` + export از `models`
+- ساخته‌شدن هر دو جدول در دیتابیس تست (create_all)
+- ساخت + خواندن رکورد مأموریت + `duration_minutes` / `status_name` / timestamps
+- رد `start_time >= end_time` و status نامعتبر با `IntegrityError`
 - چهار کد وضعیت P/A/R/D
-- رندر شدن بخش تنظیمات در صفحه `/admin/policies`
-- ذخیره چهار policy key از طریق POST (با audit log) + مقداردهی `false` برای checkbox خاموش
-- idempotent بودن save (بدون رکورد تکراری)
-- عدم دسترسی non-super_admin (403)
+- resolve: گروه بدون override؛ override برندهٔ گروه؛ عدم اثر override کاربر دیگر؛ fallback به default
+- چهار گزینه مستقل در ذخیره/بازخوانی
+- رندر کارت در `/admin/policies` (+ نبود فرم/کلیدهای قدیمی)
+- رندر صفحه لیست با scopeها + دکمه افزودن
+- رندر فرم با چهار switch
+- ذخیره HTTP با گزینه‌های مستقل (checkbox خاموش → False)
+- 403 برای غیر super_admin
 
-### ⚠️ ۲۱ تست ناموفق کل suite — **از قبل موجود و غیرمرتبط**
+### ⚠️ شکست‌های pre-existing (غیرمرتبط)
 
-این ۲۱ تست حتی روی درخت تمیز (قبل از تغییرات فاز ۱، با `git stash`) هم شکست می‌خوردند؛ یعنی **رگرسیون فاز ۱ نیستند**:
+تعدادی از تست‌های `test_policy.py` / `test_daily_status.py` / `test_hourly_leave_integration.py` در **اجرای ترکیبی** به‌دلیل آلودگی `timex_test_db` (StaleDataError / 307 / ObjectDeletedError) شکست می‌خورند؛ حتی با `git stash` روی درخت تمیز هم تکرار می‌شوند. **تست فاز ۱ باید ایزوله اجرا شود.**
 
-- `tests/test_attendance_policy_service.py` — ۱۹ تست (TestResolvePolicy, TestComputeLate, …)
+### ⚠️ درس مهم: هرگز دو دستور pytest موازی علیه یک DB
+
+دو پروسه pytest همزمان روی `timex_test_db` باعث StaleDataError، DeadlockDetected، ریدایرکت‌های 307 کاذب و نتایج false-positive می‌شود. **همیشه سریال.**
+
+### ⚠️ ۲۱ تست ناموفق کل suite — از قبل موجود
+
+- `tests/test_attendance_policy_service.py` — ۱۹ تست
 - `tests/test_admin_travel_leave_preview_route.py` — ۱ تست
 - `tests/test_travel_leave_attendance.py` — ۱ تست
-
-اگر فازهای بعد به این فایل‌ها برخوردند، ابتدا وضعیت آن‌ها را روی commit پایه بررسی کنید تا تقصیر تغییر جدید نباشد.
-
-### نکته درباره اجرای کل suite
-
-کل suite حدود **۱۳ دقیقه** طول می‌کشد (۱۰۸۹ تست)؛ برای هر فاز معقول است اجرا شود. حداقلِ پیشنهادی قبل از هر commit: `pytest tests/test_hourly_mission.py tests/test_policy.py tests/test_daily_status.py tests/test_hourly_leave_integration.py`.
 
 ---
 
 ## ۱۰. نکات مهم برای مدل بعدی
 
 1. **این فایل را اول بخوان.** بعد فقط فایل‌های بخش ۶ را باز کن؛ پروژه را از صفر نگرد.
-2. اجرای تست: `.venv\Scripts\python.exe -m pytest` از ریشه پروژه (pytest.ini → testpaths=tests). دیتابیس تست: `timex_test_db` روی PostgreSQL محلی (conftest خودش می‌سازد). قبل از commit حداقل: `pytest tests/test_hourly_mission.py tests/test_policy.py tests/test_daily_status.py tests/test_hourly_leave_integration.py`. کل suite ≈ ۱۳ دقیقه است؛ ۲۱ شکست شناخته‌شده از قبل دارد (بخش ۹).
+2. اجرای تست: `.venv\Scripts\python.exe -m pytest` از ریشه. **هرگز دو pytest موازی** ( آلودگی DB مشترک).
 3. **شاخه کاری:** `work` — commit فاز ۱: `Add hourly mission data model and policies`.
-4. هنگام افزودن route ثبت/تأیید در فاز ۲+:
-   - اول `hourly_mission_enabled` را چک کن (false → جلوی ثبت را بگیر).
-   - از `resolve_attendance_policy` + `resolve_policy_day` برای ساعات موظفی استفاده کن (کپی نکن).
+4. **سیاست مأموریت ساعتی باید برای گروه/نوع استخدام و employee override قابل تفکیک باشد و هرگز به‌عنوان یک policy global مشترک برای تمام کارکنان resolve نشود.**
+5. هنگام افزودن route ثبت/تأیید در فاز ۲+:
+   - اول `enabled` را از `get_effective_hourly_mission_settings(db, employee, date)` بگیر (false → جلوی ثبت را بگیر).
+   - از `resolve_attendance_policy` + `resolve_policy_day` برای ساعات موظفی استفاده کن (کپی نکن) — فقط اگر `working_hours_only` True بود.
+   - اگر `allowed_on_holidays` False بود، روز تعطیل را رد کن (الگوی سه‌گانه holiday در بخش ۵.۵).
    - overlap را روی `hourly_missions` همان `user_id` + `mission_date` با status در `('P','A')` بسنج (الگو: overlap مرخصی ساعتی در `hourly_leave_service`).
    - هرگز در `LeaveRequest` یا `DailyStatus` رکورد مأموریت ساعتی نساز.
-5. اگر policy key جدید خواستی، به `HOURLY_MISSION_PARAM_KEYS` و migration بعدی اضافه کن؛ نام‌گذاری: `hourly_mission_*` با مقدار `'true'`/`'false'`.
-6. UI: از Bootstrap/RTL موجود (`base.html`) استفاده کن؛ قالب جدید لازم نیست مگر برای فرم‌های ثبت.
+6. UI: از Bootstrap/RTL موجود (`base.html`) استفاده کن.
 7. مدل‌ها را با `TimestampMixin` بساز؛ FK به `users.user_id` با `ondelete="CASCADE"`؛ index با `index=True`.
-8. تست‌ها migration SQL اجرا نمی‌کنند — اگر constraint/db-level چیزی اضافه کردی، در مدل هم باید باشد تا `create_all` آن را بسازد.
+8. تست‌ها migration SQL اجرا نمی‌کنند — constraintهای DB باید در مدل هم باشند تا `create_all` بسازد.
+9. Checkbox در FastAPI form: پیش‌فرض `Form("off")`؛ مقدار ارسالی checked برابر `"on"`؛ مقایسه `== 'on'`.
 
 ---
 
@@ -261,18 +309,10 @@ category = hourly_mission
 
 - ❌ route ثبت مأموریت ساعتی توسط کاربر
 - ❌ route تأیید/رد توسط مدیر
-- ❌ سرویس validation مأموریت (`web/services/hourly_mission_service.py` هنوز وجود ندارد)
-- ❌ overlap checking
-- ❌ کنترل ساعات موظفی در service
+- ❌ سرویس validation مأموریت (overlap، ساعات موظفی، روز تعطیل)
 - ❌ اتصال مأموریت به attendance
-- ❌ تغییر `DailyStatus`
-- ❌ تغییر محاسبه گزارش روزانه/ماهانه
-- ❌ تغییر گزارش خام
-- ❌ تغییر `LeaveRequest`
-- ❌ تغییر Leave Balance
-- ❌ ثبت punch ساختگی
-- ❌ notification
-- ❌ API جداگانه
+- ❌ تغییر `DailyStatus` / `LeaveRequest` / گزارش‌ها / Leave Balance
+- ❌ ثبت punch ساختگی / notification / API جداگانه
 
 ---
 
@@ -280,20 +320,24 @@ category = hourly_mission
 
 | تاریخ | فاز | خلاصه |
 |-------|-----|--------|
-| ۱۴۰۵/۰۶ (2026-09-24) | ۱ | ایجاد مدل `HourlyMission` + migration 006 + چهار policy key + UI سیاست کلی + تست‌ها + همین راهنما |
+| ۱۴۰۵/۰۶ (2026-09-24) | ۱ | ایجاد مدل `HourlyMission` + migration 006 + چهار policy key سراسری + UI + تست‌ها + راهنما |
+| ۱۴۰۵/۰۶ (2026-09-24) | ۱-اصلاح | جایگزینی policy سراسری با `HourlyMissionPolicy` scoped + سرویس resolve + CRUD صفحه اختصاصی + بازنویسی تست‌ها + بازنویسی راهنما |
 
-**فایل‌های commit فاز ۱:**
+**فایل‌های نهایی (پس از اصلاح):**
 
 ```
-A  database/migrations/006_hourly_mission.sql
-A  docs/hourly_mission_implementation.md
-A  models/hourly_mission.py
-A  tests/test_hourly_mission.py
+M  database/migrations/006_hourly_mission.sql
 M  models/__init__.py
+M  models/hourly_mission.py
+M  tests/test_hourly_mission.py
 M  web/routes/admin_policy.py
 M  web/templates/admin/policies.html
+A  web/services/hourly_mission_service.py
+A  web/templates/admin/policy_hourly_mission.html
+A  web/templates/admin/policy_hourly_mission_form.html
+M  docs/hourly_mission_implementation.md
 ```
 
-پیام commit: `Add hourly mission data model and policies`
+پیام commit پیشنهادی: `Scope hourly mission policies by group and employee`
 
-**قدم بعدی = فاز ۲:** route ثبت مأموریت ساعتی توسط کاربر (فرم + چک `hourly_mission_enabled` + service validation پایه). قبل از شروع، بخش‌های ۱، ۵، ۶ و ۱۰ همین فایل را مرور کن.
+**قدم بعدی = فاز ۲:** route ثبت مأموریت ساعتی توسط کاربر (فرم + چک `enabled` از resolve + service validation پایه). قبل از شروع، بخش‌های ۱، ۵، ۶ و ۱۰ همین فایل را مرور کن.

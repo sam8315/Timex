@@ -8,10 +8,12 @@ from datetime import date, datetime, time
 from typing import Optional
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -29,6 +31,96 @@ STATUS_CODES = {
     'R': '❌ رد شده',
     'D': '🗑️ لغو شده',
 }
+
+
+class HourlyMissionPolicy(TimestampMixin, Base):
+    """
+    سیاست مأموریت ساعتی برای نوع عضویت (گروه) یا override کارمند
+
+    آینه‌ای از HourlyLeavePolicy — scoped (employment_type_code + user_id override)
+    با چهار ستون boolean. resolve با اولویت override → گروه → default.
+    """
+    __tablename__ = "hourly_mission_policies"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    employment_type_code: Mapped[str] = mapped_column(
+        String(10),
+        nullable=False,
+        index=True,
+        comment="کد نوع عضویت: 1=رسمی، 2=وظیفه، 3=خریدخدمت، 4=قراردادی، 5=پزشک",
+    )
+
+    user_id: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        ForeignKey("users.user_id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+        comment="اگر ست شده، این Policy فقط برای این کاربر اعمال می‌شود (Override)",
+    )
+
+    effective_from_date: Mapped[date] = mapped_column(
+        Date,
+        nullable=False,
+        index=True,
+        comment="تاریخ شروع اعتبار",
+    )
+    effective_to_date: Mapped[Optional[date]] = mapped_column(
+        Date,
+        nullable=True,
+        index=True,
+        comment="تاریخ پایان اعتبار (NULL = باز)",
+    )
+
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
+
+    # Four boolean flags (mirrors HourlyLeavePolicy pattern)
+    enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+        comment="مأموریت ساعتی فعال است",
+    )
+    working_hours_only: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+        comment="مأموریت ساعتی فقط در ساعات موظفی مجاز است",
+    )
+    allowed_on_holidays: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        comment="مأموریت ساعتی در روز تعطیل مجاز است",
+    )
+    deduct_from_required_minutes: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+        comment="مدت مأموریت ساعتی از موظفی کسر می‌شود",
+    )
+
+    # Relationships
+    user: Mapped[Optional["User"]] = relationship("User", backref="hourly_mission_policy_overrides")
+
+    __table_args__ = (
+        Index('ix_hourly_mission_policies_emp_type_date', 'employment_type_code', 'effective_from_date'),
+        Index('ix_hourly_mission_policies_user_date', 'user_id', 'effective_from_date'),
+    )
+
+    def __repr__(self) -> str:
+        scope = f"user={self.user_id}" if self.user_id else f"type={self.employment_type_code}"
+        return f"<HourlyMissionPolicy({scope}, from={self.effective_from_date}, active={self.is_active})>"
+
+    @property
+    def settings(self) -> dict:
+        """چهار تنظیم به صورت dict (برای resolve/defaults)"""
+        return {
+            'enabled': self.enabled,
+            'working_hours_only': self.working_hours_only,
+            'allowed_on_holidays': self.allowed_on_holidays,
+            'deduct_from_required_minutes': self.deduct_from_required_minutes,
+        }
 
 
 class HourlyMission(TimestampMixin, Base):

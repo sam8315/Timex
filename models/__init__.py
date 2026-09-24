@@ -10,7 +10,7 @@ from models.leave_transaction import LeaveTransaction
 from models.leave_request import LeaveRequest
 from models.holiday import Holiday
 from models.daily_status import DailyStatus
-from models.hourly_mission import HourlyMission
+from models.hourly_mission import HourlyMission, HourlyMissionPolicy
 from models.employee import Employee
 from models.employee_phone import EmployeePhone
 from models.employee_address import EmployeeAddress
@@ -37,7 +37,7 @@ __all__ = [
     'HourlyLeavePolicy', 'HourlyLeaveResolution', 'HourlyLeaveTransaction',
     'Contract', 'LeaveBalance', 'LeaveTransaction',
     'LeaveRequest', 'LeaveCarryForwardRequest', 'Holiday', 'DailyStatus',
-    'HourlyMission',
+    'HourlyMission', 'HourlyMissionPolicy',
     'EmployeePhone', 'EmployeeAddress', 'EmployeeAddressHistory', 'Education', 'UserPermission', 'UserPermissionHistory', 'BaleUser',
     'Employee', 'Region', 'Policy', 'PolicyValue', 'PolicyAuditLog',
     'EmployeeRegion',

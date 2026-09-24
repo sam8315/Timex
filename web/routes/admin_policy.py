@@ -20,6 +20,7 @@ from models.policy import Policy, PolicyValue, PolicyAuditLog
 from models.employee_region import EmployeeRegion
 from models.employee import Employee
 from models.attendance import AttendancePolicy, AttendancePolicyDay, HourlyLeavePolicy
+from models.hourly_mission import HourlyMissionPolicy
 
 router = APIRouter()
 templates = Jinja2Templates(directory=Path(__file__).parent.parent / "templates")
@@ -40,29 +41,6 @@ DEPT_DEFAULT_ANNUAL = 30
 
 # کد منطقه پیش‌فرض که نباید حذف شود
 PROTECTED_REGION_CODES = ('NORMAL',)
-
-# ============================================
-# Hourly Mission global policy (Phase 1)
-# ============================================
-HOURLY_MISSION_POLICY_CATEGORY = 'hourly_mission'
-HOURLY_MISSION_PARAM_KEYS = (
-    'hourly_mission_enabled',
-    'hourly_mission_working_hours_only',
-    'hourly_mission_allowed_on_holidays',
-    'hourly_mission_deduct_from_required_minutes',
-)
-HOURLY_MISSION_DEFAULTS = {
-    'hourly_mission_enabled': True,
-    'hourly_mission_working_hours_only': True,
-    'hourly_mission_allowed_on_holidays': False,
-    'hourly_mission_deduct_from_required_minutes': True,
-}
-HOURLY_MISSION_PARAM_NOTES = {
-    'hourly_mission_enabled': 'مأموریت ساعتی فعال است',
-    'hourly_mission_working_hours_only': 'مأموریت ساعتی فقط در ساعات موظفی مجاز است',
-    'hourly_mission_allowed_on_holidays': 'مأموریت ساعتی در روز تعطیل مجاز است',
-    'hourly_mission_deduct_from_required_minutes': 'مدت مأموریت ساعتی از موظفی کسر می‌شود',
-}
 
 
 def build_redirect_url(referer: str, key: str, value: str) -> str:
@@ -85,39 +63,6 @@ def _get_leave_policy(db: Session) -> Policy:
         db.commit()
         db.refresh(policy)
     return policy
-
-
-def _get_hourly_mission_policy(db: Session) -> Policy:
-    """دریافت یا ایجاد سیاست مأموریت ساعتی"""
-    policy = db.query(Policy).filter(
-        Policy.category == HOURLY_MISSION_POLICY_CATEGORY).first()
-    if not policy:
-        policy = Policy(
-            category=HOURLY_MISSION_POLICY_CATEGORY,
-            name='سیاست مأموریت ساعتی',
-            description='تنظیمات کلی مأموریت ساعتی (فعال بودن، ساعات موظفی، روز تعطیل، کسر از موظفی)',
-            is_active=True,
-        )
-        db.add(policy)
-        db.commit()
-        db.refresh(policy)
-    return policy
-
-
-def _hourly_mission_flag_values(db: Session) -> dict:
-    """مقدار چهار تنظیم مأموریت ساعتی (پیش‌فرض در صورت نبود مقدار)"""
-    values = dict(HOURLY_MISSION_DEFAULTS)
-    policy = db.query(Policy).filter(
-        Policy.category == HOURLY_MISSION_POLICY_CATEGORY).first()
-    if policy:
-        rows = db.query(PolicyValue).filter(
-            PolicyValue.policy_id == policy.id,
-            PolicyValue.parameter_key.in_(HOURLY_MISSION_PARAM_KEYS),
-            PolicyValue.region_code.is_(None),
-        ).all()
-        for row in rows:
-            values[row.parameter_key] = row.parameter_value == 'true'
-    return values
 
 
 def _get_param(db: Session, policy_id: int, key: str, region_code: Optional[str] = None) -> Optional[PolicyValue]:
@@ -189,43 +134,7 @@ async def admin_policies(
         "is_admin": True,
         "is_super_admin": True,
         "sms_enabled": is_sms_enabled(db),
-        "hourly_mission": _hourly_mission_flag_values(db),
     })
-
-
-@router.post("/admin/policies/hourly-mission/save")
-async def admin_policies_hourly_mission_save(
-    request: Request,
-    hourly_mission_enabled: str = Form("off"),
-    hourly_mission_working_hours_only: str = Form("off"),
-    hourly_mission_allowed_on_holidays: str = Form("off"),
-    hourly_mission_deduct_from_required_minutes: str = Form("off"),
-    db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin)
-):
-    """ذخیره چهار تنظیم کلی مأموریت ساعتی"""
-    if not has_permission(db, user, 'manage_users'):
-        return RedirectResponse(url="/admin/", status_code=302)
-
-    policy = _get_hourly_mission_policy(db)
-    submitted = {
-        'hourly_mission_enabled': hourly_mission_enabled,
-        'hourly_mission_working_hours_only': hourly_mission_working_hours_only,
-        'hourly_mission_allowed_on_holidays': hourly_mission_allowed_on_holidays,
-        'hourly_mission_deduct_from_required_minutes': hourly_mission_deduct_from_required_minutes,
-    }
-    for key, raw in submitted.items():
-        value = 'true' if raw in ('on', 'true', '1') else 'false'
-        _set_param(db, policy, key, value,
-                   notes=HOURLY_MISSION_PARAM_NOTES[key],
-                   changed_by=user.user_id)
-    db.commit()
-
-    referer = request.headers.get("referer", "/admin/policies")
-    return RedirectResponse(
-        url=build_redirect_url(referer, "success", "saved"),
-        status_code=302
-    )
 
 
 @router.get("/admin/policies/sms", response_class=HTMLResponse)
@@ -1742,6 +1651,378 @@ async def admin_policies_hourly_leave_delete(
     db.commit()
 
     referer = request.headers.get("referer", "/admin/policies/hourly-leave")
+    return RedirectResponse(
+        url=build_redirect_url(referer, "success", "deleted"),
+        status_code=302
+    )
+
+
+# ============================================
+# Hourly Mission Policy CRUD
+# ============================================
+
+@router.get("/admin/policies/hourly-mission", response_class=HTMLResponse)
+async def admin_policies_hourly_mission(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_super_admin)
+):
+    """صفحه مدیریت سیاست‌های مأموریت ساعتی"""
+    if not has_permission(db, user, 'manage_users'):
+        return RedirectResponse(url="/admin/", status_code=302)
+
+    policies_raw = db.query(HourlyMissionPolicy).filter(
+        HourlyMissionPolicy.is_active == True
+    ).order_by(
+        HourlyMissionPolicy.employment_type_code,
+        HourlyMissionPolicy.user_id,
+        HourlyMissionPolicy.effective_from_date.desc()
+    ).all()
+
+    policies_by_type = {code: [] for code, _ in DEPT_TYPES}
+    overrides_list = []
+
+    for p in policies_raw:
+        entry = {
+            'id': p.id,
+            'employment_type_code': p.employment_type_code,
+            'employment_type_name': DEPT_TYPES_DICT.get(p.employment_type_code, p.employment_type_code),
+            'from_date': jdatetime.date.fromgregorian(date=p.effective_from_date).strftime('%Y/%m/%d') if p.effective_from_date else '',
+            'to_date': jdatetime.date.fromgregorian(date=p.effective_to_date).strftime('%Y/%m/%d') if p.effective_to_date else 'نامحدود',
+            'enabled': p.enabled,
+            'working_hours_only': p.working_hours_only,
+            'allowed_on_holidays': p.allowed_on_holidays,
+            'deduct_from_required_minutes': p.deduct_from_required_minutes,
+            'is_user_override': p.user_id is not None,
+        }
+        if p.user_id:
+            emp = db.query(Employee).filter(Employee.user_id == p.user_id).first()
+            entry['full_name'] = emp.full_name if emp else p.user_id
+            overrides_list.append(entry)
+        else:
+            if p.employment_type_code in policies_by_type:
+                policies_by_type[p.employment_type_code].append(entry)
+
+    return templates.TemplateResponse(request, "admin/policy_hourly_mission.html", {
+        "user": user,
+        "is_admin": True,
+        "is_super_admin": True,
+        "dept_types": DEPT_TYPES,
+        "policies_by_type": policies_by_type,
+        "overrides": overrides_list,
+    })
+
+
+@router.get("/admin/policies/hourly-mission/new", response_class=HTMLResponse)
+async def admin_policies_hourly_mission_new(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_super_admin)
+):
+    """صفحه افزودن سیاست مأموریت ساعتی جدید"""
+    if not has_permission(db, user, 'manage_users'):
+        return RedirectResponse(url="/admin/", status_code=302)
+
+    employees = db.query(Employee).filter(
+        Employee.is_active == True
+    ).order_by(Employee.last_name, Employee.first_name).limit(100).all()
+
+    return templates.TemplateResponse(request, "admin/policy_hourly_mission_form.html", {
+        "user": user,
+        "is_admin": True,
+        "is_super_admin": True,
+        "dept_types": DEPT_TYPES,
+        "dept_types_dict": DEPT_TYPES_DICT,
+        "policy": None,
+        "employees": [{"user_id": e.user_id, "full_name": e.full_name} for e in employees],
+        "form_action": "/admin/policies/hourly-mission/save",
+        "form_title": "افزودن سیاست مأموریت ساعتی",
+        "is_edit": False,
+    })
+
+
+@router.post("/admin/policies/hourly-mission/save")
+async def admin_policies_hourly_mission_save(
+    request: Request,
+    employment_type_code: str = Form(...),
+    user_id_override: str = Form(""),
+    effective_from_date_str: str = Form(...),
+    effective_to_date_str: str = Form(""),
+    enabled: str = Form("off"),
+    working_hours_only: str = Form("off"),
+    allowed_on_holidays: str = Form("off"),
+    deduct_from_required_minutes: str = Form("off"),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_super_admin)
+):
+    """ذخیره سیاست مأموریت ساعتی جدید"""
+    if not has_permission(db, user, 'manage_users'):
+        return RedirectResponse(url="/admin/", status_code=302)
+
+    try:
+        from datetime import date as date_class
+
+        valid_codes = [code for code, _ in DEPT_TYPES]
+        if employment_type_code not in valid_codes:
+            raise ValueError("نوع عضویت نامعتبر است")
+
+        # Parse dates
+        try:
+            from_j = jdatetime.datetime.strptime(effective_from_date_str.strip(), "%Y/%m/%d").date()
+            effective_from_date = from_j.togregorian()
+        except (ValueError, AttributeError):
+            raise ValueError("تاریخ شروع نامعتبر است")
+
+        effective_to_date = None
+        if effective_to_date_str.strip():
+            try:
+                to_j = jdatetime.datetime.strptime(effective_to_date_str.strip(), "%Y/%m/%d").date()
+                effective_to_date = to_j.togregorian()
+            except (ValueError, AttributeError):
+                raise ValueError("تاریخ پایان نامعتبر است")
+            if effective_to_date <= effective_from_date:
+                raise ValueError("تاریخ پایان باید بعد از تاریخ شروع باشد")
+
+        # Validate override user
+        override_user_id = user_id_override.strip() or None
+        if override_user_id:
+            emp = db.query(Employee).filter(Employee.user_id == override_user_id).first()
+            if not emp:
+                raise ValueError("کارمند یافت نشد")
+
+        # Check overlapping active policies
+        overlap_query = db.query(HourlyMissionPolicy).filter(
+            HourlyMissionPolicy.employment_type_code == employment_type_code,
+            HourlyMissionPolicy.is_active == True,
+        )
+        if override_user_id:
+            overlap_query = overlap_query.filter(HourlyMissionPolicy.user_id == override_user_id)
+        else:
+            overlap_query = overlap_query.filter(HourlyMissionPolicy.user_id.is_(None))
+
+        overlap_query = overlap_query.filter(
+            HourlyMissionPolicy.effective_from_date <= (effective_to_date or date_class.max),
+            or_(
+                HourlyMissionPolicy.effective_to_date.is_(None),
+                HourlyMissionPolicy.effective_to_date >= effective_from_date
+            )
+        )
+        if existing := overlap_query.first():
+            raise ValueError("سیاست همپوشانی با سیاست موجود دارد")
+
+        # Create policy
+        policy = HourlyMissionPolicy(
+            employment_type_code=employment_type_code,
+            user_id=override_user_id,
+            effective_from_date=effective_from_date,
+            effective_to_date=effective_to_date,
+            is_active=True,
+            enabled=(enabled == 'on'),
+            working_hours_only=(working_hours_only == 'on'),
+            allowed_on_holidays=(allowed_on_holidays == 'on'),
+            deduct_from_required_minutes=(deduct_from_required_minutes == 'on'),
+        )
+        db.add(policy)
+        db.commit()
+
+        referer = request.headers.get("referer", "/admin/policies/hourly-mission")
+        return RedirectResponse(
+            url=build_redirect_url(referer, "success", "saved"),
+            status_code=302
+        )
+
+    except ValueError as e:
+        db.rollback()
+        referer = request.headers.get("referer", "/admin/policies/hourly-mission/new")
+        return RedirectResponse(
+            url=build_redirect_url(referer, "error", str(e)),
+            status_code=302
+        )
+    except Exception as e:
+        db.rollback()
+        referer = request.headers.get("referer", "/admin/policies/hourly-mission/new")
+        return RedirectResponse(
+            url=build_redirect_url(referer, "error", f"خطا: {str(e)}"),
+            status_code=302
+        )
+
+
+@router.get("/admin/policies/hourly-mission/{policy_id}/edit", response_class=HTMLResponse)
+async def admin_policies_hourly_mission_edit(
+    request: Request,
+    policy_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_super_admin)
+):
+    """صفحه ویرایش سیاست مأموریت ساعتی"""
+    if not has_permission(db, user, 'manage_users'):
+        return RedirectResponse(url="/admin/", status_code=302)
+
+    policy = db.query(HourlyMissionPolicy).filter(HourlyMissionPolicy.id == policy_id).first()
+    if not policy:
+        return RedirectResponse(
+            url="/admin/policies/hourly-mission?error=یافت نشد", status_code=302)
+
+    employees = db.query(Employee).filter(
+        Employee.is_active == True
+    ).order_by(Employee.last_name, Employee.first_name).limit(100).all()
+
+    # Convert Gregorian dates to Jalali for form pre-filling
+    effective_from_j = ""
+    effective_to_j = ""
+    if policy.effective_from_date:
+        effective_from_j = jdatetime.date.fromgregorian(
+            date=policy.effective_from_date
+        ).strftime('%Y/%m/%d')
+    if policy.effective_to_date:
+        effective_to_j = jdatetime.date.fromgregorian(
+            date=policy.effective_to_date
+        ).strftime('%Y/%m/%d')
+
+    return templates.TemplateResponse(request, "admin/policy_hourly_mission_form.html", {
+        "user": user,
+        "is_admin": True,
+        "is_super_admin": True,
+        "dept_types": DEPT_TYPES,
+        "dept_types_dict": DEPT_TYPES_DICT,
+        "policy": policy,
+        "employees": [{"user_id": e.user_id, "full_name": e.full_name} for e in employees],
+        "form_action": f"/admin/policies/hourly-mission/{policy_id}/update",
+        "form_title": "ویرایش سیاست مأموریت ساعتی",
+        "is_edit": True,
+        "effective_from_j": effective_from_j,
+        "effective_to_j": effective_to_j,
+    })
+
+
+@router.post("/admin/policies/hourly-mission/{policy_id}/update")
+async def admin_policies_hourly_mission_update(
+    request: Request,
+    policy_id: int,
+    employment_type_code: str = Form(...),
+    user_id_override: str = Form(""),
+    effective_from_date_str: str = Form(...),
+    effective_to_date_str: str = Form(""),
+    enabled: str = Form("off"),
+    working_hours_only: str = Form("off"),
+    allowed_on_holidays: str = Form("off"),
+    deduct_from_required_minutes: str = Form("off"),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_super_admin)
+):
+    """به‌روزرسانی سیاست مأموریت ساعتی"""
+    if not has_permission(db, user, 'manage_users'):
+        return RedirectResponse(url="/admin/", status_code=302)
+
+    policy = db.query(HourlyMissionPolicy).filter(HourlyMissionPolicy.id == policy_id).first()
+    if not policy:
+        return RedirectResponse(
+            url="/admin/policies/hourly-mission?error=یافت نشد", status_code=302)
+
+    try:
+        from datetime import date as date_class
+
+        valid_codes = [code for code, _ in DEPT_TYPES]
+        if employment_type_code not in valid_codes:
+            raise ValueError("نوع عضویت نامعتبر است")
+
+        try:
+            from_j = jdatetime.datetime.strptime(effective_from_date_str.strip(), "%Y/%m/%d").date()
+            effective_from_date = from_j.togregorian()
+        except (ValueError, AttributeError):
+            raise ValueError("تاریخ شروع نامعتبر است")
+
+        effective_to_date = None
+        if effective_to_date_str.strip():
+            try:
+                to_j = jdatetime.datetime.strptime(effective_to_date_str.strip(), "%Y/%m/%d").date()
+                effective_to_date = to_j.togregorian()
+            except (ValueError, AttributeError):
+                raise ValueError("تاریخ پایان نامعتبر است")
+            if effective_to_date <= effective_from_date:
+                raise ValueError("تاریخ پایان باید بعد از تاریخ شروع باشد")
+
+        override_user_id = user_id_override.strip() or None
+        if override_user_id:
+            emp = db.query(Employee).filter(Employee.user_id == override_user_id).first()
+            if not emp:
+                raise ValueError("کارمند یافت نشد")
+
+        # Check overlap (exclude current)
+        overlap_query = db.query(HourlyMissionPolicy).filter(
+            HourlyMissionPolicy.employment_type_code == employment_type_code,
+            HourlyMissionPolicy.is_active == True,
+            HourlyMissionPolicy.id != policy_id,
+        )
+        if override_user_id:
+            overlap_query = overlap_query.filter(HourlyMissionPolicy.user_id == override_user_id)
+        else:
+            overlap_query = overlap_query.filter(HourlyMissionPolicy.user_id.is_(None))
+
+        overlap_query = overlap_query.filter(
+            HourlyMissionPolicy.effective_from_date <= (effective_to_date or date_class.max),
+            or_(
+                HourlyMissionPolicy.effective_to_date.is_(None),
+                HourlyMissionPolicy.effective_to_date >= effective_from_date
+            )
+        )
+        if existing := overlap_query.first():
+            raise ValueError("سیاست همپوشانی با سیاست موجود دارد")
+
+        # Update fields
+        policy.employment_type_code = employment_type_code
+        policy.user_id = override_user_id
+        policy.effective_from_date = effective_from_date
+        policy.effective_to_date = effective_to_date
+        policy.enabled = (enabled == 'on')
+        policy.working_hours_only = (working_hours_only == 'on')
+        policy.allowed_on_holidays = (allowed_on_holidays == 'on')
+        policy.deduct_from_required_minutes = (deduct_from_required_minutes == 'on')
+
+        db.commit()
+
+        referer = request.headers.get("referer", "/admin/policies/hourly-mission")
+        return RedirectResponse(
+            url=build_redirect_url(referer, "success", "updated"),
+            status_code=302
+        )
+
+    except ValueError as e:
+        db.rollback()
+        referer = request.headers.get("referer", f"/admin/policies/hourly-mission/{policy_id}/edit")
+        return RedirectResponse(
+            url=build_redirect_url(referer, "error", str(e)),
+            status_code=302
+        )
+    except Exception as e:
+        db.rollback()
+        referer = request.headers.get("referer", f"/admin/policies/hourly-mission/{policy_id}/edit")
+        return RedirectResponse(
+            url=build_redirect_url(referer, "error", f"خطا: {str(e)}"),
+            status_code=302
+        )
+
+
+@router.post("/admin/policies/hourly-mission/{policy_id}/delete")
+async def admin_policies_hourly_mission_delete(
+    request: Request,
+    policy_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_super_admin)
+):
+    """حذف (غیرفعال کردن) سیاست مأموریت ساعتی"""
+    if not has_permission(db, user, 'manage_users'):
+        return RedirectResponse(url="/admin/", status_code=302)
+
+    policy = db.query(HourlyMissionPolicy).filter(HourlyMissionPolicy.id == policy_id).first()
+    if not policy:
+        return RedirectResponse(
+            url="/admin/policies/hourly-mission?error=سیاست یافت نشد", status_code=302)
+
+    policy.is_active = False
+    db.commit()
+
+    referer = request.headers.get("referer", "/admin/policies/hourly-mission")
     return RedirectResponse(
         url=build_redirect_url(referer, "success", "deleted"),
         status_code=302
