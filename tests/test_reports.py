@@ -1,6 +1,8 @@
 """Tests for monthly-stats intro (معرفی) / settlement (تسویه) logic
 and Travel Leave (توراهی) day mapping."""
 from datetime import date, timedelta
+from io import BytesIO
+import re
 from types import SimpleNamespace
 
 import jdatetime
@@ -13,6 +15,7 @@ from models.leave_request import LeaveRequest
 from models.travel_leave_detail import TravelLeaveDetail
 from web.routes.reports import (
     build_monthly_stats_leaves_map,
+    display_day_code,
     display_holiday_dates,
     fetch_monthly_stats_leave_data,
     get_day_code,
@@ -441,7 +444,159 @@ def test_monthly_stats_route_marks_travel_leave_days(client, db, make_user):
               "department": "all"},
     )
     assert resp.status_code == 200
-    # Rendered day cells: two TL days (first two working days) and the
-    # remaining working day stays ordinary annual leave (ص).
-    assert resp.text.count("        TL\n    </td>") == 2
+    # Rendered day cells: two travel-leave days (first two working days,
+    # internal TL shown as تو) and the remaining day stays annual leave (ص).
+    assert resp.text.count("        تو\n    </td>") == 2
+    assert "        TL\n    </td>" not in resp.text
     assert resp.text.count("        ص\n    </td>") == 1
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: presentation (TL -> تو) in HTML and Excel
+# ---------------------------------------------------------------------------
+def _seed_travel_report(db, make_user, final_travel_days=2, n_days=3):
+    admin = make_user(role="super_admin", balance_al=None)
+    user = make_user(role="user", balance_al=30, department="1")
+    today_j = jdatetime.date.today()
+    ms, _me = _bounds(today_j.year, today_j.month)
+    _set_employment(db, user["user_id"], ms - timedelta(days=100), None)
+    workdays = _current_month_workdays(db, n_days)
+    _create_travel_leave(
+        db, user["user_id"], workdays[0], workdays[-1], final_travel_days
+    )
+    return admin, today_j, workdays
+
+
+def _generate_monthly_stats(client, admin, today_j):
+    login_as(client, admin["national_code"])
+    return client.post(
+        "/reports/monthly-stats",
+        data={"year": str(today_j.year), "month": str(today_j.month),
+              "department": "all"},
+    )
+
+
+def _create_plain_leave(db, user_id, from_g, to_g, leave_type):
+    req = LeaveRequest(
+        user_id=user_id,
+        leave_type=leave_type,
+        from_date=from_g,
+        to_date=to_g,
+        days_count=(to_g - from_g).days + 1,
+        status="A",
+    )
+    db.add(req)
+    db.commit()
+    return req
+
+
+def test_display_day_code_maps_tl_to_persian():
+    assert display_day_code("TL") == "تو"
+    assert display_day_code("AL") == "AL"
+    assert display_day_code("ص") == "ص"
+    assert display_day_code("ت") == "ت"
+
+
+def test_monthly_stats_html_renders_travel_leave_as_to(client, db, make_user):
+    admin, today_j, _days = _seed_travel_report(db, make_user)
+    resp = _generate_monthly_stats(client, admin, today_j)
+    assert resp.status_code == 200
+    assert resp.text.count("        تو\n    </td>") == 2
+    assert "        TL\n    </td>" not in resp.text
+    assert resp.text.count("        ت\n    </td>") == 0
+
+
+def test_monthly_stats_reward_leave_still_renders_as_t(client, db, make_user):
+    admin = make_user(role="super_admin", balance_al=None)
+    user = make_user(role="user", balance_al=30, department="1")
+    today_j = jdatetime.date.today()
+    ms, _me = _bounds(today_j.year, today_j.month)
+    _set_employment(db, user["user_id"], ms - timedelta(days=100), None)
+
+    w1, _w2, w3 = _current_month_workdays(db, 3)
+    _create_plain_leave(db, user["user_id"], w1, w3, "RL")
+
+    resp = _generate_monthly_stats(client, admin, today_j)
+    assert resp.status_code == 200
+    assert resp.text.count("        ت\n    </td>") == 3
+    assert resp.text.count("        تو\n    </td>") == 0
+
+
+def test_monthly_stats_legend_includes_travel_leave(client, make_user):
+    admin = make_user(role="super_admin", balance_al=None)
+    today_j = jdatetime.date.today()
+    resp = _generate_monthly_stats(client, admin, today_j)
+    assert resp.status_code == 200
+    assert "تو = مرخصی توراهی" in resp.text
+    # existing legend entries remain intact
+    assert "ص = مرخصی استحقاقی" in resp.text
+    assert "ت = مرخصی تشویقی" in resp.text
+
+
+def test_monthly_stats_travel_leave_css_class(client, db, make_user):
+    admin, today_j, _days = _seed_travel_report(db, make_user)
+    resp = _generate_monthly_stats(client, admin, today_j)
+    assert resp.status_code == 200
+
+    travel_cells = re.findall(
+        r'<td class="[^"]*code-travel[^"]*">\s*تو\s*</td>',
+        resp.text,
+    )
+    assert len(travel_cells) == 2
+
+    travel_on_leave_class = re.findall(
+        r'<td class="[^"]*code-leave[^"]*">\s*تو\s*</td>',
+        resp.text,
+    )
+    assert travel_on_leave_class == []
+
+
+def test_monthly_stats_excel_travel_leave_presentation(
+    client, db, make_user
+):
+    import openpyxl
+
+    admin, today_j, _days = _seed_travel_report(db, make_user)
+    login_as(client, admin["national_code"])
+    resp = client.get(
+        "/reports/monthly-stats/excel",
+        params={"year": today_j.year, "month": today_j.month,
+                "department": "all"},
+    )
+    assert resp.status_code == 200
+
+    wb = openpyxl.load_workbook(BytesIO(resp.content))
+    ws = wb.active
+    values = [
+        cell.value
+        for row in ws.iter_rows()
+        for cell in row
+        if cell.value is not None
+    ]
+
+    travel_cells = [
+        cell for row in ws.iter_rows()
+        for cell in row if cell.value == "تو"
+    ]
+    al_cells = [
+        cell for row in ws.iter_rows()
+        for cell in row if cell.value == "ص"
+    ]
+    assert len(travel_cells) == 2
+    assert len(al_cells) == 1
+    assert "TL" not in [v for v in values if isinstance(v, str)]
+
+    for cell in travel_cells:
+        assert cell.font.bold is True
+        assert cell.font.name == "Tahoma"
+        assert cell.font.color is not None
+    assert travel_cells[0].font.color != al_cells[0].font.color
+
+    guides = [
+        v for v in values
+        if isinstance(v, str) and "راهنما" in v
+    ]
+    assert guides
+    assert "تو=توراهی" in guides[0]
+    assert "ص=استحقاقی" in guides[0]
+    assert "ت=تشویقی" in guides[0]

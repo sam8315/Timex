@@ -649,6 +649,19 @@ def get_day_code(
         return '-'
 
 
+DAY_CODE_DISPLAY = {
+    'TL': 'تو',
+}
+
+
+def display_day_code(code) -> str:
+    """Persian presentation for internal day codes (keeps backend code intact)."""
+    return DAY_CODE_DISPLAY.get(code, code)
+
+
+templates.env.filters['day_code_display'] = display_day_code
+
+
 def resolve_intro_settle_dates(user_contracts, hire_date, termination_date,
                                month_start_g, month_end_g):
     """تعیین تاریخ معرفی و تسویه یک کارمند برای بازه ماه.
@@ -1088,6 +1101,7 @@ async def monthly_stats_report_excel(
         font_leave_al = Font(size=10, name=FONT_NAME, bold=True, color='0D6EFD')    # ص آبی
         font_leave_sl = Font(size=10, name=FONT_NAME, bold=True, color='6F42C1')    # ج بنفش
         font_leave_rl = Font(size=10, name=FONT_NAME, bold=True, color='FD7E14')    # ت نارنجی
+        font_leave_travel = Font(size=10, name=FONT_NAME, bold=True, color='D63384')
         font_rest = Font(size=10, name=FONT_NAME, color='6C757D')                   # اس خاکستری
         font_mission = Font(size=10, name=FONT_NAME, bold=True, color='20C997')     # م سبزآبی
         font_gheyb = Font(size=10, name=FONT_NAME, bold=True, color='DC3545')       # غ قرمز پررنگ
@@ -1253,7 +1267,10 @@ async def monthly_stats_report_excel(
                 )
 
                 col_idx = day_num + 4  # بعد از 4 ستون ثابت
-                cell = ws.cell(row=row_num, column=col_idx, value=code)
+                cell = ws.cell(
+                    row=row_num, column=col_idx,
+                    value=display_day_code(code)
+                )
                 cell.alignment = center_align
                 cell.border = thin_border
 
@@ -1272,6 +1289,8 @@ async def monthly_stats_report_excel(
                     cell.font = font_leave_sl
                 elif code == 'ت':
                     cell.font = font_leave_rl
+                elif code == 'TL':
+                    cell.font = font_leave_travel
                 elif code == 'اس':
                     cell.font = font_rest
                 elif code == 'م':
@@ -1307,7 +1326,7 @@ async def monthly_stats_report_excel(
         guide_cell = ws.cell(row=last_row, column=1)
         guide_cell.value = (
             "راهنما: ✓=حاضر | -=بدون تردد | ص=استحقاقی | ج=استعلاجی | "
-            "ت=تشویقی | غ=غایب | اس=استراحت | م=مأموریت | "
+            "ت=تشویقی | تو=توراهی | غ=غایب | اس=استراحت | م=مأموریت | "
             "معرفی=شروع قرارداد (یا عضویت) | تسویه=پایان قرارداد (یا ترک کار) | خالی=جمعه/تعطیل"
         )
         guide_cell.font = Font(size=9, name=FONT_NAME, italic=True, color='666666')
