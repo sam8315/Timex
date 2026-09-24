@@ -101,6 +101,7 @@
     .stats-table td.code-leave { color: #0d6efd; font-weight: bold; }
     .stats-table td.code-sick { color: #6f42c1; }
     .stats-table td.code-reward { color: #fd7e14; }
+    .stats-table td.code-travel { color: #d63384; font-weight: bold; }
     .stats-table td.code-rest { color: #6c757d; }
     .stats-table td.code-mission { color: #20c997; }
     .stats-table td.code-gheyb { color: #dc3545; font-weight: bold; }
@@ -112,6 +113,7 @@
     [data-theme="dark"] .stats-table th.day-holiday { background: #5a1a1a !important; }
     [data-theme="dark"] .stats-table td { border-color: #444; }
     [data-theme="dark"] .stats-table td.day-holiday { background: #3a1515 !important; }
+    [data-theme="dark"] .stats-table td.code-travel { color: #f06292; }
 
     /* ============================================ */
 /* 🖨️ استایل‌های چاپ                          */
@@ -187,6 +189,7 @@
     .stats-table td.code-leave { color: #0d6efd !important; font-weight: bold; }
     .stats-table td.code-sick { color: #6f42c1 !important; }
     .stats-table td.code-reward { color: #fd7e14 !important; }
+    .stats-table td.code-travel { color: #d63384 !important; font-weight: bold; }
     .stats-table td.code-gheyb { color: #dc3545 !important; font-weight: bold; }
 
     /* حذف دکمه‌ها */
@@ -362,6 +365,7 @@
         {% if code == '✓' %}code-present
         {% elif code == '-' %}code-absent
         {% elif code == 'ص' %}code-leave
+        {% elif code == 'TL' %}code-travel
         {% elif code == 'ج' %}code-sick
         {% elif code == 'ت' %}code-reward
         {% elif code == 'اس' %}code-rest
@@ -370,7 +374,7 @@
         {% elif code == 'معرفی' %}code-moarefa
         {% elif code == 'تسویه' %}code-tasvieh
         {% endif %}">
-        {{ code }}
+        {{ code | day_code_display }}
     </td>
     {% endfor %}
     <td class="no-print">
@@ -395,6 +399,7 @@
             <span class="code-leave">ص = مرخصی استحقاقی</span>
             <span class="code-sick">ج = مرخصی استعلاجی</span>
             <span class="code-reward">ت = مرخصی تشویقی</span>
+            <span class="code-travel">تو = مرخصی توراهی</span>
             <span class="code-gheyb">غ = غایب</span>
             <span class="code-rest">اس = استراحت</span>
             <span class="code-mission">م = مأموریت</span>

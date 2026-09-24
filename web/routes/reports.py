@@ -5,7 +5,7 @@ from fastapi import APIRouter, Request, Depends, Form, Query
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from typing import Optional
 from urllib.parse import quote
 from io import BytesIO
@@ -557,6 +557,7 @@ from models.contract import Contract
 from models.holiday import Holiday
 from models.daily_status import DailyStatus
 from models.leave_request import LeaveRequest
+from web.services.travel_leave_service import build_leave_days_by_date
 from sqlalchemy import and_, func, or_
 from datetime import timedelta
 
@@ -626,6 +627,8 @@ def get_day_code(
             return 'ب'
         elif leave_type == 'CW':
             return 'ذ'
+        elif leave_type == 'TL':
+            return 'TL'
 
     # اولویت ۵: وضعیت دستی (DailyStatus)
     status_code = daily_status_map.get(day_date)
@@ -644,6 +647,19 @@ def get_day_code(
         return '✓'
     else:
         return '-'
+
+
+DAY_CODE_DISPLAY = {
+    'TL': 'تو',
+}
+
+
+def display_day_code(code) -> str:
+    """Persian presentation for internal day codes (keeps backend code intact)."""
+    return DAY_CODE_DISPLAY.get(code, code)
+
+
+templates.env.filters['day_code_display'] = display_day_code
 
 
 def resolve_intro_settle_dates(user_contracts, hire_date, termination_date,
@@ -679,6 +695,87 @@ def resolve_intro_settle_dates(user_contracts, hire_date, termination_date,
         return intro_date, settle_date
 
     return hire_date, termination_date
+
+
+def fetch_monthly_stats_leave_data(db: Session, month_start_g, month_end_g):
+    """Approved day-leaves overlapping the month plus holidays over the full
+    leave ranges (needed so Travel Leave counting sees days before the month).
+    """
+    approved_leaves = db.query(LeaveRequest).options(
+        selectinload(LeaveRequest.travel_leave_detail)
+    ).filter(
+        and_(
+            LeaveRequest.status == 'A',
+            LeaveRequest.leave_type != 'HL',
+            LeaveRequest.from_date <= month_end_g,
+            LeaveRequest.to_date >= month_start_g
+        )
+    ).all()
+
+    holiday_start = month_start_g
+    holiday_end = month_end_g
+    if approved_leaves:
+        holiday_start = min(
+            holiday_start,
+            min(leave.from_date for leave in approved_leaves)
+        )
+        holiday_end = max(
+            holiday_end,
+            max(leave.to_date for leave in approved_leaves)
+        )
+
+    holidays = db.query(Holiday).filter(
+        and_(
+            Holiday.holiday_date >= holiday_start,
+            Holiday.holiday_date <= holiday_end
+        )
+    ).all()
+    return approved_leaves, holidays
+
+
+def display_holiday_dates(holidays, month_start_g, month_end_g) -> set:
+    """Holiday dates shown in the report: month window only, all groups."""
+    return {
+        h.holiday_date for h in holidays
+        if month_start_g <= h.holiday_date <= month_end_g
+    }
+
+
+def build_monthly_stats_leaves_map(
+    approved_leaves,
+    holidays,
+    departments_by_user,
+    month_start_g,
+    month_end_g,
+):
+    """``{user_id: {date: leave_type}}`` with the Travel Leave split applied.
+
+    Each user is processed independently through ``build_leave_days_by_date``
+    so leave dates of different employees never interfere. Holidays follow the
+    existing group semantics: national (``group_id is None``) or matching the
+    employee's department.
+    """
+    leaves_by_user = {}
+    for leave in approved_leaves:
+        leaves_by_user.setdefault(leave.user_id, []).append(leave)
+
+    leaves_map = {}
+    holiday_cache = {}
+    for uid, user_leaves in leaves_by_user.items():
+        department = departments_by_user.get(uid)
+        if department not in holiday_cache:
+            holiday_cache[department] = {
+                h.holiday_date for h in holidays
+                if h.group_id is None or h.group_id == department
+            }
+        leaves_map[uid] = build_leave_days_by_date(
+            user_leaves,
+            holiday_cache[department],
+            month_start_g,
+            month_end_g,
+        )
+    return leaves_map
+
 
 @router.get("/reports/monthly-stats", response_class=HTMLResponse)
 async def monthly_stats_report_form(
@@ -740,27 +837,19 @@ async def monthly_stats_report_generate(
         # مرتب‌سازی بر اساس تاریخ عضویت
         employees = emp_query.order_by(Employee.hire_date, Employee.first_name).all()
 
-        # دریافت مرخصی‌های تأیید شده در بازه ماه (فقط مرخصی‌های روزانه، HL جداگانه پردازش می‌شود)
-        approved_leaves = db.query(LeaveRequest).filter(
-            and_(
-                LeaveRequest.status == 'A',
-                LeaveRequest.leave_type != 'HL',  # ✅ HL در leaves_map نباشد
-                LeaveRequest.from_date <= month_end_g,
-                LeaveRequest.to_date >= month_start_g
-            )
-        ).all()
+        # مرخصی‌های تأیید شده + تعطیلات بازه کامل مرخصی‌ها (برای جداسازی TL)
+        approved_leaves, all_holidays = fetch_monthly_stats_leave_data(
+            db, month_start_g, month_end_g
+        )
 
-        # ساخت دیکشنری مرخصی‌ها بر اساس کاربر و تاریخ
-        leaves_map = {}  # {user_id: {date: leave_type}}
-        for leave in approved_leaves:
-            uid = leave.user_id
-            if uid not in leaves_map:
-                leaves_map[uid] = {}
-            current_d = leave.from_date
-            while current_d <= leave.to_date:
-                if month_start_g <= current_d <= month_end_g:
-                    leaves_map[uid][current_d] = leave.leave_type
-                current_d += timedelta(days=1)
+        # ساخت دیکشنری مرخصی‌ها بر اساس کاربر و تاریخ (هر کاربر مستقل)
+        leaves_map = build_monthly_stats_leaves_map(
+            approved_leaves,
+            all_holidays,
+            {emp.user_id: emp.department for emp in employees},
+            month_start_g,
+            month_end_g,
+        )
 
         # دریافت وضعیت‌های دستی (DailyStatus)
         daily_statuses = db.query(DailyStatus).filter(
@@ -791,14 +880,10 @@ async def monthly_stats_report_generate(
                 att_map[uid] = set()
             att_map[uid].add(att_date)
 
-        # دریافت تعطیلات رسمی
-        holidays = db.query(Holiday).filter(
-            and_(
-                Holiday.holiday_date >= month_start_g,
-                Holiday.holiday_date <= month_end_g
-            )
-        ).all()
-        holiday_dates = {h.holiday_date for h in holidays}
+        # دریافت تعطیلات رسمی (فقط بازه ماه برای نمایش)
+        holiday_dates = display_holiday_dates(
+            all_holidays, month_start_g, month_end_g
+        )
 
         # دریافت قراردادهای مرتبط با ماه (یک کوئری برای همه کاربران؛
         # تا فردای پایان ماه تا قرارداد بعدیِ بلافاصله بعد هم دیده شود)
@@ -943,24 +1028,17 @@ async def monthly_stats_report_excel(
         # ============================================
         # 🗂️ دریافت داده‌های مورد نیاز
         # ============================================
-        # مرخصی‌های تایید شده
-        approved_leaves = db.query(LeaveRequest).filter(
-            and_(
-                LeaveRequest.status == 'A',
-                LeaveRequest.from_date <= month_end_g,
-                LeaveRequest.to_date >= month_start_g
-            )
-        ).all()
-        leaves_map = {}
-        for leave in approved_leaves:
-            uid = leave.user_id
-            if uid not in leaves_map:
-                leaves_map[uid] = {}
-            current_d = leave.from_date
-            while current_d <= leave.to_date:
-                if month_start_g <= current_d <= month_end_g:
-                    leaves_map[uid][current_d] = leave.leave_type
-                current_d += timedelta(days=1)
+        # مرخصی‌های تایید شده + تعطیلات بازه کامل مرخصی‌ها (برای جداسازی TL)
+        approved_leaves, all_holidays = fetch_monthly_stats_leave_data(
+            db, month_start_g, month_end_g
+        )
+        leaves_map = build_monthly_stats_leaves_map(
+            approved_leaves,
+            all_holidays,
+            {emp.user_id: emp.department for emp in employees},
+            month_start_g,
+            month_end_g,
+        )
 
         # وضعیت‌های دستی
         daily_statuses = db.query(DailyStatus).filter(
@@ -991,14 +1069,10 @@ async def monthly_stats_report_excel(
                 att_map[uid] = set()
             att_map[uid].add(att_date)
 
-        # تعطیلات
-        holidays = db.query(Holiday).filter(
-            and_(
-                Holiday.holiday_date >= month_start_g,
-                Holiday.holiday_date <= month_end_g
-            )
-        ).all()
-        holiday_dates = {h.holiday_date for h in holidays}
+        # تعطیلات (فقط بازه ماه برای نمایش)
+        holiday_dates = display_holiday_dates(
+            all_holidays, month_start_g, month_end_g
+        )
 
         # قراردادهای مرتبط با ماه (یک کوئری برای همه کاربران)
         month_contracts = db.query(Contract).filter(
@@ -1027,6 +1101,7 @@ async def monthly_stats_report_excel(
         font_leave_al = Font(size=10, name=FONT_NAME, bold=True, color='0D6EFD')    # ص آبی
         font_leave_sl = Font(size=10, name=FONT_NAME, bold=True, color='6F42C1')    # ج بنفش
         font_leave_rl = Font(size=10, name=FONT_NAME, bold=True, color='FD7E14')    # ت نارنجی
+        font_leave_travel = Font(size=10, name=FONT_NAME, bold=True, color='D63384')
         font_rest = Font(size=10, name=FONT_NAME, color='6C757D')                   # اس خاکستری
         font_mission = Font(size=10, name=FONT_NAME, bold=True, color='20C997')     # م سبزآبی
         font_gheyb = Font(size=10, name=FONT_NAME, bold=True, color='DC3545')       # غ قرمز پررنگ
@@ -1192,7 +1267,10 @@ async def monthly_stats_report_excel(
                 )
 
                 col_idx = day_num + 4  # بعد از 4 ستون ثابت
-                cell = ws.cell(row=row_num, column=col_idx, value=code)
+                cell = ws.cell(
+                    row=row_num, column=col_idx,
+                    value=display_day_code(code)
+                )
                 cell.alignment = center_align
                 cell.border = thin_border
 
@@ -1211,6 +1289,8 @@ async def monthly_stats_report_excel(
                     cell.font = font_leave_sl
                 elif code == 'ت':
                     cell.font = font_leave_rl
+                elif code == 'TL':
+                    cell.font = font_leave_travel
                 elif code == 'اس':
                     cell.font = font_rest
                 elif code == 'م':
@@ -1246,7 +1326,7 @@ async def monthly_stats_report_excel(
         guide_cell = ws.cell(row=last_row, column=1)
         guide_cell.value = (
             "راهنما: ✓=حاضر | -=بدون تردد | ص=استحقاقی | ج=استعلاجی | "
-            "ت=تشویقی | غ=غایب | اس=استراحت | م=مأموریت | "
+            "ت=تشویقی | تو=توراهی | غ=غایب | اس=استراحت | م=مأموریت | "
             "معرفی=شروع قرارداد (یا عضویت) | تسویه=پایان قرارداد (یا ترک کار) | خالی=جمعه/تعطیل"
         )
         guide_cell.font = Font(size=9, name=FONT_NAME, italic=True, color='666666')
