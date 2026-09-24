@@ -1,7 +1,7 @@
 """
-Phase 1 tests — hourly mission data model and scoped policies.
+Phase 1+2 tests — hourly mission data model, scoped policies, validation service.
 
-Covers:
+Phase 1:
 - model import / registration in Base.metadata
 - table creation in the test database
 - base DB constraints (start < end, valid status)
@@ -9,7 +9,11 @@ Covers:
 - policy resolution (override → group → default)
 - policies page renders the new card
 - detail page shows scopes
-- previous related behaviour stays intact
+
+Phase 2 (validation service):
+- enabled / time order / working hours / holiday / non-working day
+- overlap (P/A block; R/D do not; adjacent not overlap)
+- same-day / duration / authorized mission minutes
 """
 from datetime import date, time
 
@@ -18,7 +22,9 @@ from sqlalchemy import inspect
 from sqlalchemy.exc import IntegrityError
 
 from models import Base, HourlyMission, HourlyMissionPolicy
+from models.attendance import AttendancePolicy, AttendancePolicyDay
 from models.employee import Employee
+from models.holiday import Holiday
 from tests.conftest import test_engine
 from .conftest import login_as
 
@@ -26,6 +32,10 @@ from web.services.hourly_mission_service import (
     resolve_hourly_mission_policy,
     get_effective_hourly_mission_settings,
     DEFAULT_HOURLY_MISSION_SETTINGS,
+    validate_hourly_mission_request,
+    compute_mission_minutes,
+    get_authorized_mission_minutes,
+    is_holiday_for_employee,
 )
 
 
@@ -74,6 +84,75 @@ def _seed_policy(db, employment_type_code="4", user_id=None, **kwargs):
     db.commit()
     db.refresh(policy)
     return policy
+
+
+def _cleanup_attendance_policies(db, department="4"):
+    """Delete group AttendancePolicy rows for a department (test isolation)."""
+    try:
+        db.rollback()
+    except Exception:
+        pass
+    pids = [p[0] for p in db.query(AttendancePolicy.id).filter(
+        AttendancePolicy.employment_type_code == department,
+        AttendancePolicy.user_id.is_(None),
+    ).all()]
+    if pids:
+        db.query(AttendancePolicyDay).filter(
+            AttendancePolicyDay.policy_id.in_(pids)
+        ).delete(synchronize_session=False)
+        db.query(AttendancePolicy).filter(
+            AttendancePolicy.id.in_(pids)
+        ).delete(synchronize_session=False)
+        db.commit()
+
+
+def _seed_attendance_policy(
+    db,
+    department="4",
+    start=date(2020, 1, 1),
+    end=None,
+    workday_start=time(7, 0),
+    workday_end=time(15, 0),
+    working_weekdays=(0, 1, 2, 3, 5),  # Mon-Thu, Sat (Friday=4 off by default)
+):
+    """Create AttendancePolicy + days for working-hours validation tests."""
+    _cleanup_attendance_policies(db, department)
+    policy = AttendancePolicy(
+        employment_type_code=department,
+        user_id=None,
+        effective_from_date=start,
+        effective_to_date=end,
+        late_enabled=True,
+        late_allowed_minutes=0,
+        late_reference_mode="FIXED_TIME",
+        early_leave_enabled=True,
+        early_leave_allowed_minutes=0,
+        early_leave_reference_mode="FIXED_TIME",
+        is_active=True,
+    )
+    db.add(policy)
+    db.flush()
+    for weekday in range(7):
+        is_working = weekday in working_weekdays
+        db.add(AttendancePolicyDay(
+            policy_id=policy.id,
+            weekday=weekday,
+            is_working_day=is_working,
+            start_time=workday_start if is_working else None,
+            end_time=workday_end if is_working else None,
+        ))
+    db.commit()
+    return policy
+
+
+def _cleanup_holidays(db):
+    """Delete Holiday rows created by tests."""
+    try:
+        db.rollback()
+    except Exception:
+        pass
+    db.query(Holiday).delete()
+    db.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -452,3 +531,452 @@ def test_non_super_admin_cannot_save_hourly_mission_policy(client, make_user):
         follow_redirects=False,
     )
     assert resp.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 — Validation service
+# ---------------------------------------------------------------------------
+# Fixed dates (same convention as hourly leave tests):
+# 2027-03-22 Mon, 2027-03-26 Fri, 2027-03-27 Sat
+MONDAY = date(2027, 3, 22)
+FRIDAY = date(2027, 3, 26)
+SATURDAY = date(2027, 3, 27)
+
+
+def _employee(db, make_user, department="4"):
+    creds = make_user(role="user", balance_al=None, department=department)
+    emp = db.query(Employee).filter(
+        Employee.user_id == creds["user_id"]).first()
+    assert emp is not None
+    return emp, creds
+
+
+def _validate(db, emp, day, start, end, **kwargs):
+    return validate_hourly_mission_request(db, emp, day, start, end, **kwargs)
+
+
+# --- Policy: enabled / override / group ---
+def test_validation_rejects_when_disabled(db, make_user):
+    _cleanup_policies(db)
+    try:
+        emp, _ = _employee(db, make_user)
+        _seed_policy(db, employment_type_code="4", enabled=False,
+                     working_hours_only=False, allowed_on_holidays=True)
+        ok, err = _validate(db, emp, MONDAY, time(9, 0), time(11, 0))
+        assert ok is False
+        assert err is not None
+        assert "فعال" in err
+    finally:
+        _cleanup_policies(db)
+
+
+def test_validation_continues_when_enabled(db, make_user):
+    _cleanup_policies(db)
+    _cleanup_attendance_policies(db)
+    try:
+        emp, _ = _employee(db, make_user)
+        _seed_policy(db, employment_type_code="4", enabled=True,
+                     working_hours_only=False, allowed_on_holidays=True)
+        ok, err = _validate(db, emp, MONDAY, time(9, 0), time(11, 0))
+        assert ok is True
+        assert err is None
+    finally:
+        _cleanup_policies(db)
+        _cleanup_attendance_policies(db)
+
+
+def test_validation_uses_override_enabled(db, make_user):
+    _cleanup_policies(db)
+    try:
+        emp, creds = _employee(db, make_user)
+        _seed_policy(db, employment_type_code="4", enabled=True,
+                     working_hours_only=False, allowed_on_holidays=True)
+        _seed_policy(db, employment_type_code="4",
+                     user_id=creds["user_id"], enabled=False)
+        ok, err = _validate(db, emp, MONDAY, time(9, 0), time(11, 0))
+        assert ok is False
+        assert err is not None
+    finally:
+        _cleanup_policies(db)
+
+
+def test_validation_uses_group_policy_when_no_override(db, make_user):
+    _cleanup_policies(db)
+    _cleanup_attendance_policies(db)
+    try:
+        emp, creds = _employee(db, make_user)
+        other, other_creds = _employee(db, make_user)
+        _seed_policy(db, employment_type_code="4",
+                     user_id=other_creds["user_id"], enabled=False)
+        _seed_policy(db, employment_type_code="4", enabled=True,
+                     working_hours_only=False, allowed_on_holidays=True)
+        ok, err = _validate(db, emp, MONDAY, time(9, 0), time(11, 0))
+        assert ok is True
+    finally:
+        _cleanup_policies(db)
+        _cleanup_attendance_policies(db)
+
+
+# --- Time order ---
+def test_validation_rejects_start_ge_end(db, make_user):
+    _cleanup_policies(db)
+    _cleanup_attendance_policies(db)
+    try:
+        emp, _ = _employee(db, make_user)
+        _seed_policy(db, employment_type_code="4", enabled=True,
+                     working_hours_only=False, allowed_on_holidays=True)
+        ok, err = _validate(db, emp, MONDAY, time(11, 0), time(9, 0))
+        assert ok is False
+        assert err is not None
+        assert "شروع" in err
+        # equal times
+        ok2, err2 = _validate(db, emp, MONDAY, time(9, 0), time(9, 0))
+        assert ok2 is False
+    finally:
+        _cleanup_policies(db)
+        _cleanup_attendance_policies(db)
+
+
+def test_validation_accepts_valid_range(db, make_user):
+    _cleanup_policies(db)
+    _cleanup_attendance_policies(db)
+    try:
+        emp, _ = _employee(db, make_user)
+        _seed_policy(db, employment_type_code="4", enabled=True,
+                     working_hours_only=False, allowed_on_holidays=True)
+        ok, err = _validate(db, emp, MONDAY, time(9, 0), time(11, 0))
+        assert ok is True
+        assert err is None
+    finally:
+        _cleanup_policies(db)
+        _cleanup_attendance_policies(db)
+
+
+# --- Working hours ---
+def test_working_hours_inside_accepted(db, make_user):
+    _cleanup_policies(db)
+    try:
+        emp, _ = _employee(db, make_user)
+        _seed_policy(db, employment_type_code="4", enabled=True,
+                     working_hours_only=True, allowed_on_holidays=True)
+        # 07:00–15:00 workday
+        _seed_attendance_policy(db, department="4",
+                                workday_start=time(7, 0),
+                                workday_end=time(15, 0))
+        ok, err = _validate(db, emp, MONDAY, time(9, 0), time(11, 0))
+        assert ok is True, err
+    finally:
+        _cleanup_policies(db)
+        _cleanup_attendance_policies(db)
+
+
+def test_working_hours_partial_outside_rejected(db, make_user):
+    _cleanup_policies(db)
+    try:
+        emp, _ = _employee(db, make_user)
+        _seed_policy(db, employment_type_code="4", enabled=True,
+                     working_hours_only=True, allowed_on_holidays=True)
+        _seed_attendance_policy(db, department="4",
+                                workday_start=time(7, 0),
+                                workday_end=time(15, 0))
+        # starts before shift
+        ok, err = _validate(db, emp, MONDAY, time(6, 0), time(8, 0))
+        assert ok is False
+        assert err is not None
+        assert "شروع" in err
+        # ends after shift
+        ok2, err2 = _validate(db, emp, MONDAY, time(14, 0), time(16, 0))
+        assert ok2 is False
+        assert err2 is not None
+        assert "پایان" in err2
+    finally:
+        _cleanup_policies(db)
+        _cleanup_attendance_policies(db)
+
+
+def test_working_hours_off_setting_allows_outside(db, make_user):
+    _cleanup_policies(db)
+    try:
+        emp, _ = _employee(db, make_user)
+        _seed_policy(db, employment_type_code="4", enabled=True,
+                     working_hours_only=False, allowed_on_holidays=True)
+        _seed_attendance_policy(db, department="4",
+                                workday_start=time(7, 0),
+                                workday_end=time(15, 0))
+        ok, err = _validate(db, emp, MONDAY, time(16, 0), time(18, 0))
+        assert ok is True, err
+    finally:
+        _cleanup_policies(db)
+        _cleanup_attendance_policies(db)
+
+
+# --- Holiday ---
+def test_holiday_friday_rejected_when_not_allowed(db, make_user):
+    _cleanup_policies(db)
+    _cleanup_attendance_policies(db)
+    try:
+        emp, _ = _employee(db, make_user)
+        _seed_policy(db, employment_type_code="4", enabled=True,
+                     working_hours_only=False, allowed_on_holidays=False)
+        ok, err = _validate(db, emp, FRIDAY, time(9, 0), time(11, 0))
+        assert ok is False
+        assert err is not None
+        assert "تعطیل" in err or "جمعه" in err
+    finally:
+        _cleanup_policies(db)
+        _cleanup_attendance_policies(db)
+
+
+def test_holiday_table_rejected_when_not_allowed(db, make_user):
+    _cleanup_policies(db)
+    _cleanup_holidays(db)
+    try:
+        emp, _ = _employee(db, make_user)
+        _seed_policy(db, employment_type_code="4", enabled=True,
+                     working_hours_only=False, allowed_on_holidays=False)
+        # national holiday on Monday
+        db.add(Holiday(holiday_date=MONDAY, title="تست", is_national=True,
+                       group_id=None))
+        db.commit()
+        ok, err = _validate(db, emp, MONDAY, time(9, 0), time(11, 0))
+        assert ok is False
+        assert err is not None
+    finally:
+        _cleanup_policies(db)
+        _cleanup_holidays(db)
+
+
+def test_holiday_allowed_continues_other_checks(db, make_user):
+    _cleanup_policies(db)
+    _cleanup_holidays(db)
+    _cleanup_attendance_policies(db)
+    try:
+        emp, _ = _employee(db, make_user)
+        _seed_policy(db, employment_type_code="4", enabled=True,
+                     working_hours_only=False, allowed_on_holidays=True)
+        db.add(Holiday(holiday_date=MONDAY, title="تست", is_national=True,
+                       group_id=None))
+        db.commit()
+        ok, err = _validate(db, emp, MONDAY, time(9, 0), time(11, 0))
+        assert ok is True, err
+        # but disabled still rejects
+        ok2, err2 = _validate(db, emp, MONDAY, time(11, 0), time(9, 0))
+        assert ok2 is False
+    finally:
+        _cleanup_policies(db)
+        _cleanup_holidays(db)
+        _cleanup_attendance_policies(db)
+
+
+def test_is_holiday_helper_friday_and_table(db, make_user):
+    _cleanup_holidays(db)
+    try:
+        emp, _ = _employee(db, make_user)
+        assert is_holiday_for_employee(db, emp, FRIDAY) is True
+        assert is_holiday_for_employee(db, emp, MONDAY) is False
+        db.add(Holiday(holiday_date=MONDAY, title="تست", is_national=True,
+                       group_id=None))
+        db.commit()
+        assert is_holiday_for_employee(db, emp, MONDAY) is True
+    finally:
+        _cleanup_holidays(db)
+
+
+# --- Non-working day ---
+def test_non_working_day_rejected_when_working_hours_only(db, make_user):
+    _cleanup_policies(db)
+    try:
+        emp, _ = _employee(db, make_user)
+        _seed_policy(db, employment_type_code="4", enabled=True,
+                     working_hours_only=True, allowed_on_holidays=True)
+        # Saturday is working in helper; make Thursday (weekday=3) non-working
+        # Actually use a custom schedule: only Mon-Thu working; Sat non-working
+        _seed_attendance_policy(db, department="4",
+                                working_weekdays=(0, 1, 2, 3),  # no Sat
+                                workday_start=time(7, 0),
+                                workday_end=time(15, 0))
+        # Saturday 2027-03-27 is not Friday/holiday but non-working in policy
+        ok, err = _validate(db, emp, SATURDAY, time(9, 0), time(11, 0))
+        assert ok is False
+        assert err is not None
+        assert "کاری" in err
+    finally:
+        _cleanup_policies(db)
+        _cleanup_attendance_policies(db)
+
+
+def test_non_working_day_allowed_when_working_hours_off(db, make_user):
+    _cleanup_policies(db)
+    try:
+        emp, _ = _employee(db, make_user)
+        _seed_policy(db, employment_type_code="4", enabled=True,
+                     working_hours_only=False, allowed_on_holidays=True)
+        _seed_attendance_policy(db, department="4",
+                                working_weekdays=(0, 1, 2, 3),
+                                workday_start=time(7, 0),
+                                workday_end=time(15, 0))
+        ok, err = _validate(db, emp, SATURDAY, time(9, 0), time(11, 0))
+        assert ok is True, err
+    finally:
+        _cleanup_policies(db)
+        _cleanup_attendance_policies(db)
+
+
+# --- Duration ---
+def test_duration_minutes_computed(db, make_user):
+    assert compute_mission_minutes(time(9, 0), time(11, 30)) == 150
+    assert compute_mission_minutes(time(9, 0), time(9, 0)) == 0
+    assert compute_mission_minutes(None, time(9, 0)) == 0
+
+
+def test_authorized_mission_minutes_respects_deduct_flag(db):
+    settings_on = {"deduct_from_required_minutes": True}
+    settings_off = {"deduct_from_required_minutes": False}
+    assert get_authorized_mission_minutes(
+        settings_on, time(9, 0), time(11, 0)) == 120
+    assert get_authorized_mission_minutes(
+        settings_off, time(9, 0), time(11, 0)) == 0
+
+
+# --- Overlap ---
+def _seed_mission(db, user_id, day, start, end, status="P"):
+    m = HourlyMission(
+        user_id=user_id,
+        mission_date=day,
+        start_time=start,
+        end_time=end,
+        status=status,
+    )
+    db.add(m)
+    db.commit()
+    db.refresh(m)
+    return m
+
+
+def test_overlap_with_pending_rejected(db, make_user):
+    _cleanup_policies(db)
+    _cleanup_attendance_policies(db)
+    try:
+        emp, creds = _employee(db, make_user)
+        _seed_policy(db, employment_type_code="4", enabled=True,
+                     working_hours_only=False, allowed_on_holidays=True)
+        _seed_mission(db, creds["user_id"], MONDAY, time(9, 0), time(11, 0),
+                      status="P")
+        # fully inside
+        ok, err = _validate(db, emp, MONDAY, time(9, 30), time(10, 30))
+        assert ok is False
+        assert err is not None
+        assert "تداخل" in err
+        # contains existing
+        ok2, err2 = _validate(db, emp, MONDAY, time(8, 0), time(12, 0))
+        assert ok2 is False
+        # start inside existing
+        ok3, err3 = _validate(db, emp, MONDAY, time(10, 0), time(12, 0))
+        assert ok3 is False
+        # end inside existing
+        ok4, err4 = _validate(db, emp, MONDAY, time(8, 0), time(10, 0))
+        assert ok4 is False
+    finally:
+        _cleanup_policies(db)
+        _cleanup_attendance_policies(db)
+        _cleanup_missions(db, creds["user_id"])
+
+
+def test_overlap_with_approved_rejected(db, make_user):
+    _cleanup_policies(db)
+    _cleanup_attendance_policies(db)
+    try:
+        emp, creds = _employee(db, make_user)
+        _seed_policy(db, employment_type_code="4", enabled=True,
+                     working_hours_only=False, allowed_on_holidays=True)
+        _seed_mission(db, creds["user_id"], MONDAY, time(9, 0), time(11, 0),
+                      status="A")
+        ok, err = _validate(db, emp, MONDAY, time(10, 0), time(12, 0))
+        assert ok is False
+        assert err is not None
+    finally:
+        _cleanup_policies(db)
+        _cleanup_attendance_policies(db)
+        _cleanup_missions(db, creds["user_id"])
+
+
+def test_overlap_rejected_or_cancelled_does_not_block(db, make_user):
+    _cleanup_policies(db)
+    _cleanup_attendance_policies(db)
+    try:
+        emp, creds = _employee(db, make_user)
+        _seed_policy(db, employment_type_code="4", enabled=True,
+                     working_hours_only=False, allowed_on_holidays=True)
+        _seed_mission(db, creds["user_id"], MONDAY, time(9, 0), time(11, 0),
+                      status="R")
+        _seed_mission(db, creds["user_id"], MONDAY, time(13, 0), time(15, 0),
+                      status="D")
+        ok, err = _validate(db, emp, MONDAY, time(9, 0), time(11, 0))
+        assert ok is True, err
+        ok2, err2 = _validate(db, emp, MONDAY, time(13, 0), time(15, 0))
+        assert ok2 is True, err2
+    finally:
+        _cleanup_policies(db)
+        _cleanup_attendance_policies(db)
+        _cleanup_missions(db, creds["user_id"])
+
+
+def test_adjacent_ranges_not_overlap(db, make_user):
+    _cleanup_policies(db)
+    _cleanup_attendance_policies(db)
+    try:
+        emp, creds = _employee(db, make_user)
+        _seed_policy(db, employment_type_code="4", enabled=True,
+                     working_hours_only=False, allowed_on_holidays=True)
+        _seed_mission(db, creds["user_id"], MONDAY, time(9, 0), time(10, 0),
+                      status="P")
+        # 10:00-11:00 is adjacent (touching) — not overlap
+        ok, err = _validate(db, emp, MONDAY, time(10, 0), time(11, 0))
+        assert ok is True, err
+        # 08:00-09:00 adjacent on the left
+        ok2, err2 = _validate(db, emp, MONDAY, time(8, 0), time(9, 0))
+        assert ok2 is True, err2
+    finally:
+        _cleanup_policies(db)
+        _cleanup_attendance_policies(db)
+        _cleanup_missions(db, creds["user_id"])
+
+
+def test_overlap_exclude_mission_id(db, make_user):
+    """exclude_mission_id allows re-validation of an existing mission (edit)."""
+    _cleanup_policies(db)
+    _cleanup_attendance_policies(db)
+    try:
+        emp, creds = _employee(db, make_user)
+        _seed_policy(db, employment_type_code="4", enabled=True,
+                     working_hours_only=False, allowed_on_holidays=True)
+        existing = _seed_mission(db, creds["user_id"], MONDAY,
+                                 time(9, 0), time(11, 0), status="P")
+        # without exclude → blocked
+        ok, _ = _validate(db, emp, MONDAY, time(9, 0), time(11, 0))
+        assert ok is False
+        # with exclude → ok
+        ok2, err2 = _validate(db, emp, MONDAY, time(9, 0), time(11, 0),
+                              exclude_mission_id=existing.id)
+        assert ok2 is True, err2
+    finally:
+        _cleanup_policies(db)
+        _cleanup_attendance_policies(db)
+        _cleanup_missions(db, creds["user_id"])
+
+
+# --- Same-day / cross-midnight ---
+def test_cross_midnight_rejected_by_time_order(db, make_user):
+    """23:00→01:00: start >= end on same mission_date → rejected."""
+    _cleanup_policies(db)
+    _cleanup_attendance_policies(db)
+    try:
+        emp, _ = _employee(db, make_user)
+        _seed_policy(db, employment_type_code="4", enabled=True,
+                     working_hours_only=False, allowed_on_holidays=True)
+        ok, err = _validate(db, emp, MONDAY, time(23, 0), time(1, 0))
+        assert ok is False
+        assert err is not None
+    finally:
+        _cleanup_policies(db)
+        _cleanup_attendance_policies(db)
