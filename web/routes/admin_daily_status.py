@@ -229,6 +229,34 @@ async def daily_status_page(
         show_all or "",
     )
 
+    # درخواست‌های مأموریت ساعتی (همان صفحه — بدون صفحه جدا)
+    hm_query = db.query(HourlyMission).order_by(
+        HourlyMission.mission_date.desc(), HourlyMission.id.desc()
+    )
+    hm_pending_count = db.query(HourlyMission).filter(
+        HourlyMission.status == "P"
+    ).count()
+    hourly_missions = hm_query.limit(100).all()
+    hm_employee_map = {}
+    hm_user_ids = {m.user_id for m in hourly_missions}
+    if hm_user_ids:
+        for employee in db.query(Employee).filter(
+            Employee.user_id.in_(hm_user_ids)
+        ).all():
+            hm_employee_map[employee.user_id] = employee
+
+    hourly_missions_data = []
+    for mission in hourly_missions:
+        employee = hm_employee_map.get(mission.user_id)
+        date_j = jdatetime.date.fromgregorian(date=mission.mission_date)
+        hourly_missions_data.append({
+            "mission": mission,
+            "full_name": employee.full_name if employee else f"کاربر {mission.user_id}",
+            "personnel_code": mission.user_id,
+            "date_j": date_j.strftime("%Y/%m/%d"),
+            "status_name": mission.status_name,
+        })
+
     return templates.TemplateResponse(
         request,
         "admin/daily_status.html",
@@ -266,6 +294,8 @@ async def daily_status_page(
             "rest_count": status_counts.get("R", 0),
             "employees": employees,
             "is_admin": True,
+            "hourly_missions": hourly_missions_data,
+            "hm_pending_count": hm_pending_count,
         },
     )
 
@@ -460,3 +490,87 @@ async def delete_daily_status(
         url=build_redirect_url(referer, "success", "وضعیت حذف شد"),
         status_code=302,
     )
+
+
+# ============================================
+# تأیید/رد مأموریت ساعتی توسط مدیر (فاز ۴)
+# فقط P → A یا P → R. بدون policy re-validation.
+# ============================================
+@router.post("/daily-status/hourly-missions/{mission_id}/approve")
+async def approve_hourly_mission(
+    request: Request,
+    mission_id: int,
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """تأیید مأموریت ساعتی در انتظار (P → A) — فقط status + metadata"""
+    enforce_permission(db, user, "view_all_attendance")
+    referer = request.headers.get("referer", "/admin/daily-status")
+
+    try:
+        mission = db.query(HourlyMission).filter(
+            HourlyMission.id == mission_id
+        ).first()
+        if not mission:
+            raise ValueError("رکورد یافت نشد")
+        if mission.status != "P":
+            raise ValueError("این درخواست قبلاً بررسی شده است")
+
+        mission.status = "A"
+        mission.approved_by = user.user_id
+        mission.approved_at = datetime.now()
+        db.commit()
+
+        return RedirectResponse(
+            url=build_redirect_url(
+                referer, "success", "مأموریت ساعتی تأیید شد."
+            ),
+            status_code=302,
+        )
+    except Exception as exc:
+        db.rollback()
+        return RedirectResponse(
+            url=build_redirect_url(referer, "error", f"خطا: {exc}"),
+            status_code=302,
+        )
+
+
+@router.post("/daily-status/hourly-missions/{mission_id}/reject")
+async def reject_hourly_mission(
+    request: Request,
+    mission_id: int,
+    rejection_reason: str = Form(""),
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """رد مأموریت ساعتی در انتظار (P → R) — metadata + دلیل اختیاری"""
+    enforce_permission(db, user, "view_all_attendance")
+    referer = request.headers.get("referer", "/admin/daily-status")
+
+    try:
+        mission = db.query(HourlyMission).filter(
+            HourlyMission.id == mission_id
+        ).first()
+        if not mission:
+            raise ValueError("رکورد یافت نشد")
+        if mission.status != "P":
+            raise ValueError("این درخواست قبلاً بررسی شده است")
+
+        mission.status = "R"
+        mission.approved_by = user.user_id
+        mission.approved_at = datetime.now()
+        mission.rejection_reason = rejection_reason.strip() or None
+        db.commit()
+
+        return RedirectResponse(
+            url=build_redirect_url(
+                referer, "success", "مأموریت ساعتی رد شد."
+            ),
+            status_code=302,
+        )
+    except Exception as exc:
+        db.rollback()
+        return RedirectResponse(
+            url=build_redirect_url(referer, "error", f"خطا: {exc}"),
+            status_code=302,
+        )

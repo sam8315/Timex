@@ -1,5 +1,5 @@
 """
-Phase 1+2+3 tests — hourly mission data model, scoped policies, validation service, daily-status form.
+Phase 1+2+3+4 tests — hourly mission data model, scoped policies, validation service, daily-status form, admin approve/reject.
 
 Phase 1:
 - model import / registration in Base.metadata
@@ -19,6 +19,14 @@ Phase 3 (daily-status form integration):
 - hourly_mission option in dropdown + conditional start/end fields
 - POST branches to HourlyMission(status=P), never DailyStatus
 - validation integration + M/R regression
+
+Phase 4 (admin approve/reject):
+- pending list on /admin/daily-status (no separate page)
+- P → A with approved_by/approved_at
+- P → R with approved_by/approved_at + optional rejection_reason
+- invalid transitions (A/R/D) rejected server-side
+- permission enforcement (require_admin + view_all_attendance)
+- isolation: no DailyStatus / Attendance / LeaveRequest / LeaveBalance side effects
 """
 from datetime import date, time, timedelta
 
@@ -1361,3 +1369,313 @@ def test_hourly_mission_ignores_extra_time_fields_for_m(client, db, make_user):
         DailyStatus.user_id == target["user_id"],
         DailyStatus.status_code == "M",
     ).count() == 1
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 — approve / reject by admin
+# ---------------------------------------------------------------------------
+def _seed_pending_mission(db, user_id, day=None, start=time(9, 0), end=time(11, 0),
+                          status="P", reason="بازدید"):
+    if day is None:
+        day_j = jdatetime.date.today() + timedelta(days=7)
+        while day_j.togregorian().weekday() == 4:
+            day_j += timedelta(days=1)
+        day = day_j.togregorian()
+    m = HourlyMission(
+        user_id=user_id,
+        mission_date=day,
+        start_time=start,
+        end_time=end,
+        status=status,
+        reason=reason,
+    )
+    db.add(m)
+    db.commit()
+    db.refresh(m)
+    return m
+
+
+def _approve(client, mission_id, referer="/admin/daily-status"):
+    return client.post(
+        f"/admin/daily-status/hourly-missions/{mission_id}/approve",
+        headers={"referer": referer},
+        follow_redirects=False,
+    )
+
+
+def _reject(client, mission_id, reason="", referer="/admin/daily-status"):
+    return client.post(
+        f"/admin/daily-status/hourly-missions/{mission_id}/reject",
+        data={"rejection_reason": reason},
+        headers={"referer": referer},
+        follow_redirects=False,
+    )
+
+
+def test_page_shows_hourly_missions_section(client, db, make_user):
+    admin = _as_super(client, make_user)
+    target = make_user(role="user", balance_al=None)
+    m = _seed_pending_mission(db, target["user_id"])
+    try:
+        resp = client.get("/admin/daily-status")
+        assert resp.status_code == 200
+        assert "درخواست‌های مأموریت ساعتی" in resp.text
+        assert "در انتظار تأیید" in resp.text
+        assert "ساعت شروع" in resp.text
+        assert "ساعت پایان" in resp.text
+        # approve + reject buttons for pending
+        assert f"/admin/daily-status/hourly-missions/{m.id}/approve" in resp.text
+        assert f"/admin/daily-status/hourly-missions/{m.id}/reject" in resp.text
+        assert "hmRejectModal" in resp.text
+    finally:
+        _cleanup_missions(db, target["user_id"])
+
+
+def test_final_statuses_show_no_actions(client, db, make_user):
+    _as_super(client, make_user)
+    target = make_user(role="user", balance_al=None)
+    m_a = _seed_pending_mission(db, target["user_id"], status="A")
+    m_r = _seed_pending_mission(db, target["user_id"], status="R")
+    m_d = _seed_pending_mission(db, target["user_id"], status="D")
+    try:
+        resp = client.get("/admin/daily-status")
+        assert resp.status_code == 200
+        for mid in (m_a.id, m_r.id, m_d.id):
+            assert f"/admin/daily-status/hourly-missions/{mid}/approve" not in resp.text
+            assert f"/admin/daily-status/hourly-missions/{mid}/reject" not in resp.text
+        assert "تأیید شده" in resp.text
+        assert "رد شده" in resp.text
+        assert "لغو شده" in resp.text
+    finally:
+        _cleanup_missions(db, target["user_id"])
+
+
+def test_approve_pending_sets_approved_with_metadata(client, db, make_user):
+    admin = _as_super(client, make_user)
+    target = make_user(role="user", balance_al=None)
+    m = _seed_pending_mission(db, target["user_id"])
+    try:
+        resp = _approve(client, m.id)
+        assert resp.status_code == 302
+        assert "success=" in resp.headers["location"]
+        assert "تأیید" in unquote(resp.headers["location"])
+
+        db.expire_all()
+        row = db.query(HourlyMission).filter(HourlyMission.id == m.id).first()
+        assert row.status == "A"
+        assert row.approved_by == admin["user_id"]
+        assert row.approved_at is not None
+        assert row.rejection_reason is None
+    finally:
+        _cleanup_missions(db, target["user_id"])
+
+
+def test_reject_pending_sets_rejected_with_reason(client, db, make_user):
+    admin = _as_super(client, make_user)
+    target = make_user(role="user", balance_al=None)
+    m = _seed_pending_mission(db, target["user_id"])
+    try:
+        resp = _reject(client, m.id, reason="خارج از ساعات کاری")
+        assert resp.status_code == 302
+        assert "success=" in resp.headers["location"]
+
+        db.expire_all()
+        row = db.query(HourlyMission).filter(HourlyMission.id == m.id).first()
+        assert row.status == "R"
+        assert row.approved_by == admin["user_id"]
+        assert row.approved_at is not None
+        assert row.rejection_reason == "خارج از ساعات کاری"
+    finally:
+        _cleanup_missions(db, target["user_id"])
+
+
+def test_reject_without_reason_succeeds(client, db, make_user):
+    _as_super(client, make_user)
+    target = make_user(role="user", balance_al=None)
+    m = _seed_pending_mission(db, target["user_id"])
+    try:
+        resp = _reject(client, m.id, reason="")
+        assert resp.status_code == 302
+        assert "success=" in resp.headers["location"]
+        db.expire_all()
+        row = db.query(HourlyMission).filter(HourlyMission.id == m.id).first()
+        assert row.status == "R"
+        assert row.rejection_reason is None
+    finally:
+        _cleanup_missions(db, target["user_id"])
+
+
+def test_approve_twice_rejected(client, db, make_user):
+    _as_super(client, make_user)
+    target = make_user(role="user", balance_al=None)
+    m = _seed_pending_mission(db, target["user_id"])
+    try:
+        first = _approve(client, m.id)
+        assert "success=" in first.headers["location"]
+        second = _approve(client, m.id)
+        assert "error=" in second.headers["location"]
+        assert "قبلاً بررسی" in unquote(second.headers["location"])
+        db.expire_all()
+        assert db.query(HourlyMission).filter(
+            HourlyMission.id == m.id).first().status == "A"
+    finally:
+        _cleanup_missions(db, target["user_id"])
+
+
+def test_reject_approved_rejected(client, db, make_user):
+    _as_super(client, make_user)
+    target = make_user(role="user", balance_al=None)
+    m = _seed_pending_mission(db, target["user_id"], status="A")
+    try:
+        resp = _reject(client, m.id)
+        assert "error=" in resp.headers["location"]
+        db.expire_all()
+        assert db.query(HourlyMission).filter(
+            HourlyMission.id == m.id).first().status == "A"
+    finally:
+        _cleanup_missions(db, target["user_id"])
+
+
+def test_approve_rejected_request_rejected(client, db, make_user):
+    _as_super(client, make_user)
+    target = make_user(role="user", balance_al=None)
+    m = _seed_pending_mission(db, target["user_id"], status="R")
+    try:
+        resp = _approve(client, m.id)
+        assert "error=" in resp.headers["location"]
+        db.expire_all()
+        assert db.query(HourlyMission).filter(
+            HourlyMission.id == m.id).first().status == "R"
+    finally:
+        _cleanup_missions(db, target["user_id"])
+
+
+def test_reject_rejected_request_rejected(client, db, make_user):
+    _as_super(client, make_user)
+    target = make_user(role="user", balance_al=None)
+    m = _seed_pending_mission(db, target["user_id"], status="R")
+    try:
+        resp = _reject(client, m.id)
+        assert "error=" in resp.headers["location"]
+        db.expire_all()
+        assert db.query(HourlyMission).filter(
+            HourlyMission.id == m.id).first().status == "R"
+    finally:
+        _cleanup_missions(db, target["user_id"])
+
+
+def test_approve_cancelled_rejected(client, db, make_user):
+    _as_super(client, make_user)
+    target = make_user(role="user", balance_al=None)
+    m = _seed_pending_mission(db, target["user_id"], status="D")
+    try:
+        resp = _approve(client, m.id)
+        assert "error=" in resp.headers["location"]
+        db.expire_all()
+        assert db.query(HourlyMission).filter(
+            HourlyMission.id == m.id).first().status == "D"
+    finally:
+        _cleanup_missions(db, target["user_id"])
+
+
+def test_reject_cancelled_rejected(client, db, make_user):
+    _as_super(client, make_user)
+    target = make_user(role="user", balance_al=None)
+    m = _seed_pending_mission(db, target["user_id"], status="D")
+    try:
+        resp = _reject(client, m.id)
+        assert "error=" in resp.headers["location"]
+        db.expire_all()
+        assert db.query(HourlyMission).filter(
+            HourlyMission.id == m.id).first().status == "D"
+    finally:
+        _cleanup_missions(db, target["user_id"])
+
+
+def test_approve_not_found_error(client, make_user):
+    _as_super(client, make_user)
+    resp = _approve(client, 999999)
+    assert resp.status_code == 302
+    assert "error=" in resp.headers["location"]
+    assert "یافت نشد" in unquote(resp.headers["location"])
+
+
+def test_plain_user_cannot_approve(client, db, make_user):
+    target = make_user(role="user", balance_al=None)
+    m = _seed_pending_mission(db, target["user_id"])
+    creds = make_user(role="user", balance_al=None)
+    login_as(client, creds["national_code"])
+    try:
+        resp = _approve(client, m.id)
+        assert resp.status_code == 403
+        resp2 = _reject(client, m.id, reason="x")
+        assert resp2.status_code == 403
+        db.expire_all()
+        assert db.query(HourlyMission).filter(
+            HourlyMission.id == m.id).first().status == "P"
+    finally:
+        _cleanup_missions(db, target["user_id"])
+
+
+def test_admin_without_permission_cannot_approve(client, db, make_user):
+    """Admin role with view_all_attendance revoked → 403 (override layer)."""
+    from models.user_permission import UserPermission
+
+    target = make_user(role="user", balance_al=None)
+    m = _seed_pending_mission(db, target["user_id"])
+    admin = make_user(role="admin", balance_al=None)
+    db.add(UserPermission(
+        user_id=admin["user_id"],
+        permission="view_all_attendance",
+        granted=False,
+    ))
+    db.commit()
+    login_as(client, admin["national_code"])
+    try:
+        resp = _approve(client, m.id)
+        assert resp.status_code == 403
+        db.expire_all()
+        assert db.query(HourlyMission).filter(
+            HourlyMission.id == m.id).first().status == "P"
+    finally:
+        db.query(UserPermission).filter(
+            UserPermission.user_id == admin["user_id"]).delete()
+        db.commit()
+        _cleanup_missions(db, target["user_id"])
+
+
+def test_approve_creates_no_daily_status_or_attendance_or_leave(client, db, make_user):
+    """Approve must not touch DailyStatus / Attendance / LeaveRequest / LeaveBalance."""
+    from models.attendance import Attendance
+    from models.leave_balance import LeaveBalance
+    from models.leave_request import LeaveRequest
+
+    _as_super(client, make_user)
+    target = make_user(role="user", balance_al=None)
+    m = _seed_pending_mission(db, target["user_id"])
+    try:
+        before_ds = db.query(DailyStatus).filter(
+            DailyStatus.user_id == target["user_id"]).count()
+        before_att = db.query(Attendance).filter(
+            Attendance.user_id == target["user_id"]).count()
+        before_lr = db.query(LeaveRequest).filter(
+            LeaveRequest.user_id == target["user_id"]).count()
+        before_lb = db.query(LeaveBalance).filter(
+            LeaveBalance.user_id == target["user_id"]).count()
+
+        resp = _approve(client, m.id)
+        assert "success=" in resp.headers["location"]
+
+        db.expire_all()
+        assert db.query(DailyStatus).filter(
+            DailyStatus.user_id == target["user_id"]).count() == before_ds
+        assert db.query(Attendance).filter(
+            Attendance.user_id == target["user_id"]).count() == before_att
+        assert db.query(LeaveRequest).filter(
+            LeaveRequest.user_id == target["user_id"]).count() == before_lr
+        assert db.query(LeaveBalance).filter(
+            LeaveBalance.user_id == target["user_id"]).count() == before_lb
+        row = db.query(HourlyMission).filter(HourlyMission.id == m.id).first()
+        assert row.status == "A"
+    finally:
+        _cleanup_missions(db, target["user_id"])
