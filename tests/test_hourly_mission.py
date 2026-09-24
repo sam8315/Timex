@@ -1,5 +1,5 @@
 """
-Phase 1+2 tests — hourly mission data model, scoped policies, validation service.
+Phase 1+2+3 tests — hourly mission data model, scoped policies, validation service, daily-status form.
 
 Phase 1:
 - model import / registration in Base.metadata
@@ -14,19 +14,26 @@ Phase 2 (validation service):
 - enabled / time order / working hours / holiday / non-working day
 - overlap (P/A block; R/D do not; adjacent not overlap)
 - same-day / duration / authorized mission minutes
-"""
-from datetime import date, time
 
+Phase 3 (daily-status form integration):
+- hourly_mission option in dropdown + conditional start/end fields
+- POST branches to HourlyMission(status=P), never DailyStatus
+- validation integration + M/R regression
+"""
+from datetime import date, time, timedelta
+
+import jdatetime
 import pytest
 from sqlalchemy import inspect
 from sqlalchemy.exc import IntegrityError
 
 from models import Base, HourlyMission, HourlyMissionPolicy
 from models.attendance import AttendancePolicy, AttendancePolicyDay
+from models.daily_status import DailyStatus
 from models.employee import Employee
 from models.holiday import Holiday
 from tests.conftest import test_engine
-from .conftest import login_as
+from .conftest import jalali_range, login_as
 
 from web.services.hourly_mission_service import (
     resolve_hourly_mission_policy,
@@ -980,3 +987,377 @@ def test_cross_midnight_rejected_by_time_order(db, make_user):
     finally:
         _cleanup_policies(db)
         _cleanup_attendance_policies(db)
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — daily-status form integration
+# ---------------------------------------------------------------------------
+from urllib.parse import unquote
+
+
+def _post_hourly(client, user_id, from_date, start="09:00", end="11:00",
+                 to_date=None, description=""):
+    data = {
+        "user_id": user_id,
+        "from_date": from_date,
+        "status_code": "hourly_mission",
+        "description": description,
+        "start_time": start,
+        "end_time": end,
+    }
+    if to_date is not None:
+        data["to_date"] = to_date
+    return client.post("/admin/daily-status/add", data=data,
+                       follow_redirects=False)
+
+
+def _future_weekday(target_gwd: int, not_gwd: int | None = None):
+    """
+    Future Jalali date string whose Gregorian weekday == target_gwd
+    (and != not_gwd if given). Uses Gregorian weekday because
+    is_holiday_for_employee checks date.weekday()==4 on the Gregorian date.
+    jdatetime.weekday() uses Saturday=0 (Friday=6), so never use it here.
+    """
+    d = jdatetime.date.today() + timedelta(days=7)
+    while True:
+        gwd = d.togregorian().weekday()
+        if gwd == target_gwd and (not_gwd is None or gwd != not_gwd):
+            return d.strftime("%Y/%m/%d")
+        d += timedelta(days=1)
+
+
+def _future_non_friday():
+    """Future date that is not Gregorian Friday (weekday!=4)."""
+    d = jdatetime.date.today() + timedelta(days=7)
+    while d.togregorian().weekday() == 4:
+        d += timedelta(days=1)
+    return d.strftime("%Y/%m/%d")
+
+
+def _future_friday():
+    """Future date that is Gregorian Friday (weekday==4)."""
+    return _future_weekday(4)
+
+
+# --- UI ---
+def test_daily_status_page_shows_hourly_mission_option(client, make_user):
+    _as_super(client, make_user)
+    resp = client.get("/admin/daily-status")
+    assert resp.status_code == 200
+    assert 'value="hourly_mission"' in resp.text
+    assert "مأموریت ساعتی" in resp.text
+    # conditional time fields present and hidden by default
+    assert 'id="start_time"' in resp.text
+    assert 'id="end_time"' in resp.text
+    assert 'id="hm-start-wrap"' in resp.text
+    assert "d-none" in resp.text
+    # JS toggle present
+    assert "toggleHourlyMissionFields" in resp.text
+    assert "hourly_mission" in resp.text
+
+
+def test_daily_status_filter_does_not_include_hourly_mission(client, make_user):
+    """Filter dropdown must stay DailyStatus-only (no hourly_mission)."""
+    _as_super(client, make_user)
+    resp = client.get("/admin/daily-status")
+    assert resp.status_code == 200
+    # add-form select has hourly_mission; filter select must not.
+    # Count occurrences of value="hourly_mission" — should be exactly 1 (add form).
+    assert resp.text.count('value="hourly_mission"') == 1
+
+
+# --- Submission ---
+def test_submit_hourly_mission_valid_creates_pending(client, db, make_user):
+    _cleanup_policies(db)
+    _cleanup_attendance_policies(db)
+    try:
+        _as_super(client, make_user)
+        target = make_user(role="user", balance_al=None)
+        _seed_policy(db, employment_type_code="4", enabled=True,
+                     working_hours_only=False, allowed_on_holidays=True)
+        day = _future_non_friday()
+        resp = _post_hourly(client, target["user_id"], day,
+                            start="09:00", end="11:00",
+                            description="بازدید سایت")
+        assert resp.status_code == 302
+        assert "success=" in resp.headers["location"]
+        assert "موفقیت" in unquote(resp.headers["location"])
+
+        db.expire_all()
+        m = db.query(HourlyMission).filter(
+            HourlyMission.user_id == target["user_id"]).all()
+        assert len(m) == 1
+        assert m[0].status == "P"
+        assert m[0].start_time == time(9, 0)
+        assert m[0].end_time == time(11, 0)
+        assert m[0].reason == "بازدید سایت"
+        # Jalali → Gregorian roundtrip
+        expected_g = jdatetime.datetime.strptime(day, "%Y/%m/%d").date().togregorian()
+        assert m[0].mission_date == expected_g
+        # NO DailyStatus created for hourly mission
+        assert db.query(DailyStatus).filter(
+            DailyStatus.user_id == target["user_id"]).count() == 0
+    finally:
+        _cleanup_policies(db)
+        _cleanup_attendance_policies(db)
+
+
+def test_submit_hourly_mission_missing_start_rejected(client, db, make_user):
+    _cleanup_policies(db)
+    try:
+        _as_super(client, make_user)
+        target = make_user(role="user", balance_al=None)
+        day = _future_non_friday()
+        resp = client.post("/admin/daily-status/add", data={
+            "user_id": target["user_id"],
+            "from_date": day,
+            "status_code": "hourly_mission",
+            "end_time": "11:00",
+        }, follow_redirects=False)
+        assert resp.status_code == 302
+        assert "error=" in resp.headers["location"]
+        db.expire_all()
+        assert db.query(HourlyMission).filter(
+            HourlyMission.user_id == target["user_id"]).count() == 0
+    finally:
+        _cleanup_policies(db)
+
+
+def test_submit_hourly_mission_start_ge_end_rejected(client, db, make_user):
+    _cleanup_policies(db)
+    _cleanup_attendance_policies(db)
+    try:
+        _as_super(client, make_user)
+        target = make_user(role="user", balance_al=None)
+        _seed_policy(db, employment_type_code="4", enabled=True,
+                     working_hours_only=False, allowed_on_holidays=True)
+        day = _future_non_friday()
+        resp = _post_hourly(client, target["user_id"], day,
+                            start="11:00", end="09:00")
+        assert resp.status_code == 302
+        assert "error=" in resp.headers["location"]
+        db.expire_all()
+        assert db.query(HourlyMission).filter(
+            HourlyMission.user_id == target["user_id"]).count() == 0
+    finally:
+        _cleanup_policies(db)
+        _cleanup_attendance_policies(db)
+
+
+def test_submit_hourly_mission_cross_midnight_rejected(client, db, make_user):
+    _cleanup_policies(db)
+    _cleanup_attendance_policies(db)
+    try:
+        _as_super(client, make_user)
+        target = make_user(role="user", balance_al=None)
+        _seed_policy(db, employment_type_code="4", enabled=True,
+                     working_hours_only=False, allowed_on_holidays=True)
+        day = _future_non_friday()
+        resp = _post_hourly(client, target["user_id"], day,
+                            start="23:00", end="01:00")
+        assert resp.status_code == 302
+        assert "error=" in resp.headers["location"]
+        db.expire_all()
+        assert db.query(HourlyMission).count() == 0
+    finally:
+        _cleanup_policies(db)
+        _cleanup_attendance_policies(db)
+
+
+def test_submit_hourly_mission_policy_disabled_rejected(client, db, make_user):
+    _cleanup_policies(db)
+    _cleanup_attendance_policies(db)
+    try:
+        _as_super(client, make_user)
+        target = make_user(role="user", balance_al=None)
+        _seed_policy(db, employment_type_code="4", enabled=False,
+                     working_hours_only=False, allowed_on_holidays=True)
+        day = _future_non_friday()
+        resp = _post_hourly(client, target["user_id"], day)
+        assert resp.status_code == 302
+        assert "error=" in resp.headers["location"]
+        assert "فعال" in unquote(resp.headers["location"])
+        db.expire_all()
+        assert db.query(HourlyMission).count() == 0
+    finally:
+        _cleanup_policies(db)
+        _cleanup_attendance_policies(db)
+
+
+def test_submit_hourly_mission_outside_working_hours_rejected(client, db, make_user):
+    _cleanup_policies(db)
+    try:
+        _as_super(client, make_user)
+        target = make_user(role="user", balance_al=None)
+        emp = db.query(Employee).filter(
+            Employee.user_id == target["user_id"]).one()
+        assert emp.department == "4"
+        _seed_policy(db, employment_type_code="4", enabled=True,
+                     working_hours_only=True, allowed_on_holidays=True)
+        _seed_attendance_policy(db, department="4",
+                                workday_start=time(7, 0),
+                                workday_end=time(15, 0))
+        # pick a working day (Mon-Thu, Sat) by Gregorian weekday
+        d = jdatetime.date.today() + timedelta(days=7)
+        while d.togregorian().weekday() in (4,):  # skip Friday
+            d += timedelta(days=1)
+        day = d.strftime("%Y/%m/%d")
+        # 16:00-18:00 is after shift end 15:00
+        resp = _post_hourly(client, target["user_id"], day,
+                            start="16:00", end="18:00")
+        assert resp.status_code == 302
+        assert "error=" in resp.headers["location"]
+        db.expire_all()
+        assert db.query(HourlyMission).count() == 0
+    finally:
+        _cleanup_policies(db)
+        _cleanup_attendance_policies(db)
+
+
+def test_submit_hourly_mission_holiday_rejected(client, db, make_user):
+    _cleanup_policies(db)
+    _cleanup_holidays(db)
+    _cleanup_attendance_policies(db)
+    try:
+        _as_super(client, make_user)
+        target = make_user(role="user", balance_al=None)
+        _seed_policy(db, employment_type_code="4", enabled=True,
+                     working_hours_only=False, allowed_on_holidays=False)
+        day = _future_friday()
+        resp = _post_hourly(client, target["user_id"], day)
+        assert resp.status_code == 302
+        assert "error=" in resp.headers["location"]
+        assert "تعطیل" in unquote(resp.headers["location"])
+        db.expire_all()
+        assert db.query(HourlyMission).count() == 0
+    finally:
+        _cleanup_policies(db)
+        _cleanup_holidays(db)
+        _cleanup_attendance_policies(db)
+
+
+def test_submit_hourly_mission_overlap_rejected(client, db, make_user):
+    _cleanup_policies(db)
+    _cleanup_attendance_policies(db)
+    try:
+        _as_super(client, make_user)
+        target = make_user(role="user", balance_al=None)
+        _seed_policy(db, employment_type_code="4", enabled=True,
+                     working_hours_only=False, allowed_on_holidays=True)
+        day = _future_non_friday()
+        # first OK
+        r1 = _post_hourly(client, target["user_id"], day,
+                          start="09:00", end="11:00")
+        assert "success=" in r1.headers["location"]
+        # overlapping second → reject
+        r2 = _post_hourly(client, target["user_id"], day,
+                          start="10:00", end="12:00")
+        assert "error=" in r2.headers["location"]
+        assert "تداخل" in unquote(r2.headers["location"])
+        db.expire_all()
+        assert db.query(HourlyMission).filter(
+            HourlyMission.user_id == target["user_id"]).count() == 1
+    finally:
+        _cleanup_policies(db)
+        _cleanup_attendance_policies(db)
+
+
+def test_submit_hourly_mission_multi_day_rejected(client, db, make_user):
+    _cleanup_policies(db)
+    try:
+        _as_super(client, make_user)
+        target = make_user(role="user", balance_al=None)
+        from_str = _future_non_friday()
+        # to_date different from from_date
+        to_str = (jdatetime.datetime.strptime(from_str, "%Y/%m/%d").date()
+                  + timedelta(days=2)).strftime("%Y/%m/%d")
+        resp = _post_hourly(client, target["user_id"], from_str,
+                            to_date=to_str)
+        assert resp.status_code == 302
+        assert "error=" in resp.headers["location"]
+        assert "یک روز" in unquote(resp.headers["location"])
+        db.expire_all()
+        assert db.query(HourlyMission).count() == 0
+    finally:
+        _cleanup_policies(db)
+
+
+def test_submit_hourly_mission_unknown_employee_rejected(client, db, make_user):
+    _cleanup_policies(db)
+    try:
+        _as_super(client, make_user)
+        day = _future_non_friday()
+        resp = _post_hourly(client, "NO-SUCH-USER", day)
+        assert resp.status_code == 302
+        assert "error=" in resp.headers["location"]
+        db.expire_all()
+        assert db.query(HourlyMission).count() == 0
+    finally:
+        _cleanup_policies(db)
+
+
+# --- Regression: M and R still work ---
+def test_daily_mission_still_works(client, db, make_user):
+    _as_super(client, make_user)
+    target = make_user(role="user", balance_al=None)
+    day = _future_non_friday()
+    resp = client.post("/admin/daily-status/add", data={
+        "user_id": target["user_id"],
+        "from_date": day,
+        "status_code": "M",
+        "description": "مأموریت روزانه",
+    }, follow_redirects=False)
+    assert resp.status_code == 302
+    assert "success=" in resp.headers["location"]
+    db.expire_all()
+    rows = db.query(DailyStatus).filter(
+        DailyStatus.user_id == target["user_id"]).all()
+    assert len(rows) == 1
+    assert rows[0].status_code == "M"
+    # no HourlyMission from M submission
+    assert db.query(HourlyMission).filter(
+        HourlyMission.user_id == target["user_id"]).count() == 0
+
+
+def test_rest_still_works(client, db, make_user):
+    _as_super(client, make_user)
+    target = make_user(role="user", balance_al=None)
+    day = _future_non_friday()
+    resp = client.post("/admin/daily-status/add", data={
+        "user_id": target["user_id"],
+        "from_date": day,
+        "status_code": "R",
+        "description": "",
+    }, follow_redirects=False)
+    assert resp.status_code == 302
+    assert "success=" in resp.headers["location"]
+    db.expire_all()
+    rows = db.query(DailyStatus).filter(
+        DailyStatus.user_id == target["user_id"]).all()
+    assert len(rows) == 1
+    assert rows[0].status_code == "R"
+    assert db.query(HourlyMission).filter(
+        HourlyMission.user_id == target["user_id"]).count() == 0
+
+
+def test_hourly_mission_ignores_extra_time_fields_for_m(client, db, make_user):
+    """When status is M, start/end times must be ignored (no HourlyMission)."""
+    _as_super(client, make_user)
+    target = make_user(role="user", balance_al=None)
+    day = _future_non_friday()
+    resp = client.post("/admin/daily-status/add", data={
+        "user_id": target["user_id"],
+        "from_date": day,
+        "status_code": "M",
+        "description": "",
+        "start_time": "09:00",
+        "end_time": "17:00",
+    }, follow_redirects=False)
+    assert resp.status_code == 302
+    assert "success=" in resp.headers["location"]
+    db.expire_all()
+    assert db.query(HourlyMission).count() == 0
+    assert db.query(DailyStatus).filter(
+        DailyStatus.user_id == target["user_id"],
+        DailyStatus.status_code == "M",
+    ).count() == 1

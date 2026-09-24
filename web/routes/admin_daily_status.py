@@ -1,5 +1,5 @@
 """پنل مدیریت مأموریت و استراحت"""
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -12,12 +12,17 @@ from sqlalchemy.orm import Session
 
 from models.daily_status import DailyStatus, STATUS_CODES
 from models.employee import Employee
+from models.hourly_mission import HourlyMission
 from models.user import User
 from web.dependencies import get_db, require_admin
 from web.permissions import enforce_permission
+from web.services.hourly_mission_service import validate_hourly_mission_request
 
 router = APIRouter(tags=["Admin Daily Status"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
+
+# نوع عملیات فرم برای مأموریت ساعتی — فقط در POST؛ هرگز در daily_statuses نوشته نمی‌شود
+HOURLY_MISSION_FORM_STATUS = "hourly_mission"
 
 
 def build_redirect_url(referer: str, key: str, value: str) -> str:
@@ -55,6 +60,80 @@ def filter_query_string(
     if show_all:
         params["show_all"] = show_all
     return urlencode(params)
+
+
+def _parse_clock(value: str | None, label: str) -> time:
+    """Parse HH:MM (or HH:MM:SS) from the form. Empty → ValueError."""
+    text = (value or "").strip()
+    if not text:
+        raise ValueError(f"{label} الزامی است")
+    for fmt in ("%H:%M", "%H:%M:%S"):
+        try:
+            return datetime.strptime(text, fmt).time()
+        except ValueError:
+            continue
+    raise ValueError(f"{label} نامعتبر است")
+
+
+def _add_hourly_mission(
+    db: Session,
+    referer: str,
+    user_id: str,
+    from_date: str,
+    to_date: str | None,
+    start_time_str: str | None,
+    end_time_str: str | None,
+    description: str,
+) -> RedirectResponse:
+    """
+    ثبت HourlyMission از همان POST فرم daily-status.
+
+    فقط orchestration: parse → validate (سرویس فاز ۲) → ذخیره status='P'.
+    هیچ منطق business (start<end / hours / holiday / overlap / policy) اینجا نیست.
+    هیچ DailyStatus ایجاد نمی‌شود.
+    """
+    from_text = (from_date or "").strip()
+    if not from_text:
+        raise ValueError("تاریخ الزامی است")
+    from_date_j = jdatetime.datetime.strptime(from_text, "%Y/%m/%d").date()
+
+    to_text = (to_date or "").strip()
+    if to_text and to_text != from_text:
+        raise ValueError(
+            "مأموریت ساعتی فقط برای یک روز قابل ثبت است "
+            "(«از تاریخ» و «تا تاریخ» باید یکسان باشند)"
+        )
+
+    start_t = _parse_clock(start_time_str, "ساعت شروع")
+    end_t = _parse_clock(end_time_str, "ساعت پایان")
+
+    mission_date = from_date_j.togregorian()
+    employee = db.query(Employee).filter(Employee.user_id == user_id).first()
+
+    is_valid, error_msg = validate_hourly_mission_request(
+        db, employee, mission_date, start_t, end_t
+    )
+    if not is_valid:
+        raise ValueError(error_msg or "مأموریت ساعتی نامعتبر است")
+
+    db.add(
+        HourlyMission(
+            user_id=user_id,
+            mission_date=mission_date,
+            start_time=start_t,
+            end_time=end_t,
+            reason=description.strip() or None,
+            status="P",
+        )
+    )
+    db.commit()
+
+    return RedirectResponse(
+        url=build_redirect_url(
+            referer, "success", "درخواست مأموریت ساعتی با موفقیت ثبت شد."
+        ),
+        status_code=302,
+    )
 
 
 @router.get("/daily-status", response_class=HTMLResponse)
@@ -199,10 +278,12 @@ async def add_daily_status(
     to_date: str | None = Form(None),
     status_code: str = Form(...),
     description: str = Form(""),
+    start_time: str | None = Form(None),
+    end_time: str | None = Form(None),
     user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    """ثبت مأموریت یا استراحت برای بازه تاریخی"""
+    """ثبت مأموریت/استراحت روزانه یا مأموریت ساعتی"""
     enforce_permission(db, user, "view_all_attendance")
     referer = request.headers.get("referer", "/admin/daily-status")
 
@@ -211,6 +292,20 @@ async def add_daily_status(
         normalized_status = status_code.strip()
         if not normalized_user_id:
             raise ValueError("کد پرسنلی الزامی است")
+
+        # branching: hourly_mission → HourlyMission (نه DailyStatus)
+        if normalized_status == HOURLY_MISSION_FORM_STATUS:
+            return _add_hourly_mission(
+                db,
+                referer,
+                normalized_user_id,
+                from_date,
+                to_date,
+                start_time,
+                end_time,
+                description,
+            )
+
         if normalized_status not in STATUS_CODES:
             raise ValueError(f"کد وضعیت نامعتبر: {normalized_status}")
 

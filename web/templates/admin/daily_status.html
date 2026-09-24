@@ -80,7 +80,16 @@
                     {% for code, name in status_codes.items() %}
                     <option value="{{ code }}">{{ name }}</option>
                     {% endfor %}
+                    <option value="hourly_mission">مأموریت ساعتی</option>
                 </select>
+            </div>
+            <div class="col-6 col-md-2 d-none" id="hm-start-wrap">
+                <label class="form-label" for="start_time">ساعت شروع <span class="text-danger">*</span></label>
+                <input type="time" id="start_time" name="start_time" class="form-control" autocomplete="off">
+            </div>
+            <div class="col-6 col-md-2 d-none" id="hm-end-wrap">
+                <label class="form-label" for="end_time">ساعت پایان <span class="text-danger">*</span></label>
+                <input type="time" id="end_time" name="end_time" class="form-control" autocomplete="off">
             </div>
             <div class="col-12 col-md-3">
                 <label class="form-label" for="description">توضیحات</label>
@@ -93,7 +102,7 @@
             </div>
         </form>
         <div class="form-text mt-2">
-            <i class="bi bi-info-circle"></i> این وضعیت برای <strong>تمام روزهای بازهٔ انتخاب‌شده</strong> ثبت می‌شود. اگر «تا تاریخ» خالی باشد، فقط همان روز ثبت می‌شود. در صورت وجود هرگونه رکورد در بازه، هیچ روزی ثبت نخواهد شد.
+            <i class="bi bi-info-circle"></i> این وضعیت برای <strong>تمام روزهای بازهٔ انتخاب‌شده</strong> ثبت می‌شود. اگر «تا تاریخ» خالی باشد، فقط همان روز ثبت می‌شود. در صورت وجود هرگونه رکورد در بازه، هیچ روزی ثبت نخواهد شد. برای <strong>مأموریت ساعتی</strong> فقط یک روز و با ساعت شروع/پایان ثبت می‌شود.
         </div>
     </div>
 </div>
@@ -283,5 +292,39 @@
     {% endif %}
 </div>
 {% endif %}
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var statusSelect = document.getElementById('status_code');
+    var startWrap = document.getElementById('hm-start-wrap');
+    var endWrap = document.getElementById('hm-end-wrap');
+    var startInput = document.getElementById('start_time');
+    var endInput = document.getElementById('end_time');
+    var fromDate = document.getElementById('from_date');
+    var toDate = document.getElementById('to_date');
+    if (!statusSelect) return;
+
+    function toggleHourlyMissionFields() {
+        var isHM = statusSelect.value === 'hourly_mission';
+        if (startWrap) startWrap.classList.toggle('d-none', !isHM);
+        if (endWrap) endWrap.classList.toggle('d-none', !isHM);
+        if (startInput) startInput.required = isHM;
+        if (endInput) endInput.required = isHM;
+        if (toDate) {
+            toDate.disabled = isHM;
+            if (isHM && fromDate) toDate.value = fromDate.value;
+        }
+    }
+    statusSelect.addEventListener('change', toggleHourlyMissionFields);
+    if (fromDate) {
+        fromDate.addEventListener('change', function() {
+            if (statusSelect.value === 'hourly_mission' && toDate) {
+                toDate.value = this.value;
+            }
+        });
+    }
+    toggleHourlyMissionFields();
+});
+</script>
 
 {% endblock %}
