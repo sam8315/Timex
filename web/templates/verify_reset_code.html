@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}تأیید کد بازیابی | سامانه حضور و غیاب{% endblock %}
+{% block content_full %}
+<div class="min-vh-100 d-flex align-items-center justify-content-center"
+     style="background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);">
+    <div class="card shadow-lg" style="width: 400px;">
+        <div class="card-body p-5">
+            <div class="text-center mb-4">
+                <i class="bi bi-shield-lock display-4 text-primary"></i>
+                <h3 class="mt-2">تأیید کد بازیابی</h3>
+                {% if masked_phone %}
+                <p class="text-muted">کد بازیابی برای شماره <strong class="d-inline-block" dir="ltr" style="unicode-bidi: isolate;">{{ masked_phone }}</strong> ارسال شد</p>
+                {% else %}
+                <p class="text-muted">کد ۶ رقمی ارسال‌شده را وارد کنید</p>
+                {% endif %}
+            </div>
+            {% if error %}
+            <div class="alert alert-danger">{{ error }}</div>
+            {% endif %}
+            <form method="post" action="/verify-reset-code">
+                <div class="mb-3">
+                    <label class="form-label">کد بازیابی (۶ رقم)</label>
+                    <div class="input-group">
+                        <span class="input-group-text"><i class="bi bi-key"></i></span>
+                        <input type="text" name="otp" class="form-control"
+                               required maxlength="6" autocomplete="one-time-code"
+                               oninput="this.value=this.value.replace(/[۰-۹]/g,d=>d.charCodeAt(0)-0x06F0).replace(/[٠-٩]/g,d=>d.charCodeAt(0)-0x0660).replace(/[^0-9]/g,'').slice(0,6)">
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="bi bi-check2"></i> تأیید کد
+                </button>
+            </form>
+            <div class="mt-3 text-center">
+                {% if cooldown_remaining is not none and cooldown_remaining > 0 %}
+                <button id="resendBtn" class="btn btn-outline-secondary w-100" disabled>
+                    <i class="bi bi-arrow-clockwise"></i> ارسال مجدد کد ({{ cooldown_remaining }}s)
+                </button>
+                <script>
+                    var remaining = {{ cooldown_remaining }};
+                    var resendBtn = document.getElementById('resendBtn');
+                    var interval = setInterval(function() {
+                        remaining--;
+                        if (remaining <= 0) {
+                            clearInterval(interval);
+                            resendBtn.disabled = false;
+                            resendBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> ارسال مجدد کد';
+                        } else {
+                            resendBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> ارسال مجدد کد (' + remaining + 's)';
+                        }
+                    }, 1000);
+                </script>
+                {% else %}
+                <form method="post" action="/verify-reset-code" class="d-inline">
+                    <input type="hidden" name="resend" value="1">
+                    <button type="submit" class="btn btn-outline-primary w-100">
+                        <i class="bi bi-arrow-clockwise"></i> ارسال مجدد کد
+                    </button>
+                </form>
+                {% endif %}
+            </div>
+            <div class="text-center mt-3">
+                <a href="/login" class="text-decoration-none">بازگشت به صفحه ورود</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
