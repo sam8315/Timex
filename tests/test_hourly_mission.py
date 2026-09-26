@@ -50,6 +50,16 @@ Phase 6B (PDF / Excel / Raw Report):
 - multiple missions sorted by start_time; date-range filtered
 - group report: no mix across employees; bulk query (no N+1)
 - display independent of deduct policy; no required-minutes recompute
+
+Phase 6C (monthly reports Effective Required audit):
+- detailed/full generator uses the shared compute_effective_required_minutes_for_day
+- approved HM (policy on) deducts from monthly Required; policy off → display only
+- DailyStatus M / rest / all full-day leave types (incl. CW) → zero duty
+- policy non-working days render as تعطیل (not غایب); summary mission_days
+- summary totals, attendance-only morning/evening/night, weekly overtime boundary
+- both routes show Required from the same generator; no (7:20) labels
+- monthly-stats regression: no hourly mission text
+- daily-status HM time fields use the HL time-input markup
 """
 from datetime import date, time, timedelta
 
@@ -2655,4 +2665,581 @@ class TestRawReportHtmlHourlyMission:
             assert "مأموریت ساعتی 09:00 تا 11:00" not in resp.text
         finally:
             _cleanup_missions(db, creds["user_id"])
+
+
+# ---------------------------------------------------------------------------
+# Phase 6C — monthly reports (گزارش تفصیلی / کامل): Effective Required audit
+# ---------------------------------------------------------------------------
+# ماه گزارش: 1406/01 = 2027-03-21 .. 2027-04-20 (31 روز — فروردین 31 روزه).
+# سیاست پایهٔ این تست‌ها: Mon-Thu+Sat 07:00–15:00 = 480 دقیقه → 22 روز کاری
+# (22 کاری + 4 جمعه + 5 یکشنبه = 31).
+P6C_SUNDAY = date(2027, 3, 21)      # 1406/01/01 — یکشنبه (غیرکاری در Policy)
+P6C_TUESDAY = date(2027, 3, 23)
+P6C_WEDNESDAY = date(2027, 3, 24)
+P6C_THURSDAY = date(2027, 3, 25)
+# MONDAY = 2027-03-22 و FRIDAY = 2027-03-26 — در بالای فایل تعریف شده‌اند
+P6C_WORKDAYS = 22
+P6C_DUTY_HOURS = 176.0
+P6C_WORK_WEEKDAYS = (0, 1, 2, 3, 5)
+
+
+def _p6c_base(db, make_user):
+    """Employee دپارتمان 4 + سیاست حضور 480 دقیقه‌ای + پاک‌سازی policy قبلی."""
+    _cleanup_policies(db)
+    _cleanup_attendance_policies(db, "4")
+    _cleanup_holidays(db)
+    emp, creds = _employee(db, make_user)
+    _seed_attendance_policy(db, department="4",
+                            workday_start=time(7, 0),
+                            workday_end=time(15, 0))
+    return emp, creds
+
+
+def _p6c_teardown(db, user_id):
+    _cleanup_missions(db, user_id)
+    _cleanup_policies(db)
+    _cleanup_attendance_policies(db, "4")
+    _cleanup_holidays(db)
+    _cleanup_daily_statuses(db, user_id)
+
+
+def _p6c_report(monkeypatch, user_id, year=RAW_YEAR, month=RAW_MONTH):
+    """گزارش ماهانه از generator واقعی — روی DB تست (همان مسیر هر دو route)."""
+    from tests.conftest import TestingSessionLocal
+    from core.detailed_monthly_report_v2 import DetailedMonthlyReportGeneratorV2
+    monkeypatch.setattr(
+        "core.detailed_monthly_report_v2.SessionLocal", TestingSessionLocal)
+    gen = DetailedMonthlyReportGeneratorV2()
+    try:
+        report = gen.generate_detailed_report(user_id, year, month)
+    finally:
+        gen.close()
+    assert report.get("success"), report.get("message")
+    return report
+
+
+def _p6c_day(report, g_date):
+    for d in report["days"]:
+        if d["date"] == g_date:
+            return d
+    raise AssertionError(f"day {g_date} not found in report")
+
+
+def _p6c_seed_leave(db, user_id, day, leave_type="AL", status="A",
+                    start=None, end=None):
+    from models.leave_request import LeaveRequest
+    req = LeaveRequest(
+        user_id=user_id, leave_type=leave_type,
+        from_date=day, to_date=day,
+        days_count=0 if start else 1,
+        status=status, start_time=start, end_time=end,
+    )
+    db.add(req)
+    db.commit()
+    return req
+
+
+def _p6c_seed_status(db, user_id, day, code):
+    db.add(DailyStatus(user_id=user_id, status_date=day, status_code=code))
+    db.commit()
+
+
+def _p6c_seed_punches(db, user_id, day, start_t, end_t):
+    from datetime import datetime
+    from models.attendance import Attendance
+    for punch, t in ((0, start_t), (1, end_t)):
+        db.add(Attendance(
+            user_id=user_id,
+            timestamp=datetime(day.year, day.month, day.day,
+                               t.hour, t.minute),
+            punch=punch, source="M",
+        ))
+    db.commit()
+
+
+def _p6c_count_working_days(jy, jm):
+    """تعداد روزهای کاری Policy (Mon-Thu+Sat) در یک ماه جلالی (بدون Holiday)."""
+    count = 0
+    for day_no in range(1, 32):
+        try:
+            g = jdatetime.date(jy, jm, day_no).togregorian()
+        except ValueError:
+            break
+        if g.weekday() in P6C_WORK_WEEKDAYS:
+            count += 1
+    return count
+
+
+def _p6c_working_day_in_current_month():
+    """روز کاری Policy در ماه جلالی جاری (برای تست‌های route)."""
+    today_j = jdatetime.date.today()
+    for day_no in range(1, 32):
+        try:
+            d = jdatetime.date(today_j.year, today_j.month, day_no)
+        except ValueError:
+            break
+        if d.togregorian().weekday() in P6C_WORK_WEEKDAYS:
+            return d
+    raise AssertionError("no policy-working day in current Jalali month")
+
+
+class TestMonthlyReportEffectiveRequired:
+    """Effective Required در گزارش ماهانه — واحد با compute_required_minutes_for_range."""
+
+    def test_base_required_and_day_status(self, db, make_user, monkeypatch):
+        """روز عادی 480؛ جمعه/یکشنبهٔ Policy غیرکاری = تعطیل (نه غایب)."""
+        emp, creds = _p6c_base(db, make_user)
+        try:
+            report = _p6c_report(monkeypatch, creds["user_id"])
+
+            monday = _p6c_day(report, MONDAY)
+            assert monday["daily_duty"] == 8.0
+            assert monday["has_duty"] is True
+            assert monday["person_status"] == "A"   # بدون تردد → غایب
+            # تک‌منبع: همان عدد از compute_required_minutes_for_range
+            assert _hm_required(db, emp) == 480
+
+            friday = _p6c_day(report, FRIDAY)
+            assert friday["is_friday"] is True
+            assert friday["is_day_off"] is True
+            assert friday["person_status"] == "H"
+            assert friday["daily_duty"] == 0.0
+
+            # روز غیرکاری Policy (یکشنبه) هم «تعطیل» است — نه «غایب»
+            sunday = _p6c_day(report, P6C_SUNDAY)
+            assert sunday["is_day_off"] is True
+            assert sunday["day_status"] == "تعطیل"
+            assert sunday["person_status"] == "H"
+            assert sunday["daily_duty"] == 0.0
+
+            assert report["summary"]["duty_days"] == P6C_WORKDAYS
+            assert report["summary"]["duty_hours"] == P6C_DUTY_HOURS
+        finally:
+            _p6c_teardown(db, creds["user_id"])
+
+    def test_approved_hm_deducts_from_required(self, db, make_user, monkeypatch):
+        """فقط status='A': 480 − 120 = 360 دقیقه (6.00 ساعت) در هر دو مسیر."""
+        emp, creds = _p6c_base(db, make_user)
+        try:
+            _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                                  start=time(9, 0), end=time(11, 0),
+                                  status="A")
+            report = _p6c_report(monkeypatch, creds["user_id"])
+
+            monday = _p6c_day(report, MONDAY)
+            assert monday["hourly_mission_minutes"] == 120
+            assert monday["daily_duty"] == 6.0
+            assert monday["hourly_mission_display"] == \
+                "مأموریت ساعتی 09:00 تا 11:00"
+            # وضعیت فرد دست نمی‌خورد (بدون تردد → A، نه مأموریت کامل)
+            assert monday["person_status"] == "A"
+            # خلاصه: 176 − 2 = 174 ساعت
+            assert report["summary"]["duty_hours"] == 174.0
+            assert report["summary"]["duty_days"] == P6C_WORKDAYS
+            # تک‌منبع: همان عدد از compute_required_minutes_for_range
+            assert _hm_required(db, emp) == 360
+        finally:
+            _p6c_teardown(db, creds["user_id"])
+
+    def test_hm_policy_off_shows_display_but_no_deduction(
+            self, db, make_user, monkeypatch):
+        """deduct policy خاموش → نمایش هست، Required دست نمی‌خورد."""
+        emp, creds = _p6c_base(db, make_user)
+        try:
+            _seed_policy(db, employment_type_code="4",
+                         deduct_from_required_minutes=False)
+            _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                                  start=time(9, 0), end=time(11, 0),
+                                  status="A")
+            report = _p6c_report(monkeypatch, creds["user_id"])
+
+            monday = _p6c_day(report, MONDAY)
+            assert monday["daily_duty"] == 8.0
+            assert monday["hourly_mission_minutes"] == 0
+            assert monday["hourly_mission_display"] == \
+                "مأموریت ساعتی 09:00 تا 11:00"
+            assert report["summary"]["duty_hours"] == P6C_DUTY_HOURS
+            assert _hm_required(db, emp) == 480
+        finally:
+            _p6c_teardown(db, creds["user_id"])
+
+    @pytest.mark.parametrize("status", ["P", "R", "D"])
+    def test_hm_not_approved_no_deduction(self, db, make_user, monkeypatch,
+                                          status):
+        """P/R/D نه کسر می‌شوند و نه نمایش داده می‌شوند."""
+        emp, creds = _p6c_base(db, make_user)
+        try:
+            _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                                  start=time(9, 0), end=time(11, 0),
+                                  status=status)
+            report = _p6c_report(monkeypatch, creds["user_id"])
+
+            monday = _p6c_day(report, MONDAY)
+            assert monday["daily_duty"] == 8.0
+            assert monday["hourly_mission_minutes"] == 0
+            assert monday["hourly_mission_display"] == ""
+            assert _hm_required(db, emp) == 480
+        finally:
+            _p6c_teardown(db, creds["user_id"])
+
+    def test_hm_longer_than_required_clamped_at_zero(
+            self, db, make_user, monkeypatch):
+        """HM 600 دقیقه > موظفی 480 → 0 (clamp)، روز از duty_days خارج."""
+        emp, creds = _p6c_base(db, make_user)
+        try:
+            _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                                  start=time(7, 0), end=time(17, 0),
+                                  status="A")
+            report = _p6c_report(monkeypatch, creds["user_id"])
+
+            monday = _p6c_day(report, MONDAY)
+            assert monday["daily_duty"] == 0.0
+            assert monday["has_duty"] is False
+            assert monday["deficit"] == 0.0
+            assert report["summary"]["duty_days"] == P6C_WORKDAYS - 1
+            assert report["summary"]["duty_hours"] == P6C_DUTY_HOURS - 8
+            assert _hm_required(db, emp) == 0
+        finally:
+            _p6c_teardown(db, creds["user_id"])
+
+    def test_hl_and_hm_both_deduct_in_report(self, db, make_user, monkeypatch):
+        """HL 60 + HM 120 → 480 − 180 = 300 دقیقه (5.00 ساعت) — یک pipeline."""
+        emp, creds = _p6c_base(db, make_user)
+        try:
+            _p6c_seed_leave(db, creds["user_id"], MONDAY, leave_type="HL",
+                            status="A", start=time(9, 0), end=time(10, 0))
+            _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                                  start=time(9, 0), end=time(11, 0),
+                                  status="A")
+            report = _p6c_report(monkeypatch, creds["user_id"])
+
+            monday = _p6c_day(report, MONDAY)
+            assert monday["hourly_leave_minutes"] == 60
+            assert monday["hourly_mission_minutes"] == 120
+            assert monday["daily_duty"] == 5.0
+            # HL روز را مرخصی کامل نمی‌کند
+            assert monday["person_status"] == "A"
+        finally:
+            _p6c_teardown(db, creds["user_id"])
+
+    def test_daily_mission_status_zero_duty(self, db, make_user, monkeypatch):
+        """DailyStatus 'M' → person_status=مأموریت، موظفی 0، نه غایب."""
+        emp, creds = _p6c_base(db, make_user)
+        try:
+            _p6c_seed_status(db, creds["user_id"], MONDAY, "M")
+            report = _p6c_report(monkeypatch, creds["user_id"])
+
+            monday = _p6c_day(report, MONDAY)
+            assert monday["person_status"] == "M"
+            assert monday["person_status_name"] == "مأموریت"
+            assert monday["daily_duty"] == 0.0
+            assert monday["deficit"] == 0.0
+
+            s = report["summary"]
+            assert s["mission_days"] == 1
+            assert s["absent_days"] == P6C_WORKDAYS - 1
+            assert s["duty_days"] == P6C_WORKDAYS - 1
+            assert s["duty_hours"] == P6C_DUTY_HOURS - 8
+            assert _hm_required(db, emp, mission_dates={MONDAY}) == 0
+        finally:
+            _p6c_teardown(db, creds["user_id"])
+
+    def test_rest_status_zero_duty(self, db, make_user, monkeypatch):
+        """DailyStatus 'R' → استراحت، موظفی 0."""
+        emp, creds = _p6c_base(db, make_user)
+        try:
+            _p6c_seed_status(db, creds["user_id"], MONDAY, "R")
+            report = _p6c_report(monkeypatch, creds["user_id"])
+
+            monday = _p6c_day(report, MONDAY)
+            assert monday["person_status"] == "R"
+            assert monday["person_status_name"] == "استراحت"
+            assert monday["daily_duty"] == 0.0
+            assert report["summary"]["rest_days"] == 1
+            assert report["summary"]["absent_days"] == P6C_WORKDAYS - 1
+            assert _hm_required(db, emp, rest_dates={MONDAY}) == 0
+        finally:
+            _p6c_teardown(db, creds["user_id"])
+
+    @pytest.mark.parametrize("leave_type", ["AL", "SL", "RL", "CW", "UL"])
+    def test_full_day_leave_types_zero_duty(self, db, make_user, monkeypatch,
+                                            leave_type):
+        """همهٔ مرخصی‌های روزانه (شامل CW — اصلاح فاز 6C) → L و موظفی 0."""
+        emp, creds = _p6c_base(db, make_user)
+        try:
+            _p6c_seed_leave(db, creds["user_id"], MONDAY,
+                            leave_type=leave_type, status="A")
+            report = _p6c_report(monkeypatch, creds["user_id"])
+
+            monday = _p6c_day(report, MONDAY)
+            assert monday["person_status"] == "L"
+            assert monday["person_status_name"] == "مرخصی"
+            assert monday["daily_duty"] == 0.0
+
+            s = report["summary"]
+            assert s["leave_days"] == 1
+            assert s["absent_days"] == P6C_WORKDAYS - 1
+            assert s["duty_days"] == P6C_WORKDAYS - 1
+            assert s["duty_hours"] == P6C_DUTY_HOURS - 8
+            assert _hm_required(
+                db, emp, leaves_by_date={MONDAY: leave_type}) == 0
+        finally:
+            _p6c_teardown(db, creds["user_id"])
+
+    def test_holiday_row_zero_duty(self, db, make_user, monkeypatch):
+        """Holiday ثبت‌شده → تعطیل، موظفی 0، شمارش holiday_days."""
+        emp, creds = _p6c_base(db, make_user)
+        try:
+            db.add(Holiday(holiday_date=MONDAY, title="تست فاز 6C",
+                           is_national=True, group_id=None))
+            db.commit()
+            report = _p6c_report(monkeypatch, creds["user_id"])
+
+            monday = _p6c_day(report, MONDAY)
+            assert monday["is_holiday"] is True
+            assert monday["is_day_off"] is True
+            assert monday["person_status"] == "H"
+            assert monday["daily_duty"] == 0.0
+
+            s = report["summary"]
+            # 4 جمعه + 5 یکشنبه + MONDAY
+            assert s["holiday_days"] == 10
+            assert s["duty_days"] == P6C_WORKDAYS - 1
+            assert s["duty_hours"] == P6C_DUTY_HOURS - 8
+            assert s["absent_days"] == P6C_WORKDAYS - 1
+            assert _hm_required(db, emp, holiday_dates={MONDAY: None}) == 0
+        finally:
+            _p6c_teardown(db, creds["user_id"])
+
+
+class TestMonthlyReportSummaryAndShifts:
+    """خلاصهٔ ماهانه، تفکیک شیفت (فقط attendance) و اضافه‌کار هفتگی."""
+
+    def test_summary_scenario(self, db, make_user, monkeypatch):
+        """حضور کامل / اضافی / کسری / مرخصی — جمع‌های خلاصه و تراز."""
+        emp, creds = _p6c_base(db, make_user)
+        try:
+            _p6c_seed_punches(db, creds["user_id"], MONDAY,
+                              time(7, 0), time(15, 0))       # 8h → تعادل
+            _p6c_seed_punches(db, creds["user_id"], P6C_TUESDAY,
+                              time(7, 0), time(17, 0))       # 10h → +2
+            _p6c_seed_punches(db, creds["user_id"], P6C_WEDNESDAY,
+                              time(7, 0), time(13, 0))       # 6h → −2
+            _p6c_seed_leave(db, creds["user_id"], P6C_THURSDAY,
+                            leave_type="AL", status="A")
+            report = _p6c_report(monkeypatch, creds["user_id"])
+
+            assert _p6c_day(report, MONDAY)["surplus"] == 0.0
+            assert _p6c_day(report, MONDAY)["deficit"] == 0.0
+            assert _p6c_day(report, P6C_TUESDAY)["surplus"] == 2.0
+            assert _p6c_day(report, P6C_WEDNESDAY)["deficit"] == 2.0
+            assert _p6c_day(report, P6C_THURSDAY)["person_status"] == "L"
+            assert _p6c_day(report, P6C_THURSDAY)["daily_duty"] == 0.0
+
+            s = report["summary"]
+            assert s["duty_days"] == P6C_WORKDAYS - 1
+            assert s["duty_hours"] == P6C_DUTY_HOURS - 8
+            assert s["present_days"] == 3
+            assert s["leave_days"] == 1
+            # 21 روز کاری − ۳ حضور − ۱ مرخصی
+            assert s["absent_days"] == P6C_WORKDAYS - 4
+            assert s["rest_days"] == 0
+            assert s["mission_days"] == 0
+            # 4 جمعه + 5 یکشنبه (بدون Holiday)
+            assert s["holiday_days"] == 9
+            assert s["total_surplus"] == 2.0
+            # کسری: 17 روز بدون تردد (17×8) + کسری چهارشنبه (2)
+            assert s["total_deficit"] == (P6C_WORKDAYS - 4) * 8 + 2.0
+            assert s["net_balance"] == 2.0 - s["total_deficit"]
+            assert s["overall_status"] == "کسری"
+            # تفکیک شیفت فقط از attendance: 7+7+6 صبح، 1+3+0 عصر
+            assert s["total_morning"] == 20.0
+            assert s["total_evening"] == 4.0
+            assert s["total_night"] == 0.0
+        finally:
+            _p6c_teardown(db, creds["user_id"])
+
+    def test_shift_split_from_attendance_only(self, db, make_user, monkeypatch):
+        """صبح/عصر/شب از جفت ورود/خروج — HM به آن اضافه نمی‌شود."""
+        emp, creds = _p6c_base(db, make_user)
+        try:
+            _p6c_seed_punches(db, creds["user_id"], MONDAY,
+                              time(7, 0), time(15, 0))
+            _seed_pending_mission(db, creds["user_id"], day=MONDAY,
+                                  start=time(12, 0), end=time(14, 0),
+                                  status="A")
+            report = _p6c_report(monkeypatch, creds["user_id"])
+
+            monday = _p6c_day(report, MONDAY)
+            assert monday["work_hours"] == 8.0
+            assert monday["morning_hours"] == 7.0   # 07–14 (bucket 6–14)
+            assert monday["evening_hours"] == 1.0    # 14–15 (bucket 14–22)
+            assert monday["night_hours"] == 0.0
+            # HM باز هم از موظفی کم می‌شود: 480 − 120 = 360
+            assert monday["daily_duty"] == 6.0
+        finally:
+            _p6c_teardown(db, creds["user_id"])
+
+    def test_weekly_overtime_current_behavior(self, db, make_user, monkeypatch):
+        """اضافه‌کار هفتگی: هفته از شنبه؛ فقط روزهای همین ماه شمرده می‌شوند."""
+        emp, creds = _p6c_base(db, make_user)
+        try:
+            # پانچِ خارج از ماه (شنبه 2027-03-20 — همان هفته) نباید لحاظ شود
+            _p6c_seed_punches(db, creds["user_id"], date(2027, 3, 20),
+                              time(7, 0), time(19, 0))
+            _p6c_seed_punches(db, creds["user_id"], MONDAY,
+                              time(7, 0), time(16, 0))       # 9h
+            _p6c_seed_punches(db, creds["user_id"], P6C_TUESDAY,
+                              time(7, 0), time(15, 0))       # 8h
+            _p6c_seed_punches(db, creds["user_id"], P6C_WEDNESDAY,
+                              time(7, 0), time(15, 0))       # 8h
+            _p6c_seed_punches(db, creds["user_id"], P6C_THURSDAY,
+                              time(7, 0), time(15, 0))       # 8h
+            report = _p6c_report(monkeypatch, creds["user_id"])
+
+            # هفتهٔ شنبه 2027-03-20 (ماه قبل) تا جمعه 2027-03-26:
+            # کارکرد درون‌ماه 33h در برابر موظفی درون‌ماه 32h → 1h اضافه‌کار
+            assert report["summary"]["weekly_overtime"] == 1.0
+            assert report["summary"]["total_work_hours"] == 33.0
+        finally:
+            _p6c_teardown(db, creds["user_id"])
+
+
+class TestMonthlyReportRoutes:
+    """دو route گزارش + monthly-stats (بدون HM) + UI فرم HM."""
+
+    def test_detailed_route_shows_required_after_hm(
+            self, db, client, make_user, monkeypatch):
+        from tests.conftest import TestingSessionLocal
+        monkeypatch.setattr(
+            "core.detailed_monthly_report_v2.SessionLocal",
+            TestingSessionLocal)
+        _cleanup_policies(db)
+        _cleanup_attendance_policies(db, "4")
+        _cleanup_holidays(db)
+        admin = _as_super(client, make_user)
+        user = make_user(role="user", balance_al=None, department="4")
+        _seed_attendance_policy(db, department="4",
+                                workday_start=time(7, 0),
+                                workday_end=time(15, 0))
+        workday = _p6c_working_day_in_current_month()
+        try:
+            _seed_pending_mission(db, user["user_id"],
+                                  day=workday.togregorian(),
+                                  start=time(9, 0), end=time(11, 0),
+                                  status="A")
+            login_as(client, admin["national_code"])
+            resp = client.post("/reports/monthly-detailed", data={
+                "target_user_id": user["user_id"],
+                "year": workday.year,      # Jalali
+                "month": workday.month,
+            })
+            assert resp.status_code == 200
+            row = _html_row_containing(resp.text,
+                                       workday.strftime("%Y/%m/%d"))
+            assert row != "", "ردیف روز در گزارش تفصیلی یافت نشد"
+            # موظفی = 480 − 120 = 360 دقیقه → 6.00 ساعت (ستون موظفی)
+            assert 'hour-value">6.00</span>' in row
+            assert "مأموریت ساعتی 09:00 تا 11:00" in row
+            # وضعیت فرد نباید به مرخصی/مأموریت کامل تبدیل شود
+            assert 'status-badge">مرخصی' not in row
+            assert 'status-badge">مأموریت</span>' not in row
+        finally:
+            _cleanup_missions(db, user["user_id"])
+            _cleanup_attendance_policies(db, "4")
+            _cleanup_policies(db)
+
+    def test_full_route_shows_required_and_no_720_labels(
+            self, db, client, make_user, monkeypatch):
+        from tests.conftest import TestingSessionLocal
+        from web.routes.reports import format_hhmm
+        monkeypatch.setattr(
+            "core.detailed_monthly_report_v2.SessionLocal",
+            TestingSessionLocal)
+        _cleanup_policies(db)
+        _cleanup_attendance_policies(db, "4")
+        _cleanup_holidays(db)
+        admin = _as_super(client, make_user)
+        user = make_user(role="user", balance_al=None, department="4")
+        _seed_attendance_policy(db, department="4",
+                                workday_start=time(7, 0),
+                                workday_end=time(15, 0))
+        workday = _p6c_working_day_in_current_month()
+        try:
+            _seed_pending_mission(db, user["user_id"],
+                                  day=workday.togregorian(),
+                                  start=time(9, 0), end=time(11, 0),
+                                  status="A")
+            login_as(client, admin["national_code"])
+            resp = client.post("/reports/monthly-full", data={
+                "target_user_id": user["user_id"],
+                "year": workday.year,      # Jalali
+                "month": workday.month,
+            })
+            assert resp.status_code == 200
+            html = resp.text
+
+            # موظفی خلاصه مستقیماً از همان generator:
+            # (تعداد روزهای کاری × 8) − 2 ساعت کسر HM
+            duty_days = _p6c_count_working_days(workday.year, workday.month)
+            expected = (f"{duty_days} روز / "
+                        f"{format_hhmm(duty_days * 8 - 2)} ساعت")
+            assert expected in html
+            assert "مأموریت ساعتی 09:00 تا 11:00" in html
+            # برچسب‌های hard-coded حذف شده‌اند
+            assert "اضافی (7:20)" not in html
+            assert "کسری (7:20)" not in html
+        finally:
+            _cleanup_missions(db, user["user_id"])
+            _cleanup_attendance_policies(db, "4")
+            _cleanup_policies(db)
+
+    def test_monthly_stats_has_no_hourly_mission(self, db, client, make_user):
+        """گزارش آمار ماهیانه عمداً مأموریت ساعتی را نمایش نمی‌دهد."""
+        _cleanup_policies(db)
+        admin = _as_super(client, make_user)
+        user = make_user(role="user", balance_al=None, department="4")
+        workday = _p6c_working_day_in_current_month()
+        try:
+            _seed_pending_mission(db, user["user_id"],
+                                  day=workday.togregorian(),
+                                  start=time(9, 0), end=time(11, 0),
+                                  status="A")
+            login_as(client, admin["national_code"])
+            resp = client.post("/reports/monthly-stats", data={
+                "year": str(workday.year),
+                "month": str(workday.month),
+                "department": "all",
+            })
+            assert resp.status_code == 200
+            assert "مأموریت ساعتی" not in resp.text
+        finally:
+            _cleanup_missions(db, user["user_id"])
+            _cleanup_policies(db)
+
+    def test_daily_status_hm_time_fields_match_hl_markup(
+            self, client, make_user):
+        """فیلدهای ساعت HM: همان markup الگوی HL (text + picker مشترک)."""
+        _as_super(client, make_user)
+        resp = client.get("/admin/daily-status")
+        assert resp.status_code == 200
+        html = resp.text
+
+        assert 'id="start_time"' in html
+        assert 'id="end_time"' in html
+        assert 'id="hm-start-wrap"' in html
+        # time-picker سراسری HL (leave_time.js) روی فیلدهای HM هم فعال است
+        assert "leave_time.js" in html
+
+        start_wrap = html.split('id="hm-start-wrap"', 1)[1][:500]
+        end_wrap = html.split('id="hm-end-wrap"', 1)[1][:500]
+        for wrap in (start_wrap, end_wrap):
+            assert 'type="text"' in wrap
+            assert 'type="time"' not in wrap
+            assert 'pattern="([01][0-9]|2[0-3]):([0-5][0-9])"' in wrap
+            assert 'inputmode="numeric"' in wrap
+            assert 'maxlength="5"' in wrap
+            assert 'dir="ltr"' in wrap
+            assert 'autocomplete="off"' in wrap
+            assert 'data-time-input="true"' in wrap
 

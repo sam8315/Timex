@@ -17,10 +17,12 @@ from models.holiday import Holiday
 from core.time_calculator import calculate_shift_hours
 from web.services.attendance_policy_service import (
     resolve_policy,
-    resolve_required_minutes,
+    resolve_policy_day,
+    compute_effective_required_minutes_for_day,
 )
 from web.services.hourly_leave_service import get_approved_hl_minutes, format_hl_display
 from web.services.hourly_mission_service import (
+    get_approved_hourly_mission_minutes,
     get_approved_hourly_missions_for_display,
     format_hm_display,
 )
@@ -134,6 +136,13 @@ class DetailedMonthlyReportGeneratorV2:
             start_date=g_start, end_date=g_end
         )
 
+        # Phase 6C: Approved HM minutes for Effective Required (policy aware:
+        # only status='A'; deduct_from_required_minutes=False → 0)
+        hm_minutes_by_date = get_approved_hourly_mission_minutes(
+            db=self.db, employee=employee,
+            start_date=g_start, end_date=g_end
+        )
+
         # ✅ ترکیب وضعیت‌ها: DailyStatus اولویت بالاتر دارد
         for leave_date, leave_type in leaves_by_date.items():
             if leave_date not in statuses_by_date:
@@ -149,7 +158,14 @@ class DetailedMonthlyReportGeneratorV2:
             # تعیین وضعیت روز
             is_friday = current.weekday() == 4
             is_holiday = self._is_holiday(current, employee.department)
-            is_day_off = is_friday or is_holiday
+
+            # Phase 6C: سیاست گروه برای روز — روز غیرکاری Policy هم «تعطیل» است
+            # (همان semantics resolve_required_minutes → Non-working = 0)
+            resolved = resolve_policy(self.db, employee, current)
+            policy_day = resolve_policy_day(resolved, current)
+            is_day_off = is_friday or is_holiday or (
+                policy_day is not None and not policy_day.is_working_day
+            )
 
             # تعیین وضعیت فرد
             person_status = self._determine_person_status(
@@ -166,19 +182,25 @@ class DetailedMonthlyReportGeneratorV2:
             attendance_status = day_data['attendance_status']
             has_incomplete = day_data['has_incomplete']
 
-            # تعیین موظفی روز بر اساس سیاست گروه (Policy)
-            resolved = resolve_policy(self.db, employee, current)
-            required_minutes = resolve_required_minutes(
+            # Phase 7: approved HL minutes (display + duty)
+            hl_mins = hl_minutes_by_date.get(current, 0)
+            # Phase 6C: approved HM minutes (duty only — نمایش از hm_by_date)
+            hm_mins = hm_minutes_by_date.get(current, 0)
+
+            # Phase 6C: Effective Required — همان تابع مرکزی
+            # (Base → روز کامل → HL → HM → clamp)؛ DailyStatus 'M' و 'R'
+            # و مرخصی کامل از person_status استخراج می‌شوند.
+            required_minutes = compute_effective_required_minutes_for_day(
                 resolved=resolved,
                 target_date=current,
                 is_holiday=is_holiday,
                 is_leave=person_status['code'] == 'L',
+                is_mission=person_status['code'] == 'M',
                 is_rest=person_status['code'] == 'R',
                 is_friday=is_friday,
+                hourly_leave_minutes=hl_mins,
+                hourly_mission_minutes=hm_mins,
             )
-            # Phase 7: Subtract approved HL minutes from required duty
-            hl_mins = hl_minutes_by_date.get(current, 0)
-            required_minutes = max(0, required_minutes - hl_mins)
             daily_required_hours = required_minutes / 60
 
             # محاسبه اضافی/کسری بر اساس موظفی روز
@@ -219,10 +241,12 @@ class DetailedMonthlyReportGeneratorV2:
                 'night_hours': shift_hours['night'],
                 'has_duty': has_duty,
                 'daily_duty': daily_duty,
-                # 🕐 HL تایید شده برای نمایش (بدون تاثیر روی وضعیت فرد/موظفی)
+                # 🕐 HL تأییدشده برای نمایش (از Effective Required کم شده)
                 'hourly_leave_minutes': hl_mins,
                 'hourly_leave_display': format_hl_display(hl_mins),
-                # 🚗 HM تأییدشده برای نمایش (بدون تاثیر روی وضعیت فرد/موظفی)
+                # 🚗 HM تأییدشده برای نمایش (از Effective Required کم شده —
+                # نمایش همیشگی است، حتی اگر policy کسر خاموش باشد)
+                'hourly_mission_minutes': hm_mins,
                 'hourly_mission_display': format_hm_display(hm_by_date.get(current)),
             })
 
@@ -255,9 +279,12 @@ class DetailedMonthlyReportGeneratorV2:
         """تعیین وضعیت فرد در یک روز"""
         if current in statuses_by_date:
             status_code = statuses_by_date[current]
-            # ✅ بررسی انواع مرخصی
-            if status_code in ['AL', 'SL', 'RL', 'UL', 'L']:
+            # ✅ بررسی انواع مرخصی (همه leave-type های canonical: AL/SL/RL/UL/CW/TL)
+            if status_code in ['AL', 'SL', 'RL', 'UL', 'CW', 'TL', 'L']:
                 return {'code': 'L', 'name': 'مرخصی'}
+            # ✅ مأموریت روزانه (DailyStatus 'M') — موظفی روز صفر است
+            elif status_code == 'M':
+                return {'code': 'M', 'name': 'مأموریت'}
             elif status_code == 'R':
                 return {'code': 'R', 'name': 'استراحت'}
             elif status_code == 'A':
@@ -469,8 +496,12 @@ class DetailedMonthlyReportGeneratorV2:
     def _calculate_monthly_summary(self, days: List[Dict]) -> Dict:
         """محاسبه خلاصه ماهانه"""
         # ✅ شمارش روزها با تفکیک دقیق
-        # روزهای کاری عادی که حاضر بوده
-        present_days = sum(1 for d in days if d['person_status'] == 'P' and not d['is_day_off'])
+        # روزهای کاری (شامل روزهای غیرکاریِ Policy که تردد داشته — جمعه/تعطیل
+        # رسمی جداگانه شمارش می‌شوند)
+        present_days = sum(
+            1 for d in days
+            if d['person_status'] == 'P' and not d['is_friday'] and not d['is_holiday']
+        )
 
         # جمعه‌هایی که حاضر بوده (جمعه کاری)
         friday_work_days = sum(1 for d in days if d['is_friday'] and d['person_status'] == 'P')
@@ -482,6 +513,8 @@ class DetailedMonthlyReportGeneratorV2:
         absent_days = sum(1 for d in days if d['person_status'] == 'A')
         rest_days = sum(1 for d in days if d['person_status'] == 'R')
         holiday_days = sum(1 for d in days if d['person_status'] == 'H')
+        # Phase 6C: روزهای مأموریت روزانه (DailyStatus 'M') — قبلاً غایب شمرده می‌شد
+        mission_days = sum(1 for d in days if d['person_status'] == 'M')
 
         # محاسبه موظفی
         duty_days = sum(1 for d in days if d['has_duty'])
@@ -493,7 +526,7 @@ class DetailedMonthlyReportGeneratorV2:
         total_evening = sum(d['evening_hours'] for d in days)
         total_night = sum(d['night_hours'] for d in days)
 
-        # محاسبه اضافی و کسری بر اساس 7:20
+        # محاسبه اضافی و کسری بر اساس موظفی روز (Policy — بدون فرض 7:20)
         total_surplus = sum(d['surplus'] for d in days)
         total_deficit = sum(d['deficit'] for d in days)
 
@@ -528,6 +561,7 @@ class DetailedMonthlyReportGeneratorV2:
             'absent_days': absent_days,
             'rest_days': rest_days,
             'holiday_days': holiday_days,
+            'mission_days': mission_days,
             'friday_work_days': friday_work_days,
             'holiday_work_days': holiday_work_days,  # ✅ اضافه شد
             'total_work_hours': round(total_work_hours, 2),

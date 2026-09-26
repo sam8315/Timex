@@ -55,12 +55,33 @@
 | **فاز ۵** | اتصال مأموریت تأییدشده (`status='A'`) به `compute_required_minutes_for_range` (`deduct_from_required_minutes`) + تست‌ها — **بدون UI/گزارش جدا/نوتیفیکیشن** | ✅ انجام شد |
 | **فاز ۶A** | نمایش HM در UI/گزارش‌های موجود (badge کنار HL در attendance + گزارش‌های ماهانه) + تست‌ها — **بدون PDF/Excel/Raw Report/طراحی مجدد/محاسبه مجدد** | ✅ انجام شد |
 | **فاز ۶B** | نمایش HM در PDF / Excel / Raw Report موجود + تست‌ها — **بدون punch مصنوعی/محاسبه مجدد Required/طراحی مجدد/report جدید** | ✅ انجام شد |
+| **فاز ۶C** | ممیزی و اصلاح گزارش کامل/تفصیلی ماهیانه با logic مشترک Effective Required + فیلدهای ساعت HM با الگوی HL + تست‌ها — **بدون تغییر model/monthly-stats/طراحی مجدد** | ✅ انجام شد |
 
 > ترتیب فازها ممکن است با صلاحدید کاربر تغییر کند؛ اما هر فاز فقط در محدوده خودش کار کند.
 
 ---
 
 ## ۴. وضعیت فاز فعلی
+
+**فاز ۶C — تکمیل شده (ممیزی/اصلاح گزارش‌های ماهانه).** ۱۴۲ تست.
+
+انجام شده در فاز ۶C:
+
+1. `web/services/attendance_policy_service.py` — تابع مرکزی جدید `compute_effective_required_minutes_for_day(resolved, target_date, is_holiday, is_leave, is_mission, is_rest, is_friday, hourly_leave_minutes, hourly_mission_minutes)`:
+   - Base Required → قوانین روز کامل → HL تأییدشده → HM تأییدشده → `max(0, …)`.
+   - `compute_required_minutes_for_range` بازنویسی شد تا از همین تابع استفاده کند (حذف duplicate) — **یک خط محاسبه برای همه**.
+2. `core/detailed_monthly_report_v2.py` — گزارش تفصیلی/کامل:
+   - fetch جدید `hm_minutes_by_date = get_approved_hourly_mission_minutes(...)`؛ محاسبهٔ موظفی روز از helper مرکزی (نه `resolve_required_minutes` خام).
+   - روز غیرکاریِ Policy هم `is_day_off` و `day_status='تعطیل'` می‌شود (قبلاً «غایب» شمرده می‌شد).
+   - `_determine_person_status`: همهٔ مرخصی‌های روزانه شامل **`CW`** → `L`؛ شاخه جدید `M` (DailyStatus مأموریت روزانه) → `مأموریت` (قبلاً غایب محسوب می‌شد)؛ `R` → استراحت.
+   - summary: `mission_days` اضافه شد؛ `present_days` روزهای جمعه/تعطیل رسمی را شامل نمی‌شود.
+   - فیلد جدید day dict: `hourly_mission_minutes` (مقدار کسری — با policy خاموش = 0) کنار `hourly_mission_display` (نمایش همیشگی).
+3. `web/templates/admin/report_monthly_detailed.html` — badge جدید `مأموریت` (M) + خط راهنما.
+4. `web/templates/admin/report_monthly_full.html` — badge جدید `مأموریت` + آیتم خلاصه `🎖️ مأموریت:`؛ حذف برچسب‌های hard-coded `(7:20)` از «اضافی/کسری».
+5. `web/templates/admin/daily_status.html` — فیلدهای ساعت HM به markup الگوی HL تبدیل شدند (`type="text"` + pattern/inputmode/maxlength/dir + `data-time-input="true"`)؛ idها (`start_time`/`end_time`) و JS toggle حفظ شد → time-picker سراسری `leave_time.js` فعال می‌شود.
+6. `tests/test_hourly_mission.py` — ۲۳ تست Phase 6C (جمعاً ۱۴۲): Effective Required (base/HM/policy off/P-R-D/clamp/HL+HM/M/R/انواع مرخصی/Holiday)، خلاصه و تفکیک شیفت و اضافه‌کار هفتگی، routeهای تفصیلی/کامل، regression `monthly-stats` (بدون HM)، markup فیلدهای HM.
+7. اجرای سریال: `test_hourly_mission.py` → **142 passed**؛ `test_raw_report_fixes.py` → **62 passed**؛ HL+HL-int+daily_status → **69 passed**؛ attendance+mission+reports+filters → **48 passed**؛ `test_attendance_policy_integration.py` → **11 passed**.
+8. به‌روزرسانی همین راهنما.
 
 **فاز ۶B — تکمیل شده (نمایش در PDF / Excel / Raw Report).** ۱۱۹ تست.
 
@@ -376,7 +397,7 @@ category = hourly_mission
 
 | دستور / محدوده | نتیجه |
 |----------------|--------|
-| `pytest tests/test_hourly_mission.py` (۸۵ تست = ۱۶ فاز ۱ + ۲۳ فاز ۲ + ۱۵ فاز ۳ + ۱۵ فاز ۴ + ۱۶ فاز ۵، **ایزوله**) | ✅ **85 passed** (~31s) |
+| `pytest tests/test_hourly_mission.py` (۱۴۲ تست = ۸۵ فازهای ۱–۵ + ~۱۵ فاز ۶A + ~۱۹ فاز ۶B + ۲۳ فاز ۶C، **ایزوله**) | ✅ **142 passed** (~63s) |
 | `pytest tests/test_hourly_mission.py tests/test_daily_status.py tests/test_hourly_leave_integration.py tests/test_attendance_policy_service.py` (سریال) | ⚠️ **19 failed, 154 passed** — هر ۱۹ شکست pre-existing در `test_attendance_policy_service` (خطای API قدیمی `required_minutes`/`compute_late`)؛ فایل‌های مأموریت/leave/daily_status صفر شکست |
 | `pytest tests/test_policy.py tests/test_daily_status.py tests/test_hourly_leave_integration.py` روی درخت تمیز (git stash) | ⚠️ **15 failed, 50 passed** — شکست‌ها **pre-existing** ناشی از آلودگی DB مشترک بین تست‌ها |
 | `pytest` کل suite | ⚠️ ۲۱ تست ناموفق pre-existing شناخته‌شده (بخش زیر) |
@@ -444,6 +465,21 @@ category = hourly_mission
 - `hourly_mission_minutes_by_date=None` → auto-fetch (single source)
 - isolation: compute هیچ `DailyStatus`/`Attendance`/`LeaveRequest`/`LeaveBalance`/HL نمی‌سازد
 
+**فاز ۶C — گزارش‌های ماهانه و UI فیلد ساعت (۲۳):**
+
+- Effective Required در generator: روز عادی 480 (تک‌منبع با `compute_required_minutes_for_range`)؛ جمعه/یکشنبهٔ Policy = تعطیل/0
+- HM تأییدشده: 480 − 120 = 360 → 6.00 ساعت در سلول موظفی؛ خلاصه 176 − 2 = 174 ساعت
+- policy `deduct=false` → نمایش هست، Required دست نمی‌خورد؛ `P`/`R`/`D` → بدون کسر
+- clamp: HM بزرگ‌تر از موظفی → 0 و خروج از duty_days
+- HL + HM هر دو در یک pipeline (480 − 60 − 120 = 300)
+- DailyStatus `M` → person_status=مأموریت + `mission_days` + موظفی 0؛ `R` → استراحت؛ مرخصی‌های کامل `AL/SL/RL/CW/UL` → L + موظفی 0
+- Holiday → تعطیل + `holiday_days` + موظفی 0
+- خلاصهٔ ماهانه: duty/present/leave/absent/rest/mission/holiday، surplus/deficit/net/overall، جمع صبح/عصر/شب
+- تفکیک شیفت فقط از attendance (HM به آن اضافه نمی‌شود)؛ اضافه‌کار هفتگی (هفته از شنبه؛ فقط روزهای درون ماه)
+- route تفصیلی: سلول موظفی `6.00` + badge HM + بدون badge مرخصی/مأموریت کامل؛ route کامل: `{N} روز / {hhmm} ساعت` + بدون برچسب `(7:20)`
+- `monthly-stats` regression: عبارت «مأموریت ساعتی» در خروجی نیست
+- daily-status: markup فیلدهای HM (text/pattern/inputmode/maxlength/dir/data-time-input) + نبود `type="time"` + وجود `leave_time.js`
+
 ### ⚠️ شکست‌های pre-existing (غیرمرتبط)
 
 تعدادی از تست‌های `test_policy.py` / `test_daily_status.py` / `test_hourly_leave_integration.py` در **اجرای ترکیبی** به‌دلیل آلودگی `timex_test_db` (StaleDataError / 307 / ObjectDeletedError) شکست می‌خورند؛ حتی با `git stash` روی درخت تمیز هم تکرار می‌شوند. **تست فاز ۱ باید ایزوله اجرا شود.**
@@ -464,7 +500,7 @@ category = hourly_mission
 
 1. **این فایل را اول بخوان.** بعد فقط فایل‌های بخش ۶ را باز کن؛ پروژه را از صفر نگرد.
 2. اجرای تست: `.venv\Scripts\python.exe -m pytest` از ریشه. **هرگز دو pytest موازی** ( آلودگی DB مشترک) — و اجرای تکی را هم در یک batch تکرار نکن.
-3. **شاخه کاری:** `work` — commit فاز ۱: `Scope hourly mission policies by group and employee` (`afc210d`). — فاز ۲: `Add hourly mission validation service` (`a50d6b7`). — فاز ۳: `Add hourly mission to daily status form` (`79c6ee0`). — فاز ۴: `Add hourly mission approval and rejection` (`dd2b69f`). — فاز ۵: `Include hourly mission in required minutes` (`1eb3b92`). — فاز ۶A: `Display hourly missions in existing reports` (`d3d8bd5`). — فاز ۶B: `Add hourly missions to PDF Excel and raw reports`.
+3. **شاخه کاری:** `work` — commit فاز ۱: `Scope hourly mission policies by group and employee` (`afc210d`). — فاز ۲: `Add hourly mission validation service` (`a50d6b7`). — فاز ۳: `Add hourly mission to daily status form` (`79c6ee0`). — فاز ۴: `Add hourly mission approval and rejection` (`dd2b69f`). — فاز ۵: `Include hourly mission in required minutes` (`1eb3b92`). — فاز ۶A: `Display hourly missions in existing reports` (`d3d8bd5`). — فاز ۶B: `Add hourly missions to PDF Excel and raw reports` (`9a0e6fb`). — فاز ۶C: `Fix monthly reports calculations and hourly mission UI`.
 4. **سیاست مأموریت ساعتی باید برای گروه/نوع استخدام و employee override قابل تفکیک باشد و هرگز به‌عنوان یک policy global مشترک برای تمام کارکنان resolve نشود.**
 5. **هنگام ثبت مأموریت: فقط `validate_hourly_mission_request(db, employee, date, start, end, exclude_mission_id)` را صدا بزن.** تمام چک‌ها (enabled/ساعت/ساعات موظفی/holiday/غیرکاری/overlap) داخل آن است. `exclude_mission_id` را هنگام ویرایش رد کن تا خود-mأموریت overlap نگیرد.
 6. **هرگز در `LeaveRequest` یا `DailyStatus` رکورد مأموریت ساعتی نساز.** بدون LeaveBalance، بدون punch، بدون تغییر attendance.
@@ -491,6 +527,17 @@ category = hourly_mission
 
 ---
 
+## ۱۱bis. مواردی که عمداً در فاز ۶C انجام **نشد**
+
+- ❌ تغییر `HourlyMission` model / migration / validation / approval / policy
+- ❌ تغییر `LeaveRequest` / `LeaveBalance` / punch / `Attendance` / `Raw` report
+- ❌ نمایش مأموریت ساعتی در `/reports/monthly-stats` (عمداً فقط regression test)
+- ❌ ایجاد صفحه/فرم/report جدید یا طراحی مجدد گزارش‌ها
+- ❌ تغییر `web/static/js/leave_time.js` یا `leave_register.html` (time-picker سراسری بدون تغییر)
+- ❌ تغییر محاسبات PDF/Excel export (فقط مقادیر از generator واحد می‌آیند)
+
+---
+
 ## ۱۲. لاگ تغییرات فازها
 
 | تاریخ | فاز | خلاصه |
@@ -503,6 +550,7 @@ category = hourly_mission
 | ۱۴۰۵/۰۶ (2026-09-24) | ۵ | helper `get_approved_hourly_mission_minutes` + اتصال به `compute_required_minutes_for_range` (auto-fetch اگر None) + اتصال در admin/attendance + ~۱۶ تست (جمعاً ۸۵) + به‌روزرسانی راهنما — بدون تغییر مدل/punch/DailyStatus/Leave/UI |
 | ۱۴۰۵/۰۶ (2026-09-24) | ۶A | helper نمایشی + badge در attendance/گزارش‌های موجود + ~۱۵ تست (جمعاً ۱۰۰) + به‌روزرسانی راهنما — بدون PDF/Excel/Raw/طراحی مجدد/محاسبه مجدد |
 | ۱۴۰۵/۰۶ (2026-09-24) | ۶B | bulk-fetch + فیلد نمایش در day dict خام + اتصال Excel/PDF/HTML raw + ~۱۹ تست (جمعاً ۱۱۹) + به‌روزرسانی راهنما — بدون punch/محاسبه مجدد/طراحی مجدد |
+| ۱۴۰۵/۰۶ (2026-09-26) | ۶C | تابع مرکزی `compute_effective_required_minutes_for_day` + اتصال generator گزارش کامل/تفصیلی + person_status `M`/`CW` + summary `mission_days` + badge M + حذف برچسب `(7:20)` + فیلدهای ساعت HM با markup HL + ۲۳ تست (جمعاً ۱۴۲) + به‌روزرسانی راهنما — بدون تغییر model/monthly-stats/طراحی مجدد |
 
 **فایل‌های نهایی پس از فاز ۶B:**
 
@@ -518,7 +566,21 @@ M  docs/hourly_mission_implementation.md
 
 پیام commit: `Add hourly missions to PDF Excel and raw reports`
 
-**قدم بعدی = فاز بعدی (در صورت نیاز):** dashboard اختصاصی HM، نوتیفیکیشن، یا cancel توسط کاربر. قبل از شروع، بخش‌های ۱، ۵.۵ter، ۵.۵quater، ۵.۵quinquies، ۵.۵sexies و ۱۰ همین فایل را مرور کن.
+**فایل‌های نهایی پس از فاز ۶C:**
+
+```
+M  core/detailed_monthly_report_v2.py
+M  tests/test_hourly_mission.py
+M  web/services/attendance_policy_service.py
+M  web/templates/admin/daily_status.html
+M  web/templates/admin/report_monthly_detailed.html
+M  web/templates/admin/report_monthly_full.html
+M  docs/hourly_mission_implementation.md
+```
+
+پیام commit: `Fix monthly reports calculations and hourly mission UI`
+
+**قدم بعدی = فاز بعدی (در صورت نیاز):** dashboard اختصاصی HM، نوتیفیکیشن، یا cancel توسط کاربر. قبل از شروع، بخش‌های ۱، ۵.۵ter، ۵.۵quater، ۵.۵quinquies، ۵.۵sexies، ۵.۵septies و ۱۰ همین فایل را مرور کن.
 
 ### ۵.۵quater تصمیم‌های فاز ۵ (مهم)
 
@@ -550,9 +612,21 @@ M  docs/hourly_mission_implementation.md
 - **بازه تاریخ:** query با `mission_date >= start AND <= end`؛ مأموریت خارج از بازه نمایش داده نمی‌شود.
 - **Group:** فیلتر per-employee با `user_id`؛ مأموریت بین کارکنان mix نمی‌شود.
 
-### Handoff کوتاه برای مدل بعدی
+### ۵.۵septies تصمیم‌های فاز ۶C (مهم)
 
-فاز ۶B مأموریت ساعتی را به PDF، Excel و Raw Report اضافه کرده است. لایه محاسبه required minutes و UI اصلی در فازهای قبل تکمیل شده‌اند. Helper نمایشی: `format_hm_display` در `hourly_mission_service.py`. اتصال: `core/raw_report.py` (bulk fetch + day dict) → `core/excel_raw_report.py`، `core/pdf_raw_report.py`، `web/templates/admin/report_raw.html`. فقط `status='A'`؛ بدون punch مصنوعی؛ بدون محاسبه مجدد Required؛ نمایش مستقل از deduct policy. ۱۱۹ تست isolated پاس؛ regression سریال: raw 62، HL+int+daily 69، attendance+mission+reports 47.
+- **Single Source of Truth:** `compute_effective_required_minutes_for_day` در `attendance_policy_service.py` — هر دو `compute_required_minutes_for_range` و generator گزارش ماهانه از همان تابع استفاده می‌کنند؛ هیچ محاسبهٔ موازی دومی نساز.
+- **ترتیب محاسبه:** Base Required → قوانین روز کامل (Holiday/Leave/Mission/Rest/غیرکاری) → HL تأییدشده → HM تأییدشده → `max(0, …)`.
+- **Display ≠ Deduction:** `hourly_mission_display` همیشه نمایش داده می‌شود؛ `hourly_mission_minutes` فقط وقتی policy کسر فعال است صفر نیست.
+- **وضعیت فرد:** DailyStatus `M` → «مأموریت» (قبلاً غایب)؛ مرخصی‌های روزانه شامل `CW` → «مرخصی»؛ روز غیرکاریِ Policy → `day_status='تعطیل'` و person `H` (نه «غایب»).
+- **خلاصه:** `mission_days` افزوده شد؛ `present_days` جمعه/تعطیل رسمی را نمی‌شمارد؛ تفکیک صبح/عصر/شب فقط از attendance.
+- **UI فیلد ساعت:** فیلدهای start/end مأموریت ساعتی در daily-status با markup الگوی HL (`type="text"` + pattern + `data-time-input="true"`)؛ idها و JS حفظ شدند.
+- **بدون تغییر:** model/migration/validation/approval/punch/`LeaveRequest`/monthly-stats/صفحهٔ جدید.
+
+### Handoff کوتاه برای مدل بعدی (پس از فاز ۶C)
+
+گزارش کامل و تفصیلی ماهیانه از منطق واحد Effective Required استفاده می‌کنند. مأموریت ساعتی فقط در صورت Approved بودن و فعال بودن deduct policy از موظفی کم می‌شود و به Worked اضافه نمی‌شود. گزارش آمار ماهیانه عمداً مأموریت ساعتی را نمایش نمی‌دهد.
+
+مرجع محاسبه: `compute_effective_required_minutes_for_day` در `web/services/attendance_policy_service.py` (اتصال در `core/detailed_monthly_report_v2.py` + `compute_required_minutes_for_range`). UI فیلد ساعت HM در `web/templates/admin/daily_status.html` با markup الگوی HL. ۱۴۲ تست isolated پاس؛ regression سریال: raw 62، HL+int+daily 69، attendance+mission+reports+filters 48، attendance_policy_integration 11.
 
 مأموریت ساعتی **Leave نیست** — بدون LeaveBalance/punch/تغییر attendance. درس‌های قبلی: `jdatetime.weekday()` شنبه=۰ — برای جمعه از `togregorian().weekday()==4`؛ پیام‌های redirect فارسی را با `unquote` assert کن؛ **هرگز دو pytest موازی**؛ صفحه `/admin/attendance/user/{id}` با `require_admin` است (تست با super_admin).
 

@@ -323,6 +323,43 @@ def resolve_required_minutes(
     return policy_day.required_minutes or 0
 
 
+def compute_effective_required_minutes_for_day(
+    resolved: Optional[ResolvedPolicy],
+    target_date: date,
+    is_holiday: bool = False,
+    is_leave: bool = False,
+    is_mission: bool = False,
+    is_rest: bool = False,
+    is_friday: bool = False,
+    hourly_leave_minutes: int = 0,
+    hourly_mission_minutes: int = 0,
+) -> int:
+    """
+    Effective Required برای یک روز — تنها مرجع مشترک (Single Source of Truth).
+
+    ترتیب محاسبه:
+        Base Required → قوانین روز کامل (Holiday/Leave/Mission/Rest/Non-working)
+        → HL تأییدشده → HM تأییدشده → max(0, …)
+
+    هر دو گزارش ماهانه (DetailedMonthlyReportGeneratorV2) و
+    compute_required_minutes_for_range از همین تابع استفاده می‌کنند تا
+    موظفی در همه جا یکسان محاسبه شود.
+    """
+    base_required = resolve_required_minutes(
+        resolved=resolved,
+        target_date=target_date,
+        is_holiday=is_holiday,
+        is_leave=is_leave,
+        is_mission=is_mission,
+        is_rest=is_rest,
+        is_friday=is_friday,
+    )
+    return max(
+        0,
+        base_required - (hourly_leave_minutes or 0) - (hourly_mission_minutes or 0),
+    )
+
+
 def compute_required_minutes_for_range(
     db: Session,
     employee: Employee,
@@ -339,7 +376,8 @@ def compute_required_minutes_for_range(
     مجموع دقایق موظفی برای یک بازه تاریخی (بر اساس Policy)
 
     جایگزین N_days × DAILY_DUTY_HOURS می‌شود.
-    برای هر روز: resolve_policy → resolve_required_minutes → جمع‌بندی
+    برای هر روز: resolve_policy → compute_effective_required_minutes_for_day
+    (Phase 6C: همان تابع مرکزی گزارش‌های ماهانه — یک خط محاسبه برای همه)
 
     Fallback: اگر Policy وجود نداشته باشد، DEFAULT_REQUIRED_MINUTES (440)
     برای روزهای کاری (غیر جمعه) استفاده می‌شود — رفتار فعلی حفظ می‌شود.
@@ -371,7 +409,9 @@ def compute_required_minutes_for_range(
     current = start_date
     while current <= end_date:
         resolved = resolve_policy(db, employee, current)
-        base_required = resolve_required_minutes(
+        # Phase 6C: واحد — Effective Required از تابع مرکزی ساخته می‌شود
+        # (base → قوانین روز کامل → HL → HM → clamp).
+        effective_required = compute_effective_required_minutes_for_day(
             resolved=resolved,
             target_date=current,
             is_holiday=current in holiday_dates,
@@ -379,13 +419,11 @@ def compute_required_minutes_for_range(
             is_mission=current in mission_dates,
             is_rest=current in rest_dates,
             is_friday=current.weekday() == 4,
+            # Phase 7: approved HL minutes (deducted from required, not actual)
+            hourly_leave_minutes=hourly_leave_minutes_by_date.get(current, 0),
+            # Phase 5: approved HourlyMission minutes (policy applied inside)
+            hourly_mission_minutes=hourly_mission_minutes_by_date.get(current, 0),
         )
-
-        # Phase 7: subtract approved HL minutes from required (not from actual)
-        hl_minutes = hourly_leave_minutes_by_date.get(current, 0)
-        # Phase 5: subtract approved HourlyMission minutes from required
-        hm_minutes = hourly_mission_minutes_by_date.get(current, 0)
-        effective_required = max(0, base_required - hl_minutes - hm_minutes)
 
         total += effective_required
         current += timedelta(days=1)

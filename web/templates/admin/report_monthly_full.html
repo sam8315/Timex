@@ -304,6 +304,8 @@
                             <span class="badge bg-secondary status-pill">استراحت</span>
                             {% elif day.person_status == 'H' %}
                             <span class="badge bg-warning text-dark status-pill">تعطیل</span>
+                            {% elif day.person_status == 'M' %}
+                            <span class="badge bg-primary status-pill">مأموریت</span>
                             {% endif %}
                             {% if day.hourly_leave_minutes %}
                             <br><span class="badge bg-success status-pill">🕐 {{ day.hourly_leave_display }}</span>
@@ -385,6 +387,10 @@
                 <span class="value">{{ report.summary.leave_days }}</span>
             </div>
             <div class="summary-item">
+                <span>🎖️ مأموریت:</span>
+                <span class="value">{{ report.summary.mission_days }}</span>
+            </div>
+            <div class="summary-item">
                 <span>❌ غیبت:</span>
                 <span class="value">{{ report.summary.absent_days }}</span>
             </div>
@@ -421,11 +427,11 @@
         <!-- ستون ۳: اضافی و کسری -->
         <div class="col-md-4">
             <div class="summary-item">
-                <span>➕ اضافی (7:20):</span>
+                <span>➕ اضافی:</span>
                 <span class="value" style="color: #4ade80;">{{ report.summary.total_surplus | hhmm }}</span>
             </div>
             <div class="summary-item">
-                <span>➖ کسری (7:20):</span>
+                <span>➖ کسری:</span>
                 <span class="value" style="color: #f87171;">{{ report.summary.total_deficit | hhmm }}</span>
             </div>
             <div class="summary-item">
