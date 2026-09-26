@@ -208,13 +208,6 @@
                     </div>
                 </div>
 
-                <!-- دکمه ثبت در حالت مرخصی ساعتی، در همان ردیف فیلدها -->
-                <div class="col-12 d-none" id="hlActions">
-                    <button type="submit" class="btn btn-success w-100">
-                        <i class="bi bi-check-lg"></i> ثبت
-                    </button>
-                </div>
-
                 <!-- 🆕 مرخصی توراهی (فقط مرخصی استحقاقی) -->
                 <div class="col-12 d-none" id="tlSection">
                     <div class="card border-primary">
@@ -283,12 +276,10 @@
     </ul>
 </div>
 
-            <div id="normalActions">
-                <button type="submit" class="btn btn-success">
-                    <i class="bi bi-check-lg"></i> ثبت مرخصی
-                </button>
-                <a href="/admin/leave-requests" class="btn btn-outline-secondary">انصراف</a>
-            </div>
+            <button type="submit" class="btn btn-success">
+                <i class="bi bi-check-lg"></i> ثبت مرخصی
+            </button>
+            <a href="/admin/leave-requests" class="btn btn-outline-secondary">انصراف</a>
         </form>
     </div>
 </div>
@@ -493,62 +484,23 @@ const hlDurationText = document.getElementById('hlDurationText');
 function toggleHLFields() {
     const isHL = leaveTypeSelect.value === 'HL';
     const hlNote = document.getElementById('hlNote');
-    const userFieldContainer = document.getElementById('userFieldContainer');
-    const leaveTypeContainer = document.getElementById('leaveTypeContainer');
-    const fromDateContainer = document.getElementById('fromDateContainer');
-    const hlActions = document.getElementById('hlActions');
-    const normalActions = document.getElementById('normalActions');
-
     if (isHL) {
         toDateContainer.classList.add('d-none');
         toDateInput.removeAttribute('required');
         hlTimeContainer.classList.remove('d-none');
         hlDurationContainer.classList.remove('d-none');
-
-        // چیدمان فشرده: کاربر ۲، نوع ۲، تاریخ ۲، ساعت ۳، مدت ۲، ثبت ۱
-        userFieldContainer.classList.remove('col-md-6');
-        userFieldContainer.classList.add('col-md-2');
-        leaveTypeContainer.classList.remove('col-md-6');
-        leaveTypeContainer.classList.add('col-md-2');
-        fromDateContainer.classList.remove('col-md-6');
-        fromDateContainer.classList.add('col-md-2');
-        hlTimeContainer.classList.remove('col-md-6');
-        hlTimeContainer.classList.add('col-md-3');
-        hlDurationContainer.classList.remove('col-md-6');
-        hlDurationContainer.classList.add('col-md-2');
-        hlActions.classList.remove('col-12');
-        hlActions.classList.add('col-md-1');
-        hlActions.classList.remove('d-none');
-        normalActions.classList.add('d-none');
-
-        if (hlNote) {
-            hlNote.classList.remove('d-none');
-            hlNote.textContent = '⏰ برای مرخصی ساعتی، تاریخ پایان با تاریخ شروع یکسان است و ساعت شروع/پایان تعیین می‌گردد.';
-        }
+        if (hlNote) hlNote.classList.remove('d-none');
+        // برای HL تاریخ پایان = تاریخ شروع (مخفی)
+        if (hlNote) hlNote.textContent = '⏰ برای مرخصی ساعتی، تاریخ پایان با تاریخ شروع یکسان است و ساعت شروع/پایان تعیین می‌گردد.';
     } else {
         toDateContainer.classList.remove('d-none');
         toDateInput.setAttribute('required', 'required');
         hlTimeContainer.classList.add('d-none');
         hlDurationContainer.classList.add('d-none');
-
-        userFieldContainer.classList.remove('col-md-2');
-        userFieldContainer.classList.add('col-md-6');
-        leaveTypeContainer.classList.remove('col-md-2');
-        leaveTypeContainer.classList.add('col-md-6');
-        fromDateContainer.classList.remove('col-md-2');
-        fromDateContainer.classList.add('col-md-6');
-        hlTimeContainer.classList.remove('col-md-3');
-        hlTimeContainer.classList.add('col-md-6');
-        hlDurationContainer.classList.remove('col-md-2');
-        hlDurationContainer.classList.add('col-md-6');
-        hlActions.classList.remove('col-md-1');
-        hlActions.classList.add('col-12');
-        hlActions.classList.add('d-none');
-        normalActions.classList.remove('d-none');
-
         if (hlNote) hlNote.classList.add('d-none');
     }
 }
+
 function calculateHLDuration() {
     if (!hlStartTime || !hlEndTime || !hlDurationText) {
         return;
