@@ -52,33 +52,27 @@
 <style>
     @media (min-width: 992px) {
         #dailyStatusForm.hm-inline {
-            align-items: flex-end;
+            display: grid;
+            grid-template-columns: 1.35fr 1.15fr 1.25fr 1fr 1fr 1.8fr 0.75fr;
+            gap: 0.5rem;
+            align-items: end;
         }
-        #dailyStatusForm.hm-inline > .hm-personnel {
-            flex: 0 0 17%;
-            max-width: 17%;
-        }
-        #dailyStatusForm.hm-inline > .hm-from-date {
-            flex: 0 0 15%;
-            max-width: 15%;
-        }
-        #dailyStatusForm.hm-inline > .hm-status {
-            flex: 0 0 15%;
-            max-width: 15%;
-        }
+
+        #dailyStatusForm.hm-inline > .hm-personnel,
+        #dailyStatusForm.hm-inline > .hm-from-date,
+        #dailyStatusForm.hm-inline > .hm-to-date,
+        #dailyStatusForm.hm-inline > .hm-status,
         #dailyStatusForm.hm-inline > .hm-start,
-        #dailyStatusForm.hm-inline > .hm-end {
-            flex: 0 0 12%;
-            max-width: 12%;
-        }
-        #dailyStatusForm.hm-inline > .hm-description {
-            flex: 0 0 21%;
-            max-width: 21%;
-        }
+        #dailyStatusForm.hm-inline > .hm-end,
+        #dailyStatusForm.hm-inline > .hm-description,
         #dailyStatusForm.hm-inline > .hm-submit {
-            flex: 0 0 8%;
-            max-width: 8%;
+            width: auto;
+            max-width: none;
+            flex: none;
+            padding-left: 0;
+            padding-right: 0;
         }
+
         #dailyStatusForm.hm-inline > .hm-to-date {
             display: none;
         }
@@ -91,7 +85,7 @@
     </div>
     <div class="card-body">
         <form method="post" action="/admin/daily-status/add" class="row g-2 align-items-end" id="dailyStatusForm">
-            <div class="col-12 col-sm-6 col-md-2">
+            <div class="col-12 col-sm-6 col-md-2 hm-personnel">
                 <label class="form-label">کد پرسنلی <span class="text-danger">*</span></label>
                 <input type="text" name="user_id" class="form-control" placeholder="NN-1234" required list="employee-list">
                 {% if employees %}
@@ -102,15 +96,15 @@
                 </datalist>
                 {% endif %}
             </div>
-            <div class="col-6 col-sm-6 col-md-2">
+            <div class="col-6 col-sm-6 col-md-2 hm-from-date">
                 <label class="form-label" for="from_date">از تاریخ <span class="text-danger">*</span></label>
                 <input type="text" id="from_date" name="from_date" class="form-control jalali-date" placeholder="1405/05/19" autocomplete="off" required>
             </div>
-            <div class="col-6 col-sm-6 col-md-2">
+            <div class="col-6 col-sm-6 col-md-2 hm-to-date">
                 <label class="form-label" for="to_date">تا تاریخ</label>
                 <input type="text" id="to_date" name="to_date" class="form-control jalali-date" placeholder="خالی = همان روز" autocomplete="off">
             </div>
-            <div class="col-6 col-sm-6 col-md-2">
+            <div class="col-6 col-sm-6 col-md-2 hm-status">
                 <label class="form-label" for="status_code">نوع وضعیت <span class="text-danger">*</span></label>
                 <select id="status_code" name="status_code" class="form-select">
                     {% for code, name in status_codes.items() %}
@@ -135,11 +129,11 @@
                        inputmode="numeric" maxlength="5" dir="ltr"
                        autocomplete="off" data-time-input="true">
             </div>
-            <div class="col-12 col-md-3">
+            <div class="col-12 col-md-3 hm-description">
                 <label class="form-label" for="description">توضیحات</label>
                 <input type="text" id="description" name="description" class="form-control" placeholder="مقصد مأموریت، دلیل استراحت و...">
             </div>
-            <div class="col-6 col-md-1">
+            <div class="col-6 col-md-1 hm-submit">
                 <button type="submit" class="btn btn-success w-100" title="ثبت برای تمام روزهای بازه انتخاب شده">
                     <i class="bi bi-plus"></i> ثبت
                 </button>
@@ -471,7 +465,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function toggleHourlyMissionFields() {
         var isHM = statusSelect.value === 'hourly_mission';
         var form = document.getElementById('dailyStatusForm');
-        var toDateField = toDate ? toDate.closest('.hm-to-date') : null;
+        var toDateField = toDate ? toDate.parentElement : null;
 
         if (startWrap) startWrap.classList.toggle('d-none', !isHM);
         if (endWrap) endWrap.classList.toggle('d-none', !isHM);
@@ -483,9 +477,12 @@ document.addEventListener('DOMContentLoaded', function() {
             if (isHM && fromDate) toDate.value = fromDate.value;
         }
 
+        // در مأموریت ساعتی، تا تاریخ اصلاً نمایش داده نمی‌شود.
         if (toDateField) {
             toDateField.classList.toggle('d-none', isHM);
         }
+
+        // در مأموریت ساعتی، تمام فیلدهای باقی‌مانده در یک ردیف Grid قرار می‌گیرند.
         if (form) {
             form.classList.toggle('hm-inline', isHM);
         }
