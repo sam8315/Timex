@@ -28,6 +28,10 @@ from dotenv import load_dotenv
 
 load_dotenv(ROOT / ".env")
 
+# Test-only cryptographic secrets; production must provide real values via the environment.
+os.environ.setdefault("WEB_SECRET_KEY", "test-web-secret-key-32-chars-minimum-0001")
+os.environ.setdefault("WEB_SESSION_MIDDLEWARE_SECRET_KEY", "test-session-secret-key-32-chars-0002")
+
 from config.settings import DB_USER, DB_PASSWORD, DB_HOST, DB_PORT
 
 TEST_DB_NAME = os.getenv("TEST_DB_NAME", "timex_test_db")
