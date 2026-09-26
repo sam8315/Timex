@@ -49,12 +49,48 @@
     </div>
 </div>
 
+<style>
+    @media (min-width: 992px) {
+        #dailyStatusForm.hm-inline {
+            align-items: flex-end;
+        }
+        #dailyStatusForm.hm-inline > .hm-personnel {
+            flex: 0 0 17%;
+            max-width: 17%;
+        }
+        #dailyStatusForm.hm-inline > .hm-from-date {
+            flex: 0 0 15%;
+            max-width: 15%;
+        }
+        #dailyStatusForm.hm-inline > .hm-status {
+            flex: 0 0 15%;
+            max-width: 15%;
+        }
+        #dailyStatusForm.hm-inline > .hm-start,
+        #dailyStatusForm.hm-inline > .hm-end {
+            flex: 0 0 12%;
+            max-width: 12%;
+        }
+        #dailyStatusForm.hm-inline > .hm-description {
+            flex: 0 0 21%;
+            max-width: 21%;
+        }
+        #dailyStatusForm.hm-inline > .hm-submit {
+            flex: 0 0 8%;
+            max-width: 8%;
+        }
+        #dailyStatusForm.hm-inline > .hm-to-date {
+            display: none;
+        }
+    }
+</style>
+
 <div class="card mb-4">
     <div class="card-header bg-white">
         <h6 class="mb-0"><i class="bi bi-plus-circle"></i> ثبت مأموریت یا استراحت</h6>
     </div>
     <div class="card-body">
-        <form method="post" action="/admin/daily-status/add" class="row g-3 align-items-end">
+        <form method="post" action="/admin/daily-status/add" class="row g-2 align-items-end" id="dailyStatusForm">
             <div class="col-12 col-sm-6 col-md-2">
                 <label class="form-label">کد پرسنلی <span class="text-danger">*</span></label>
                 <input type="text" name="user_id" class="form-control" placeholder="NN-1234" required list="employee-list">
@@ -83,23 +119,21 @@
                     <option value="hourly_mission">مأموریت ساعتی</option>
                 </select>
             </div>
-            <div class="col-6 col-md-2 d-none" id="hm-start-wrap">
+            <div class="col-6 col-md-2 d-none hm-start" id="hm-start-wrap">
                 <label class="form-label" for="start_time">ساعت شروع <span class="text-danger">*</span></label>
                 <input type="text" id="start_time" name="start_time" class="form-control"
                        placeholder="HH:MM"
                        pattern="([01][0-9]|2[0-3]):([0-5][0-9])"
                        inputmode="numeric" maxlength="5" dir="ltr"
                        autocomplete="off" data-time-input="true">
-                <div class="form-text">ساعت شروع</div>
             </div>
-            <div class="col-6 col-md-2 d-none" id="hm-end-wrap">
+            <div class="col-6 col-md-2 d-none hm-end" id="hm-end-wrap">
                 <label class="form-label" for="end_time">ساعت پایان <span class="text-danger">*</span></label>
                 <input type="text" id="end_time" name="end_time" class="form-control"
                        placeholder="HH:MM"
                        pattern="([01][0-9]|2[0-3]):([0-5][0-9])"
                        inputmode="numeric" maxlength="5" dir="ltr"
                        autocomplete="off" data-time-input="true">
-                <div class="form-text">ساعت پایان</div>
             </div>
             <div class="col-12 col-md-3">
                 <label class="form-label" for="description">توضیحات</label>
@@ -436,13 +470,24 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function toggleHourlyMissionFields() {
         var isHM = statusSelect.value === 'hourly_mission';
+        var form = document.getElementById('dailyStatusForm');
+        var toDateField = toDate ? toDate.closest('.hm-to-date') : null;
+
         if (startWrap) startWrap.classList.toggle('d-none', !isHM);
         if (endWrap) endWrap.classList.toggle('d-none', !isHM);
         if (startInput) startInput.required = isHM;
         if (endInput) endInput.required = isHM;
+
         if (toDate) {
             toDate.disabled = isHM;
             if (isHM && fromDate) toDate.value = fromDate.value;
+        }
+
+        if (toDateField) {
+            toDateField.classList.toggle('d-none', isHM);
+        }
+        if (form) {
+            form.classList.toggle('hm-inline', isHM);
         }
     }
     statusSelect.addEventListener('change', toggleHourlyMissionFields);
