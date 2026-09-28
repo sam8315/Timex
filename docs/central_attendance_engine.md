@@ -275,4 +275,181 @@ pairing در آن‌ها نیست. جریان داده:
 یعنی معیار «همه‌ی مصرف‌کننده‌های فعال روی موتور مرکزی» برای **وب** برقرار
 است ولی برای **کنسول** هنوز کامل نیست. این باقی‌مانده صریح و مستند است و
 کار بعدی مشخص دارد.
+
+---
+
+# Phase 8 — Architecture Hardening, Contract & Regression
+
+هدف: جلوگیری از اینکه در آینده دوباره موتور دومی ساخته شود یا لایه‌ها دوباره
+به هم وابسته شوند. این Phase عمدتاً **نگهبان** اضافه می‌کند، نه رفتار تازه.
+
+## 17. قرارداد داده (تثبیت‌شده)
+
+`DayAttendanceResult` — قرارداد پایدار:
+
+| گروه | فیلدها |
+|---|---|
+| وضعیت | `main_status` / `status`، `main_label`، `main_color` |
+| شیفت شب | `is_night_shift` |
+| ناهنجاری | `has_sequence_error`، `sequence_error_detail`، `warnings` / `warning_codes` |
+| کارکرد واقعی | `work_hours`، `first_enter`، `last_exit`، `pairs` |
+| شمارش | `enter_count`، `exit_count` |
+| پرچم | `is_friday`، `is_holiday`، `holiday_title` |
+| context | `schedule_context` (فقط برگردانده می‌شود) |
+| سازگاری | `attendance_status_dict` (۷ کلید `analyze_day_status` قدیمی) |
+
+API اصلی: `compute_day_attendance(day, day_records, prev_day_records,
+next_day_records, is_friday, holiday_title, schedule_context)`.
+
+**این Phase هیچ تغییری در API نداد** — نیازی نبود.
+
+## 18. قاعده‌ی دقیق درب‌های ضمنی شیفت شب
+
+این قاعده ظریف است و اکنون صریحاً قفل شده
+(`tests/test_central_engine_contracts.py`):
+
+| وضعیت | ورود واقعی | خروج واقعی | نتیجه |
+|---|---|---|---|
+| state 1 | هر دو | هر دو | هر دو **واقعی** می‌مانند؛ درب ضمنی فقط داخل `pairs` است |
+| state 2 | فقط ورود | ندارد | خروج ضمنی `23:59:59` |
+| state 3 | ندارد | فقط خروج | ورود ضمنی `00:00:00` |
+
+روز غیرشیفت شب **هیچ** درب ضمنی نمی‌گیرد (`missing_exit` → `last_exit is None`).
+
+## 19. جداسازی Pairs از Actual Work
+
+`MAX_PAIRS = 3` یک سقف **نمایشی** در لایه‌ی گزارش است و فقط روی
+`attendance_pairs` اثر دارد. `work_hours` همیشه از *همه* pairها می‌آید و:
+
+    sum(pair['hours']) == work_hours        (در هر وضعیتی)
+
+**باگی که در Phase 8 پیدا و رفع شد:** در
+`core/detailed_monthly_report_v2.py` تفکیک صبح/عصر/شب از
+`attendance_pairs[-1]['exit']` گرفته می‌شد — یعنی از لیستِ **سقف‌خورده**.
+برای روزی با ۵ بازه، تفکیک تا `13:00` محاسبه می‌شد نه تا `17:00`.
+حالا تفکیک از مرزهای کامل موتور می‌آید و `attendance_pairs` همچنان
+سقف‌خورده می‌ماند (بدون تغییر UI). Regression test دارد که با بازگرداندن
+باگ، قطعاً می‌شکند (به‌صورت تجربی تأیید شد).
+
+## 20. دقت خام
+
+موتور ثانیه‌ی خام را نگه می‌دارد. مثال قفل‌شده: `۳۰ ثانیه → 30/3600
+= 0.008333…` و **نه** `0.01`. گرد کردن فقط در لایه‌ی گزارش/نمایش اتفاق
+می‌افتد (`round(x, 2)` یا `format_hours_hhmm`).
+
+## 21. مرزبندی لایه‌ها و جهت وابستگی
+
+قاعده: `web → core` مجاز، `core → web` نامطلوب.
+
+**اصلاح‌شده در Phase 8:** `web/services/attendance_policy_service.py` از
+`web.routes.attendance` تابع `analyze_day_status` و `calculate_work_hours`
+را import می‌کرد (یعنی `services → routes`، و در نتیجه
+`core → web → web.routes` که ریسک چرخه داشت). حالا مستقیم از
+`core.attendance_calculator` می‌گیرد. چون re-export صرفاً همان شیء تابع
+است (هویت با تست اثبات شده)، **هیچ تغییر رفتاری** رخ نداد.
+
+**استثناهای باقی‌مانده (pin شده‌اند تا بی‌سروصدا بزرگ نشوند):**
+
+| فایل | وابستگی |
+|---|---|
+| `core/detailed_monthly_report_v2.py` | `web.services.{attendance_policy, hourly_leave, hourly_mission}` |
+| `core/raw_report.py` | `web.services.{hourly_mission, travel_leave}` |
+
+این‌ها لایه‌ی Policy را از `web/services` می‌گیرند. جابه‌جایی آن‌ها یک
+refactor بزرگ است و در این Phase انجام نشد؛ اما با تست
+`test_no_core_module_imports_web_except_known_exceptions` قفل شده‌اند.
+
+**re-exportهای legacy حفظ شدند (KEEP):** `web/routes/attendance.py` همچنان
+`analyze_day_status` و `calculate_work_hours` را re-export می‌کند و
+هویتشان با همان توابع موتور تست می‌شود. حذف‌شان backward compatibility را
+می‌شکست.
+
+## 22. استثناهای معماری (بدون تغییر)
+
+### 22.1 `core/attendance_analyzer.py` — استثنای قطعی
+
+`shift-based` است: هر شیفت با `'date': pending_in.timestamp.date()`
+(یعنی **روزِ ورود**) کلید می‌خورد و کل ساعت شیفت به آن روز نسبت داده
+می‌شود. Central Engine روز-تقویمی است و شیفت شب را بین دو روز تقسیم
+می‌کند.
+
+| شیفت مرزی | تحلیلگر | موتور مرکزی |
+|---|---|---|
+| `2024-03-19 22:00 → 2024-03-20 06:00` | یک ردیف برای `03-19` با `8.0` | `03-19 → 1.99972` و `03-20 → 6.0` |
+
+مهاجرت مستقیم ~۶ ساعت را از `summary.total_work_hours` حذف می‌کند و ردیف‌های
+روز را جابه‌جا می‌کند ⇒ **تغییر UI + تغییر semantics**. نیازمند تصمیم
+business-level مستقل. تا آن زمان: **DO NOT MIGRATE / DO NOT DELETE**.
+
+قرارداد فعلی با تست‌هایی pin شده که **عمداً** می‌شکنند اگر کسی بی‌سروصدا
+مهاجرت دهد.
+
+### 22.2 `core/daily_status_manager.py` — مهاجرت به تعویق افتاد
+
+طبقه‌بندی متدها:
+
+| متد | خط | دسته |
+|---|---|---|
+| `get_status_name` | 69 | C |
+| `detect_status` | 73 | B |
+| `set_manual_status` | 150 | B |
+| `get_daily_report` | 204 | **A** (ساعت در 315/335/337/355/381/405) + B + C |
+| `get_monthly_report` | 447 | **A** (502) + B + C |
+| `get_bulk_absent_report` | 518 | B |
+| `get_daily_details_for_month` | 523 | **A** (613) + B + C |
+| `sort_key` / `_get_day_name` / `_get_jalali_month_name` | 436/686/694 | C |
+
+- **فعال:** بله. `main.py → ui.console.ConsoleUI` (۳ نقطه) و
+  `core/report_generator.py → ui/console.py` (۶ نقطه) و `debug_leave_report.py`.
+- **وابستگی DB:** `Employee`, `User`, `DailyStatus`, `Attendance`,
+  `LeaveRequest`, `Contract`, `HolidayManager`, `LeaveManager`,
+  `EmployeeManager`، `SessionLocal`.
+- **تست:** صفر تست اختصاصی.
+- **تصمیم:** **DEFER.** برخلاف تحلیلگر، این ماژول روز-تقویمی است و از نظر
+  semantics با موتور هم‌راستاست، پس مهاجرت *ممکن* است — ولی سه متد
+  مستقل با هشت نقطه‌ی محاسبه، بدون پوشش تست و با رندر کنسولی، ریسک
+  بالایی دارد. طبق 8.13، در این Phase اعمال نشد و به‌عنوان **کار باز**
+  ثبت شد.
+
+### 22.3 `core/report_generator.py` — pure orchestration
+
+هیچ `/3600` ندارد؛ فقط `DailyStatusManager` را صدا می‌زند و خلاصه می‌سازد
+(`monthly['total_work_hours']`). خودش Actual Attendance را حساب نمی‌کند ⇒
+**KEEP**.
+
+## 23. Performance audit (اندازه‌گیری‌شده)
+
+برای یک ماه ۳۱ روزه و یک کارمند، تعداد query واقعی گزارش ماهانه:
+
+| جدول | تعداد query | تفسیر |
+|---|---|---|
+| `attendances` | **1** | ✅ یک بار برای کل ماه — **N+1 ندارد** |
+| `attendance_policies` | 62 | N+1 در لایه‌ی Policy (۲× در روز) |
+| `holidays` | 31 | N+1 در لایه‌ی Policy (۱× در روز) |
+| `leave_requests` | 2 | OK |
+| `hourly_missions` | 2 | OK |
+| `employee` / `daily_statuses` | 1 / 1 | OK |
+| **مجموع** | **100** | |
+
+**نتیجه:** centralization هیچ N+1 در خودِ تردد ایجاد نکرده است. موتور
+مرکزی **صفر query** دارد (اثبات‌شده با شمارنده‌ی `before_cursor_execute`)،
+بنابراین فراخوانی per-day آن هزینه‌ی DB ندارد. N+1 باقی‌مانده کاملاً در
+لایه‌ی **Policy** است که طبق مرزبندی پروژه خارج از Central Engine است و
+بهینه‌سازی زودهنگام آن ممنوع. عدد ۱۰۰ pin شده تا تغییر ناخواسته دیده شود.
+
+## 24. تست‌های Phase 8
+
+| فایل | تعداد | موضوع |
+|---|---|---|
+| `tests/test_central_engine_contracts.py` | 30 | شیفت شب (۳ state)، pairs، دقت خام، مرز ماه |
+| `tests/test_central_engine_architecture.py` | 20 | actual-only، بدون موظفی، جهت وابستگی، re-export، export |
+| `tests/test_cross_consumer_phase8_contracts.py` | 5 | سقف نمایشی ≠ Actual Work، برابری سه‌گانه |
+| `tests/test_central_engine_performance.py` | 4 | صفر query در موتور، خواندن یک‌باره‌ی تردد |
+| `tests/test_central_engine_performance_baseline.py` | 2 | اندازه‌گیری و pin خط پایه‌ی query |
+
+Baseline کل بعد از Phase 8: **۱۳۲۷ passed / ۲۰ pre-existing failed**
+(Phase 7: ۱۲۶۶ passed / ۲۰ failed) ⇒ **۶۱ تست جدید، صفر regression**.
+
+Pre-existing (تغییری نکرده): `tests/test_attendance_policy_service.py` (۱۹)
+و `tests/test_admin_travel_leave_preview_route.py` (۱).
 (itsdangerous timestamp-dependent tamper check, ~1/40 runs).
