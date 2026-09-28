@@ -232,13 +232,13 @@ class DetailedMonthlyReportGeneratorV2:
                 work_hours, is_day_off, person_status, daily_required_hours
             )
 
-            # محاسبه ساعات تفکیکی
+            # محاسبه ساعات تفکیکی — از مرزهای کامل موتور، نه pairهای
+            # سقف‌خورده‌ی نمایشی (Phase 8)
             shift_hours = {'morning': 0.0, 'evening': 0.0, 'night': 0.0}
-            if attendance_pairs:
-                first_enter = attendance_pairs[0]['enter']
-                last_exit = attendance_pairs[-1]['exit']
-                if first_enter and last_exit and last_exit > first_enter:
-                    shift_hours = calculate_shift_hours(first_enter, last_exit)
+            first_enter = day_data.get('first_enter')
+            last_exit = day_data.get('last_exit')
+            if first_enter and last_exit and last_exit > first_enter:
+                shift_hours = calculate_shift_hours(first_enter, last_exit)
 
             # تعیین موظفی روز
             has_duty = daily_required_hours > 0
@@ -381,6 +381,11 @@ class DetailedMonthlyReportGeneratorV2:
             # مقدار خام موتور (بدون round داخلی)؛ float برای سازگاری نوع با خروجی قدیمی
             'work_hours': float(result.work_hours),
             'pairs': pairs[:self.MAX_PAIRS],
+            # Phase 8: مرزهای *کامل* موتور برای محاسبه‌ی تفکیک شیفت.
+            # نباید از pairهای نمایشیِ سقف‌خورده گرفته شوند، وگرنه روزهای
+            # بیش از MAX_PAIRS بازه تفکیک صبح/عصر/شب اشتباه می‌گیرند.
+            'first_enter': _with_tz(result.first_enter),
+            'last_exit': _with_tz(result.last_exit),
             'attendance_status': attendance_status,
             'has_incomplete': has_incomplete,
         }
