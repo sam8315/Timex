@@ -65,6 +65,8 @@ from core.attendance_calculator import (
     # منطق محاسبه
     analyze_day_status,
     calculate_work_hours,
+    # موتور مرکزی (Phase 3): یک‌جا status + work_hours
+    compute_day_attendance,
 )
 
 
@@ -228,8 +230,8 @@ async def attendance_page(
         is_friday = current.weekday() == 4
         holiday_title = holiday_dates.get(current)
 
-        # تحلیل وضعیت
-        status_info = analyze_day_status(
+        # تحلیل وضعیت + کارکرد از موتور مرکزی (Phase 3)
+        day_result = compute_day_attendance(
             day=current,
             day_records=day_records,
             prev_day_records=prev_day_records,
@@ -237,8 +239,10 @@ async def attendance_page(
             is_friday=is_friday,
             holiday_title=holiday_title
         )
+        status_info = day_result.attendance_status_dict
         # 🆕 بررسی مرخصی تایید شده
         # ⚠️ فقط اگر روز تعطیل یا جمعه نباشد (تعطیلات اولویت دارند)
+        # (در لایه route می‌ماند — سیاست/موظفی از Policy است)
         leave_type = leaves_by_date.get(current)
         if leave_type and not is_friday and holiday_title is None:
             type_name = LEAVE_TYPE_NAMES_LOCAL.get(leave_type, '')
@@ -247,10 +251,18 @@ async def attendance_page(
             status_info['main_color'] = 'info'
 
         # 🆕 محاسبه کارکرد با در نظر گرفتن شیفت شب
-        work_hours, first_enter, last_exit = calculate_work_hours(
-            day_records,
-            is_night_shift=status_info['main_status'] == STATUS_NIGHT_SHIFT
-        )
+        is_night_shift = status_info['main_status'] == STATUS_NIGHT_SHIFT
+        if is_night_shift == day_result.is_night_shift:
+            # وضعیت دست‌نخورده → نتیجه آماده موتور مرکزی
+            work_hours = day_result.work_hours
+            first_enter = day_result.first_enter
+            last_exit = day_result.last_exit
+        else:
+            # اورراید مرخصی شب/غیرشب را عوض کرده → محاسبه مجدد (رفتار قبلی)
+            work_hours, first_enter, last_exit = calculate_work_hours(
+                day_records,
+                is_night_shift=is_night_shift
+            )
 
         days_list.append({
             'date': current,
