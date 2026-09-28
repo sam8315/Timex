@@ -34,9 +34,14 @@ All three import `compute_day_attendance` directly from `core.attendance_calcula
 Documented observations (not duplicates, no change made):
 
 - `web.routes.attendance` re-exports `analyze_day_status` /
-  `calculate_work_hours`; `web.services.attendance_policy_service.calculate_daily_attendance`
-  imports them from there. Its only caller is
+  `calculate_work_hours` for backwards compatibility (**KEEP** — see §21).
+  `web.services.attendance_policy_service.calculate_daily_attendance` also uses
+  them, but since **Phase 8** it imports them from `core.attendance_calculator`
+  directly (no longer via `web.routes`); the re-export objects are identical, so
+  behaviour is unchanged. Its only caller is
   `tests/test_attendance_policy_service.py` (no production route/template).
+- `core/detailed_monthly_report.py` (console monthly report v1) is a fourth
+  consumer, migrated in Phase 7 (see §11).
 - Other admin endpoints (`GET /admin/attendance`, `/admin/incomplete`, dashboard
   widgets) keep their own punch queries: different features, out of scope (class F).
 
@@ -453,3 +458,99 @@ Baseline کل بعد از Phase 8: **۱۳۲۷ passed / ۲۰ pre-existing failed*
 Pre-existing (تغییری نکرده): `tests/test_attendance_policy_service.py` (۱۹)
 و `tests/test_admin_travel_leave_preview_route.py` (۱).
 (itsdangerous timestamp-dependent tamper check, ~1/40 runs).
+
+---
+
+# Phase 9 — Final Audit, Cleanup & PR Readiness
+
+هدف: **ممیزی نهایی** بدون افزودن هیچ رفتار تازه. این Phase هیچ تغییر
+محتوایی در موتور، مسیرها یا قالب‌ها ایجاد نکرد.
+
+## 25. ممیزی نهایی source-of-truth
+
+جست‌وجوی تمام‌مخزنی روی `analyze_day_status` / `calculate_work_hours` /
+`compute_day_attendance` / `work_hours` / `first_enter` / `last_exit` /
+`night_shift` / `pairing`. نتیجه: **موتور دومِ فعال در لایه‌ی محصول وجود ندارد.**
+
+| مصرف‌کننده | ماژول / فراخوان | منبع Actual | منبع وضعیت | منبع ساعت |
+|---|---|---|---|---|
+| `/attendance` | `web/routes/attendance.py:234` | `compute_day_attendance` | موتور + leave-override مسیر | `result.work_hours` |
+| `/admin/attendance/user/{id}` | `web/routes/admin.py:1211` | `compute_day_attendance` | موتور + leave-override مسیر | `result.work_hours` |
+| `/reports/monthly-full` | `core/detailed_monthly_report_v2.py:350` | `compute_day_attendance` | موتور → `_display_status` | `result.work_hours` خام |
+| گزارش کنسولی v1 | `core/detailed_monthly_report.py:244` | `compute_day_attendance` | موتور → `_display_status` | `result.work_hours` (گرد در گزارش) |
+
+دو مسیر وب پس از leave-override، در صورت تغییر پرچم شیفت شب، از
+`calculate_work_hours` خودِ موتور برای بازمحاسبه استفاده می‌کنند (همان تابع،
+همان شیء — بدون موتور دوم).
+
+### استثناهای فعال (بدون تغییر)
+
+| ماژول | مصرف‌کننده‌ی فعال | وضعیت |
+|---|---|---|
+| `core/attendance_analyzer.py` | `ui/console.py` (۱۰ نقطه) و `web/routes/admin.py:2278` (`/admin/incomplete`) | **DO NOT MIGRATE / DO NOT DELETE** (§22.1) |
+| `core/daily_status_manager.py` | `ui/console.py`، `core/report_generator.py`، `scripts/debug_attendance.py` | **DEFERRED** (§22.2) |
+
+`/admin/incomplete` فقط از `get_incomplete_attendances` و تاکسونومی خطای
+رکوردی استفاده می‌کند و **هیچ ساعت کارکردی محاسبه نمی‌کند**.
+
+## 26. معماری — جهت وابستگی
+
+`web → core` برقرار است. این branch **هیچ وابستگی تازه‌ی `core → web`
+اضافه نکرد**: تنها import جدید در `core/`، `core.attendance_calculator`
+(هم‌لایه) بود. استثناهای پیشین `core/detailed_monthly_report_v2.py` و
+`core/raw_report.py` هر دو روی `work` موجود بودند و دست‌نخورده ماندند
+(پین‌شده با `test_no_core_module_imports_web_except_known_exceptions`).
+
+سختیِ باقی‌مانده: `web/routes/admin.py` برای `calculate_work_hours` و ثابت‌های
+`STATUS_*` هنوز از re-exportِ `web.routes.attendance` می‌گیرد. این
+`web → web` است (مجاز) و **عمداً دست‌نخورده ماند**؛ حذف آن صرفاً برای
+زیبایی معماری بود و در محدوده‌ی این Phase نیست.
+
+## 27. re-exportهای legacy
+
+`web/routes/attendance.py` همچنان `analyze_day_status` و
+`calculate_work_hours` را re-export می‌کند و همان شیء‌های موتور هستند
+(هویت با تست اثبات می‌شود). مصرف‌کننده‌ی باقی‌مانده: `web/routes/admin.py`
+(خط ۱۲۳۹، fallback مربوط به leave-override) و تست‌ها. **KEEP** — حذف،
+backward compatibility را می‌شکست.
+
+## 28. UI
+
+`git diff work...HEAD -- web/templates/` **خالی است**: صفر تغییر در هیچ
+قالبی، از جمله `admin/report_monthly_full.html`. ظاهر monthly-full دست‌نخورده
+مانده و متن‌های نمایشی از لایه‌ی گزارش (`_display_status`) می‌آیند.
+
+## 29. تست‌ها
+
+| مجموعه | نتیجه |
+|---|---|
+| تست‌های موتور و معماری و cross-consumer و performance | **۹۵ passed** |
+| تست‌های مهاجرت مصرف‌کننده‌ها (route / admin / monthly-full / v1 / analyzer) | **۲۸ passed, 1 skipped** |
+| **کل مخزن** | **۱۳۲۷ passed, ۲۰ failed, 1 skipped** |
+
+۲۰ failure همان ۲۰ failure پیشین‌اند (۱۹ در
+`tests/test_attendance_policy_service.py` و ۱ در
+`tests/test_admin_travel_leave_preview_route.py`) ⇒ **صفر regression**.
+خط پایه در دو اجرای مستقل کامل بازتولید شد.
+
+## 30. امنیت
+
+`work` پایه‌ی `0989330` («Fix hard-coded session secrets (#37)») است و
+این branch هیچ‌کدام از `web/app.py`، `web/config.py`، `web/session.py`،
+`tests/conftest.py`، `tests/test_session_security.py` یا `.env.example` را
+لمس نکرده است. بنابراین تغییرات این branch **هیچ سطحی** از authentication،
+authorization، session، CSRF، secret یا admin-access را تغییر نداده ⇒
+**بدون regression امنیتی**.
+
+## 31. وضعیت نهایی
+
+نتیجه‌ی ممیزی:
+
+    Actual Attendance  →  یک منبع واحد (core/attendance_calculator)
+    Required Work      →  یک منبع واحد (Policy: attendance_policy_service)
+    Schedule فرد/گروه  →  حفظ شد (Policy؛ موتور فقط WorkScheduleContext را برمی‌گرداند)
+    Night Shift / Month Boundary / Raw Precision  →  حفظ و تست‌شده
+    UI                 →  بدون تغییر
+    work               →  دست‌نخورده
+    regression جدید    →  ندارد
+    استثناهای legacy   →  صریحاً مستند (§22.1، §22.2)
