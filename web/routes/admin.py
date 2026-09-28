@@ -31,7 +31,6 @@ from web.routes.attendance import (
     format_hours_hhmm, STATUS_LEAVE
 )
 from web.routes.attendance import (
-    analyze_day_status,
     calculate_work_hours,
     format_hours_hhmm, STATUS_LEAVE,
     STATUS_COMPLETE, STATUS_NIGHT_SHIFT, STATUS_MISSING_EXIT,
@@ -39,6 +38,8 @@ from web.routes.attendance import (
     STATUS_NO_ATTENDANCE
 )
 from web.services.attendance_policy_service import compute_required_minutes_for_range
+# Phase 4: وابستگی مستقیم Admin → Central Attendance Engine (بدون واسطه route)
+from core.attendance_calculator import compute_day_attendance
 from web.services.hourly_leave_service import (
     get_approved_hl_minutes,
     get_approved_hl_minutes_on_date,
@@ -133,9 +134,9 @@ def _finalize_test_run(root: Path, proc) -> None:
     except OSError:
         pass
 
-# 🆕 import تابع تحلیل وضعیت از صفحه کاربر عادی
+# 🆕 import ثابت‌های وضعیت از صفحه کاربر عادی
+# (تحلیل وضعیت/کارکرد اکنون مستقیم از Central Engine — Phase 4)
 from web.routes.attendance import (
-    analyze_day_status,
     STATUS_COMPLETE, STATUS_NIGHT_SHIFT, STATUS_MISSING_EXIT,
     STATUS_MISSING_ENTER, STATUS_SEQUENCE_ERROR, STATUS_IMBALANCE,
     STATUS_NO_ATTENDANCE
@@ -1206,8 +1207,8 @@ async def admin_user_attendance(
         is_friday = current.weekday() == 4
         holiday_title = holiday_dates.get(current)
 
-        # تحلیل وضعیت با تابع مشترک
-        status_info = analyze_day_status(
+        # تحلیل وضعیت + کارکرد از موتور مرکزی (Phase 4)
+        day_result = compute_day_attendance(
             day=current,
             day_records=day_records,
             prev_day_records=prev_day_records,
@@ -1215,8 +1216,10 @@ async def admin_user_attendance(
             is_friday=is_friday,
             holiday_title=holiday_title
         )
+        status_info = day_result.attendance_status_dict
 
         # بررسی مرخصی تایید شده (فقط در روزهای کاری - تعطیلات اولویت دارند)
+        # (در لایه route می‌ماند — سیاست/موظفی از Policy است)
         leave_type = leaves_by_date.get(current)
         if leave_type and not is_friday and holiday_title is None:
             type_name = LEAVE_TYPE_NAMES_LOCAL.get(leave_type, '')
@@ -1225,10 +1228,18 @@ async def admin_user_attendance(
             status_info['main_color'] = 'info'
 
         # محاسبه کارکرد با در نظر گرفتن شیفت شب
-        work_hours, first_enter, last_exit = calculate_work_hours(
-            day_records,
-            is_night_shift=status_info['main_status'] == STATUS_NIGHT_SHIFT
-        )
+        is_night_shift = status_info['main_status'] == STATUS_NIGHT_SHIFT
+        if is_night_shift == day_result.is_night_shift:
+            # وضعیت دست‌نخورده → نتیجه آماده موتور مرکزی
+            work_hours = day_result.work_hours
+            first_enter = day_result.first_enter
+            last_exit = day_result.last_exit
+        else:
+            # اورراید مرخصی شب/غیرشب را عوض کرده → محاسبه مجدد (رفتار قبلی)
+            work_hours, first_enter, last_exit = calculate_work_hours(
+                day_records,
+                is_night_shift=is_night_shift
+            )
 
         days_list.append({
             'date': current,
