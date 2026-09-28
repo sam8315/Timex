@@ -554,7 +554,9 @@ def calculate_daily_attendance(
 
     این تابع اصلی است که توسط تمام بخش‌ها (User, Manager, Reports) استفاده می‌شود
     """
-    from web.routes.attendance import analyze_day_status
+    # Phase 8: از owner واقعی import می‌شود، نه از web.routes
+    # (حذف وابستگی لایه‌ی services به لایه‌ی routes؛ تابع یکی است).
+    from core.attendance_calculator import analyze_day_status
 
     # ۱. بررسی تعطیلی
     employment_type = employee.department if employee else None
@@ -622,8 +624,8 @@ def calculate_daily_attendance(
     )
     is_night_shift = status_info.get('main_status') == 'night_shift'
 
-    # محاسبه کارکرد واقعی (از تابع موجود)
-    from web.routes.attendance import calculate_work_hours
+    # محاسبه کارکرد واقعی (از موتور مرکزی — Phase 8: نه از لایه routes)
+    from core.attendance_calculator import calculate_work_hours
     work_hours, first_enter, last_exit = calculate_work_hours(day_records, is_night_shift)
     actual_minutes = int(work_hours * 60)
 
