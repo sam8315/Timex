@@ -1,5 +1,5 @@
 """صفحه رکوردهای تردد با تحلیل وضعیت"""
-from datetime import timedelta, date as date_type
+from datetime import timedelta
 from fastapi import APIRouter, Request, Depends, Query
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -7,7 +7,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, func, or_
 import jdatetime
-from typing import Optional, List, Dict
+from typing import Optional
 
 from models.employee import Employee
 from web.dependencies import get_db, check_password_change
@@ -39,23 +39,33 @@ DAY_NAMES_FA = {
     3: 'پنج‌شنبه', 4: 'جمعه', 5: 'شنبه', 6: 'یکشنبه'
 }
 
-# وضعیت‌های اصلی
-STATUS_COMPLETE = 'complete'
-STATUS_NIGHT_SHIFT = 'night_shift'
-STATUS_MISSING_EXIT = 'missing_exit'
-STATUS_MISSING_ENTER = 'missing_enter'
-STATUS_SEQUENCE_ERROR = 'sequence_error'
-STATUS_IMBALANCE = 'imbalance'
-STATUS_NO_ATTENDANCE = 'no_attendance'
-STATUS_LEAVE = 'leave'
-
-# هشدارهای ترکیبی
-WARN_ABNORMAL_GAP = 'abnormal_gap'
-WARN_DUPLICATE = 'duplicate'
-WARN_ABNORMAL_TIME = 'abnormal_time'
-WARN_TOO_MANY = 'too_many'
-WARN_FRIDAY_WORK = 'friday_work'
-WARN_HOLIDAY_WORK = 'holiday_work'
+# ============================================
+# Central Attendance Engine (منبع واحد حقیقت)
+# منطق محاسبه تردد از `core/attendance_calculator.py` وارد می‌شود.
+# نام‌ها برای سازگاری با مصرف‌کننده‌های موجود (admin.py, policy service)
+# دوباره export می‌شوند — رفتار محاسباتی بدون تغییر است.
+# ============================================
+from core.attendance_calculator import (
+    # وضعیت‌های اصلی
+    STATUS_COMPLETE,
+    STATUS_NIGHT_SHIFT,
+    STATUS_MISSING_EXIT,
+    STATUS_MISSING_ENTER,
+    STATUS_SEQUENCE_ERROR,
+    STATUS_IMBALANCE,
+    STATUS_NO_ATTENDANCE,
+    STATUS_LEAVE,
+    # هشدارهای ترکیبی
+    WARN_ABNORMAL_GAP,
+    WARN_DUPLICATE,
+    WARN_ABNORMAL_TIME,
+    WARN_TOO_MANY,
+    WARN_FRIDAY_WORK,
+    WARN_HOLIDAY_WORK,
+    # منطق محاسبه
+    analyze_day_status,
+    calculate_work_hours,
+)
 
 
 # ============================================
@@ -72,361 +82,6 @@ def format_hours_hhmm(hours: float) -> str:
     h = total_minutes // 60
     m = total_minutes % 60
     return f"{sign}{h}:{m:02d}"
-
-
-def analyze_day_status(
-    day: date_type,
-    day_records: List[Attendance],
-    prev_day_records: List[Attendance],
-    next_day_records: List[Attendance],
-    is_friday: bool,
-    holiday_title: Optional[str]
-) -> Dict:
-    """تحلیل وضعیت تردد یک روز"""
-    warnings = []
-
-    # بدون تردد
-    if not day_records:
-        return {
-            'main_status': STATUS_NO_ATTENDANCE,
-            'main_label': '⚪ بدون تردد',
-            'main_color': 'secondary',
-            'warnings': [],
-            'is_friday': is_friday,
-            'is_holiday': holiday_title is not None,
-            'holiday_title': holiday_title,
-        }
-
-    enters = sorted([r for r in day_records if r.punch == 0], key=lambda x: x.timestamp)
-    exits = sorted([r for r in day_records if r.punch == 1], key=lambda x: x.timestamp)
-
-    # 🆕 بررسی شیفت شب با منطق دقیق‌تر
-    has_night_shift = False
-
-    # حالت ۰: خروج قبل از ورود در همان روز → شیفت شب ادغام‌شده
-    if enters and exits:
-        first_enter = min(enters, key=lambda x: x.timestamp)
-        first_exit = min(exits, key=lambda x: x.timestamp)
-        if first_exit.timestamp < first_enter.timestamp:
-            # خروج صبح قبل از ورود شب → شیفت شب
-            has_night_shift = True
-
-    # 🆕 حالت ۱: ورود بدون خروج → بررسی اولین رکورد فردا
-    if len(enters) > len(exits) and not has_night_shift:
-        if next_day_records:
-            # مرتب‌سازی بر اساس زمان
-            next_sorted = sorted(next_day_records, key=lambda x: x.timestamp)
-            first_next_record = next_sorted[0]
-
-            # ✅ اولین رکورد فردا باید خروجی باشد
-            if first_next_record.punch == 1:
-                has_night_shift = True
-
-    # 🆕 حالت ۲: خروج بدون ورود → بررسی آخرین رکورد دیروز
-    if len(exits) > len(enters) and not has_night_shift:
-        if prev_day_records:
-            # مرتب‌سازی بر اساس زمان
-            prev_sorted = sorted(prev_day_records, key=lambda x: x.timestamp)
-            last_prev_record = prev_sorted[-1]
-
-            # ✅ آخرین رکورد دیروز باید ورودی باشد
-            if last_prev_record.punch == 0:
-                has_night_shift = True
-
-
-# ============================================
-# 🆕 بررسی خطای ترتیب (تفکیک‌شده از ناقص)
-# ============================================
-    has_sequence_error = False
-    sequence_error_detail = ""
-
-    if day_records:
-        sorted_records = sorted(day_records, key=lambda x: x.timestamp)
-
-        # 🆕 بررسی ۱: دو رکورد هم‌نوع پشت سر هم = خطای ترتیب واقعی
-        # مثال: (ورود، ورود) یا (خروج، خروج)
-        for i in range(1, len(sorted_records)):
-            if sorted_records[i].punch == sorted_records[i - 1].punch:
-                has_sequence_error = True
-                if sorted_records[i].punch == 0:
-                    sequence_error_detail = "دو ورود پشت سر هم"
-                else:
-                    sequence_error_detail = "دو خروج پشت سر هم"
-                break
-
-        # 🆕 بررسی ۲: اولین رکورد خروج است (و شیفت شب نیست)
-        # فقط اگر بیش از یک رکورد داشته باشیم، خطای ترتیب است
-        # اگر فقط یک خروج تنها باشد → missing_enter است (نه خطای ترتیب)
-        if not has_sequence_error and not has_night_shift:
-            if sorted_records[0].punch == 1 and len(sorted_records) > 1:
-                has_sequence_error = True
-                sequence_error_detail = "خروج بدون ورود قبلی"
-
-    # 🆕 تعیین وضعیت اصلی - شیفت شب اولویت بالاتری دارد
-    if has_night_shift:
-        # شیفت شب تشخیص داده شد - خطای ترتیب نادیده گرفته شود
-        main_status = STATUS_NIGHT_SHIFT
-        main_label = '🌙 شیفت شب'
-        main_color = 'info'
-    elif has_sequence_error:
-        main_status = STATUS_SEQUENCE_ERROR
-        main_label = f'❌ {sequence_error_detail}' if sequence_error_detail else '❌ خطای ترتیب'
-        main_color = 'danger'
-    elif len(enters) == len(exits) and len(enters) > 0:
-        main_status = STATUS_COMPLETE
-        main_label = '✅ کامل'
-        main_color = 'success'
-    elif len(enters) > len(exits):
-        main_status = STATUS_MISSING_EXIT
-        main_label = '⬅️ ورود بدون خروج'
-        main_color = 'warning'
-    elif len(exits) > len(enters):
-        main_status = STATUS_MISSING_ENTER
-        main_label = '➡️ خروج بدون ورود'
-        main_color = 'warning'
-    else:
-        main_status = STATUS_IMBALANCE
-        main_label = '⚠️ عدم تعادل'
-        main_color = 'warning'
-
-    # ============================================
-    # 🆕 هشدارهای ترکیبی - با در نظر گرفتن ورود/خروج ضمنی
-    # ============================================
-
-    # ساخت لیست‌های موثر (با ضمنی‌ها در صورت شیفت شب)
-    effective_enters = enters.copy()
-    effective_exits = exits.copy()
-
-    # 🆕 تابع کمکی برای ساخت MockRecord با timezone
-    def create_mock_record(timestamp_naive, punch):
-        """ساخت رکورد موقت با timezone مشابه رکوردهای واقعی"""
-        # اگر رکوردهای واقعی داریم، timezone آن‌ها را استفاده کن
-        if enters:
-            tz = enters[0].timestamp.tzinfo
-            timestamp_aware = timestamp_naive.replace(tzinfo=tz)
-        elif exits:
-            tz = exits[0].timestamp.tzinfo
-            timestamp_aware = timestamp_naive.replace(tzinfo=tz)
-        else:
-            # اگر هیچ رکورد واقعی نداریم، naive نگه دار
-            timestamp_aware = timestamp_naive
-
-        return type('MockRecord', (), {'timestamp': timestamp_aware, 'punch': punch})()
-
-    if has_night_shift:
-        # ورود بدون خروج → خروج ضمنی 23:59:59
-        if len(enters) > len(exits) and enters:
-            last_enter = max(enters, key=lambda x: x.timestamp)
-            day = last_enter.timestamp.date()
-            implicit_exit_ts = datetime(day.year, day.month, day.day, 23, 59, 59)
-            implicit_exit = create_mock_record(implicit_exit_ts, 1)
-            effective_exits.append(implicit_exit)
-
-        # خروج بدون ورود → ورود ضمنی 00:00:00
-        elif len(exits) > len(enters) and exits:
-            first_exit = min(exits, key=lambda x: x.timestamp)
-            day = first_exit.timestamp.date()
-            implicit_enter_ts = datetime(day.year, day.month, day.day, 0, 0, 0)
-            implicit_enter = create_mock_record(implicit_enter_ts, 0)
-            effective_enters.append(implicit_enter)
-
-    # 🆕 1. فاصله غیرعادی - بررسی هر جفت ورود-خروج (با ضمنی‌ها)
-    if effective_enters and effective_exits:
-        enters_sorted = sorted(effective_enters, key=lambda x: x.timestamp)
-        exits_sorted = sorted(effective_exits, key=lambda x: x.timestamp)
-
-        # جفت‌سازی: هر ورود با اولین خروج بعد از خودش
-        pairs = []
-        exit_idx = 0
-        for enter_rec in enters_sorted:
-            # پیدا کردن اولین خروج که بعد از این ورود باشد
-            while exit_idx < len(exits_sorted) and exits_sorted[exit_idx].timestamp < enter_rec.timestamp:
-                exit_idx += 1
-
-            if exit_idx < len(exits_sorted):
-                exit_rec = exits_sorted[exit_idx]
-                gap_hours = (exit_rec.timestamp - enter_rec.timestamp).total_seconds() / 3600
-                pairs.append({
-                    'enter': enter_rec,
-                    'exit': exit_rec,
-                    'gap_hours': gap_hours
-                })
-                exit_idx += 1
-
-        # بررسی جفت‌های غیرعادی (بیش از 12 ساعت برای یک جفت)
-        MAX_PAIR_HOURS = 12
-        abnormal_pairs = [p for p in pairs if p['gap_hours'] > MAX_PAIR_HOURS]
-
-        if abnormal_pairs:
-            max_gap = max(p['gap_hours'] for p in abnormal_pairs)
-            worst_pair = max(abnormal_pairs, key=lambda x: x['gap_hours'])
-            enter_time = worst_pair['enter'].timestamp.strftime('%H:%M')
-            exit_time = worst_pair['exit'].timestamp.strftime('%H:%M')
-            warnings.append({
-                'code': WARN_ABNORMAL_GAP,
-                'label': f'⏱️ فاصله {max_gap:.1f}h ({enter_time}-{exit_time})',
-                'color': 'warning'
-            })
-
-    # 🆕 2. تردد تکراری (<2 دقیقه فاصله) - فقط رکوردهای واقعی
-    all_sorted = sorted(day_records, key=lambda x: x.timestamp)
-    for i in range(1, len(all_sorted)):
-        gap = (all_sorted[i].timestamp - all_sorted[i - 1].timestamp).total_seconds()
-        if gap < 120:  # 2 دقیقه
-            warnings.append({
-                'code': WARN_DUPLICATE,
-                'label': '🔁 تردد تکراری',
-                'color': 'warning'
-            })
-            break
-
-    # 🆕 3. ساعت غیرعادی - فقط رکوردهای واقعی
-    for e in enters:
-        if e.timestamp.hour >= 22:
-            warnings.append({
-                'code': WARN_ABNORMAL_TIME,
-                'label': '🕐 ورود دیروقت',
-                'color': 'warning'
-            })
-            break
-    for e in exits:
-        if e.timestamp.hour < 5:
-            warnings.append({
-                'code': WARN_ABNORMAL_TIME,
-                'label': '🕐 خروج زودهنگام',
-                'color': 'warning'
-            })
-            break
-
-    # 🆕 4. تعداد تردد بیش از حد (>6)
-    if len(day_records) > 6:
-        warnings.append({
-            'code': WARN_TOO_MANY,
-            'label': f'🔢 {len(day_records)} تردد',
-            'color': 'warning'
-        })
-
-    # 🆕 5. تردد در جمعه
-    if is_friday and day_records:
-        warnings.append({
-            'code': WARN_FRIDAY_WORK,
-            'label': '🟡 جمعه‌کاری',
-            'color': 'info'
-        })
-
-    # 🆕 6. تردد در تعطیل رسمی
-    if holiday_title and day_records:
-        warnings.append({
-            'code': WARN_HOLIDAY_WORK,
-            'label': f'🔴 تعطیل‌کاری ({holiday_title})',
-            'color': 'danger'
-        })
-
-    return {
-        'main_status': main_status,
-        'main_label': main_label,
-        'main_color': main_color,
-        'warnings': warnings,
-        'is_friday': is_friday,
-        'is_holiday': holiday_title is not None,
-        'holiday_title': holiday_title,
-    }
-
-
-from datetime import datetime
-import logging
-
-logger = logging.getLogger(__name__)
-
-def calculate_work_hours(
-    day_records: list,
-    is_night_shift: bool
-) -> tuple:
-    """
-    🆕 محاسبه دقیق ساعات کاری با جمع زدن بازه‌های ورود و خروج
-    - اگر بیش از ۲ تردد باشد، بازه هر جفت (ورود تا خروج) محاسبه و جمع می‌شود
-    - ترددهای تکراری (دو ورود یا دو خروج پشت سر هم) نادیده گرفته می‌شوند
-    - شیفت شب (ورود/خروج ضمنی) به درستی مدیریت می‌شود
-    """
-    from datetime import datetime
-    import logging
-    logger = logging.getLogger(__name__)
-
-    if not day_records:
-        return 0, None, None
-
-    # تابع کمکی برای حذف timezone و مرتب‌سازی
-    def get_naive_ts(rec):
-        return rec.timestamp.replace(tzinfo=None) if rec.timestamp.tzinfo else rec.timestamp
-
-    sorted_records = sorted(day_records, key=get_naive_ts)
-    
-    total_seconds = 0
-    open_enter = None
-    
-    for rec in sorted_records:
-        ts = get_naive_ts(rec)
-        
-        if rec.punch == 0:  # ورود
-            if open_enter is None:
-                open_enter = ts
-            # اگر open_enter از قبل ست شده باشد (دو ورود پشت سر هم)، ورود دوم نادیده گرفته می‌شود
-            
-        elif rec.punch == 1:  # خروج
-            if open_enter is not None:
-                # بستن بازه کاری
-                diff = (ts - open_enter).total_seconds()
-                if diff > 0:
-                    total_seconds += diff
-                open_enter = None
-            else:
-                # خروج بدون ورود قبلی در همین روز
-                if is_night_shift:
-                    # این خروجِ صبحِ شیفت شب است → ورود ضمنی 00:00:00
-                    day = ts.date()
-                    implicit_enter = datetime(day.year, day.month, day.day, 0, 0, 0)
-                    diff = (ts - implicit_enter).total_seconds()
-                    if diff > 0:
-                        total_seconds += diff
-                    # دیگر open_enter ست نمی‌شود تا ورودهای بعدی عادی پردازش شوند
-
-    # اگر در پایان روز، ورودی بدون خروج مانده باشد
-    if open_enter is not None:
-        if is_night_shift:
-            # شیفت شب → خروج ضمنی 23:59:59
-            day = open_enter.date()
-            implicit_exit = datetime(day.year, day.month, day.day, 23, 59, 59)
-            diff = (implicit_exit - open_enter).total_seconds()
-            if diff > 0:
-                total_seconds += diff
-        else:
-            # روز عادی و خروج فراموش شده → این بازه ناقص است و محاسبه نمی‌شود
-            logger.debug(f"⚠️ Unpaired enter at {open_enter} ignored for non-night-shift.")
-
-    work_hours = total_seconds / 3600.0
-    
-    # تعیین اولین ورود و آخرین خروج برای نمایش در جدول
-    enters = [r for r in day_records if r.punch == 0]
-    exits = [r for r in day_records if r.punch == 1]
-    
-    first_enter = min(enters, key=get_naive_ts).timestamp if enters else None
-    last_exit = max(exits, key=get_naive_ts).timestamp if exits else None
-    
-    if first_enter and first_enter.tzinfo:
-        first_enter = first_enter.replace(tzinfo=None)
-    if last_exit and last_exit.tzinfo:
-        last_exit = last_exit.replace(tzinfo=None)
-
-    # تنظیم زمان‌های ضمنی برای نمایش در شیفت شب
-    if is_night_shift:
-        if first_enter and not last_exit:
-            day = first_enter.date()
-            last_exit = datetime(day.year, day.month, day.day, 23, 59, 59)
-        elif last_exit and not first_enter:
-            day = last_exit.date()
-            first_enter = datetime(day.year, day.month, day.day, 0, 0, 0)
-
-    return work_hours, first_enter, last_exit
 
 
 @router.get("/attendance", response_class=HTMLResponse)
