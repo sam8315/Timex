@@ -1,8 +1,16 @@
 """
 ماژول گزارش تفصیلی ماهانه کارمند - نسخه ۲
 با ستون‌های متعدد ورود/خروج و مبنای محاسبه بر اساس سیاست گروه
+
+Phase 5: محاسبه «تردد واقعی» (Actual Attendance) از Central Attendance Engine
+(`core/attendance_calculator.compute_day_attendance`) انجام می‌شود؛
+این ماژول فقط لایه Report است:
+
+    Central Engine  → Actual Work / pairs / وضعیت تردد
+    Policy Engine   → Required Duty / موظفی روز
+    Report Layer    → surplus / deficit / weekly overtime / monthly summary
 """
-from datetime import date, timedelta, datetime
+from datetime import date, timedelta
 from typing import List, Dict, Optional
 from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
@@ -15,6 +23,11 @@ from models.daily_status import DailyStatus
 from models.leave_request import LeaveRequest
 from models.holiday import Holiday
 from core.time_calculator import calculate_shift_hours
+from core.attendance_calculator import (
+    STATUS_NIGHT_SHIFT,
+    STATUS_NO_ATTENDANCE,
+    compute_day_attendance,
+)
 from web.services.attendance_policy_service import (
     resolve_policy,
     resolve_policy_day,
@@ -75,12 +88,15 @@ class DetailedMonthlyReportGeneratorV2:
         if not employee:
             return {'success': False, 'message': 'کارمند یافت نشد'}
 
-        # دریافت تمام رکوردهای تردد ماه
+        # دریافت رکوردهای تردد — با حاشیه مرز ماه (Phase 5)
+        # روزهای حاشیه (‎-1 / +2 روز) صرفاً context موتور مرکزی برای تشخیص
+        # شیفت شبِ عبور از مرز ماه هستند؛ فقط روزهای داخل ماه در گزارش و
+        # summary لحاظ می‌شوند (در حلقه ساخت `days` فقط ماه فیلتر می‌شود).
         attendances = self.db.query(Attendance).filter(
             and_(
                 Attendance.user_id == user_id,
-                func.date(Attendance.timestamp) >= g_start,
-                func.date(Attendance.timestamp) <= g_end,
+                func.date(Attendance.timestamp) >= g_start - timedelta(days=1),
+                func.date(Attendance.timestamp) <= g_end + timedelta(days=2),
                 Attendance.is_deleted == False
             )
         ).order_by(Attendance.timestamp).all()
@@ -157,7 +173,9 @@ class DetailedMonthlyReportGeneratorV2:
 
             # تعیین وضعیت روز
             is_friday = current.weekday() == 4
-            is_holiday = self._is_holiday(current, employee.department)
+            holiday = self._find_holiday(current, employee.department)
+            is_holiday = holiday is not None
+            holiday_title = holiday.title if holiday is not None else None
 
             # Phase 6C: سیاست گروه برای روز — روز غیرکاری Policy هم «تعطیل» است
             # (همان semantics resolve_required_minutes → Non-working = 0)
@@ -172,9 +190,15 @@ class DetailedMonthlyReportGeneratorV2:
                 current, statuses_by_date, attendances_by_day, is_day_off
             )
 
-            # محاسبه ساعات کاری با چند جفت ورود/خروج
-            day_data = self._calculate_day_work_hours_v2(
-                current, attendances_by_day.get(current, []), attendances
+            # Actual Attendance فقط از Central Engine (Phase 5) —
+            # با context روز قبل/بعد (روزهای حاشیه ماه هم fetch شده‌اند)
+            day_data = self._compute_day_actual(
+                current,
+                attendances_by_day.get(current, []),
+                attendances_by_day.get(current - timedelta(days=1), []),
+                attendances_by_day.get(current + timedelta(days=1), []),
+                is_friday=is_friday,
+                holiday_title=holiday_title,
             )
 
             work_hours = day_data['work_hours']
@@ -305,161 +329,91 @@ class DetailedMonthlyReportGeneratorV2:
 
         return {'code': 'A', 'name': 'غایب'}
 
-    def _calculate_day_work_hours_v2(self, current: date, day_attendances: List, all_attendances: List) -> Dict:
+    def _compute_day_actual(
+        self,
+        current: date,
+        day_records: List,
+        prev_day_records: List,
+        next_day_records: List,
+        is_friday: bool,
+        holiday_title: Optional[str],
+    ) -> Dict:
         """
-        محاسبه ساعات کاری روز با چند جفت ورود/خروج - نسخه ۲
+        Actual Attendance یک روز - فقط از Central Attendance Engine.
+
+        خروجی موتور (status / night shift / pairs / work_hours) اینجا به
+        ساختار فعلی گزارش تبدیل می‌شود تا template بدون تغییر کار کند:
+            - work_hours: مقدار خام موتور (بدون round داخلی)
+            - pairs: همان pairهای موتور؛ نمایش حداکثر MAX_PAIRS جفت
+            - attendance_status: label نمایشی فعلی monthly-full
         """
-        if not day_attendances:
-            return {
-                'work_hours': 0.0,
-                'pairs': [],
-                'attendance_status': 'بدون تردد',
-                'has_incomplete': False
-            }
+        result = compute_day_attendance(
+            day=current,
+            day_records=day_records,
+            prev_day_records=prev_day_records,
+            next_day_records=next_day_records,
+            is_friday=is_friday,
+            holiday_title=holiday_title,
+        )
 
-        enters = sorted([a for a in day_attendances if a.punch == 0], key=lambda x: x.timestamp)
-        exits = sorted([a for a in day_attendances if a.punch == 1], key=lambda x: x.timestamp)
+        # موتور برای محاسبه، زمان‌ها را naive نگه می‌دارد؛ ساختار قدیمیِ گزارش
+        # pairها را با همان timezone رکوردهای تردد می‌دهد (فقط نمایش/سازگاری)
+        tzinfo = None
+        for rec in day_records:
+            if rec.timestamp.tzinfo is not None:
+                tzinfo = rec.timestamp.tzinfo
+                break
 
-        # تابع کمکی برای ساخت datetime با timezone صحیح
-        def make_aware_datetime(d: date, hour: int, minute: int, second: int, microsecond: int, ref_timestamp):
-            naive_dt = datetime.combine(d, datetime.min.time().replace(
-                hour=hour, minute=minute, second=second, microsecond=microsecond
-            ))
-            if ref_timestamp.tzinfo is not None:
-                return naive_dt.replace(tzinfo=ref_timestamp.tzinfo)
-            return naive_dt
+        def _with_tz(value):
+            if value is not None and tzinfo is not None and value.tzinfo is None:
+                return value.replace(tzinfo=tzinfo)
+            return value
 
-        # حالت ۱: ورود و خروج هر دو در این روز
-        if enters and exits:
-            first_enter = min(e.timestamp for e in enters)
-            last_exit = max(e.timestamp for e in exits)
-
-            # بررسی آیا خروج فردا است
-            if last_exit.date() > current:
-                end_of_day = make_aware_datetime(current, 23, 59, 59, 999999, first_enter)
-
-                pairs = []
-                for i, enter in enumerate(enters):
-                    if i < len(exits):
-                        exit_time = exits[i].timestamp
-                        if exit_time.date() > current:
-                            exit_time = end_of_day
-                        if exit_time > enter.timestamp:
-                            pairs.append({
-                                'enter': enter.timestamp,
-                                'exit': exit_time,
-                                'hours': round((exit_time - enter.timestamp).total_seconds() / 3600, 2)
-                            })
-
-                work_hours = sum(p['hours'] for p in pairs)
-
-                return {
-                    'work_hours': round(work_hours, 2),
-                    'pairs': pairs[:self.MAX_PAIRS],
-                    'attendance_status': f'کامل (خروج فردا)',
-                    'has_incomplete': False
-                }
-
-            # خروج در همان روز است
-            if last_exit > first_enter:
-                pairs = []
-                for i, enter in enumerate(enters):
-                    if i < len(exits):
-                        exit_time = exits[i].timestamp
-                        if exit_time > enter.timestamp:
-                            pairs.append({
-                                'enter': enter.timestamp,
-                                'exit': exit_time,
-                                'hours': round((exit_time - enter.timestamp).total_seconds() / 3600, 2)
-                            })
-
-                work_hours = sum(p['hours'] for p in pairs)
-
-                if len(enters) == len(exits):
-                    if len(enters) == 1:
-                        attendance_status = 'کامل'
-                    else:
-                        attendance_status = f'کامل{len(enters)}'
-                else:
-                    attendance_status = f'ناقص ({len(enters)}و/{len(exits)}خ)'
-
-                return {
-                    'work_hours': round(work_hours, 2),
-                    'pairs': pairs[:self.MAX_PAIRS],
-                    'attendance_status': attendance_status,
-                    'has_incomplete': len(enters) != len(exits)
-                }
-
-        # حالت ۲: فقط ورود (بررسی آیا فردا خروج دارد)
-        if enters and not exits:
-            first_enter = min(e.timestamp for e in enters)
-
-            next_day = current + timedelta(days=1)
-            next_day_attendances = [a for a in all_attendances if a.timestamp.date() == next_day]
-            next_day_exits = [a for a in next_day_attendances if a.punch == 1]
-
-            if next_day_exits:
-                end_of_day = make_aware_datetime(current, 23, 59, 59, 999999, first_enter)
-                work_hours = (end_of_day - first_enter).total_seconds() / 3600
-
-                pairs = [{
-                    'enter': first_enter,
-                    'exit': end_of_day,
-                    'hours': round(work_hours, 2)
-                }]
-
-                return {
-                    'work_hours': round(work_hours, 2),
-                    'pairs': pairs,
-                    'attendance_status': 'کامل (خروج فردا)',
-                    'has_incomplete': False
-                }
-            else:
-                return {
-                    'work_hours': 0.0,
-                    'pairs': [],
-                    'attendance_status': f'ورود بدون خروج ({len(enters)} ورود)',
-                    'has_incomplete': True
-                }
-
-        # حالت ۳: فقط خروج (بررسی آیا دیروز ورود داشته)
-        if exits and not enters:
-            last_exit = max(e.timestamp for e in exits)
-
-            prev_day = current - timedelta(days=1)
-            prev_day_attendances = [a for a in all_attendances if a.timestamp.date() == prev_day]
-            prev_day_enters = [a for a in prev_day_attendances if a.punch == 0]
-
-            if prev_day_enters:
-                start_of_day = make_aware_datetime(current, 0, 0, 0, 0, last_exit)
-                work_hours = (last_exit - start_of_day).total_seconds() / 3600
-
-                pairs = [{
-                    'enter': start_of_day,
-                    'exit': last_exit,
-                    'hours': round(work_hours, 2)
-                }]
-
-                return {
-                    'work_hours': round(work_hours, 2),
-                    'pairs': pairs,
-                    'attendance_status': 'کامل (ورود دیروز)',
-                    'has_incomplete': False
-                }
-            else:
-                return {
-                    'work_hours': 0.0,
-                    'pairs': [],
-                    'attendance_status': f'خروج بدون ورود ({len(exits)} خروج)',
-                    'has_incomplete': True
-                }
+        pairs = [
+            {'enter': _with_tz(pair['enter']),
+             'exit': _with_tz(pair['exit']),
+             'hours': pair['hours']}
+            for pair in result.pairs
+        ]
+        attendance_status, has_incomplete = self._display_status(result)
 
         return {
-            'work_hours': 0.0,
-            'pairs': [],
-            'attendance_status': 'بدون تردد',
-            'has_incomplete': False
+            # مقدار خام موتور (بدون round داخلی)؛ float برای سازگاری نوع با خروجی قدیمی
+            'work_hours': float(result.work_hours),
+            'pairs': pairs[:self.MAX_PAIRS],
+            'attendance_status': attendance_status,
+            'has_incomplete': has_incomplete,
         }
+
+    @staticmethod
+    def _display_status(result) -> tuple:
+        """
+        نگاشت وضعیت فنی Central Engine به labelهای نمایشی فعلی گزارش.
+        (لایه نمایش - متن‌های UI به خاطر migration عوض نمی‌شوند.)
+        """
+        enters = result.enter_count
+        exits = result.exit_count
+
+        if result.main_status == STATUS_NO_ATTENDANCE or (enters == 0 and exits == 0):
+            return 'بدون تردد', False
+
+        if result.main_status == STATUS_NIGHT_SHIFT:
+            if exits == 0:
+                return 'کامل (خروج فردا)', False
+            if enters == 0:
+                return 'کامل (ورود دیروز)', False
+            # خروجِ صبحِ قبل از ورودِ شب در همان روز
+            if enters == exits:
+                return ('کامل' if enters == 1 else f'کامل{enters}'), False
+            return f'ناقص ({enters}و/{exits}خ)', True
+
+        if exits == 0:
+            return f'ورود بدون خروج ({enters} ورود)', True
+        if enters == 0:
+            return f'خروج بدون ورود ({exits} خروج)', True
+        if enters == exits:
+            return ('کامل' if enters == 1 else f'کامل{enters}'), False
+        return f'ناقص ({enters}و/{exits}خ)', True
 
     def _calculate_surplus_deficit(self, work_hours: float, is_day_off: bool, person_status: Dict, daily_required_hours: float = 7.33) -> tuple:
         """
@@ -602,19 +556,23 @@ class DetailedMonthlyReportGeneratorV2:
 
         return weekly_overtime
 
-    def _is_holiday(self, target_date: date, department: str) -> bool:
-        """بررسی تعطیل بودن"""
+    def _find_holiday(self, target_date: date, department: str) -> Optional[Holiday]:
+        """رکورد تعطیلِ مؤثر برای تاریخ/گروه (برای عنوان و پرچم تعطیلی)"""
         holidays = self.db.query(Holiday).filter(
             Holiday.holiday_date == target_date
         ).all()
 
         for holiday in holidays:
             if holiday.group_id is None:
-                return True
+                return holiday
             elif holiday.group_id == department:
-                return True
+                return holiday
 
-        return False
+        return None
+
+    def _is_holiday(self, target_date: date, department: str) -> bool:
+        """بررسی تعطیل بودن"""
+        return self._find_holiday(target_date, department) is not None
 
     def _get_day_name(self, d: date) -> str:
         """دریافت نام روز هفته"""
