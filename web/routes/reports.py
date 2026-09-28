@@ -31,6 +31,38 @@ from core.pdf_raw_report import (
     export_group as export_raw_pdf_group,
 )
 from core.detailed_monthly_report_v2 import DetailedMonthlyReportGeneratorV2
+from core.excel_detailed_export_v2 import DetailedExcelExporterV2
+from core.pdf_detailed_export_v2 import DetailedPDFExporterV2
+
+
+def _monthly_full_report_data(target_user_id: str, year: int, month: int):
+    """گزارش monthly-full از همان Central Engine مسیر صفحه.
+
+    خروجی Screen / Print / PDF / Excel همگی از این یک ساختار داده می‌آیند؛
+    لایه export هیچ محاسبهٔ دوبارهٔ تردد انجام نمی‌دهد.
+    """
+    generator = DetailedMonthlyReportGeneratorV2()
+    try:
+        report = generator.generate_detailed_report(
+            target_user_id, year, month)
+    finally:
+        generator.close()
+    if not report.get('success'):
+        raise ValueError(report.get('message', 'خطا در تولید گزارش'))
+    return report
+
+
+def _ascii_filename_part(value: str, fallback: str = 'report') -> str:
+    """بخش ASCII نام فایل — هدر HTTP فقط latin-1 را می‌پذیرد.
+
+    نام فارسی کامل از طریق پارامتر `filename*=UTF-8''` منتقل می‌شود.
+    """
+    cleaned = ''.join(
+        char for char in str(value)
+        if char.isascii() and (char.isalnum() or char in ('-', '_', '.'))
+    )
+    return cleaned or fallback
+
 
 router = APIRouter(tags=["Reports"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
@@ -545,6 +577,100 @@ async def monthly_full_report_generate(
         return RedirectResponse(
             url=f"/reports/monthly-full?error={str(e)}",
             status_code=302
+        )
+
+
+@router.get("/reports/monthly-full/export-excel")
+async def monthly_full_report_excel(
+        request: Request,
+        target_user_id: str = Query(...),
+        year: int = Query(...),
+        month: int = Query(...),
+        user: User = Depends(require_admin),
+        db: Session = Depends(get_db),
+):
+    """خروجی اکسل گزارش کامل ماهانه"""
+    enforce_permission(db, user, 'view_reports')
+    try:
+        if month < 1 or month > 12:
+            raise ValueError("ماه نامعتبر است")
+
+        report = _monthly_full_report_data(target_user_id, year, month)
+
+        output = BytesIO()
+        exporter = DetailedExcelExporterV2()
+        exporter.export_detailed_report(report, output)
+
+        emp_name = report['employee']['full_name']
+        month_name = report['month_name']
+        ascii_name = _ascii_filename_part(
+            report['employee']['user_id'], 'detailed')
+        filename = f'{ascii_name}_detailed_{year}_{month:02d}.xlsx'
+        utf8_filename = quote(
+            f'گزارش_تفصیلی_V2_{emp_name}_{month_name}_{year}.xlsx',
+            safe='',
+        )
+        return StreamingResponse(
+            output,
+            media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            headers={
+                'Content-Disposition': (
+                    f'attachment; filename="{filename}"; filename*=UTF-8\'\'{utf8_filename}'
+                )
+            },
+        )
+    except Exception as e:
+        error = quote(str(e), safe='')
+        return RedirectResponse(
+            url=f"/reports/monthly-full?error={error}",
+            status_code=302,
+        )
+
+
+@router.get("/reports/monthly-full/export-pdf")
+async def monthly_full_report_pdf(
+        request: Request,
+        target_user_id: str = Query(...),
+        year: int = Query(...),
+        month: int = Query(...),
+        user: User = Depends(require_admin),
+        db: Session = Depends(get_db),
+):
+    """خروجی PDF گزارش کامل ماهانه"""
+    enforce_permission(db, user, 'view_reports')
+    try:
+        if month < 1 or month > 12:
+            raise ValueError("ماه نامعتبر است")
+
+        report = _monthly_full_report_data(target_user_id, year, month)
+
+        output = BytesIO()
+        exporter = DetailedPDFExporterV2()
+        exporter.export_detailed_report(report, output)
+
+        emp_name = report['employee']['full_name']
+        month_name = report['month_name']
+        ascii_name = _ascii_filename_part(
+            report['employee']['user_id'], 'detailed')
+        filename = f'{ascii_name}_detailed_{year}_{month:02d}.pdf'
+        utf8_filename = quote(
+            f'گزارش_تفصیلی_V2_{emp_name}_{month_name}_{year}.pdf',
+            safe='',
+        )
+        return StreamingResponse(
+            output,
+            media_type='application/pdf',
+            headers={
+                'Content-Disposition': (
+                    f'attachment; filename="{filename}"; filename*=UTF-8\'\'{utf8_filename}'
+                )
+            },
+        )
+    except Exception as e:
+        error = quote(str(e), safe='')
+        return RedirectResponse(
+            url=f"/reports/monthly-full?error={error}",
+            status_code=302,
         )
 
 

@@ -23,8 +23,15 @@ class DetailedPDFExporterV2:
 
     def __init__(self, output_dir: str = "exports"):
         self.output_dir = Path(output_dir)
-        self.output_dir.mkdir(exist_ok=True)
         self.font_path = self._find_persian_font()
+
+    def _resolve_output_file(self, filename: str) -> str:
+        """پوشهٔ خروجی فقط هنگام ذخیرهٔ واقعی فایل ساخته می‌شود.
+
+        مسیر وب (stream) هیچ فایلی روی دیسک نمی‌نویسد و نباید پوشه بسازد.
+        """
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        return str(self.output_dir / filename)
 
     def _find_persian_font(self) -> str:
         """پیدا کردن فونت فارسی"""
@@ -64,8 +71,16 @@ class DetailedPDFExporterV2:
             return 'Persian'
         return 'Helvetica'
 
-    def export_detailed_report(self, report: Dict) -> str:
-        """خروجی گزارش تفصیلی یک کارمند به PDF"""
+    def export_detailed_report(self, report: Dict, output=None):
+        """خروجی گزارش تفصیلی یک کارمند به PDF
+
+        Args:
+            report: گزارش تفصیلی
+            output: اگر داده شود، PDF در آن stream/فایل نوشته می‌شود؛
+                    در غیر این صورت در `output_dir` ذخیره می‌شود.
+        Returns:
+            مسیر فایل ذخیره‌شده، یا همان `output` در حالت stream.
+        """
         pdf = FPDF()
         pdf.add_page()
 
@@ -101,7 +116,7 @@ class DetailedPDFExporterV2:
             pdf.cell(col_widths[i], 5, self._fix_rtl(header), border=1, align='C')
         pdf.ln()
 
-        pdf.set_font(font_name, '', 5)
+        pdf.set_font(font_name, '', 6)
         for day in report['days']:
             def fmt_time(dt):
                 return dt.strftime('%H:%M') if dt else '-'
@@ -129,17 +144,17 @@ class DetailedPDFExporterV2:
                 day['jalali_date'],
                 day['day_name'][:6],
                 day['day_status'][:6],
-                day['person_status_name'][:10],
+                day['person_status_name'][:12],
                 enter1, exit1,
                 enter2, exit2,
                 enter3, exit3,
-                attendance_str[:10],
+                attendance_str[:12],
                 fmt_hours(day['work_hours']),
                 fmt_hours(day['surplus']),
                 fmt_hours(day['deficit'])
             ]
 
-            if pdf.get_y() > pdf.h - 20:
+            if pdf.get_y() > pdf.h - 25:
                 pdf.add_page()
                 pdf.set_font(font_name, 'B', 6)
                 current_x = start_x + table_width
@@ -148,13 +163,13 @@ class DetailedPDFExporterV2:
                     pdf.set_xy(current_x, pdf.get_y())
                     pdf.cell(col_widths[i], 5, self._fix_rtl(header), border=1, align='C')
                 pdf.ln()
-                pdf.set_font(font_name, '', 5)
+                pdf.set_font(font_name, '', 6)
 
             current_x = start_x + table_width
             for i, value in enumerate(values):
                 current_x -= col_widths[i]
                 pdf.set_xy(current_x, pdf.get_y())
-                if i in [0, 4, 5, 6, 7, 8, 9, 11, 12, 13]:
+                if i in [0, 4, 5, 6, 7, 8, 9, 12, 13]:
                     pdf.cell(col_widths[i], 4, value, border=1, align='C')
                 else:
                     pdf.cell(col_widths[i], 4, self._fix_rtl(value), border=1, align='C')
@@ -172,21 +187,47 @@ class DetailedPDFExporterV2:
                  self._fix_rtl(f"موظفی: {summary['duty_days']} روز / {self._fmt_hours(summary['duty_hours'])} ساعت"),
                  ln=True, align='R')
         pdf.cell(0, 5, self._fix_rtl(
-            f"حضور: {summary['present_days']} | مرخصی: {summary['leave_days']} | غیبت: {summary['absent_days']} | استراحت: {summary['rest_days']} | تعطیل: {summary['holiday_days']}"),
+            f"حضور: {summary['present_days']} | مرخصی: {summary['leave_days']} | مأموریت: {summary['mission_days']} | غیبت: {summary['absent_days']} | استراحت: {summary['rest_days']} | تعطیل: {summary['holiday_days']}"),
                  ln=True, align='R')
         pdf.cell(0, 5, self._fix_rtl(
             f"کارکرد: {self._fmt_hours(summary['total_work_hours'])} | صبح: {self._fmt_hours(summary['total_morning'])} | عصر: {self._fmt_hours(summary['total_evening'])} | شب: {self._fmt_hours(summary['total_night'])}"),
                  ln=True, align='R')
+        # مبنای اضافه/کسری، موظفی هر روز از Policy/Schedule است (نه مقدار ثابت)
         pdf.cell(0, 5, self._fix_rtl(
-            f"اضافی (7:20): {self._fmt_hours(summary['total_surplus'])} | کسری (7:20): {self._fmt_hours(summary['total_deficit'])} | هفتگی: {self._fmt_hours(summary['weekly_overtime'])} | جمعه کاری: {self._fmt_hours(summary['friday_work_hours'])}"),
-                 ln=True, align='R')
+            f"اضافی: {self._fmt_hours(summary['total_surplus'])} | کسری: {self._fmt_hours(summary['total_deficit'])} | هفتگی: {self._fmt_hours(summary['weekly_overtime'])} | جمعه کاری: {self._fmt_hours(summary['friday_work_hours'])} | تعطیل کاری: {self._fmt_hours(summary['holiday_work_hours'])}"),
+             ln=True, align='R')
 
-        filename = self.output_dir / f"گزارش_تفصیلی_V2_{emp['full_name']}_{report['month_name']}_{report['year']}.pdf"
-        pdf.output(str(filename))
-        return str(filename)
+        # ✅ وضعیت کلی
+        pdf.set_font(font_name, 'B', 9)
+        pdf.cell(0, 5, self._fix_rtl('وضعیت کلی:'), ln=True, align='R')
+        pdf.set_font(font_name, '', 9)
+        pdf.cell(0, 5, self._fix_rtl(f"تهاتر: {self._fmt_hours(abs(summary['net_balance']))} ({abs(summary['net_balance']):.2f} عددی) | وضعیت: {summary['overall_status']} | مقدار خالص: {summary['net_balance_hours']:.2f} عددی"), ln=True, align='R')
 
-    def export_all_employees_report(self, reports: List[Dict], year: int, month: int, month_name: str) -> str:
-        """خروجی گزارش همه کارمندان در یک فایل PDF"""
+        if output is None:
+            filename = (
+                f"گزارش_تفصیلی_V2_{emp['full_name']}_"
+                f"{report['month_name']}_{report['year']}.pdf"
+            )
+            path = self._resolve_output_file(filename)
+            pdf.output(path)
+            return path
+
+        pdf.output(output)
+        if hasattr(output, 'seek'):
+            output.seek(0)
+        return output
+
+    def export_all_employees_report(self, reports: List[Dict], year: int, month: int, month_name: str, output=None):
+        """خروجی گزارش همه کارمندان در یک فایل PDF
+
+        Args:
+            reports: لیست گزارش‌ها
+            year: سال
+            month: ماه
+            month_name: نام ماه
+            output: اگر داده شود، PDF در آن stream/فایل نوشته می‌شود؛
+                    در غیر این صورت در `output_dir` ذخیره می‌شود.
+        """
         pdf = FPDF()
         pdf.set_auto_page_break(auto=True, margin=15)
 
@@ -248,9 +289,16 @@ class DetailedPDFExporterV2:
             pdf.add_page()
             self._add_employee_detail_to_pdf(pdf, report, font_name)
 
-        filename = self.output_dir / f"گزارش_کلی_V2_{month_name}_{year}.pdf"
-        pdf.output(str(filename))
-        return str(filename)
+        if output is None:
+            path = self._resolve_output_file(
+                f"گزارش_کلی_V2_{month_name}_{year}.pdf")
+            pdf.output(path)
+            return path
+
+        pdf.output(output)
+        if hasattr(output, 'seek'):
+            output.seek(0)
+        return output
 
     def _add_employee_detail_to_pdf(self, pdf: FPDF, report: Dict, font_name: str):
         """اضافه کردن گزارش تفصیلی یک کارمند"""
@@ -354,13 +402,14 @@ class DetailedPDFExporterV2:
         pdf.cell(0, 5,
                  self._fix_rtl(f"موظفی: {summary['duty_days']} روز / {self._fmt_hours(summary['duty_hours'])} ساعت"),
                  ln=True, align='R')
-        pdf.cell(0, 5, self._fix_rtl(f"حضور: {summary['present_days']} | جمعه کاری: {summary['friday_work_days']} | تعطیل کاری: {summary['holiday_work_days']} | مرخصی: {summary['leave_days']} | غیبت: {summary['absent_days']} | استراحت: {summary['rest_days']} | تعطیل: {summary['holiday_days']}"), ln=True, align='R')
+        pdf.cell(0, 5, self._fix_rtl(f"حضور: {summary['present_days']} | جمعه کاری: {summary['friday_work_days']} | تعطیل کاری: {summary['holiday_work_days']} | مرخصی: {summary['leave_days']} | مأموریت: {summary['mission_days']} | غیبت: {summary['absent_days']} | استراحت: {summary['rest_days']} | تعطیل: {summary['holiday_days']}"), ln=True, align='R')
 
         pdf.cell(0, 5, self._fix_rtl(
             f"کارکرد: {self._fmt_hours(summary['total_work_hours'])} | صبح: {self._fmt_hours(summary['total_morning'])} | عصر: {self._fmt_hours(summary['total_evening'])} | شب: {self._fmt_hours(summary['total_night'])}"),
                  ln=True, align='R')
+        # مبنای اضافه/کسری، موظفی هر روز از Policy/Schedule است (نه مقدار ثابت)
         pdf.cell(0, 5, self._fix_rtl(
-            f"اضافی: {self._fmt_hours(summary['total_surplus'])} | کسری: {self._fmt_hours(summary['total_deficit'])} | هفتگی: {self._fmt_hours(summary['weekly_overtime'])} | جمعه کاری: {self._fmt_hours(summary['friday_work_hours'])}"),
+            f"اضافی: {self._fmt_hours(summary['total_surplus'])} | کسری: {self._fmt_hours(summary['total_deficit'])} | هفتگی: {self._fmt_hours(summary['weekly_overtime'])} | جمعه کاری: {self._fmt_hours(summary['friday_work_hours'])} | تعطیل کاری: {self._fmt_hours(summary['holiday_work_hours'])}"),
                  ln=True, align='R')
 
         # ✅ وضعیت کلی

@@ -124,6 +124,8 @@ shared seed dataset matches exactly
 - `tests/test_monthly_v1_central_engine.py` — Phase 7 گزارش کنسولی v1 (7)
 - `tests/test_attendance_analyzer_central_engine.py` — Phase 7 ثبت یافته‌ی
   تحلیلگر و پین قرارداد فعلی آن (3)
+- `tests/test_monthly_full_exports.py` — Phase 9 خروجی‌های monthly-full:
+  Print / PDF / Excel (22)
 
 Pre-existing failures unrelated to this work:
 `tests/test_attendance_policy_service.py` (19) and
@@ -246,13 +248,50 @@ pairing در آن‌ها نیست. جریان داده:
 نه برعکس. `ui/console.py:4895/4901/5057/5062/5480/5485/5658/5663` فقط
 دیکشنری آماده را به exporter می‌دهد.
 
-## 14. مسیرهای export در وب وجود ندارند
+از Phase 9، هر دو exporter یک آرگومان اختیاری `output` می‌پذیرند: اگر داده
+شود، خروجی در همان stream نوشته می‌شود (مسیر وب)؛ در غیر این صورت مثل قبل
+در `output_dir` ذخیره می‌شود (مسیر کنسول). ساخت پوشهٔ خروجی فقط هنگام
+ذخیرهٔ واقعی فایل انجام می‌شود، بنابراین درخواست‌های وب هیچ فایلی روی دیسک
+نمی‌نویسند.
 
-بررسی مجدد `web/routes/reports.py`: تنها `GET /reports/monthly-full` (`:455`)
-و `POST /reports/monthly-full` (`:491`) وجود دارد. مسیرهای
+## 14. مسیرهای export در وب
+
+**Phase 9 وضعیت جدید:** تمپلیت `admin/report_monthly_full.html` از پیش لینک
+`دانلود اکسل` و `دانلود PDF` را به
 `/reports/monthly-full/export-excel` و `/reports/monthly-full/export-pdf`
-**وجود ندارند** و طبق دستور این Phase **اضافه نشدند** — یک issue
-پیشین و نامرتبط.
+می‌داد، ولی هیچ‌کدام از این دو مسیر در `web/routes/reports.py` وجود نداشت؛
+یعنی هر دو دکمهٔ دانلود ۴۰۴ می‌دادند. این یک نقص واقعیِ لایهٔ خروجی بود
+(قابل اثبات از خود مخزن) و در این Phase رفع شد.
+
+هر دو مسیر اکنون وجود دارند و دقیقاً همان سطح دسترسی گزارش پایه را دارند:
+
+    require_admin + enforce_permission('view_reports')
+
+جریان دادهٔ هر چهار خروجی — یکسان:
+
+    DetailedMonthlyReportGeneratorV2.generate_detailed_report(...)
+        →  Central Attendance Engine (Actual Work)
+        →  Policy/Schedule Engine (Required Work)
+        →  report dict
+              ├── Screen / Print   : admin/report_monthly_full.html
+              ├── PDF               : core/pdf_detailed_export_v2.py
+              └── Excel             : core/excel_detailed_export_v2.py
+
+`web/routes/reports.py::_monthly_full_report_data` تنها نقطهٔ ورود مشترک
+است: هر درخواست export دقیقاً **یک بار** گزارش می‌سازد (تست
+`test_exports_use_single_report_generation`) و exporterها فقط قالب‌بندی
+می‌کنند. **هیچ خروجی‌ای attendance را دوباره محاسبه نمی‌کند.**
+
+دو نکتهٔ صحت که در این Phase در لایهٔ export اصلاح شد:
+
+- برچسب‌های «اضافه کاری روزانه (مبنای 7:20)» / «کسری کار (مبنای 7:20)»
+  در Excel و «اضافی (7:20)» در PDF حذف شد؛ مبنای اضافه/کسری، موظفی هر
+  روز از Policy/Schedule است و مقدار ثابت نیست.
+- شیت خلاصهٔ اکسل و خلاصهٔ PDF اکنون `مأموریت` و `تعطیل کاری (ساعت)` را
+  هم گزارش می‌کنند؛ پیش‌تر این دو مقدارِ موجود در صفحه در خروجی‌ها نبود.
+
+نام فایل دانلود: بخش `filename="..."` فقط ASCII است (هدر HTTP|latin-1)، و
+نام فارسی کامل از راه `filename*=UTF-8''` منتقل می‌شود.
 
 ## 15. `core/time_calculator.py`
 
