@@ -378,9 +378,8 @@
     </div>
 </div>
 
-<!-- 📈 نوار تفکیک ساعات (صبح/عصر/شب) - اختیاری -->
-{% set total_h = days | sum(attribute='work_hours') %}
-{% if total_h > 0 %}
+<!-- 📈 مجموع ساعات + نوار پیشرفت (هم‌تراز با کارت‌های خلاصه ماه) -->
+{% if total_work_hours_display is defined %}
 <div class="card border-0 shadow-sm mb-4" style="border-radius: 16px;">
     <div class="card-body p-4">
         <div class="d-flex justify-content-between align-items-center mb-3">
@@ -392,19 +391,17 @@
             <span class="badge bg-primary rounded-pill">{{ days|length }} روز</span>
         </div>
 
-        <!-- نوار پیشرفت تفکیکی -->
+        {% if progress_percent is defined %}
         <div class="progress" style="height: 12px; border-radius: 6px;">
-            {% set duty_h = monthly_duty_display.split(':')[0]|int + monthly_duty_display.split(':')[1]|int / 60 %}
-            {% if total_h > 0 and duty_h > 0 %}
             <div class="progress-bar" role="progressbar"
-                 style="width: {{ [100, (total_h / duty_h * 100)|round(0)|int]|min }}%; background: linear-gradient(90deg, #667eea, #764ba2);"
+                 style="width: {{ progress_percent }}%; background: linear-gradient(90deg, #667eea, #764ba2);"
                  title="کارکرد"></div>
-            {% endif %}
         </div>
         <div class="d-flex justify-content-between mt-2 small text-muted">
             <span>0</span>
             <span>{{ monthly_duty_display }} (موظفی)</span>
         </div>
+        {% endif %}
     </div>
 </div>
 {% endif %}
