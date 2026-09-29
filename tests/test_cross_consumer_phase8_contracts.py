@@ -179,36 +179,68 @@ def test_three_way_parity_on_many_intervals_day(db, gen, seeded):
     assert sum(hours) == pytest.approx(day['work_hours'])
 
 
-def test_shift_breakdown_uses_full_bounds_not_capped_pairs(gen, seeded):
+def test_shift_breakdown_sums_all_pairs_not_first_to_last(gen, seeded):
     """
-    Regression برای نشت سقف نمایشی (Phase 8).
+    تفکیک صبح/عصر/شب باید روی *همه* جفت‌های موتور جمع شود.
 
-    قبلاً `morning/evening/night` از `attendance_pairs[-1]['exit']` گرفته
-    می‌شد، ولی آن لیست سقف‌خورده است. برای روزی با ۵ بازه، تفکیک شیفت
-    تا ۱۵:۰۰ محاسبه می‌شد نه تا ۱۷:۰۰.
-
-    حالا تفکیک از مرزهای کامل موتور می‌آید، در حالی که `attendance_pairs`
-    همچنان سقف‌خورده می‌ماند (بدون تغییر UI).
+    روز با ۵ بازهٔ ۱ ساعته (۸–۹، ۱۰–۱۱، ۱۲–۱۳، ۱۴–۱۵، ۱۶–۱۷):
+      - کارکرد واقعی = ۵ ساعت (بدون فاصله‌های بین جفت)
+      - first→last پیوسته = ۹ ساعت (شامل فاصله‌ها) ← اشتباه قبلی
+      - فقط ۳ جفت نمایشی = ۳ ساعت ← نشت سقف نمایشی
     """
     report = _make_report(gen, seeded, J_YEAR, J_MONTH)
     day = _day(report, MANY_INTERVALS_DAY)
 
-    # جفت‌های نمایشی فقط ۳ تای اول‌اند → آخرین exit نمایشی 13:00 است
+    assert len(day['attendance_pairs']) == MAX_PAIRS
     shown_last = _naive(day['attendance_pairs'][-1]['exit'])
     assert shown_last == datetime(2024, 3, 25, 13, 0)
 
-    # تفکیک شیفت، بازه‌ی زمانی 08:00 → 17:00 را می‌پوشاند (صبح+عصر)،
-    # نه بازه‌ی کوتاه‌شده‌ی 08:00 → 13:00 که از pairهای سقف‌خورده می‌آمد.
+    assert day['work_hours'] == pytest.approx(5.0)
+    assert day['morning_hours'] == pytest.approx(3.0)  # 8-9 + 10-11 + 12-13
+    assert day['evening_hours'] == pytest.approx(2.0)  # 14-15 + 16-17
+    assert day['night_hours'] == pytest.approx(0.0)
+
     breakdown = (day['morning_hours'] + day['evening_hours']
                  + day['night_hours'])
-    assert breakdown == pytest.approx(9.0), (
-        'تفکیک شیفت باید کل بازه‌ی 08:00→17:00 را بپوشاند')
-    assert breakdown > 0
+    assert breakdown == pytest.approx(5.0)
+    # اشتباه قبلی: بازهٔ پیوسته ۸→۱۷
+    assert breakdown != pytest.approx(9.0)
+    # اشتباه نشت سقف نمایشی: فقط ۳ جفت اول
+    assert breakdown != pytest.approx(3.0)
 
-    # مقدار اشتباهِ قبلی (از pairهای سقف‌خورده) دقیقاً 5.0 بود
-    assert breakdown != pytest.approx(5.0), (
-        'اگر تفکیک 5.0 شد یعنی دوباره از pairهای نمایشی خوانده شده است')
 
+def test_multi_pair_friday_gap_excluded_from_shift_bands(gen, seeded, db):
+    """جمعه با دو جفت و فاصله ناهار: فاصله نباید صبح/عصر شمرده شود."""
+    uid = seeded
+    friday = date(2024, 3, 22)  # جمعه داخل ماه seed
+    db.query(Attendance).filter(
+        Attendance.user_id == uid,
+        Attendance.timestamp >= datetime.combine(friday, datetime.min.time()),
+        Attendance.timestamp < datetime.combine(
+            friday + timedelta(days=1), datetime.min.time()),
+    ).delete()
+    for h1, m1, h2, m2 in ((8, 0, 12, 0), (14, 0, 18, 0)):
+        db.add(Attendance(
+            user_id=uid,
+            timestamp=datetime(friday.year, friday.month, friday.day, h1, m1),
+            punch=0, source='M'))
+        db.add(Attendance(
+            user_id=uid,
+            timestamp=datetime(friday.year, friday.month, friday.day, h2, m2),
+            punch=1, source='M'))
+    db.commit()
+
+    report = _make_report(gen, seeded, J_YEAR, J_MONTH)
+    day = _day(report, friday)
+    assert day['is_friday'] is True
+    assert day['work_hours'] == pytest.approx(8.0)
+    # ۸–۱۲ صبح (۶–۱۴) = ۴؛ ۱۴–۱۸ عصر = ۴؛ فاصله ۱۲–۱۴ نباید بیاید
+    assert day['morning_hours'] == pytest.approx(4.0)
+    assert day['evening_hours'] == pytest.approx(4.0)
+    assert day['night_hours'] == pytest.approx(0.0)
+    continuum = day['morning_hours'] + day['evening_hours'] + day['night_hours']
+    assert continuum == pytest.approx(8.0)
+    assert continuum != pytest.approx(10.0)  # ۸→۱۸ پیوسته = ۱۰
 
 def test_no_consumer_recomputes_actual_work(db, gen, seeded):
     """

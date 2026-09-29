@@ -22,7 +22,7 @@ from models.attendance import Attendance
 from models.daily_status import DailyStatus
 from models.leave_request import LeaveRequest
 from models.holiday import Holiday
-from core.time_calculator import calculate_shift_hours
+from core.time_calculator import sum_shift_hours_from_pairs
 from core.attendance_calculator import (
     STATUS_NIGHT_SHIFT,
     STATUS_NO_ATTENDANCE,
@@ -232,13 +232,11 @@ class DetailedMonthlyReportGeneratorV2:
                 work_hours, is_day_off, person_status, daily_required_hours
             )
 
-            # محاسبه ساعات تفکیکی — از مرزهای کامل موتور، نه pairهای
-            # سقف‌خورده‌ی نمایشی (Phase 8)
-            shift_hours = {'morning': 0.0, 'evening': 0.0, 'night': 0.0}
-            first_enter = day_data.get('first_enter')
-            last_exit = day_data.get('last_exit')
-            if first_enter and last_exit and last_exit > first_enter:
-                shift_hours = calculate_shift_hours(first_enter, last_exit)
+            # تفکیک صبح/عصر/شب روی *همه* جفت‌های موتور (نه first→last و
+            # نه فقط pairهای سقف‌خورده‌ی نمایشی). فاصله بین جفت‌ها کار نیست.
+            shift_hours = day_data.get('shift_hours') or {
+                'morning': 0.0, 'evening': 0.0, 'night': 0.0,
+            }
 
             # تعیین موظفی روز
             has_duty = daily_required_hours > 0
@@ -376,14 +374,14 @@ class DetailedMonthlyReportGeneratorV2:
             for pair in result.pairs
         ]
         attendance_status, has_incomplete = self._display_status(result)
+        # تفکیک شیفت از همه جفت‌ها؛ سقف نمایشی فقط روی attendance_pairs است
+        shift_hours = sum_shift_hours_from_pairs(pairs)
 
         return {
             # مقدار خام موتور (بدون round داخلی)؛ float برای سازگاری نوع با خروجی قدیمی
             'work_hours': float(result.work_hours),
             'pairs': pairs[:self.MAX_PAIRS],
-            # Phase 8: مرزهای *کامل* موتور برای محاسبه‌ی تفکیک شیفت.
-            # نباید از pairهای نمایشیِ سقف‌خورده گرفته شوند، وگرنه روزهای
-            # بیش از MAX_PAIRS بازه تفکیک صبح/عصر/شب اشتباه می‌گیرند.
+            'shift_hours': shift_hours,
             'first_enter': _with_tz(result.first_enter),
             'last_exit': _with_tz(result.last_exit),
             'attendance_status': attendance_status,

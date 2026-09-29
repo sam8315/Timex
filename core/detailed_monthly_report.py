@@ -13,7 +13,7 @@ from models.attendance import Attendance
 from models.daily_status import DailyStatus
 from models.leave_request import LeaveRequest
 from models.holiday import Holiday
-from core.time_calculator import calculate_shift_hours
+from core.time_calculator import sum_shift_hours_from_pairs
 from core.attendance_calculator import (
     STATUS_NIGHT_SHIFT,
     STATUS_NO_ATTENDANCE,
@@ -144,10 +144,10 @@ class DetailedMonthlyReportGenerator:
                 work_hours, is_day_off, person_status
             )
 
-            # محاسبه ساعات تفکیکی
-            shift_hours = {'morning': 0.0, 'evening': 0.0, 'night': 0.0}
-            if first_enter and last_exit and last_exit > first_enter:
-                shift_hours = calculate_shift_hours(first_enter, last_exit)
+            # محاسبه ساعات تفکیکی روی همه جفت‌ها (نه first→last)
+            shift_hours = day_data.get('shift_hours') or {
+                'morning': 0.0, 'evening': 0.0, 'night': 0.0,
+            }
 
             # تعیین موظفی روز
             has_duty = self._has_duty(is_day_off, person_status)
@@ -263,6 +263,12 @@ class DetailedMonthlyReportGenerator:
             return value
 
         attendance_status, has_incomplete = self._display_status(result)
+        pairs = [
+            {'enter': _with_tz(pair['enter']),
+             'exit': _with_tz(pair['exit']),
+             'hours': pair['hours']}
+            for pair in result.pairs
+        ]
 
         return {
             'work_hours': round(float(result.work_hours), 2),
@@ -270,6 +276,7 @@ class DetailedMonthlyReportGenerator:
             'last_exit': _with_tz(result.last_exit),
             'attendance_status': attendance_status,
             'has_incomplete': has_incomplete,
+            'shift_hours': sum_shift_hours_from_pairs(pairs),
         }
 
     @staticmethod
