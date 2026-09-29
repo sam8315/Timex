@@ -132,11 +132,9 @@ class DetailedExcelExporterV2:
                 return dt.strftime('%H:%M') if dt else '-'
 
             def fmt_hours(h):
-                if h == 0:
+                if not h:
                     return '-'
-                hours = int(h)
-                minutes = int((h - hours) * 60)
-                return f"{hours:02d}:{minutes:02d}"
+                return self._fmt_hours(h)
 
             # ✅ استخراج جفت‌های ورود/خروج
             pairs = day.get('attendance_pairs', [])
@@ -282,12 +280,15 @@ class DetailedExcelExporterV2:
         self._auto_adjust_column_width(ws)
 
     def _fmt_hours(self, h: float) -> str:
-        """فرمت ساعات"""
-        if h == 0:
+        """فرمت ساعات اعشاری به HH:MM با دقت دقیقه."""
+        if h is None:
             return '00:00'
-        hours = int(h)
-        minutes = int((h - hours) * 60)
-        return f"{hours:02d}:{minutes:02d}"
+        total_minutes = int(round(float(h) * 60))
+        sign = '-' if total_minutes < 0 else ''
+        total_minutes = abs(total_minutes)
+        hours = total_minutes // 60
+        minutes = total_minutes % 60
+        return f"{sign}{hours:02d}:{minutes:02d}"
 
     def _auto_adjust_column_width(self, ws, max_width: int = 25):
         """تنظیم خودکار عرض ستون‌ها"""

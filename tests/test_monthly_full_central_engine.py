@@ -335,10 +335,14 @@ class TestBeforeAfter:
             assert d['work_hours'] == pytest.approx(7199 / 3600)
 
             # مجموع کارکرد ماه = قبل + delta مستندشده
+            from core.detailed_monthly_report_v2 import (
+                _hours_to_minutes, _minutes_to_hours,
+            )
             old_total = sum(v['work_hours'] for v in old_days.values())
             new_total = sum(d['work_hours'] for d in report['days'])
             assert new_total - old_total == pytest.approx(EXPECTED_TOTAL_DELTA, abs=1e-6)
-            assert report['summary']['total_work_hours'] == round(new_total, 2)
+            assert report['summary']['total_work_hours'] == pytest.approx(
+                _minutes_to_hours(_hours_to_minutes(new_total)))
         finally:
             _cleanup_holiday(db)
 
@@ -475,22 +479,32 @@ class TestScenarioMatrix:
             assert s['leave_days'] == 2
             assert s['mission_days'] == 1
             assert s['rest_days'] == 1
-            # internal consistency
+            # internal consistency (جمع‌ها با دقت دقیقه هم‌تراز با لایه گزارش)
+            from core.detailed_monthly_report_v2 import (
+                _hours_to_minutes, _minutes_to_hours,
+            )
+
+            def _sum_hhmm(key):
+                return _minutes_to_hours(
+                    _hours_to_minutes(sum(float(d[key] or 0) for d in report['days']))
+                )
+
             assert s['total_work_hours'] == pytest.approx(
-                round(sum(d['work_hours'] for d in report['days']), 2))
-            assert s['total_surplus'] == pytest.approx(
-                round(sum(d['surplus'] for d in report['days']), 2))
-            assert s['total_deficit'] == pytest.approx(
-                round(sum(d['deficit'] for d in report['days']), 2))
-            expected_ot = 0.0
+                _sum_hhmm('work_hours'))
+            assert s['total_surplus'] == pytest.approx(_minutes_to_hours(
+                sum(_hours_to_minutes(d['surplus']) for d in report['days'])))
+            assert s['total_deficit'] == pytest.approx(_minutes_to_hours(
+                sum(_hours_to_minutes(d['deficit']) for d in report['days'])))
+            expected_ot_m = 0
             for wk in {_week_start(d['date']) for d in report['days']}:
                 week_days = [d for d in report['days']
                              if _week_start(d['date']) == wk]
-                work = sum(d['work_hours'] for d in week_days)
-                req = sum(d['daily_duty'] for d in week_days)
-                if req > 0 and work > req:
-                    expected_ot += work - req
-            assert s['weekly_overtime'] == pytest.approx(round(expected_ot, 2))
+                work_m = sum(_hours_to_minutes(d['work_hours']) for d in week_days)
+                req_m = sum(_hours_to_minutes(d['daily_duty']) for d in week_days)
+                if req_m > 0 and work_m > req_m:
+                    expected_ot_m += work_m - req_m
+            assert s['weekly_overtime'] == pytest.approx(
+                _minutes_to_hours(expected_ot_m))
         finally:
             _cleanup_holiday(db)
 

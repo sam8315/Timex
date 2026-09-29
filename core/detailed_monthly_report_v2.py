@@ -41,6 +41,20 @@ from web.services.hourly_mission_service import (
 )
 
 
+def _hours_to_minutes(hours: float) -> int:
+    """تبدیل ساعت اعشاری به دقیقهٔ صحیح (مبنای نمایش H:MM)."""
+    return int(round(float(hours or 0) * 60))
+
+
+def _minutes_to_hours(minutes: int) -> float:
+    """دقیقه → ساعت اعشاری طوری که round(h*60) همان دقیقه را برگرداند."""
+    return minutes / 60.0
+
+
+# موظفی پیش‌فرض وقتی Policy نباشد: ۷:۲۰ = ۴۴۰ دقیقه (نه ۷.۳۳ شناور)
+_DEFAULT_DUTY_MINUTES = 440
+
+
 class DetailedMonthlyReportGeneratorV2:
     """تولید گزارش تفصیلی ماهانه - نسخه ۲"""
 
@@ -225,7 +239,7 @@ class DetailedMonthlyReportGeneratorV2:
                 hourly_leave_minutes=hl_mins,
                 hourly_mission_minutes=hm_mins,
             )
-            daily_required_hours = required_minutes / 60
+            daily_required_hours = _minutes_to_hours(int(required_minutes))
 
             # محاسبه اضافی/کسری بر اساس موظفی روز
             surplus, deficit = self._calculate_surplus_deficit(
@@ -255,7 +269,7 @@ class DetailedMonthlyReportGeneratorV2:
                 'attendance_pairs': attendance_pairs,
                 'attendance_status': attendance_status,
                 'has_incomplete': has_incomplete,
-                'work_hours': work_hours,
+                'work_hours': float(work_hours),
                 'surplus': surplus,
                 'deficit': deficit,
                 'morning_hours': shift_hours['morning'],
@@ -418,101 +432,109 @@ class DetailedMonthlyReportGeneratorV2:
             return ('کامل' if enters == 1 else f'کامل{enters}'), False
         return f'ناقص ({enters}و/{exits}خ)', True
 
-    def _calculate_surplus_deficit(self, work_hours: float, is_day_off: bool, person_status: Dict, daily_required_hours: float = 7.33) -> tuple:
+    def _calculate_surplus_deficit(
+        self,
+        work_hours: float,
+        is_day_off: bool,
+        person_status: Dict,
+        daily_required_hours: float = None,
+    ) -> tuple:
         """
-        محاسبه اضافی و کسری بر اساس موظفی روز (Policy)
-        daily_required_hours: ساعات موظفی روز از Policy (در صورت نبود، 7.33)
+        محاسبه اضافی و کسری بر اساس موظفی روز (Policy) با دقت دقیقه.
+
+        daily_required_hours: ساعات موظفی روز از Policy؛ اگر نباشد ۷:۲۰ (۴۴۰ دقیقه).
         """
-        # اگر روز تعطیل است و تردد ندارد
+        if daily_required_hours is None:
+            daily_required_hours = _minutes_to_hours(_DEFAULT_DUTY_MINUTES)
+
+        work_m = _hours_to_minutes(work_hours)
+        duty_m = _hours_to_minutes(daily_required_hours)
+
         if is_day_off and person_status['code'] == 'H':
             return 0.0, 0.0
 
-        # اگر روز تعطیل است و تردد دارد (تعطیل کاری)
         if is_day_off and person_status['code'] == 'P':
-            return work_hours, 0.0
+            return _minutes_to_hours(work_m), 0.0
 
-        # اگر مرخصی یا استراحت است
         if person_status['code'] in ['L', 'R']:
-            if work_hours > 0:
-                return work_hours, 0.0
+            if work_m > 0:
+                return _minutes_to_hours(work_m), 0.0
             return 0.0, 0.0
 
-        # روز کاری عادی
-        if work_hours > daily_required_hours:
-            surplus = work_hours - daily_required_hours
-            return round(surplus, 2), 0.0
-        elif work_hours < daily_required_hours and work_hours > 0:
-            deficit = daily_required_hours - work_hours
-            return 0.0, round(deficit, 2)
-        elif work_hours == 0:
-            # روز کاری ولی بدون تردد
-            return 0.0, daily_required_hours
+        if work_m > duty_m:
+            return _minutes_to_hours(work_m - duty_m), 0.0
+        if 0 < work_m < duty_m:
+            return 0.0, _minutes_to_hours(duty_m - work_m)
+        if work_m == 0:
+            return 0.0, _minutes_to_hours(duty_m)
 
         return 0.0, 0.0
 
     def _calculate_monthly_summary(self, days: List[Dict]) -> Dict:
-        """محاسبه خلاصه ماهانه"""
-        # ✅ شمارش روزها با تفکیک دقیق
-        # روزهای کاری (شامل روزهای غیرکاریِ Policy که تردد داشته — جمعه/تعطیل
-        # رسمی جداگانه شمارش می‌شوند)
+        """محاسبه خلاصه ماهانه (جمع‌ها با دقت دقیقه)."""
         present_days = sum(
             1 for d in days
             if d['person_status'] == 'P' and not d['is_friday'] and not d['is_holiday']
         )
 
-        # جمعه‌هایی که حاضر بوده (جمعه کاری)
         friday_work_days = sum(1 for d in days if d['is_friday'] and d['person_status'] == 'P')
-
-        # تعطیل‌های غیر جمعه که حاضر بوده (تعطیل کاری)
-        holiday_work_days = sum(1 for d in days if d['is_holiday'] and not d['is_friday'] and d['person_status'] == 'P')
+        holiday_work_days = sum(
+            1 for d in days if d['is_holiday'] and not d['is_friday'] and d['person_status'] == 'P'
+        )
 
         leave_days = sum(1 for d in days if d['person_status'] == 'L')
         absent_days = sum(1 for d in days if d['person_status'] == 'A')
         rest_days = sum(1 for d in days if d['person_status'] == 'R')
         holiday_days = sum(1 for d in days if d['person_status'] == 'H')
-        # Phase 6C: روزهای مأموریت روزانه (DailyStatus 'M') — قبلاً غایب شمرده می‌شد
         mission_days = sum(1 for d in days if d['person_status'] == 'M')
 
-        # محاسبه موظفی
         duty_days = sum(1 for d in days if d['has_duty'])
-        total_duty_hours = sum(d['daily_duty'] for d in days)
 
-        # محاسبه کارکرد
-        total_work_hours = sum(d['work_hours'] for d in days)
-        total_morning = sum(d['morning_hours'] for d in days)
-        total_evening = sum(d['evening_hours'] for d in days)
-        total_night = sum(d['night_hours'] for d in days)
+        def _sum_hours(key: str) -> float:
+            # جمع اعشاری روزها، سپس یک‌بار به دقیقه گرد می‌شود تا نمایش H:MM پایدار بماند
+            return _minutes_to_hours(
+                _hours_to_minutes(sum(float(d[key] or 0) for d in days))
+            )
 
-        # محاسبه اضافی و کسری بر اساس موظفی روز (Policy — بدون فرض 7:20)
-        total_surplus = sum(d['surplus'] for d in days)
-        total_deficit = sum(d['deficit'] for d in days)
+        total_duty_hours = _sum_hours('daily_duty')
+        total_work_hours = _sum_hours('work_hours')
+        total_morning = _sum_hours('morning_hours')
+        total_evening = _sum_hours('evening_hours')
+        total_night = _sum_hours('night_hours')
+        # اضافی/کسری از قبل دقیقه‌ای‌اند → جمع دقیقه‌ای
+        total_surplus = _minutes_to_hours(
+            sum(_hours_to_minutes(d['surplus']) for d in days))
+        total_deficit = _minutes_to_hours(
+            sum(_hours_to_minutes(d['deficit']) for d in days))
 
-        # تهاتر و وضعیت کلی
-        net_balance = total_surplus - total_deficit
+        net_balance_m = _hours_to_minutes(total_surplus) - _hours_to_minutes(total_deficit)
+        net_balance = _minutes_to_hours(net_balance_m)
 
-        if net_balance > 0:
+        if net_balance_m > 0:
             overall_status = 'اضافی'
             net_balance_hours = net_balance
-        elif net_balance < 0:
+        elif net_balance_m < 0:
             overall_status = 'کسری'
             net_balance_hours = abs(net_balance)
         else:
             overall_status = 'متعادل'
             net_balance_hours = 0.0
 
-        # محاسبه اضافه کار هفتگی
         weekly_overtime = self._calculate_weekly_overtime(days)
 
-        # جمعه کاری (ساعات)
-        friday_work_hours = sum(d['work_hours'] for d in days if d['is_friday'] and d['person_status'] == 'P')
-
-        # تعطیل کاری (ساعات)
-        holiday_work_hours = sum(
-            d['work_hours'] for d in days if d['is_holiday'] and not d['is_friday'] and d['person_status'] == 'P')
+        friday_work_hours = _minutes_to_hours(sum(
+            _hours_to_minutes(d['work_hours'])
+            for d in days if d['is_friday'] and d['person_status'] == 'P'
+        ))
+        holiday_work_hours = _minutes_to_hours(sum(
+            _hours_to_minutes(d['work_hours'])
+            for d in days
+            if d['is_holiday'] and not d['is_friday'] and d['person_status'] == 'P'
+        ))
 
         return {
             'duty_days': duty_days,
-            'duty_hours': round(total_duty_hours, 2),
+            'duty_hours': total_duty_hours,
             'present_days': present_days,
             'leave_days': leave_days,
             'absent_days': absent_days,
@@ -520,24 +542,24 @@ class DetailedMonthlyReportGeneratorV2:
             'holiday_days': holiday_days,
             'mission_days': mission_days,
             'friday_work_days': friday_work_days,
-            'holiday_work_days': holiday_work_days,  # ✅ اضافه شد
-            'total_work_hours': round(total_work_hours, 2),
-            'total_morning': round(total_morning, 2),
-            'total_evening': round(total_evening, 2),
-            'total_night': round(total_night, 2),
-            'total_surplus': round(total_surplus, 2),
-            'total_deficit': round(total_deficit, 2),
-            'net_balance': round(net_balance, 2),
+            'holiday_work_days': holiday_work_days,
+            'total_work_hours': total_work_hours,
+            'total_morning': total_morning,
+            'total_evening': total_evening,
+            'total_night': total_night,
+            'total_surplus': total_surplus,
+            'total_deficit': total_deficit,
+            'net_balance': net_balance,
             'overall_status': overall_status,
-            'net_balance_hours': round(net_balance_hours, 2),
-            'weekly_overtime': round(weekly_overtime, 2),
-            'friday_work_hours': round(friday_work_hours, 2),
-            'holiday_work_hours': round(holiday_work_hours, 2)  # ✅ اضافه شد
+            'net_balance_hours': net_balance_hours,
+            'weekly_overtime': weekly_overtime,
+            'friday_work_hours': friday_work_hours,
+            'holiday_work_hours': holiday_work_hours,
         }
 
     def _calculate_weekly_overtime(self, days: List[Dict]) -> float:
-        """محاسبه اضافه کار هفتگی (بر اساس Policy هر روز)"""
-        weekly_overtime = 0.0
+        """محاسبه اضافه کار هفتگی با دقت دقیقه (بر اساس Policy هر روز)."""
+        weekly_overtime_m = 0
 
         weeks = {}
         for day in days:
@@ -551,13 +573,13 @@ class DetailedMonthlyReportGeneratorV2:
             weeks[week_start].append(day)
 
         for week_start, week_days in weeks.items():
-            total_hours = sum(d['work_hours'] for d in week_days)
-            week_required_hours = sum(d['daily_duty'] for d in week_days)
+            total_m = sum(_hours_to_minutes(d['work_hours']) for d in week_days)
+            required_m = sum(_hours_to_minutes(d['daily_duty']) for d in week_days)
 
-            if week_required_hours > 0 and total_hours > week_required_hours:
-                weekly_overtime += total_hours - week_required_hours
+            if required_m > 0 and total_m > required_m:
+                weekly_overtime_m += total_m - required_m
 
-        return weekly_overtime
+        return _minutes_to_hours(weekly_overtime_m)
 
     def _find_holiday(self, target_date: date, department: str) -> Optional[Holiday]:
         """رکورد تعطیلِ مؤثر برای تاریخ/گروه (برای عنوان و پرچم تعطیلی)"""

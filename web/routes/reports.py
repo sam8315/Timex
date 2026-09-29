@@ -467,13 +467,17 @@ async def monthly_detailed_report_generate(
 # 🆕 تبدیل ساعت اعشاری به فرمت HH:MM
 # ============================================
 def format_hhmm(hours):
-    """تبدیل ساعت اعشاری به فرمت HH:MM"""
-    if hours is None or hours == 0:
+    """تبدیل ساعت اعشاری به فرمت HH:MM (مبنای دقیقه)."""
+    if hours is None:
         return '-'
-    total_minutes = int(round(hours * 60))
+    total_minutes = int(round(float(hours) * 60))
+    if total_minutes == 0:
+        return '-'
+    sign = '-' if total_minutes < 0 else ''
+    total_minutes = abs(total_minutes)
     h = total_minutes // 60
     m = total_minutes % 60
-    return f"{h:02d}:{m:02d}"
+    return f"{sign}{h:02d}:{m:02d}"
 
 
 # ثبت filter در Jinja2

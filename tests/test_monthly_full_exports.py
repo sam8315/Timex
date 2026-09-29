@@ -83,11 +83,14 @@ def _summary_cells(workbook):
 
 def _fmt_hours(value):
     """همان فرمت HH:MM که exporter در شیت خلاصه استفاده می‌کند."""
-    if not value:
+    if value is None:
         return '00:00'
-    hours = int(value)
-    minutes = int((value - hours) * 60)
-    return f"{hours:02d}:{minutes:02d}"
+    total_minutes = int(round(float(value) * 60))
+    sign = '-' if total_minutes < 0 else ''
+    total_minutes = abs(total_minutes)
+    hours = total_minutes // 60
+    minutes = total_minutes % 60
+    return f"{sign}{hours:02d}:{minutes:02d}"
 
 
 def _fmt_cell_hours(value):

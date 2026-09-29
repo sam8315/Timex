@@ -316,7 +316,7 @@
                 <div class="card summary-card bg-primary bg-opacity-10">
                     <div class="card-body text-center">
                         <div class="value text-primary">
-                            <span class="hour-value">{{ "%.2f"|format(report.summary.total_work_hours) }}</span>
+                            <span class="hour-value">{{ report.summary.total_work_hours | hhmm }}</span>
                         </div>
                         <div class="label text-primary">مجموع ساعات کاری</div>
                     </div>
@@ -326,7 +326,7 @@
                 <div class="card summary-card bg-light">
                     <div class="card-body text-center">
                         <div class="value">
-                            <span class="hour-value">{{ "%.2f"|format(report.summary.duty_hours) }}</span>
+                            <span class="hour-value">{{ report.summary.duty_hours | hhmm }}</span>
                         </div>
                         <div class="label">ساعات موظفی</div>
                     </div>
@@ -336,7 +336,7 @@
                 <div class="card summary-card bg-success bg-opacity-10">
                     <div class="card-body text-center">
                         <div class="value text-success">
-                            <span class="hour-value">+{{ "%.2f"|format(report.summary.total_surplus) }}</span>
+                            <span class="hour-value">{% if report.summary.total_surplus > 0 %}+{% endif %}{{ report.summary.total_surplus | hhmm }}</span>
                         </div>
                         <div class="label text-success">مجموع اضافی</div>
                     </div>
@@ -346,7 +346,7 @@
                 <div class="card summary-card bg-danger bg-opacity-10">
                     <div class="card-body text-center">
                         <div class="value text-danger">
-                            <span class="hour-value">-{{ "%.2f"|format(report.summary.total_deficit) }}</span>
+                            <span class="hour-value">{% if report.summary.total_deficit > 0 %}-{% endif %}{{ report.summary.total_deficit | hhmm }}</span>
                         </div>
                         <div class="label text-danger">مجموع کسری</div>
                     </div>
@@ -358,11 +358,11 @@
         <div class="alert {% if report.summary.overall_status == 'اضافی' %}alert-success{% elif report.summary.overall_status == 'کسری' %}alert-danger{% else %}alert-info{% endif %}">
             <i class="bi bi-info-circle"></i>
             وضعیت کلی: <strong>{{ report.summary.overall_status }}</strong>
-            | خالص: <strong class="hour-value">{{ "%.2f"|format(report.summary.net_balance) }}</strong> ساعت
-            | اضافه کار هفتگی: <strong class="hour-value">{{ "%.2f"|format(report.summary.weekly_overtime) }}</strong>
+            | خالص: <strong class="hour-value">{{ report.summary.net_balance | hhmm }}</strong> ساعت
+            | اضافه کار هفتگی: <strong class="hour-value">{{ report.summary.weekly_overtime | hhmm }}</strong>
             ساعت
-            | جمعه کاری: <strong class="hour-value">{{ "%.2f"|format(report.summary.friday_work_hours) }}</strong> ساعت
-            | تعطیل کاری: <strong class="hour-value">{{ "%.2f"|format(report.summary.holiday_work_hours) }}</strong>
+            | جمعه کاری: <strong class="hour-value">{{ report.summary.friday_work_hours | hhmm }}</strong> ساعت
+            | تعطیل کاری: <strong class="hour-value">{{ report.summary.holiday_work_hours | hhmm }}</strong>
             ساعت
         </div>
 
@@ -447,25 +447,25 @@
                         <span class="text-muted">-</span>
                         {% endif %}
                     </td>
-                    <td><span class="hour-value">{{ "%.2f"|format(day.work_hours) }}</span></td>
+                    <td><span class="hour-value">{{ day.work_hours | hhmm }}</span></td>
                     <td>
                         {% if day.surplus > 0 %}
-                        <span class="hour-value hour-positive">+{{ "%.2f"|format(day.surplus) }}</span>
+                        <span class="hour-value hour-positive">+{{ day.surplus | hhmm }}</span>
                         {% else %}
                         <span class="text-muted">-</span>
                         {% endif %}
                     </td>
                     <td>
                         {% if day.deficit > 0 %}
-                        <span class="hour-value hour-negative">-{{ "%.2f"|format(day.deficit) }}</span>
+                        <span class="hour-value hour-negative">-{{ day.deficit | hhmm }}</span>
                         {% else %}
                         <span class="text-muted">-</span>
                         {% endif %}
                     </td>
-                    <td><span class="hour-value">{{ "%.1f"|format(day.morning_hours) }}</span></td>
-                    <td><span class="hour-value">{{ "%.1f"|format(day.evening_hours) }}</span></td>
-                    <td><span class="hour-value">{{ "%.1f"|format(day.night_hours) }}</span></td>
-                    <td><span class="hour-value">{{ "%.2f"|format(day.daily_duty) }}</span></td>
+                    <td><span class="hour-value">{{ day.morning_hours | hhmm }}</span></td>
+                    <td><span class="hour-value">{{ day.evening_hours | hhmm }}</span></td>
+                    <td><span class="hour-value">{{ day.night_hours | hhmm }}</span></td>
+                    <td><span class="hour-value">{{ day.daily_duty | hhmm }}</span></td>
                 </tr>
                 {% endfor %}
                 </tbody>
