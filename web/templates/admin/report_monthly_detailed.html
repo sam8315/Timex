@@ -290,10 +290,8 @@
 <div class="card border-0 shadow-sm mb-4 no-print">
     <div class="card-body">
         <form method="post" action="/reports/monthly-detailed" class="row g-3 align-items-end" id="reportForm">
-            <!-- انتخاب کاربر -->
             <div class="col-md-4">
-                <label class="form-label">👤 کارمند <span class="text-danger">*</span></label>
-                <!-- ✅ wrapper با position: relative -->
+                <label class="form-label" for="userSearchInput">کارمند</label>
                 <div class="user-search-wrapper">
                     <div class="input-group">
                         <span class="input-group-text"><i class="bi bi-search"></i></span>
@@ -301,19 +299,22 @@
                                class="form-control"
                                id="userSearchInput"
                                value="{{ report.employee.full_name if report else '' }}"
-                               placeholder="جستجوی کاربر..."
-                               autocomplete="off"
-                               required>
+                               placeholder="جستجوی نام یا کد — خالی = گروهی"
+                               autocomplete="off">
+                        <button type="button"
+                                class="btn btn-outline-danger"
+                                id="clearUserBtn"
+                                style="{% if not selected_user_id %}display: none;{% endif %}">
+                            <i class="bi bi-trash"></i>
+                        </button>
                     </div>
                     <input type="hidden" name="target_user_id" id="targetUserId"
-                           value="{{ selected_user_id if selected_user_id else '' }}" required>
-                    <!-- ✅ dropdown داخل wrapper -->
+                           value="{{ selected_user_id if selected_user_id else '' }}">
                     <div class="user-search-results" id="userSearchResults"></div>
                 </div>
             </div>
-            <!-- سال -->
             <div class="col-md-2">
-                <label class="form-label">📅 سال <span class="text-danger">*</span></label>
+                <label class="form-label" for="reportYear">سال <span class="text-danger">*</span></label>
                 <select name="year" id="reportYear" class="form-select" required>
                     {% for y in available_years %}
                     <option value="{{ y }}" {% if selected_year== y %}selected{% endif %}>{{ y }}</option>
@@ -321,9 +322,8 @@
                 </select>
             </div>
 
-            <!-- ماه -->
             <div class="col-md-2">
-                <label class="form-label">🗓️ ماه <span class="text-danger">*</span></label>
+                <label class="form-label" for="reportMonth">ماه <span class="text-danger">*</span></label>
                 <select name="month" id="reportMonth" class="form-select" required>
                     {% for m, name in jalali_months.items() %}
                     <option value="{{ m }}" {% if selected_month== m %}selected{% endif %}>{{ name }}</option>
@@ -332,7 +332,7 @@
             </div>
 
             <div class="col-md-2">
-                <label class="form-label">نوع عضویت (گروهی)</label>
+                <label class="form-label" for="employmentType">نوع عضویت</label>
                 <select name="employment_type" id="employmentType" class="form-select">
                     {% for value, label in employment_type_options %}
                     <option value="{{ value }}" {% if selected_employment_type == value %}selected{% endif %}>{{ label }}</option>
@@ -340,30 +340,14 @@
                 </select>
             </div>
 
-            <!-- دکمه تولید -->
             <div class="col-md-2">
                 <button type="submit" class="btn btn-primary w-100">
-                    <i class="bi bi-lightning"></i> تولید گزارش
+                    <i class="bi bi-lightning"></i> تولید
                 </button>
             </div>
         </form>
-    </div>
-</div>
-
-<!-- خروجی گروهی — همیشه در دسترس -->
-<div class="card border-0 shadow-sm mb-4 no-print">
-    <div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-3">
-        <div>
-            <strong><i class="bi bi-people"></i> خروجی گروهی</strong>
-            <div class="text-muted small">بر اساس نوع عضویت انتخاب‌شده در فرم — هر نفر یک صفحه</div>
-        </div>
-        <div class="d-flex gap-2 flex-wrap">
-            <a id="groupPrintBtn" href="#" class="btn btn-outline-dark">
-                <i class="bi bi-printer"></i> چاپ گروهی
-            </a>
-            <a id="groupPdfBtn" href="#" class="btn btn-outline-danger">
-                <i class="bi bi-file-earmark-pdf"></i> PDF گروهی
-            </a>
+        <div class="form-text mt-2">
+            <strong>راهنما:</strong> با انتخاب کارمند گزارش فردی؛ بدون انتخاب کارمند، گزارش گروهی بر اساس نوع عضویت (مثل گزارش خام).
         </div>
     </div>
 </div>
@@ -610,7 +594,7 @@
 <!-- 🖨️ دکمه‌های خروجی فردی -->
 <div class="card border-0 shadow-sm mt-4 no-print">
     <div class="card-body text-center py-4">
-        <h6 class="mb-3"><i class="bi bi-download"></i> خروجی گزارش فردی</h6>
+        <h6 class="mb-3"><i class="bi bi-download"></i> خروجی گزارش</h6>
         <div class="d-flex justify-content-center gap-3 flex-wrap">
             <a href="/reports/monthly-detailed/export-excel?target_user_id={{ selected_user_id }}&year={{ selected_year }}&month={{ selected_month }}"
                class="btn btn-success btn-lg">
@@ -625,7 +609,7 @@
             </button>
         </div>
         <small class="text-muted d-block mt-3">
-            چاپ و PDF در یک صفحه A4؛ خروجی گروهی از نوار بالای صفحه
+            چاپ و PDF در یک صفحه A4 — برای گروهی کارمند را خالی بگذارید
         </small>
     </div>
 </div>
@@ -686,7 +670,6 @@
 
 {% block extra_js %}
 <script>
-// 🎨 جستجوگر کاربر - نسخه اصلاح شده
 const employeesData = {{ employees | tojson }};
 let highlightedIndex = -1;
 let filteredEmployees = [];
@@ -694,25 +677,7 @@ let filteredEmployees = [];
 const searchInput = document.getElementById('userSearchInput');
 const searchResults = document.getElementById('userSearchResults');
 const targetUserId = document.getElementById('targetUserId');
-
-function syncGroupExportLinks() {
-    const year = document.getElementById('reportYear')?.value
-        || '{{ selected_year }}';
-    const month = document.getElementById('reportMonth')?.value
-        || '{{ selected_month }}';
-    const employmentType = document.getElementById('employmentType')?.value
-        || '{{ selected_employment_type }}';
-    const qs = `year=${encodeURIComponent(year)}&month=${encodeURIComponent(month)}&employment_type=${encodeURIComponent(employmentType)}`;
-    const printBtn = document.getElementById('groupPrintBtn');
-    const pdfBtn = document.getElementById('groupPdfBtn');
-    if (printBtn) printBtn.href = `/reports/monthly-detailed/print-group?${qs}`;
-    if (pdfBtn) pdfBtn.href = `/reports/monthly-detailed/export-pdf-group?${qs}`;
-}
-syncGroupExportLinks();
-['reportYear', 'reportMonth', 'employmentType'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.addEventListener('change', syncGroupExportLinks);
-});
+const clearUserBtn = document.getElementById('clearUserBtn');
 
 function searchEmployees(query) {
     if (!query.trim()) return employeesData.slice(0, 50);
@@ -736,7 +701,6 @@ function renderResults(employees) {
 
     let html = `<div class="user-search-count">${employees.length} کاربر یافت شد</div>`;
     employees.forEach((emp, index) => {
-        // ✅ ساختار جدید: user-info wrapper برای نام + کد
         html += `
             <div class="user-search-item" data-index="${index}"
                  title="${emp.full_name} (${emp.user_id}) - ${emp.department}">
@@ -774,10 +738,20 @@ function highlightItem(index) {
 }
 
 function selectEmployee(emp) {
+    if (!emp) return;
     targetUserId.value = emp.user_id;
     searchInput.value = emp.full_name;
     searchInput.classList.add('user-selected');
+    if (clearUserBtn) clearUserBtn.style.display = 'inline-flex';
     closeDropdown();
+}
+
+function clearSelection() {
+    targetUserId.value = '';
+    searchInput.value = '';
+    searchInput.classList.remove('user-selected');
+    if (clearUserBtn) clearUserBtn.style.display = 'none';
+    searchInput.focus();
 }
 
 function closeDropdown() {
@@ -785,17 +759,19 @@ function closeDropdown() {
     highlightedIndex = -1;
 }
 
-// رویدادها
 searchInput.addEventListener('input', function() {
-    targetUserId.value = '';
-    searchInput.classList.remove('user-selected');
+    if (targetUserId.value) {
+        targetUserId.value = '';
+        searchInput.classList.remove('user-selected');
+    }
     renderResults(searchEmployees(this.value));
+    if (clearUserBtn) {
+        clearUserBtn.style.display = targetUserId.value ? 'inline-flex' : 'none';
+    }
 });
 
 searchInput.addEventListener('focus', function() {
-    if (!targetUserId.value || this.value !== '') {
-        renderResults(searchEmployees(this.value));
-    }
+    if (!targetUserId.value) renderResults(searchEmployees(this.value));
 });
 
 searchInput.addEventListener('keydown', function(e) {
@@ -822,27 +798,16 @@ searchInput.addEventListener('keydown', function(e) {
     }
 });
 
-// ✅ بستن dropdown با کلیک بیرون (اصلاح شده)
+if (clearUserBtn) clearUserBtn.addEventListener('click', clearSelection);
+
 document.addEventListener('click', function(e) {
-    // اگر کلیک روی wrapper جستجو نباشد
     if (!e.target.closest('.user-search-wrapper')) {
         closeDropdown();
     }
 });
 
-// ✅ جلوگیری از بسته شدن هنگام کلیک روی خود dropdown
 searchResults.addEventListener('click', function(e) {
     e.stopPropagation();
-});
-
-// اعتبارسنجی فرم
-document.getElementById('reportForm').addEventListener('submit', function(e) {
-    if (!targetUserId.value) {
-        e.preventDefault();
-        alert('⚠️ لطفاً یک کاربر انتخاب کنید');
-        searchInput.focus();
-        return false;
-    }
 });
 </script>
 {% endblock %}

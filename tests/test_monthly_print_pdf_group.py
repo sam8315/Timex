@@ -1,9 +1,9 @@
 """
 خروجی چاپ / PDF گزارش کامل و تفصیلی ماهانه.
 
-- فردی: یک صفحه A4
-- گروهی: یک صفحه به ازای هر نفر، فیلتر نوع عضویت
-- گزارش تفصیلی قبلاً خروجی نداشت؛ مسیرهای export اضافه شده‌اند
+سیاست مثل گزارش خام:
+- با کارمند → فردی (یک صفحه A4)
+- بدون کارمند → گروهی بر اساس نوع عضویت (هر نفر یک صفحه)
 """
 import io
 
@@ -138,14 +138,15 @@ class TestDetailedExports:
         assert 'دانلود اکسل' in html
         assert 'دانلود PDF' in html
         assert 'window.print()' in html
-        assert 'چاپ گروهی' in html
-        assert 'PDF گروهی' in html
         assert '@media print' in html
         assert 'print-one-page' in html
+        # مثل گزارش خام: دکمه جداگانهٔ گروهی روی فرم فردی نیست
+        assert 'چاپ گروهی' not in html
+        assert 'PDF گروهی' not in html
 
 
 # ---------------------------------------------------------------------------
-# خروجی گروهی بر اساس نوع عضویت
+# خروجی گروهی بر اساس نوع عضویت (سیاست گزارش خام)
 # ---------------------------------------------------------------------------
 class TestGroupByEmployment:
     def test_full_group_pdf(self, client, monthly_ctx):
@@ -201,7 +202,8 @@ class TestGroupByEmployment:
         assert 'print-employee-page' in html
         assert 'page-break-after: always' in html
         assert monthly_ctx['target']['user_id'] in html
-        assert 'چاپ گروهی' in html
+        assert 'خروجی PDF' in html
+        assert 'window.print()' in html
 
     def test_detailed_print_group_page(self, client, monthly_ctx):
         _login(client, monthly_ctx)
@@ -212,6 +214,44 @@ class TestGroupByEmployment:
         )
         assert resp.status_code == 200, getattr(resp, 'headers', {})
         assert 'print-employee-page' in resp.text
+
+    def test_generate_without_user_redirects_to_group_full(
+            self, client, monthly_ctx):
+        _login(client, monthly_ctx)
+        resp = client.post(
+            '/reports/monthly-full',
+            data={
+                'target_user_id': '',
+                'year': J_YEAR,
+                'month': J_MONTH,
+                'employment_type': '4',
+            },
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+        location = resp.headers.get('location', '')
+        assert '/reports/monthly-full/print-group?' in location
+        assert 'employment_type=4' in location
+        assert f'year={J_YEAR}' in location
+        assert f'month={J_MONTH}' in location
+
+    def test_generate_without_user_redirects_to_group_detailed(
+            self, client, monthly_ctx):
+        _login(client, monthly_ctx)
+        resp = client.post(
+            '/reports/monthly-detailed',
+            data={
+                'target_user_id': '',
+                'year': J_YEAR,
+                'month': J_MONTH,
+                'employment_type': '4',
+            },
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+        location = resp.headers.get('location', '')
+        assert '/reports/monthly-detailed/print-group?' in location
+        assert 'employment_type=4' in location
 
     def test_group_filters_by_employment_type(
             self, client, monthly_ctx, make_user):
@@ -252,14 +292,18 @@ class TestPrintCssOnePage:
         assert 'print-one-page' in source
         assert 'page-break-inside: avoid' in source
         assert 'margin: 6mm' in source
+        # سیاست خام: بدون نوار جداگانهٔ چاپ گروهی روی فرم
+        assert 'چاپ گروهی' not in source
+        assert 'خالی = گروهی' in source
 
-    def test_detailed_has_print_and_group_ui(self):
+    def test_detailed_has_print_and_raw_like_group_policy(self):
         from pathlib import Path
         source = Path(
             'web/templates/admin/report_monthly_detailed.html'
         ).read_text(encoding='utf-8')
         assert '@media print' in source
         assert 'print-one-page' in source
-        assert 'PDF گروهی' in source
-        assert 'چاپ گروهی' in source
         assert 'دانلود PDF' in source
+        assert 'چاپ گروهی' not in source
+        assert 'خالی = گروهی' in source
+        assert 'لطفاً یک کاربر انتخاب کنید' not in source

@@ -91,7 +91,13 @@ def _monthly_group_reports(
     month: int,
     employment_type: str,
 ):
-    """لیست گزارش‌های ماهانه برای یک نوع عضویت (یا همه)."""
+    """لیست گزارش‌های ماهانه برای یک نوع عضویت (یا همه).
+
+    سیاست انتخاب مثل گزارش خام:
+    - با user_id مشخص → فردی (این تابع صدا زده نمی‌شود)
+    - بدون user_id → گروهی بر اساس employment_type
+      (all = همهٔ کارکنان فعال)
+    """
     if month < 1 or month > 12:
         raise ValueError('ماه نامعتبر است')
     _validate_monthly_employment_type(employment_type)
@@ -104,6 +110,23 @@ def _monthly_group_reports(
         except ValueError:
             continue
     return reports, _employment_type_label(employment_type)
+
+
+def _monthly_group_print_redirect(
+    base_path: str,
+    year: int,
+    month: int,
+    employment_type: str,
+) -> RedirectResponse:
+    """هدایت به صفحه چاپ گروهی — همان مسیر خروجی گروهی گزارش خام."""
+    qs = (
+        f'year={year}&month={month}'
+        f'&employment_type={quote(str(employment_type), safe="")}'
+    )
+    return RedirectResponse(
+        url=f'{base_path}/print-group?{qs}',
+        status_code=302,
+    )
 
 
 def _monthly_pdf_response(report: dict, year: int, month: int):
@@ -568,19 +591,26 @@ async def monthly_detailed_report_form(
 @router.post("/reports/monthly-detailed")
 async def monthly_detailed_report_generate(
         request: Request,
-        target_user_id: str = Form(...),
+        target_user_id: str = Form(''),
         year: int = Form(...),
         month: int = Form(...),
         employment_type: str = Form('all'),
         user: User = Depends(require_admin),
         db: Session = Depends(get_db)
 ):
-    """تولید گزارش تفصیلی ماهانه"""
+    """تولید گزارش تفصیلی ماهانه.
+
+    سیاست مثل گزارش خام: با کارمند → فردی؛ بدون کارمند → گروهی.
+    """
     enforce_permission(db, user, 'view_reports')
     try:
         if month < 1 or month > 12:
             raise ValueError("ماه نامعتبر است")
         _validate_monthly_employment_type(employment_type)
+        target_user_id = (target_user_id or '').strip()
+        if not target_user_id:
+            return _monthly_group_print_redirect(
+                '/reports/monthly-detailed', year, month, employment_type)
         report = _monthly_full_report_data(target_user_id, year, month)
         return templates.TemplateResponse(
             request,
@@ -700,6 +730,11 @@ async def monthly_detailed_report_print_group(
                 "group_label": group_label,
                 "employment_type": employment_type,
                 "back_url": "/reports/monthly-detailed",
+                "pdf_url": (
+                    "/reports/monthly-detailed/export-pdf-group"
+                    f"?year={year}&month={month}"
+                    f"&employment_type={quote(str(employment_type), safe='')}"
+                ),
                 "report_title": "گزارش تفصیلی ماهانه",
                 "is_admin": True,
             },
@@ -743,19 +778,26 @@ async def monthly_full_report_form(
 @router.post("/reports/monthly-full")
 async def monthly_full_report_generate(
         request: Request,
-        target_user_id: str = Form(...),
+        target_user_id: str = Form(''),
         year: int = Form(...),
         month: int = Form(...),
         employment_type: str = Form('all'),
         user: User = Depends(require_admin),
         db: Session = Depends(get_db)
 ):
-    """تولید گزارش کامل ماهانه (شبیه PDF)"""
+    """تولید گزارش کامل ماهانه.
+
+    سیاست مثل گزارش خام: با کارمند → فردی؛ بدون کارمند → گروهی.
+    """
     enforce_permission(db, user, 'view_reports')
     try:
         if month < 1 or month > 12:
             raise ValueError("ماه نامعتبر است")
         _validate_monthly_employment_type(employment_type)
+        target_user_id = (target_user_id or '').strip()
+        if not target_user_id:
+            return _monthly_group_print_redirect(
+                '/reports/monthly-full', year, month, employment_type)
         report = _monthly_full_report_data(target_user_id, year, month)
         return templates.TemplateResponse(
             request,
@@ -875,6 +917,11 @@ async def monthly_full_report_print_group(
                 "group_label": group_label,
                 "employment_type": employment_type,
                 "back_url": "/reports/monthly-full",
+                "pdf_url": (
+                    "/reports/monthly-full/export-pdf-group"
+                    f"?year={year}&month={month}"
+                    f"&employment_type={quote(str(employment_type), safe='')}"
+                ),
                 "report_title": "گزارش کامل ماهانه",
                 "is_admin": True,
             },

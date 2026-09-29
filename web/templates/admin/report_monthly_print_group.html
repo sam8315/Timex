@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}چاپ گروهی {{ report_title }} | {{ group_label }}{% endblock %}
+{% block title %}{{ report_title }} | {{ group_label }}{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -199,17 +199,26 @@
 {% block content %}
 <div class="print-toolbar no-print">
     <div>
-        <h4 class="mb-1">{{ report_title }} — چاپ گروهی</h4>
+        <h4 class="mb-1">{{ report_title }}</h4>
         <div class="text-muted small">
+            {% if employment_type == 'all' %}
+            همه کارکنان فعال
+            {% else %}
             نوع عضویت: <strong>{{ group_label }}</strong>
+            {% endif %}
             | {{ month_name }} {{ year }}
-            | تعداد: <strong>{{ reports|length }}</strong> نفر
+            | <span class="badge bg-secondary">{{ reports|length }} کارمند</span>
         </div>
     </div>
     <div class="d-flex gap-2 flex-wrap">
-        <button type="button" class="btn btn-primary" onclick="window.print()">
+        <button type="button" class="btn btn-outline-dark" onclick="window.print()">
             <i class="bi bi-printer"></i> چاپ
         </button>
+        {% if pdf_url %}
+        <a class="btn btn-outline-danger" href="{{ pdf_url }}">
+            <i class="bi bi-file-earmark-pdf"></i> خروجی PDF
+        </a>
+        {% endif %}
         <a class="btn btn-outline-secondary" href="{{ back_url }}">
             <i class="bi bi-arrow-right"></i> بازگشت
         </a>
