@@ -162,11 +162,11 @@
         background-color: #f0fff4 !important;
     }
 
-    /* 🖨️ استایل‌های چاپ (فقط چاپ — ظاهر صفحه در حالت عادی دست‌نخورده) */
+    /* 🖨️ استایل‌های چاپ — کل گزارش یک نفر در یک صفحه A4 */
     @media print {
         @page {
             size: A4 portrait;
-            margin: 10mm;
+            margin: 6mm;
         }
 
         html,
@@ -197,19 +197,32 @@
         .card {
             border: 0 !important;
             box-shadow: none !important;
+            margin-bottom: 4px !important;
         }
 
         /* هدر گزارش (نام فرد / ماه) چاپ می‌شود */
         .card-header {
             background: #fff !important;
+            padding: 4px 0 !important;
+        }
+        .print-one-page .card-body.py-4 {
+            padding-top: 4px !important;
+            padding-bottom: 4px !important;
+        }
+        .print-one-page h5 {
+            font-size: 11pt !important;
+            margin-bottom: 2px !important;
+        }
+        .print-one-page .text-muted.small {
+            font-size: 7.5pt !important;
         }
 
-        /* جدول گزارش */
+        /* جدول گزارش — فشرده برای جا شدن در یک صفحه */
         .table-responsive {
             overflow: visible !important;
         }
         .full-report-table {
-            font-size: 6.6pt !important;
+            font-size: 5.8pt !important;
             width: 100% !important;
             table-layout: auto;
             border-collapse: collapse !important;
@@ -217,9 +230,9 @@
         }
         .full-report-table th,
         .full-report-table td {
-            border: 0.5pt solid #64748b !important;
-            padding: 1mm 0.6mm !important;
-            line-height: 1.15;
+            border: 0.4pt solid #64748b !important;
+            padding: 0.55mm 0.4mm !important;
+            line-height: 1.1;
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
         }
@@ -227,7 +240,7 @@
             background: #e2e8f0 !important;
             color: #000 !important;
             font-weight: 700 !important;
-            font-size: 6.4pt !important;
+            font-size: 5.6pt !important;
         }
         .full-report-table th.group-header {
             background: #cbd5e1 !important;
@@ -239,7 +252,6 @@
         .full-report-table tr.row-leave { background: #dbeafe !important; }
         .full-report-table tr.row-absent { background: #fee2e2 !important; }
 
-        /* هدر جدول در هر صفحه تکرار و ردیف‌ها نشکننده شوند */
         .full-report-table thead {
             display: table-header-group;
         }
@@ -257,22 +269,41 @@
 
         /* Badgeها بدون رنگ پس‌زمینهٔ تیره */
         .status-pill {
-            border: 0.5pt solid #94a3b8;
+            border: 0.4pt solid #94a3b8;
             background: #fff !important;
             color: #000 !important;
+            font-size: 5.5pt !important;
+            padding: 0 3px !important;
         }
 
         /* خلاصه ماهانه */
         .summary-box {
             border-radius: 0 !important;
-            padding: 12px !important;
-            margin-top: 8px !important;
+            padding: 6px 8px !important;
+            margin-top: 4px !important;
             break-inside: avoid;
             page-break-inside: avoid;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+        .summary-box .summary-title {
+            font-size: 8pt !important;
+            margin-bottom: 4px !important;
+            padding-bottom: 3px !important;
         }
         .summary-box .summary-item {
-            font-size: 8pt !important;
-            padding: 2px 0 !important;
+            font-size: 7pt !important;
+            padding: 1px 0 !important;
+        }
+        .summary-box .summary-section {
+            margin-top: 4px !important;
+            padding-top: 3px !important;
+        }
+
+        /* کل گزارش یک صفحه — جلوگیری از شکستن بین جدول و خلاصه */
+        .print-one-page {
+            page-break-inside: avoid;
+            break-inside: avoid;
         }
     }
 </style>
@@ -299,7 +330,7 @@
 <div class="card border-0 shadow-sm mb-4 no-print">
     <div class="card-body">
         <form method="post" action="/reports/monthly-full" class="row g-3 align-items-end" id="reportForm">
-            <div class="col-md-5">
+            <div class="col-md-4">
                 <label class="form-label">👤 کارمند <span class="text-danger">*</span></label>
                 <div class="user-search-wrapper">
                     <div class="input-group">
@@ -316,18 +347,27 @@
 
             <div class="col-md-2">
                 <label class="form-label">📅 سال <span class="text-danger">*</span></label>
-                <select name="year" class="form-select" required>
+                <select name="year" id="reportYear" class="form-select" required>
                     {% for y in available_years %}
                     <option value="{{ y }}" {% if selected_year == y %}selected{% endif %}>{{ y }}</option>
                     {% endfor %}
                 </select>
             </div>
 
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <label class="form-label">🗓️ ماه <span class="text-danger">*</span></label>
-                <select name="month" class="form-select" required>
+                <select name="month" id="reportMonth" class="form-select" required>
                     {% for m, name in jalali_months.items() %}
                     <option value="{{ m }}" {% if selected_month == m %}selected{% endif %}>{{ name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-md-2">
+                <label class="form-label">نوع عضویت (گروهی)</label>
+                <select name="employment_type" id="employmentType" class="form-select">
+                    {% for value, label in employment_type_options %}
+                    <option value="{{ value }}" {% if selected_employment_type == value %}selected{% endif %}>{{ label }}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -341,8 +381,27 @@
     </div>
 </div>
 
+<!-- خروجی گروهی — همیشه در دسترس (بدون نیاز به گزارش فردی) -->
+<div class="card border-0 shadow-sm mb-4 no-print">
+    <div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-3">
+        <div>
+            <strong><i class="bi bi-people"></i> خروجی گروهی</strong>
+            <div class="text-muted small">بر اساس نوع عضویت انتخاب‌شده در فرم — هر نفر یک صفحه</div>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <a id="groupPrintBtnTop" href="#" class="btn btn-outline-dark">
+                <i class="bi bi-printer"></i> چاپ گروهی
+            </a>
+            <a id="groupPdfBtnTop" href="#" class="btn btn-outline-danger">
+                <i class="bi bi-file-earmark-pdf"></i> PDF گروهی
+            </a>
+        </div>
+    </div>
+</div>
+
 <!-- 📊 نمایش گزارش -->
 {% if report %}
+<div class="print-one-page">
 
 <!-- 🎨 Header گزارش -->
 <div class="card border-0 shadow-sm mb-4">
@@ -574,45 +633,57 @@
     </div>
 </div>
 
-<!-- 🖨️ دکمه‌های عملیات -->
+</div><!-- /.print-one-page -->
+
+<!-- 🖨️ دکمه‌های عملیات فردی -->
 {% if report %}
 <div class="card border-0 shadow-sm mt-4 no-print">
     <div class="card-body text-center py-4">
-        <h6 class="mb-3"><i class="bi bi-download"></i> خروجی گزارش</h6>
+        <h6 class="mb-3"><i class="bi bi-download"></i> خروجی گزارش فردی</h6>
 
         <div class="d-flex justify-content-center gap-3 flex-wrap">
-            <!-- 📗 دانلود اکسل -->
             <a href="/reports/monthly-full/export-excel?target_user_id={{ selected_user_id }}&year={{ selected_year }}&month={{ selected_month }}"
                class="btn btn-success btn-lg">
                 <i class="bi bi-file-earmark-excel"></i> دانلود اکسل
             </a>
-
-            <!-- 📕 دانلود PDF -->
             <a href="/reports/monthly-full/export-pdf?target_user_id={{ selected_user_id }}&year={{ selected_year }}&month={{ selected_month }}"
                class="btn btn-danger btn-lg">
                 <i class="bi bi-file-earmark-pdf"></i> دانلود PDF
             </a>
-
-            <!-- 🖨️ چاپ -->
             <button onclick="window.print()" class="btn btn-outline-primary btn-lg">
                 <i class="bi bi-printer"></i> چاپ
             </button>
-
-            <!-- ↩️ بازگشت -->
             <a href="/reports" class="btn btn-outline-secondary btn-lg">
                 <i class="bi bi-arrow-right"></i> بازگشت
             </a>
         </div>
-
         <small class="text-muted d-block mt-3">
             <i class="bi bi-info-circle"></i>
-            خروجی‌ها دقیقاً مطابق نسخه کنسول تولید می‌شوند
+            چاپ و PDF فردی در یک صفحه A4
         </small>
     </div>
 </div>
 {% endif %}
 
 {% endif %}
+
+<!-- خروجی گروهی — همیشه در دسترس -->
+<div class="card border-0 shadow-sm mt-4 no-print">
+    <div class="card-body text-center py-4">
+        <h6 class="mb-3"><i class="bi bi-people"></i> خروجی گروهی بر اساس نوع عضویت</h6>
+        <div class="d-flex justify-content-center gap-3 flex-wrap">
+            <a id="groupPrintBtn" href="#" class="btn btn-outline-dark btn-lg">
+                <i class="bi bi-printer"></i> چاپ گروهی
+            </a>
+            <a id="groupPdfBtn" href="#" class="btn btn-outline-danger btn-lg">
+                <i class="bi bi-file-earmark-pdf"></i> PDF گروهی
+            </a>
+        </div>
+        <small class="text-muted d-block mt-3">
+            فیلتر از فیلد «نوع عضویت» — هر نفر یک صفحه
+        </small>
+    </div>
+</div>
 
 {% endblock %}
 
@@ -626,6 +697,29 @@ let filteredEmployees = [];
 const searchInput = document.getElementById('userSearchInput');
 const searchResults = document.getElementById('userSearchResults');
 const targetUserId = document.getElementById('targetUserId');
+
+function syncGroupExportLinks() {
+    const year = document.getElementById('reportYear')?.value
+        || '{{ selected_year }}';
+    const month = document.getElementById('reportMonth')?.value
+        || '{{ selected_month }}';
+    const employmentType = document.getElementById('employmentType')?.value
+        || '{{ selected_employment_type }}';
+    const qs = `year=${encodeURIComponent(year)}&month=${encodeURIComponent(month)}&employment_type=${encodeURIComponent(employmentType)}`;
+    ['groupPrintBtn', 'groupPrintBtnTop'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.href = `/reports/monthly-full/print-group?${qs}`;
+    });
+    ['groupPdfBtn', 'groupPdfBtnTop'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.href = `/reports/monthly-full/export-pdf-group?${qs}`;
+    });
+}
+syncGroupExportLinks();
+['reportYear', 'reportMonth', 'employmentType'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', syncGroupExportLinks);
+});
 
 function searchEmployees(query) {
     if (!query.trim()) return employeesData.slice(0, 50);

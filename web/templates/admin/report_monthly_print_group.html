@@ -1,0 +1,364 @@
+{% extends "base.html" %}
+{% block title %}چاپ گروهی {{ report_title }} | {{ group_label }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .print-toolbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-bottom: 1rem;
+    }
+    .print-employee-page {
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 12px;
+        margin-bottom: 1.5rem;
+    }
+    .print-employee-page .emp-header {
+        text-align: center;
+        margin-bottom: 8px;
+    }
+    .print-employee-page .emp-header h5 {
+        margin: 0 0 4px;
+        font-size: 1rem;
+        font-weight: 700;
+    }
+    .print-employee-page .emp-header .meta {
+        font-size: 0.8rem;
+        color: #64748b;
+    }
+    .full-report-table {
+        font-size: 0.72rem;
+        white-space: nowrap;
+        width: 100%;
+        border-collapse: collapse;
+    }
+    .full-report-table th {
+        background: #1e293b;
+        color: #fff;
+        font-weight: 600;
+        font-size: 0.68rem;
+        padding: 4px 3px;
+        text-align: center;
+        border: 1px solid #334155;
+    }
+    .full-report-table th.group-header { background: #0f172a; }
+    .full-report-table td {
+        vertical-align: middle;
+        padding: 3px 4px;
+        text-align: center;
+        border: 1px solid #e2e8f0;
+    }
+    .full-report-table tr.row-holiday { background: #fef3c7; }
+    .full-report-table tr.row-friday { background: #f1f5f9; }
+    .full-report-table tr.row-leave { background: #dbeafe; }
+    .full-report-table tr.row-absent { background: #fee2e2; }
+    .time-value {
+        direction: ltr;
+        unicode-bidi: embed;
+        font-variant-numeric: tabular-nums;
+        display: inline-block;
+        min-width: 36px;
+    }
+    .time-enter { color: #059669; font-weight: 600; }
+    .time-exit { color: #dc2626; font-weight: 600; }
+    .time-surplus { color: #059669; font-weight: 700; }
+    .time-deficit { color: #dc2626; font-weight: 700; }
+    .time-empty { color: #cbd5e1; }
+    .status-pill {
+        font-size: 0.65rem;
+        padding: 1px 6px;
+        border-radius: 8px;
+        font-weight: 600;
+    }
+    .summary-box {
+        background: #1e293b;
+        color: #fff;
+        border-radius: 8px;
+        padding: 10px 14px;
+        margin-top: 8px;
+        font-size: 0.78rem;
+    }
+    .summary-box .summary-title {
+        font-weight: 700;
+        margin-bottom: 6px;
+        border-bottom: 1px solid rgba(255,255,255,0.2);
+        padding-bottom: 4px;
+    }
+    .summary-box .summary-item {
+        display: flex;
+        justify-content: space-between;
+        padding: 2px 0;
+    }
+    .summary-box .summary-item .value {
+        font-weight: 700;
+        direction: ltr;
+        unicode-bidi: embed;
+    }
+    .empty-group {
+        text-align: center;
+        padding: 40px 16px;
+        color: #64748b;
+    }
+
+    @media print {
+        @page {
+            size: A4 portrait;
+            margin: 6mm;
+        }
+        html, body {
+            background: #fff !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+        .app-sidebar,
+        .app-topbar,
+        .sidebar-overlay,
+        .no-print {
+            display: none !important;
+        }
+        .app-content {
+            width: 100%;
+            max-width: none;
+            margin: 0;
+            padding: 0;
+        }
+        .print-employee-page {
+            border: 0 !important;
+            border-radius: 0 !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            page-break-after: always;
+            break-after: page;
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+        .print-employee-page:last-child {
+            page-break-after: auto;
+            break-after: auto;
+        }
+        .print-employee-page .emp-header h5 {
+            font-size: 10pt !important;
+        }
+        .print-employee-page .emp-header .meta {
+            font-size: 7.5pt !important;
+        }
+        .table-responsive { overflow: visible !important; }
+        .full-report-table {
+            font-size: 5.8pt !important;
+            width: 100% !important;
+            white-space: normal;
+        }
+        .full-report-table th,
+        .full-report-table td {
+            border: 0.4pt solid #64748b !important;
+            padding: 0.55mm 0.4mm !important;
+            line-height: 1.1;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+        .full-report-table th {
+            background: #e2e8f0 !important;
+            color: #000 !important;
+            font-size: 5.6pt !important;
+        }
+        .full-report-table th.group-header { background: #cbd5e1 !important; }
+        .full-report-table thead { display: table-header-group; }
+        .full-report-table tr {
+            break-inside: avoid;
+            page-break-inside: avoid;
+        }
+        .full-report-table tr.row-holiday { background: #fef3c7 !important; }
+        .full-report-table tr.row-friday { background: #f1f5f9 !important; }
+        .full-report-table tr.row-leave { background: #dbeafe !important; }
+        .full-report-table tr.row-absent { background: #fee2e2 !important; }
+        .status-pill {
+            border: 0.4pt solid #94a3b8;
+            background: #fff !important;
+            color: #000 !important;
+        }
+        .summary-box {
+            border-radius: 0 !important;
+            padding: 6px 8px !important;
+            margin-top: 4px !important;
+            font-size: 7pt !important;
+            break-inside: avoid;
+            page-break-inside: avoid;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+        .summary-box .summary-item { padding: 1px 0 !important; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="print-toolbar no-print">
+    <div>
+        <h4 class="mb-1">{{ report_title }} — چاپ گروهی</h4>
+        <div class="text-muted small">
+            نوع عضویت: <strong>{{ group_label }}</strong>
+            | {{ month_name }} {{ year }}
+            | تعداد: <strong>{{ reports|length }}</strong> نفر
+        </div>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+        <button type="button" class="btn btn-primary" onclick="window.print()">
+            <i class="bi bi-printer"></i> چاپ
+        </button>
+        <a class="btn btn-outline-secondary" href="{{ back_url }}">
+            <i class="bi bi-arrow-right"></i> بازگشت
+        </a>
+    </div>
+</div>
+
+{% if not reports %}
+<div class="empty-group card border-0 shadow-sm">
+    <div class="card-body">
+        گزارشی برای نوع عضویت «{{ group_label }}» در {{ month_name }} {{ year }} یافت نشد.
+    </div>
+</div>
+{% endif %}
+
+{% for report in reports %}
+<div class="print-employee-page">
+    <div class="emp-header">
+        <h5>{{ report.employee.full_name }}</h5>
+        <div class="meta">
+            کد: {{ report.employee.user_id }}
+            | دپارتمان: {{ report.employee.department or '-' }}
+            | {{ report.month_name }} {{ report.year }}
+        </div>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table full-report-table mb-0">
+            <thead>
+                <tr>
+                    <th rowspan="2">تاریخ</th>
+                    <th rowspan="2">روز</th>
+                    <th rowspan="2">وضعیت روز</th>
+                    <th rowspan="2">وضعیت فرد</th>
+                    <th colspan="6" class="group-header">ورود / خروج</th>
+                    <th rowspan="2">وضعیت تردد</th>
+                    <th rowspan="2">کارکرد</th>
+                    <th rowspan="2">اضافی</th>
+                    <th rowspan="2">کسری</th>
+                </tr>
+                <tr>
+                    <th>ورود ۱</th>
+                    <th>خروج ۱</th>
+                    <th>ورود ۲</th>
+                    <th>خروج ۲</th>
+                    <th>ورود ۳</th>
+                    <th>خروج ۳</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for day in report.days %}
+                {% set row_class = '' %}
+                {% if day.person_status == 'L' %}
+                {% set row_class = 'row-leave' %}
+                {% elif day.person_status == 'A' %}
+                {% set row_class = 'row-absent' %}
+                {% elif day.is_holiday %}
+                {% set row_class = 'row-holiday' %}
+                {% elif day.is_friday %}
+                {% set row_class = 'row-friday' %}
+                {% endif %}
+                <tr class="{{ row_class }}">
+                    <td>{{ day.jalali_date }}</td>
+                    <td>{{ day.day_name }}</td>
+                    <td>
+                        {% if day.is_day_off %}
+                        <span class="badge bg-warning text-dark status-pill">تعطیل</span>
+                        {% else %}
+                        <span class="badge bg-light text-dark border status-pill">کاری</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if day.person_status == 'P' %}
+                        <span class="badge bg-success status-pill">حاضر</span>
+                        {% elif day.person_status == 'L' %}
+                        <span class="badge bg-info status-pill">مرخصی</span>
+                        {% elif day.person_status == 'A' %}
+                        <span class="badge bg-danger status-pill">غایب</span>
+                        {% elif day.person_status == 'R' %}
+                        <span class="badge bg-secondary status-pill">استراحت</span>
+                        {% elif day.person_status == 'H' %}
+                        <span class="badge bg-warning text-dark status-pill">تعطیل</span>
+                        {% elif day.person_status == 'M' %}
+                        <span class="badge bg-primary status-pill">مأموریت</span>
+                        {% endif %}
+                    </td>
+                    {% for i in range(3) %}
+                    {% if day.attendance_pairs[i] is defined %}
+                    <td><span class="time-value time-enter">{{ day.attendance_pairs[i].enter.strftime('%H:%M') }}</span></td>
+                    <td><span class="time-value time-exit">{{ day.attendance_pairs[i].exit.strftime('%H:%M') }}</span></td>
+                    {% else %}
+                    <td><span class="time-value time-empty">-</span></td>
+                    <td><span class="time-value time-empty">-</span></td>
+                    {% endif %}
+                    {% endfor %}
+                    <td>
+                        {% if day.has_incomplete %}
+                        <span class="badge bg-danger status-pill">{{ day.attendance_status }}</span>
+                        {% elif day.attendance_pairs %}
+                        <span class="badge bg-success status-pill">{{ day.attendance_status }}</span>
+                        {% else %}
+                        <span class="time-value time-empty">-</span>
+                        {% endif %}
+                    </td>
+                    <td><span class="time-value">{{ day.work_hours | hhmm }}</span></td>
+                    <td>
+                        {% if day.surplus > 0 %}
+                        <span class="time-value time-surplus">{{ day.surplus | hhmm }}</span>
+                        {% else %}
+                        <span class="time-value time-empty">-</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if day.deficit > 0 %}
+                        <span class="time-value time-deficit">{{ day.deficit | hhmm }}</span>
+                        {% else %}
+                        <span class="time-value time-empty">-</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="summary-box">
+        <div class="summary-title">خلاصه ماهانه</div>
+        <div class="row g-2">
+            <div class="col-md-4">
+                <div class="summary-item"><span>موظفی:</span><span class="value">{{ report.summary.duty_days }} / {{ report.summary.duty_hours | hhmm }}</span></div>
+                <div class="summary-item"><span>حضور:</span><span class="value">{{ report.summary.present_days }}</span></div>
+                <div class="summary-item"><span>مرخصی:</span><span class="value">{{ report.summary.leave_days }}</span></div>
+                <div class="summary-item"><span>مأموریت:</span><span class="value">{{ report.summary.mission_days }}</span></div>
+                <div class="summary-item"><span>غیبت:</span><span class="value">{{ report.summary.absent_days }}</span></div>
+            </div>
+            <div class="col-md-4">
+                <div class="summary-item"><span>کارکرد:</span><span class="value">{{ report.summary.total_work_hours | hhmm }}</span></div>
+                <div class="summary-item"><span>صبح:</span><span class="value">{{ report.summary.total_morning | hhmm }}</span></div>
+                <div class="summary-item"><span>عصر:</span><span class="value">{{ report.summary.total_evening | hhmm }}</span></div>
+                <div class="summary-item"><span>شب:</span><span class="value">{{ report.summary.total_night | hhmm }}</span></div>
+            </div>
+            <div class="col-md-4">
+                <div class="summary-item"><span>اضافی:</span><span class="value">{{ report.summary.total_surplus | hhmm }}</span></div>
+                <div class="summary-item"><span>کسری:</span><span class="value">{{ report.summary.total_deficit | hhmm }}</span></div>
+                <div class="summary-item"><span>جمعه‌کاری:</span><span class="value">{{ report.summary.friday_work_hours | hhmm }}</span></div>
+                <div class="summary-item"><span>تعطیل‌کاری:</span><span class="value">{{ report.summary.holiday_work_hours | hhmm }}</span></div>
+                <div class="summary-item"><span>وضعیت / خالص:</span><span class="value">{{ report.summary.overall_status }} / {{ report.summary.net_balance | hhmm }}</span></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endfor %}
+{% endblock %}
