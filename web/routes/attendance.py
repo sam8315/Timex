@@ -287,10 +287,11 @@ async def attendance_page(
             'hourly_mission_display': format_hm_display(hourly_missions_by_date.get(current)),
         })
         current += timedelta(days=1)
-    # 🆕 محاسبه کارکرد کل ماه قبل از اعمال فیلتر
+    # کارکرد کل ماه — قبل از فیلتر وضعیت (کارت‌های خلاصه همیشه روی ماه کامل‌اند)
     total_work_hours_month = sum(d['work_hours'] for d in days_list)
+    summary_days = days_list
 
-    # 🆕 اعمال فیلتر
+    # فیلتر وضعیت فقط جدول را محدود می‌کند؛ روی کارت‌های خلاصه اثر ندارد
     if status_filter == 'complete':
         days_list = [d for d in days_list if d['status']['main_status'] == STATUS_COMPLETE]
     elif status_filter == 'night_shift':
@@ -346,7 +347,7 @@ async def attendance_page(
     # ---------- ۲. موظفی لحظه‌ای ----------
     today_g = today_j.togregorian()
 
-    # تعیین تاریخ مرجع (امروز یا دیروز)
+    # تعیین تاریخ مرجع (امروز یا دیروز) — از لیست کامل ماه، نه جدول فیلترشده
     if today_g < month_start_g:
         # ماه آینده: هیچ روزی سپری نشده
         reference_date = month_start_g - timedelta(days=1)
@@ -356,7 +357,7 @@ async def attendance_page(
     else:
         # ماه جاری: بررسی تردد کامل امروز
         is_today_complete = False
-        for day in days_list:
+        for day in summary_days:
             if day['date'] == today_g:
                 main_status = day['status']['main_status']
                 # اگر وضعیت مشخصی دارد (کامل، مرخصی، تعطیل، استراحت)
@@ -365,11 +366,11 @@ async def attendance_page(
                 break
         reference_date = today_g if is_today_complete else today_g - timedelta(days=1)
 
-    # محاسبه موظفی و کارکرد تا تاریخ مرجع
+    # محاسبه موظفی و کارکرد تا تاریخ مرجع (همیشه روی ماه کامل)
     duty_days_until_ref = 0
     work_hours_until_ref = 0.0
 
-    for day in days_list:
+    for day in summary_days:
         if day['date'] <= reference_date:
             is_day_off = day['is_friday'] or day['is_holiday']
             is_leave = day['status']['main_status'] == STATUS_LEAVE
@@ -394,11 +395,7 @@ async def attendance_page(
     instant_duty_hours = instant_required_minutes / 60
 
     # ---------- ۳ و ۴. اضافه/کسر کار ----------
-    # کارکرد واقعی کل ماه (از روزهای بدون فیلتر)
-    # باید از days_list بدون فیلتر استفاده کنیم، پس محاسبه قبل از فیلتر انجام شده
-    # اینجا از مجموع کارکرد همه روزهای ماه استفاده می‌کنیم
-    # 🆕 درصد پیشرفت کارکرد نسبت به موظفی
-    total_work_hours_month = sum(d['work_hours'] for d in days_list)
+    # total_work_hours_month از قبل از فیلتر وضعیت حفظ شده است
     progress_percent = 0
     if monthly_duty_hours > 0:
         progress_percent = min(100, round((total_work_hours_month / monthly_duty_hours) * 100, 1))

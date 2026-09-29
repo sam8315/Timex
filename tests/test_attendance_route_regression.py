@@ -166,7 +166,8 @@ def _seed_leaves(db, user_id):
     db.commit()
 
 
-def _capture_context(client, monkeypatch, year=J_YEAR, month=J_MONTH):
+def _capture_context(client, monkeypatch, year=J_YEAR, month=J_MONTH,
+                     extra_query=''):
     """GET /attendance و برگرداندن context واقعیِ template + HTML."""
     import web.routes.attendance as route_mod
 
@@ -183,9 +184,9 @@ def _capture_context(client, monkeypatch, year=J_YEAR, month=J_MONTH):
         return original(*args, **kwargs)
 
     monkeypatch.setattr(route_mod.templates, 'TemplateResponse', spy)
-    resp = client.get(f'/attendance?year={year}&month={month}')
+    resp = client.get(f'/attendance?year={year}&month={month}{extra_query}')
     assert resp.status_code == 200, resp.status_code
-    return captured, resp.text
+    return dict(captured), resp.text
 
 
 def _month_bounds():
@@ -503,3 +504,58 @@ def test_group_schedule_changes_required_not_actual(db, client, make_user,
     # Balance = Actual − Required (برای هر فرد با موظفی خودش)
     assert ra['balance'] == pytest.approx(ra['actual'] - 31 * 360 / 60)
     assert rb['balance'] == pytest.approx(rb['actual'] - 31 * 480 / 60)
+
+
+# ---------------------------------------------------------------------------
+# فیلتر وضعیت فقط جدول را محدود می‌کند؛ کارت‌های خلاصه ماه کامل می‌مانند
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize('status_filter', [
+    'complete', 'night_shift', 'issues', 'leave', 'no_attendance',
+])
+def test_status_filter_does_not_change_monthly_summary(
+        db, client, make_user, monkeypatch, status_filter):
+    creds = make_user(role='user', balance_al=30, department='4')
+    uid = creds['user_id']
+    _seed_punches(db, uid)
+    _seed_holiday(db)
+    _seed_day_statuses(db, uid)
+    _seed_leaves(db, uid)
+
+    try:
+        login_as(client, creds['national_code'])
+        ctx_all, _ = _capture_context(client, monkeypatch)
+        ctx_f, _ = _capture_context(
+            client, monkeypatch, extra_query=f'&filter={status_filter}')
+
+        assert len(ctx_f['days']) <= len(ctx_all['days'])
+        assert len(ctx_f['days']) < len(ctx_all['days']), (
+            f'فیلتر {status_filter} باید حداقل یک روز را حذف کند')
+
+        if status_filter == 'issues':
+            allowed = {
+                'missing_exit', 'missing_enter',
+                'sequence_error', 'imbalance',
+            }
+            assert all(d['status']['main_status'] in allowed
+                       for d in ctx_f['days'])
+        else:
+            assert all(
+                d['status']['main_status'] == status_filter
+                for d in ctx_f['days']
+            )
+
+        # کارت‌های خلاصه بدون تغییر نسبت به ماه کامل
+        assert ctx_f['total_work_hours_month'] == pytest.approx(
+            ctx_all['total_work_hours_month'])
+        assert ctx_f['monthly_balance'] == pytest.approx(
+            ctx_all['monthly_balance'])
+        assert ctx_f['instant_balance'] == pytest.approx(
+            ctx_all['instant_balance'])
+        assert ctx_f['progress_percent'] == ctx_all['progress_percent']
+        assert ctx_f['monthly_duty_display'] == ctx_all['monthly_duty_display']
+
+        # جمع کارکرد روزهای جدول فیلترشده با کارت ماه یکی نیست
+        table_total = sum(d['work_hours'] for d in ctx_f['days'])
+        assert abs(ctx_f['total_work_hours_month'] - table_total) > 1e-9
+    finally:
+        _cleanup_holiday(db)

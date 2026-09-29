@@ -23,7 +23,9 @@ from datetime import date, datetime, time, timedelta
 import pytest
 
 from .conftest import login_as
-from core.attendance_calculator import STATUS_LEAVE, STATUS_NIGHT_SHIFT
+from core.attendance_calculator import (
+    STATUS_COMPLETE, STATUS_LEAVE, STATUS_NIGHT_SHIFT,
+)
 from models.attendance import Attendance, AttendancePolicy
 from models.employee import Employee
 from web.services.attendance_policy_service import compute_required_minutes_for_range
@@ -82,7 +84,7 @@ def _capture_admin_context(client, monkeypatch, uid,
     resp = client.get(url, follow_redirects=False)
     assert resp.status_code == 200, resp.status_code
     assert captured, 'context گرفته نشد — route به template درست پاسخ نداد'
-    return captured, resp.text
+    return dict(captured), resp.text
 
 
 def _cleanup_policy(db, *user_ids):
@@ -468,6 +470,66 @@ def test_date_range_and_status_filters_preserved(db, client, make_user,
                                if s == STATUS_NIGHT_SHIFT}
         assert all(d['status']['main_status'] == STATUS_NIGHT_SHIFT
                    for d in ctx_night['days'])
+
+        # کارت‌های خلاصه با فیلتر وضعیت تغییر نمی‌کنند (فقط جدول محدود می‌شود)
+        assert ctx_night['total_work_hours_month'] == pytest.approx(
+            ctx_full['total_work_hours_month'])
+        assert ctx_night['monthly_balance'] == pytest.approx(
+            ctx_full['monthly_balance'])
+        assert ctx_night['instant_balance'] == pytest.approx(
+            ctx_full['instant_balance'])
+        night_table_total = sum(d['work_hours'] for d in ctx_night['days'])
+        assert abs(ctx_night['total_work_hours_month'] - night_table_total) > 1e-9
+    finally:
+        _cleanup_holiday(db)
+
+
+def test_status_filter_preserves_admin_monthly_summary(db, client, make_user,
+                                                       monkeypatch):
+    """فیلتر وضعیت در admin فقط جدول را محدود می‌کند."""
+    admin, target = _seed_target(db, make_user)
+    uid = target['user_id']
+    try:
+        login_as(client, admin['national_code'])
+        ctx_all, _ = _capture_admin_context(client, monkeypatch, uid)
+        for status_filter in ('complete', 'issues', 'leave'):
+            ctx_f, _ = _capture_admin_context(
+                client, monkeypatch, uid,
+                extra_query=f'&filter={status_filter}')
+            assert len(ctx_f['days']) < len(ctx_all['days'])
+            assert ctx_f['total_work_hours_month'] == pytest.approx(
+                ctx_all['total_work_hours_month'])
+            assert ctx_f['monthly_balance'] == pytest.approx(
+                ctx_all['monthly_balance'])
+            assert ctx_f['instant_balance'] == pytest.approx(
+                ctx_all['instant_balance'])
+            assert ctx_f['daily_avg_days'] == ctx_all['daily_avg_days']
+    finally:
+        _cleanup_holiday(db)
+
+
+def test_date_range_plus_status_filter_totals_follow_range_only(
+        db, client, make_user, monkeypatch):
+    """بازه تاریخ جمع خلاصه را محدود می‌کند؛ فیلتر وضعیت فقط جدول را."""
+    admin, target = _seed_target(db, make_user)
+    uid = target['user_id']
+    try:
+        login_as(client, admin['national_code'])
+        range_q = '&from_date=1403/01/04&to_date=1403/01/09'
+        ctx_range, _ = _capture_admin_context(
+            client, monkeypatch, uid, extra_query=range_q)
+        ctx_both, _ = _capture_admin_context(
+            client, monkeypatch, uid,
+            extra_query=range_q + '&filter=complete')
+
+        assert ctx_both['total_work_hours_month'] == pytest.approx(
+            ctx_range['total_work_hours_month'])
+        assert len(ctx_both['days']) < len(ctx_range['days'])
+        assert all(d['status']['main_status'] == STATUS_COMPLETE
+                   for d in ctx_both['days'])
+        # جمع خلاصه = همه روزهای بازه (بدون فیلتر وضعیت)
+        assert ctx_both['total_work_hours_month'] == pytest.approx(
+            sum(d['work_hours'] for d in ctx_range['days']))
     finally:
         _cleanup_holiday(db)
 

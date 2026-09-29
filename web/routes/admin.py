@@ -1264,10 +1264,11 @@ async def admin_user_attendance(
         })
         current += timedelta(days=1)
 
-    # محاسبه کارکرد کل ماه قبل از اعمال فیلتر
+    # کارکرد کل ماه — قبل از فیلتر وضعیت (کارت‌های خلاصه روی همین مبنا می‌مانند)
     total_work_hours_month = sum(d['work_hours'] for d in days_list)
+    summary_days = days_list
 
-    # اعمال فیلتر وضعیت
+    # فیلتر وضعیت فقط جدول را محدود می‌کند
     if status_filter == 'complete':
         days_list = [d for d in days_list if d['status']['main_status'] == STATUS_COMPLETE]
     elif status_filter == 'night_shift':
@@ -1282,18 +1283,13 @@ async def admin_user_attendance(
     elif status_filter == 'leave':
         days_list = [d for d in days_list if d['status']['main_status'] == STATUS_LEAVE]
 
-    # 🆕 محدود کردن نمایش/محاسبات به بازه تاریخ در صورت اعمال فیلتر
+    # بازه تاریخ عمداً هم جدول و هم کارت‌های خلاصه را محدود می‌کند
     if filter_applied and not filter_error:
         range_start = filter_from_g if filter_from_g else month_start_g
         range_end = filter_to_g if filter_to_g else month_end_g
-        # فقط روزهای داخل بازه (برای جدول و محاسبات)
         days_list = [d for d in days_list if range_start <= d['date'] <= range_end]
-        # محاسبات بر اساس همین لیست فیلتر شده
-        total_work_hours_month = sum(d['work_hours'] for d in days_list)
-        total_records = sum(len(d['records']) for d in days_list)
-    else:
-        total_work_hours_month = sum(d['work_hours'] for d in days_list)
-        total_records = sum(len(d['records']) for d in days_list)
+        summary_days = [d for d in summary_days if range_start <= d['date'] <= range_end]
+        total_work_hours_month = sum(d['work_hours'] for d in summary_days)
 
     MONTH_NAMES = {
         1: 'فروردین', 2: 'اردیبهشت', 3: 'خرداد', 4: 'تیر',
@@ -1345,7 +1341,7 @@ async def admin_user_attendance(
         reference_date = month_end_g
     else:
         is_today_complete = False
-        for day in days_list:
+        for day in summary_days:
             if day['date'] == today_g:
                 main_status = day['status']['main_status']
                 if main_status in [STATUS_COMPLETE, STATUS_LEAVE] or day['is_holiday'] or day['is_friday']:
@@ -1355,7 +1351,7 @@ async def admin_user_attendance(
 
     duty_days_until_ref = 0
     work_hours_until_ref = 0.0
-    for day in days_list:
+    for day in summary_days:
         if day['date'] <= reference_date:
             is_day_off = day['is_friday'] or day['is_holiday']
             is_leave = day['status']['main_status'] == STATUS_LEAVE
@@ -1418,7 +1414,7 @@ async def admin_user_attendance(
     this_week_days = 0
     this_week_work_days = 0
 
-    for day in days_list:
+    for day in summary_days:
         # فقط روزهای این هفته که در ماه انتخاب‌شده هستند
         if this_week_start_g <= day['date'] <= this_week_end_g:
             # 🆕 کارکرد همه روزها (شامل جمعه و تعطیل)
@@ -1452,7 +1448,7 @@ async def admin_user_attendance(
     prev_week_days = 0
     prev_week_work_days = 0
 
-    for day in days_list:
+    for day in summary_days:
         # فقط روزهای هفته قبل که در ماه انتخاب‌شده هستند
         if prev_week_start_g <= day['date'] <= prev_week_end_g:
             # 🆕 کارکرد همه روزها (شامل جمعه و تعطیل)
@@ -1482,8 +1478,8 @@ async def admin_user_attendance(
                                         1)) if prev_week_duty_hours > 0 else 0
 
     # ---------- میانگین کارکرد روزانه ----------
-    # 🆕 همه روزهایی که کارکرد دارند (شامل جمعه‌کاری و تعطیل‌کاری)
-    days_with_work = [d for d in days_list if d['work_hours'] > 0]
+    # همه روزهایی که کارکرد دارند (شامل جمعه‌کاری و تعطیل‌کاری) — از summary نه جدول فیلتر وضعیت
+    days_with_work = [d for d in summary_days if d['work_hours'] > 0]
     daily_avg_hours = total_work_hours_month / len(days_with_work) if days_with_work else 0
     daily_avg_days = len(days_with_work)
     # ============================================
@@ -1508,9 +1504,9 @@ async def admin_user_attendance(
             week_hours = 0.0
             week_duty_days = 0
 
-            for day in days_list:
+            for day in summary_days:
                 if current_week_start <= day['date'] <= current_week_end:
-                    # 🆕 کارکرد همه روزها (شامل جمعه و تعطیل)
+                    # کارکرد همه روزها (شامل جمعه و تعطیل)
                     week_hours += day['work_hours']
 
                     # روزهای موظفی (فقط روزهای کاری غیر جمعه، غیر تعطیل، غیر استراحت و غیر مأموریت)
