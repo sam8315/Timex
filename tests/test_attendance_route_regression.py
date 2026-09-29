@@ -554,8 +554,9 @@ def test_status_filter_does_not_change_monthly_summary(
         assert ctx_f['progress_percent'] == ctx_all['progress_percent']
         assert ctx_f['monthly_duty_display'] == ctx_all['monthly_duty_display']
 
-        # جمع کارکرد روزهای جدول فیلترشده با کارت ماه یکی نیست
+        # جمع کارکرد روزهای نمایش‌داده‌شده = جمع جدول فیلترشده
         table_total = sum(d['work_hours'] for d in ctx_f['days'])
+        assert ctx_f['displayed_work_hours'] == pytest.approx(table_total)
         assert abs(ctx_f['total_work_hours_month'] - table_total) > 1e-9
     finally:
         _cleanup_holiday(db)

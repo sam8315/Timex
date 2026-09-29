@@ -479,6 +479,7 @@ def test_date_range_and_status_filters_preserved(db, client, make_user,
         assert ctx_night['instant_balance'] == pytest.approx(
             ctx_full['instant_balance'])
         night_table_total = sum(d['work_hours'] for d in ctx_night['days'])
+        assert ctx_night['displayed_work_hours'] == pytest.approx(night_table_total)
         assert abs(ctx_night['total_work_hours_month'] - night_table_total) > 1e-9
     finally:
         _cleanup_holiday(db)

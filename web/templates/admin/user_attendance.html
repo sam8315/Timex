@@ -515,18 +515,22 @@
 {% endif %}
 
 <!-- ============================================ -->
-<!-- 📊 مجموع ساعات + نوار پیشرفت خطی            -->
+<!-- 📊 کارکرد ماه + جمع روزهای نمایش‌داده‌شده   -->
 <!-- ============================================ -->
 {% if total_work_hours_display is defined %}
 <div class="card border-0 shadow-sm mb-4" style="border-radius: 16px;">
     <div class="card-body p-4">
-        <div class="d-flex justify-content-between align-items-center mb-3">
+        <div class="d-flex justify-content-between align-items-center mb-2">
             <h6 class="mb-0 fw-bold">
                 <i class="bi bi-clock-history text-primary"></i>
-                مجموع ساعات:
+                کارکرد ماه:
                 <span style="direction: ltr; unicode-bidi: embed;">{{ total_work_hours_display }}</span>
             </h6>
-            <span class="badge bg-primary rounded-pill">{{ days|length }} روز</span>
+            <span class="badge bg-primary rounded-pill">{{ days|length }} روز در جدول</span>
+        </div>
+        <div class="small text-muted mb-3">
+            جمع کارکرد روزهای نمایش‌داده‌شده:
+            <strong style="direction: ltr; unicode-bidi: embed; display: inline-block;">{{ displayed_work_hours_display }}</strong>
         </div>
         {% if progress_percent is defined %}
         <div class="progress" style="height: 12px; border-radius: 6px; background: #e9ecef;">
@@ -535,7 +539,7 @@
         </div>
         <div class="d-flex justify-content-between mt-2 small text-muted">
             <span style="direction: ltr;">0:00</span>
-            <span style="direction: ltr;">{{ monthly_duty_display }} (موظفی)</span>
+            <span style="direction: ltr;">{{ monthly_duty_display }} (موظفی ماه)</span>
         </div>
         {% endif %}
     </div>

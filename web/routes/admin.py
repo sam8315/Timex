@@ -1297,6 +1297,8 @@ async def admin_user_attendance(
         9: 'آذر', 10: 'دی', 11: 'بهمن', 12: 'اسفند'
     }
     total_records = sum(len(d['records']) for d in days_list)
+    # جمع کارکرد فقط روزهای جدول (بعد از فیلتر وضعیت/بازه) — جدا از کارت‌های ماه
+    displayed_work_hours = sum(d['work_hours'] for d in days_list)
 
     # ============================================
     # 🆕 محاسبات موظفی و اضافه/کسر کار
@@ -1614,6 +1616,8 @@ async def admin_user_attendance(
         "total_work_hours_month": total_work_hours_month,
         "total_work_hours_display": format_hours_hhmm(total_work_hours_month),
         "progress_percent": progress_percent,
+        "displayed_work_hours": displayed_work_hours,
+        "displayed_work_hours_display": format_hours_hhmm(displayed_work_hours),
 
         # 🆕 کارکرد هفتگی (با شرط‌های نمایش)
         "show_this_week_card": show_this_week_card,

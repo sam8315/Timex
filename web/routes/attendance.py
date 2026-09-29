@@ -412,6 +412,8 @@ async def attendance_page(
 
     # آمار
     total_records = sum(len(d['records']) for d in days_list)
+    # جمع کارکرد فقط روزهای جدول (بعد از فیلتر وضعیت) — جدا از کارت‌های ماه
+    displayed_work_hours = sum(d['work_hours'] for d in days_list)
     # 🆕 محاسبه ماه قبل و بعد
     if month == 1:
         prev_year, prev_month = year - 1, 12
@@ -478,5 +480,7 @@ async def attendance_page(
         "total_work_hours_month": total_work_hours_month,
         "total_work_hours_display": format_hours_hhmm(total_work_hours_month),  # 🆕
         "progress_percent": progress_percent,
+        "displayed_work_hours": displayed_work_hours,
+        "displayed_work_hours_display": format_hours_hhmm(displayed_work_hours),
 
     })
