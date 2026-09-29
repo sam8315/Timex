@@ -378,33 +378,34 @@
     </div>
 </div>
 
-<!-- 📈 نوار تفکیک ساعات (صبح/عصر/شب) - اختیاری -->
-{% set total_h = days | sum(attribute='work_hours') %}
-{% if total_h > 0 %}
+<!-- 📈 کارکرد ماه + جمع روزهای نمایش‌داده‌شده -->
+{% if total_work_hours_display is defined %}
 <div class="card border-0 shadow-sm mb-4" style="border-radius: 16px;">
     <div class="card-body p-4">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-<h6 class="mb-0 fw-bold">
-    <i class="bi bi-clock-history text-primary"></i>
-    مجموع ساعات:
-    <span style="direction: ltr; unicode-bidi: embed;">{{ total_work_hours_display }}</span>
-</h6>
-            <span class="badge bg-primary rounded-pill">{{ days|length }} روز</span>
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="mb-0 fw-bold">
+                <i class="bi bi-clock-history text-primary"></i>
+                کارکرد ماه:
+                <span style="direction: ltr; unicode-bidi: embed;">{{ total_work_hours_display }}</span>
+            </h6>
+            <span class="badge bg-primary rounded-pill">{{ days|length }} روز در جدول</span>
+        </div>
+        <div class="small text-muted mb-3">
+            جمع کارکرد روزهای نمایش‌داده‌شده:
+            <strong style="direction: ltr; unicode-bidi: embed; display: inline-block;">{{ displayed_work_hours_display }}</strong>
         </div>
 
-        <!-- نوار پیشرفت تفکیکی -->
+        {% if progress_percent is defined %}
         <div class="progress" style="height: 12px; border-radius: 6px;">
-            {% set duty_h = monthly_duty_display.split(':')[0]|int + monthly_duty_display.split(':')[1]|int / 60 %}
-            {% if total_h > 0 and duty_h > 0 %}
             <div class="progress-bar" role="progressbar"
-                 style="width: {{ [100, (total_h / duty_h * 100)|round(0)|int]|min }}%; background: linear-gradient(90deg, #667eea, #764ba2);"
-                 title="کارکرد"></div>
-            {% endif %}
+                 style="width: {{ progress_percent }}%; background: linear-gradient(90deg, #667eea, #764ba2);"
+                 title="پیشرفت نسبت به موظفی ماه"></div>
         </div>
         <div class="d-flex justify-content-between mt-2 small text-muted">
             <span>0</span>
-            <span>{{ monthly_duty_display }} (موظفی)</span>
+            <span>{{ monthly_duty_display }} (موظفی ماه)</span>
         </div>
+        {% endif %}
     </div>
 </div>
 {% endif %}

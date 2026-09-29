@@ -161,6 +161,151 @@
         border-color: #198754 !important;
         background-color: #f0fff4 !important;
     }
+
+    /* 🖨️ استایل‌های چاپ — کل گزارش یک نفر در یک صفحه A4 */
+    @media print {
+        @page {
+            size: A4 portrait;
+            margin: 6mm;
+        }
+
+        html,
+        body {
+            background: #fff !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+
+        /* کنترل‌های فقط-صفحه‌نمایش هنگام چاپ پنهان می‌شوند */
+        .app-sidebar,
+        .app-topbar,
+        .sidebar-overlay,
+        .no-print,
+        .user-search-results {
+            display: none !important;
+        }
+
+        /* فضای محتوا پر شود تا جدول کل عرض صفحه را بگیرد */
+        .app-content {
+            width: 100%;
+            max-width: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        /* کارت‌ها بدون سایه و گردی چاپ شوند */
+        .card {
+            border: 0 !important;
+            box-shadow: none !important;
+            margin-bottom: 4px !important;
+        }
+
+        /* هدر گزارش (نام فرد / ماه) چاپ می‌شود */
+        .card-header {
+            background: #fff !important;
+            padding: 4px 0 !important;
+        }
+        .print-one-page .card-body.py-4 {
+            padding-top: 4px !important;
+            padding-bottom: 4px !important;
+        }
+        .print-one-page h5 {
+            font-size: 11pt !important;
+            margin-bottom: 2px !important;
+        }
+        .print-one-page .text-muted.small {
+            font-size: 7.5pt !important;
+        }
+
+        /* جدول گزارش — فشرده برای جا شدن در یک صفحه */
+        .table-responsive {
+            overflow: visible !important;
+        }
+        .full-report-table {
+            font-size: 5.8pt !important;
+            width: 100% !important;
+            table-layout: auto;
+            border-collapse: collapse !important;
+            white-space: normal;
+        }
+        .full-report-table th,
+        .full-report-table td {
+            border: 0.4pt solid #64748b !important;
+            padding: 0.55mm 0.4mm !important;
+            line-height: 1.1;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+        .full-report-table th {
+            background: #e2e8f0 !important;
+            color: #000 !important;
+            font-weight: 700 !important;
+            font-size: 5.6pt !important;
+        }
+        .full-report-table th.group-header {
+            background: #cbd5e1 !important;
+        }
+
+        /* رنگ ردیف‌ها بر اساس وضعیت روز حفظ می‌شود */
+        .full-report-table tr.row-holiday { background: #fef3c7 !important; }
+        .full-report-table tr.row-friday { background: #f1f5f9 !important; }
+        .full-report-table tr.row-leave { background: #dbeafe !important; }
+        .full-report-table tr.row-absent { background: #fee2e2 !important; }
+
+        .full-report-table thead {
+            display: table-header-group;
+        }
+        .full-report-table tr {
+            break-inside: avoid;
+            page-break-inside: avoid;
+        }
+
+        /* رنگ مقادیر ساعت */
+        .time-enter { color: #059669 !important; }
+        .time-exit { color: #dc2626 !important; }
+        .time-surplus { color: #059669 !important; }
+        .time-deficit { color: #dc2626 !important; }
+        .time-empty { color: #94a3b8 !important; }
+
+        /* Badgeها بدون رنگ پس‌زمینهٔ تیره */
+        .status-pill {
+            border: 0.4pt solid #94a3b8;
+            background: #fff !important;
+            color: #000 !important;
+            font-size: 5.5pt !important;
+            padding: 0 3px !important;
+        }
+
+        /* خلاصه ماهانه */
+        .summary-box {
+            border-radius: 0 !important;
+            padding: 6px 8px !important;
+            margin-top: 4px !important;
+            break-inside: avoid;
+            page-break-inside: avoid;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+        .summary-box .summary-title {
+            font-size: 8pt !important;
+            margin-bottom: 4px !important;
+            padding-bottom: 3px !important;
+        }
+        .summary-box .summary-item {
+            font-size: 7pt !important;
+            padding: 1px 0 !important;
+        }
+        .summary-box .summary-section {
+            margin-top: 4px !important;
+            padding-top: 3px !important;
+        }
+
+        /* کل گزارش یک صفحه — جلوگیری از شکستن بین جدول و خلاصه */
+        .print-one-page {
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+    }
 </style>
 {% endblock %}
 
@@ -168,13 +313,13 @@
 
 <!-- پیام‌ها -->
 {% if request.query_params.get('error') %}
-<div class="alert alert-danger alert-dismissible fade show">
+<div class="alert alert-danger alert-dismissible fade show no-print">
     <i class="bi bi-exclamation-triangle"></i> {{ request.query_params.get('error') }}
     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
 </div>
 {% endif %}
 
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="d-flex justify-content-between align-items-center mb-4 no-print">
     <h4 class="mb-0"><i class="bi bi-file-earmark-bar-graph text-primary"></i> گزارش کامل ماهانه</h4>
     <a href="/reports" class="btn btn-outline-primary btn-sm">
         <i class="bi bi-arrow-right"></i> بازگشت به گزارشات
@@ -182,36 +327,43 @@
 </div>
 
 <!-- 🎨 فرم انتخاب -->
-<div class="card border-0 shadow-sm mb-4">
+<div class="card border-0 shadow-sm mb-4 no-print">
     <div class="card-body">
         <form method="post" action="/reports/monthly-full" class="row g-3 align-items-end" id="reportForm">
-            <div class="col-md-5">
-                <label class="form-label">👤 کارمند <span class="text-danger">*</span></label>
+            <div class="col-md-4">
+                <label class="form-label" for="userSearchInput">کارمند</label>
                 <div class="user-search-wrapper">
                     <div class="input-group">
                         <span class="input-group-text"><i class="bi bi-search"></i></span>
                         <input type="text" class="form-control" id="userSearchInput"
                                value="{{ report.employee.full_name if report else '' }}"
-                               placeholder="جستجوی کاربر..." autocomplete="off" required>
+                               placeholder="جستجوی نام یا کد — خالی = گروهی"
+                               autocomplete="off">
+                        <button type="button"
+                                class="btn btn-outline-danger"
+                                id="clearUserBtn"
+                                style="{% if not selected_user_id %}display: none;{% endif %}">
+                            <i class="bi bi-trash"></i>
+                        </button>
                     </div>
                     <input type="hidden" name="target_user_id" id="targetUserId"
-                           value="{{ selected_user_id if selected_user_id else '' }}" required>
+                           value="{{ selected_user_id if selected_user_id else '' }}">
                     <div class="user-search-results" id="userSearchResults"></div>
                 </div>
             </div>
 
             <div class="col-md-2">
-                <label class="form-label">📅 سال <span class="text-danger">*</span></label>
-                <select name="year" class="form-select" required>
+                <label class="form-label" for="reportYear">سال <span class="text-danger">*</span></label>
+                <select name="year" id="reportYear" class="form-select" required>
                     {% for y in available_years %}
                     <option value="{{ y }}" {% if selected_year == y %}selected{% endif %}>{{ y }}</option>
                     {% endfor %}
                 </select>
             </div>
 
-            <div class="col-md-3">
-                <label class="form-label">🗓️ ماه <span class="text-danger">*</span></label>
-                <select name="month" class="form-select" required>
+            <div class="col-md-2">
+                <label class="form-label" for="reportMonth">ماه <span class="text-danger">*</span></label>
+                <select name="month" id="reportMonth" class="form-select" required>
                     {% for m, name in jalali_months.items() %}
                     <option value="{{ m }}" {% if selected_month == m %}selected{% endif %}>{{ name }}</option>
                     {% endfor %}
@@ -219,16 +371,29 @@
             </div>
 
             <div class="col-md-2">
+                <label class="form-label" for="employmentType">نوع عضویت</label>
+                <select name="employment_type" id="employmentType" class="form-select">
+                    {% for value, label in employment_type_options %}
+                    <option value="{{ value }}" {% if selected_employment_type == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-md-2">
                 <button type="submit" class="btn btn-primary w-100">
-                    <i class="bi bi-lightning"></i> تولید گزارش
+                    <i class="bi bi-lightning"></i> تولید
                 </button>
             </div>
         </form>
+        <div class="form-text mt-2">
+            <strong>راهنما:</strong> با انتخاب کارمند گزارش فردی؛ بدون انتخاب کارمند، گزارش گروهی بر اساس نوع عضویت (مثل گزارش خام).
+        </div>
     </div>
 </div>
 
 <!-- 📊 نمایش گزارش -->
 {% if report %}
+<div class="print-one-page">
 
 <!-- 🎨 Header گزارش -->
 <div class="card border-0 shadow-sm mb-4">
@@ -460,39 +625,33 @@
     </div>
 </div>
 
-<!-- 🖨️ دکمه‌های عملیات -->
+</div><!-- /.print-one-page -->
+
+<!-- 🖨️ دکمه‌های عملیات فردی -->
 {% if report %}
-<div class="card border-0 shadow-sm mt-4">
+<div class="card border-0 shadow-sm mt-4 no-print">
     <div class="card-body text-center py-4">
         <h6 class="mb-3"><i class="bi bi-download"></i> خروجی گزارش</h6>
 
         <div class="d-flex justify-content-center gap-3 flex-wrap">
-            <!-- 📗 دانلود اکسل -->
             <a href="/reports/monthly-full/export-excel?target_user_id={{ selected_user_id }}&year={{ selected_year }}&month={{ selected_month }}"
                class="btn btn-success btn-lg">
                 <i class="bi bi-file-earmark-excel"></i> دانلود اکسل
             </a>
-
-            <!-- 📕 دانلود PDF -->
             <a href="/reports/monthly-full/export-pdf?target_user_id={{ selected_user_id }}&year={{ selected_year }}&month={{ selected_month }}"
                class="btn btn-danger btn-lg">
                 <i class="bi bi-file-earmark-pdf"></i> دانلود PDF
             </a>
-
-            <!-- 🖨️ چاپ -->
             <button onclick="window.print()" class="btn btn-outline-primary btn-lg">
                 <i class="bi bi-printer"></i> چاپ
             </button>
-
-            <!-- ↩️ بازگشت -->
             <a href="/reports" class="btn btn-outline-secondary btn-lg">
                 <i class="bi bi-arrow-right"></i> بازگشت
             </a>
         </div>
-
         <small class="text-muted d-block mt-3">
             <i class="bi bi-info-circle"></i>
-            خروجی‌ها دقیقاً مطابق نسخه کنسول تولید می‌شوند
+            چاپ و PDF فردی در یک صفحه A4 — برای گروهی کارمند را خالی بگذارید
         </small>
     </div>
 </div>
@@ -504,7 +663,6 @@
 
 {% block extra_js %}
 <script>
-// 🎨 جستجوگر کاربر
 const employeesData = {{ employees | tojson }};
 let highlightedIndex = -1;
 let filteredEmployees = [];
@@ -512,6 +670,7 @@ let filteredEmployees = [];
 const searchInput = document.getElementById('userSearchInput');
 const searchResults = document.getElementById('userSearchResults');
 const targetUserId = document.getElementById('targetUserId');
+const clearUserBtn = document.getElementById('clearUserBtn');
 
 function searchEmployees(query) {
     if (!query.trim()) return employeesData.slice(0, 50);
@@ -571,20 +730,35 @@ function highlightItem(index) {
 }
 
 function selectEmployee(emp) {
+    if (!emp) return;
     targetUserId.value = emp.user_id;
     searchInput.value = emp.full_name;
     searchInput.classList.add('user-selected');
+    if (clearUserBtn) clearUserBtn.style.display = 'inline-flex';
     searchResults.classList.remove('show');
 }
 
-searchInput.addEventListener('input', function() {
+function clearSelection() {
     targetUserId.value = '';
+    searchInput.value = '';
     searchInput.classList.remove('user-selected');
+    if (clearUserBtn) clearUserBtn.style.display = 'none';
+    searchInput.focus();
+}
+
+searchInput.addEventListener('input', function() {
+    if (targetUserId.value) {
+        targetUserId.value = '';
+        searchInput.classList.remove('user-selected');
+    }
     renderResults(searchEmployees(this.value));
+    if (clearUserBtn) {
+        clearUserBtn.style.display = targetUserId.value ? 'inline-flex' : 'none';
+    }
 });
 
 searchInput.addEventListener('focus', function() {
-    renderResults(searchEmployees(this.value));
+    if (!targetUserId.value) renderResults(searchEmployees(this.value));
 });
 
 searchInput.addEventListener('keydown', function(e) {
@@ -611,18 +785,11 @@ searchInput.addEventListener('keydown', function(e) {
     }
 });
 
+if (clearUserBtn) clearUserBtn.addEventListener('click', clearSelection);
+
 document.addEventListener('click', function(e) {
     if (!e.target.closest('.user-search-wrapper')) {
         searchResults.classList.remove('show');
-    }
-});
-
-document.getElementById('reportForm').addEventListener('submit', function(e) {
-    if (!targetUserId.value) {
-        e.preventDefault();
-        alert('⚠️ لطفاً یک کاربر انتخاب کنید');
-        searchInput.focus();
-        return false;
     }
 });
 </script>

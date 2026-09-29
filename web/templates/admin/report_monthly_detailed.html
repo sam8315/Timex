@@ -186,6 +186,86 @@
         padding: 2px 8px;
         border-radius: 10px;
     }
+
+    /* 🖨️ چاپ — کل گزارش یک نفر در یک صفحه A4 */
+    @media print {
+        @page {
+            size: A4 portrait;
+            margin: 6mm;
+        }
+        html, body {
+            background: #fff !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+        .app-sidebar,
+        .app-topbar,
+        .sidebar-overlay,
+        .no-print,
+        .user-search-results {
+            display: none !important;
+        }
+        .app-content {
+            width: 100%;
+            max-width: none;
+            margin: 0;
+            padding: 0;
+        }
+        .card {
+            border: 0 !important;
+            box-shadow: none !important;
+            margin-bottom: 4px !important;
+        }
+        .print-one-page {
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+        .screen-summary-cards {
+            display: none !important;
+        }
+        .print-compact-summary {
+            display: block !important;
+            font-size: 7pt !important;
+            padding: 4px 6px !important;
+            margin-bottom: 4px !important;
+            border: 0.4pt solid #94a3b8 !important;
+        }
+        .table-responsive { overflow: visible !important; }
+        .report-table {
+            font-size: 5.8pt !important;
+            width: 100% !important;
+            border-collapse: collapse !important;
+        }
+        .report-table th,
+        .report-table td {
+            border: 0.4pt solid #64748b !important;
+            padding: 0.5mm 0.35mm !important;
+            line-height: 1.1;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+        .report-table th {
+            background: #e2e8f0 !important;
+            color: #000 !important;
+            font-size: 5.5pt !important;
+        }
+        .report-table thead { display: table-header-group; }
+        .report-table tr {
+            break-inside: avoid;
+            page-break-inside: avoid;
+        }
+        .day-row.holiday { background: #fff3cd !important; }
+        .day-row.friday { background: #e2e3e5 !important; }
+        .day-row.leave { background: #cfe2ff !important; }
+        .day-row.absent { background: #f8d7da !important; }
+        .attendance-pair {
+            background: transparent !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            font-size: 5.5pt !important;
+        }
+    }
+    .print-compact-summary { display: none; }
 </style>
 {% endblock %}
 
@@ -193,13 +273,13 @@
 
 <!-- پیام‌ها -->
 {% if request.query_params.get('error') %}
-<div class="alert alert-danger alert-dismissible fade show">
+<div class="alert alert-danger alert-dismissible fade show no-print">
     <i class="bi bi-exclamation-triangle"></i> {{ request.query_params.get('error') }}
     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
 </div>
 {% endif %}
 
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="d-flex justify-content-between align-items-center mb-4 no-print">
     <h4 class="mb-0"><i class="bi bi-calendar2-week text-primary"></i> گزارش تفصیلی ماهانه</h4>
     <a href="/reports" class="btn btn-outline-primary btn-sm">
         <i class="bi bi-arrow-right"></i> بازگشت به گزارشات
@@ -207,13 +287,11 @@
 </div>
 
 <!-- 🎨 فرم انتخاب -->
-<div class="card border-0 shadow-sm mb-4">
+<div class="card border-0 shadow-sm mb-4 no-print">
     <div class="card-body">
         <form method="post" action="/reports/monthly-detailed" class="row g-3 align-items-end" id="reportForm">
-            <!-- انتخاب کاربر -->
-            <div class="col-md-5">
-                <label class="form-label">👤 کارمند <span class="text-danger">*</span></label>
-                <!-- ✅ wrapper با position: relative -->
+            <div class="col-md-4">
+                <label class="form-label" for="userSearchInput">کارمند</label>
                 <div class="user-search-wrapper">
                     <div class="input-group">
                         <span class="input-group-text"><i class="bi bi-search"></i></span>
@@ -221,48 +299,62 @@
                                class="form-control"
                                id="userSearchInput"
                                value="{{ report.employee.full_name if report else '' }}"
-                               placeholder="جستجوی کاربر..."
-                               autocomplete="off"
-                               required>
+                               placeholder="جستجوی نام یا کد — خالی = گروهی"
+                               autocomplete="off">
+                        <button type="button"
+                                class="btn btn-outline-danger"
+                                id="clearUserBtn"
+                                style="{% if not selected_user_id %}display: none;{% endif %}">
+                            <i class="bi bi-trash"></i>
+                        </button>
                     </div>
                     <input type="hidden" name="target_user_id" id="targetUserId"
-                           value="{{ selected_user_id if selected_user_id else '' }}" required>
-                    <!-- ✅ dropdown داخل wrapper -->
+                           value="{{ selected_user_id if selected_user_id else '' }}">
                     <div class="user-search-results" id="userSearchResults"></div>
                 </div>
             </div>
-            <!-- سال -->
             <div class="col-md-2">
-                <label class="form-label">📅 سال <span class="text-danger">*</span></label>
-                <select name="year" class="form-select" required>
+                <label class="form-label" for="reportYear">سال <span class="text-danger">*</span></label>
+                <select name="year" id="reportYear" class="form-select" required>
                     {% for y in available_years %}
                     <option value="{{ y }}" {% if selected_year== y %}selected{% endif %}>{{ y }}</option>
                     {% endfor %}
                 </select>
             </div>
 
-            <!-- ماه -->
-            <div class="col-md-3">
-                <label class="form-label">🗓️ ماه <span class="text-danger">*</span></label>
-                <select name="month" class="form-select" required>
+            <div class="col-md-2">
+                <label class="form-label" for="reportMonth">ماه <span class="text-danger">*</span></label>
+                <select name="month" id="reportMonth" class="form-select" required>
                     {% for m, name in jalali_months.items() %}
                     <option value="{{ m }}" {% if selected_month== m %}selected{% endif %}>{{ name }}</option>
                     {% endfor %}
                 </select>
             </div>
 
-            <!-- دکمه تولید -->
+            <div class="col-md-2">
+                <label class="form-label" for="employmentType">نوع عضویت</label>
+                <select name="employment_type" id="employmentType" class="form-select">
+                    {% for value, label in employment_type_options %}
+                    <option value="{{ value }}" {% if selected_employment_type == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
             <div class="col-md-2">
                 <button type="submit" class="btn btn-primary w-100">
-                    <i class="bi bi-lightning"></i> تولید گزارش
+                    <i class="bi bi-lightning"></i> تولید
                 </button>
             </div>
         </form>
+        <div class="form-text mt-2">
+            <strong>راهنما:</strong> با انتخاب کارمند گزارش فردی؛ بدون انتخاب کارمند، گزارش گروهی بر اساس نوع عضویت (مثل گزارش خام).
+        </div>
     </div>
 </div>
 
 <!-- 📊 نمایش گزارش -->
 {% if report %}
+<div class="print-one-page">
 <div class="card border-0 shadow-sm mb-4">
     <div class="card-header bg-white d-flex justify-content-between align-items-center">
         <div>
@@ -274,8 +366,19 @@
     </div>
     <div class="card-body">
 
+        <div class="print-compact-summary alert alert-secondary mb-2">
+            موظفی: {{ report.summary.duty_days }} / {{ report.summary.duty_hours | hhmm }}
+            | حضور: {{ report.summary.present_days }}
+            | مرخصی: {{ report.summary.leave_days }}
+            | غیبت: {{ report.summary.absent_days }}
+            | کارکرد: {{ report.summary.total_work_hours | hhmm }}
+            | اضافی: {{ report.summary.total_surplus | hhmm }}
+            | کسری: {{ report.summary.total_deficit | hhmm }}
+            | {{ report.summary.overall_status }} / {{ report.summary.net_balance | hhmm }}
+        </div>
+
         <!-- 📈 کارت‌های خلاصه -->
-        <div class="row g-3 mb-4">
+        <div class="row g-3 mb-4 screen-summary-cards">
             <div class="col-md-3 col-6">
                 <div class="card summary-card bg-light">
                     <div class="card-body text-center">
@@ -311,12 +414,12 @@
         </div>
 
         <!-- 📊 خلاصه ساعات -->
-        <div class="row g-3 mb-4">
+        <div class="row g-3 mb-4 screen-summary-cards">
             <div class="col-md-3 col-6">
                 <div class="card summary-card bg-primary bg-opacity-10">
                     <div class="card-body text-center">
                         <div class="value text-primary">
-                            <span class="hour-value">{{ "%.2f"|format(report.summary.total_work_hours) }}</span>
+                            <span class="hour-value">{{ report.summary.total_work_hours | hhmm }}</span>
                         </div>
                         <div class="label text-primary">مجموع ساعات کاری</div>
                     </div>
@@ -326,7 +429,7 @@
                 <div class="card summary-card bg-light">
                     <div class="card-body text-center">
                         <div class="value">
-                            <span class="hour-value">{{ "%.2f"|format(report.summary.duty_hours) }}</span>
+                            <span class="hour-value">{{ report.summary.duty_hours | hhmm }}</span>
                         </div>
                         <div class="label">ساعات موظفی</div>
                     </div>
@@ -336,7 +439,7 @@
                 <div class="card summary-card bg-success bg-opacity-10">
                     <div class="card-body text-center">
                         <div class="value text-success">
-                            <span class="hour-value">+{{ "%.2f"|format(report.summary.total_surplus) }}</span>
+                            <span class="hour-value">{% if report.summary.total_surplus > 0 %}+{% endif %}{{ report.summary.total_surplus | hhmm }}</span>
                         </div>
                         <div class="label text-success">مجموع اضافی</div>
                     </div>
@@ -346,7 +449,7 @@
                 <div class="card summary-card bg-danger bg-opacity-10">
                     <div class="card-body text-center">
                         <div class="value text-danger">
-                            <span class="hour-value">-{{ "%.2f"|format(report.summary.total_deficit) }}</span>
+                            <span class="hour-value">{% if report.summary.total_deficit > 0 %}-{% endif %}{{ report.summary.total_deficit | hhmm }}</span>
                         </div>
                         <div class="label text-danger">مجموع کسری</div>
                     </div>
@@ -355,14 +458,14 @@
         </div>
 
         <!-- 📊 وضعیت کلی -->
-        <div class="alert {% if report.summary.overall_status == 'اضافی' %}alert-success{% elif report.summary.overall_status == 'کسری' %}alert-danger{% else %}alert-info{% endif %}">
+        <div class="alert screen-summary-cards {% if report.summary.overall_status == 'اضافی' %}alert-success{% elif report.summary.overall_status == 'کسری' %}alert-danger{% else %}alert-info{% endif %}">
             <i class="bi bi-info-circle"></i>
             وضعیت کلی: <strong>{{ report.summary.overall_status }}</strong>
-            | خالص: <strong class="hour-value">{{ "%.2f"|format(report.summary.net_balance) }}</strong> ساعت
-            | اضافه کار هفتگی: <strong class="hour-value">{{ "%.2f"|format(report.summary.weekly_overtime) }}</strong>
+            | خالص: <strong class="hour-value">{{ report.summary.net_balance | hhmm }}</strong> ساعت
+            | اضافه کار هفتگی: <strong class="hour-value">{{ report.summary.weekly_overtime | hhmm }}</strong>
             ساعت
-            | جمعه کاری: <strong class="hour-value">{{ "%.2f"|format(report.summary.friday_work_hours) }}</strong> ساعت
-            | تعطیل کاری: <strong class="hour-value">{{ "%.2f"|format(report.summary.holiday_work_hours) }}</strong>
+            | جمعه کاری: <strong class="hour-value">{{ report.summary.friday_work_hours | hhmm }}</strong> ساعت
+            | تعطیل کاری: <strong class="hour-value">{{ report.summary.holiday_work_hours | hhmm }}</strong>
             ساعت
         </div>
 
@@ -447,25 +550,25 @@
                         <span class="text-muted">-</span>
                         {% endif %}
                     </td>
-                    <td><span class="hour-value">{{ "%.2f"|format(day.work_hours) }}</span></td>
+                    <td><span class="hour-value">{{ day.work_hours | hhmm }}</span></td>
                     <td>
                         {% if day.surplus > 0 %}
-                        <span class="hour-value hour-positive">+{{ "%.2f"|format(day.surplus) }}</span>
+                        <span class="hour-value hour-positive">+{{ day.surplus | hhmm }}</span>
                         {% else %}
                         <span class="text-muted">-</span>
                         {% endif %}
                     </td>
                     <td>
                         {% if day.deficit > 0 %}
-                        <span class="hour-value hour-negative">-{{ "%.2f"|format(day.deficit) }}</span>
+                        <span class="hour-value hour-negative">-{{ day.deficit | hhmm }}</span>
                         {% else %}
                         <span class="text-muted">-</span>
                         {% endif %}
                     </td>
-                    <td><span class="hour-value">{{ "%.1f"|format(day.morning_hours) }}</span></td>
-                    <td><span class="hour-value">{{ "%.1f"|format(day.evening_hours) }}</span></td>
-                    <td><span class="hour-value">{{ "%.1f"|format(day.night_hours) }}</span></td>
-                    <td><span class="hour-value">{{ "%.2f"|format(day.daily_duty) }}</span></td>
+                    <td><span class="hour-value">{{ day.morning_hours | hhmm }}</span></td>
+                    <td><span class="hour-value">{{ day.evening_hours | hhmm }}</span></td>
+                    <td><span class="hour-value">{{ day.night_hours | hhmm }}</span></td>
+                    <td><span class="hour-value">{{ day.daily_duty | hhmm }}</span></td>
                 </tr>
                 {% endfor %}
                 </tbody>
@@ -473,7 +576,7 @@
         </div>
 
         <!-- راهنمای رنگ‌ها -->
-        <div class="d-flex gap-3 mt-3 small flex-wrap">
+        <div class="d-flex gap-3 mt-3 small flex-wrap no-print">
             <strong class="text-muted">راهنما:</strong>
             <span><span class="badge bg-success">سبز</span> حاضر</span>
             <span><span class="badge bg-info">آبی</span> مرخصی</span>
@@ -484,6 +587,30 @@
             <span><span class="badge bg-primary">🚗</span> مأموریت ساعتی</span>
             <span><span class="badge bg-primary">مأموریت</span> مأموریت روزانه</span>
         </div>
+    </div>
+</div>
+</div><!-- /.print-one-page -->
+
+<!-- 🖨️ دکمه‌های خروجی فردی -->
+<div class="card border-0 shadow-sm mt-4 no-print">
+    <div class="card-body text-center py-4">
+        <h6 class="mb-3"><i class="bi bi-download"></i> خروجی گزارش</h6>
+        <div class="d-flex justify-content-center gap-3 flex-wrap">
+            <a href="/reports/monthly-detailed/export-excel?target_user_id={{ selected_user_id }}&year={{ selected_year }}&month={{ selected_month }}"
+               class="btn btn-success btn-lg">
+                <i class="bi bi-file-earmark-excel"></i> دانلود اکسل
+            </a>
+            <a href="/reports/monthly-detailed/export-pdf?target_user_id={{ selected_user_id }}&year={{ selected_year }}&month={{ selected_month }}"
+               class="btn btn-danger btn-lg">
+                <i class="bi bi-file-earmark-pdf"></i> دانلود PDF
+            </a>
+            <button type="button" onclick="window.print()" class="btn btn-outline-primary btn-lg">
+                <i class="bi bi-printer"></i> چاپ
+            </button>
+        </div>
+        <small class="text-muted d-block mt-3">
+            چاپ و PDF در یک صفحه A4 — برای گروهی کارمند را خالی بگذارید
+        </small>
     </div>
 </div>
 {% endif %}
@@ -543,7 +670,6 @@
 
 {% block extra_js %}
 <script>
-// 🎨 جستجوگر کاربر - نسخه اصلاح شده
 const employeesData = {{ employees | tojson }};
 let highlightedIndex = -1;
 let filteredEmployees = [];
@@ -551,6 +677,7 @@ let filteredEmployees = [];
 const searchInput = document.getElementById('userSearchInput');
 const searchResults = document.getElementById('userSearchResults');
 const targetUserId = document.getElementById('targetUserId');
+const clearUserBtn = document.getElementById('clearUserBtn');
 
 function searchEmployees(query) {
     if (!query.trim()) return employeesData.slice(0, 50);
@@ -574,7 +701,6 @@ function renderResults(employees) {
 
     let html = `<div class="user-search-count">${employees.length} کاربر یافت شد</div>`;
     employees.forEach((emp, index) => {
-        // ✅ ساختار جدید: user-info wrapper برای نام + کد
         html += `
             <div class="user-search-item" data-index="${index}"
                  title="${emp.full_name} (${emp.user_id}) - ${emp.department}">
@@ -612,10 +738,20 @@ function highlightItem(index) {
 }
 
 function selectEmployee(emp) {
+    if (!emp) return;
     targetUserId.value = emp.user_id;
     searchInput.value = emp.full_name;
     searchInput.classList.add('user-selected');
+    if (clearUserBtn) clearUserBtn.style.display = 'inline-flex';
     closeDropdown();
+}
+
+function clearSelection() {
+    targetUserId.value = '';
+    searchInput.value = '';
+    searchInput.classList.remove('user-selected');
+    if (clearUserBtn) clearUserBtn.style.display = 'none';
+    searchInput.focus();
 }
 
 function closeDropdown() {
@@ -623,17 +759,19 @@ function closeDropdown() {
     highlightedIndex = -1;
 }
 
-// رویدادها
 searchInput.addEventListener('input', function() {
-    targetUserId.value = '';
-    searchInput.classList.remove('user-selected');
+    if (targetUserId.value) {
+        targetUserId.value = '';
+        searchInput.classList.remove('user-selected');
+    }
     renderResults(searchEmployees(this.value));
+    if (clearUserBtn) {
+        clearUserBtn.style.display = targetUserId.value ? 'inline-flex' : 'none';
+    }
 });
 
 searchInput.addEventListener('focus', function() {
-    if (!targetUserId.value || this.value !== '') {
-        renderResults(searchEmployees(this.value));
-    }
+    if (!targetUserId.value) renderResults(searchEmployees(this.value));
 });
 
 searchInput.addEventListener('keydown', function(e) {
@@ -660,27 +798,16 @@ searchInput.addEventListener('keydown', function(e) {
     }
 });
 
-// ✅ بستن dropdown با کلیک بیرون (اصلاح شده)
+if (clearUserBtn) clearUserBtn.addEventListener('click', clearSelection);
+
 document.addEventListener('click', function(e) {
-    // اگر کلیک روی wrapper جستجو نباشد
     if (!e.target.closest('.user-search-wrapper')) {
         closeDropdown();
     }
 });
 
-// ✅ جلوگیری از بسته شدن هنگام کلیک روی خود dropdown
 searchResults.addEventListener('click', function(e) {
     e.stopPropagation();
-});
-
-// اعتبارسنجی فرم
-document.getElementById('reportForm').addEventListener('submit', function(e) {
-    if (!targetUserId.value) {
-        e.preventDefault();
-        alert('⚠️ لطفاً یک کاربر انتخاب کنید');
-        searchInput.focus();
-        return false;
-    }
 });
 </script>
 {% endblock %}

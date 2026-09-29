@@ -31,9 +31,243 @@ from core.pdf_raw_report import (
     export_group as export_raw_pdf_group,
 )
 from core.detailed_monthly_report_v2 import DetailedMonthlyReportGeneratorV2
+from core.excel_detailed_export_v2 import DetailedExcelExporterV2
+from core.pdf_detailed_export_v2 import DetailedPDFExporterV2
+
+
+def _monthly_full_report_data(target_user_id: str, year: int, month: int):
+    """گزارش monthly-full از همان Central Engine مسیر صفحه.
+
+    خروجی Screen / Print / PDF / Excel همگی از این یک ساختار داده می‌آیند؛
+    لایه export هیچ محاسبهٔ دوبارهٔ تردد انجام نمی‌دهد.
+    """
+    generator = DetailedMonthlyReportGeneratorV2()
+    try:
+        report = generator.generate_detailed_report(
+            target_user_id, year, month)
+    finally:
+        generator.close()
+    if not report.get('success'):
+        raise ValueError(report.get('message', 'خطا در تولید گزارش'))
+    return report
+
+
+def _ascii_filename_part(value: str, fallback: str = 'report') -> str:
+    """بخش ASCII نام فایل — هدر HTTP فقط latin-1 را می‌پذیرد.
+
+    نام فارسی کامل از طریق پارامتر `filename*=UTF-8''` منتقل می‌شود.
+    """
+    cleaned = ''.join(
+        char for char in str(value)
+        if char.isascii() and (char.isalnum() or char in ('-', '_', '.'))
+    )
+    return cleaned or fallback
+
+
+def _employment_type_label(employment_type: str) -> str:
+    for value, label in EMPLOYMENT_TYPE_OPTIONS:
+        if value == employment_type:
+            return label
+    return employment_type or 'همه'
+
+
+def _validate_monthly_employment_type(employment_type: str) -> None:
+    if employment_type not in CONTRACT_TYPES and employment_type != 'all':
+        raise ValueError('نوع عضویت نامعتبر است')
+
+
+def _employees_for_employment_type(db: Session, employment_type: str):
+    query = db.query(Employee).filter(Employee.is_active.is_(True))
+    if employment_type != 'all':
+        query = query.filter(Employee.department == employment_type)
+    return query.order_by(
+        Employee.first_name, Employee.last_name, Employee.user_id
+    ).all()
+
+
+def _monthly_group_reports(
+    db: Session,
+    year: int,
+    month: int,
+    employment_type: str,
+):
+    """لیست گزارش‌های ماهانه برای یک نوع عضویت (یا همه).
+
+    سیاست انتخاب مثل گزارش خام:
+    - با user_id مشخص → فردی (این تابع صدا زده نمی‌شود)
+    - بدون user_id → گروهی بر اساس employment_type
+      (all = همهٔ کارکنان فعال)
+    """
+    if month < 1 or month > 12:
+        raise ValueError('ماه نامعتبر است')
+    _validate_monthly_employment_type(employment_type)
+    reports = []
+    for employee in _employees_for_employment_type(db, employment_type):
+        try:
+            reports.append(
+                _monthly_full_report_data(employee.user_id, year, month)
+            )
+        except ValueError:
+            continue
+    return reports, _employment_type_label(employment_type)
+
+
+def _monthly_group_print_redirect(
+    base_path: str,
+    year: int,
+    month: int,
+    employment_type: str,
+) -> RedirectResponse:
+    """هدایت به صفحه چاپ گروهی — همان مسیر خروجی گروهی گزارش خام."""
+    qs = (
+        f'year={year}&month={month}'
+        f'&employment_type={quote(str(employment_type), safe="")}'
+    )
+    return RedirectResponse(
+        url=f'{base_path}/print-group?{qs}',
+        status_code=302,
+    )
+
+
+def _monthly_pdf_response(report: dict, year: int, month: int):
+    output = BytesIO()
+    DetailedPDFExporterV2().export_detailed_report(report, output)
+    emp_name = report['employee']['full_name']
+    month_name = report['month_name']
+    ascii_name = _ascii_filename_part(
+        report['employee']['user_id'], 'detailed')
+    filename = f'{ascii_name}_detailed_{year}_{month:02d}.pdf'
+    utf8_filename = quote(
+        f'گزارش_تفصیلی_V2_{emp_name}_{month_name}_{year}.pdf',
+        safe='',
+    )
+    return StreamingResponse(
+        output,
+        media_type='application/pdf',
+        headers={
+            'Content-Disposition': (
+                f'attachment; filename="{filename}"; '
+                f'filename*=UTF-8\'\'{utf8_filename}'
+            )
+        },
+    )
+
+
+def _monthly_excel_response(report: dict, year: int, month: int):
+    output = BytesIO()
+    DetailedExcelExporterV2().export_detailed_report(report, output)
+    emp_name = report['employee']['full_name']
+    month_name = report['month_name']
+    ascii_name = _ascii_filename_part(
+        report['employee']['user_id'], 'detailed')
+    filename = f'{ascii_name}_detailed_{year}_{month:02d}.xlsx'
+    utf8_filename = quote(
+        f'گزارش_تفصیلی_V2_{emp_name}_{month_name}_{year}.xlsx',
+        safe='',
+    )
+    return StreamingResponse(
+        output,
+        media_type=(
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        ),
+        headers={
+            'Content-Disposition': (
+                f'attachment; filename="{filename}"; '
+                f'filename*=UTF-8\'\'{utf8_filename}'
+            )
+        },
+    )
+
+
+def _monthly_group_pdf_response(
+    reports: list,
+    year: int,
+    month: int,
+    group_label: str,
+):
+    output = BytesIO()
+    month_name = JALALI_MONTHS.get(month, str(month))
+    DetailedPDFExporterV2().export_group_reports(
+        reports, year, month, month_name,
+        group_label=group_label, output=output,
+    )
+    ascii_label = _ascii_filename_part(group_label, 'group')
+    filename = f'group_{ascii_label}_{year}_{month:02d}.pdf'
+    utf8_filename = quote(
+        f'گزارش_گروهی_V2_{group_label}_{month_name}_{year}.pdf',
+        safe='',
+    )
+    return StreamingResponse(
+        output,
+        media_type='application/pdf',
+        headers={
+            'Content-Disposition': (
+                f'attachment; filename="{filename}"; '
+                f'filename*=UTF-8\'\'{utf8_filename}'
+            )
+        },
+    )
+
+
+def _monthly_form_context(
+    request: Request,
+    user: User,
+    db: Session,
+    *,
+    report=None,
+    selected_user_id: Optional[str] = None,
+    selected_year: Optional[int] = None,
+    selected_month: Optional[int] = None,
+    selected_employment_type: str = 'all',
+):
+    today_j = jdatetime.date.today()
+    employees = db.query(Employee).filter(
+        Employee.is_active.is_(True)
+    ).order_by(Employee.first_name, Employee.last_name).all()
+    employees_list = [
+        {
+            'user_id': emp.user_id,
+            'full_name': emp.full_name,
+            'department': emp.department or '-',
+        }
+        for emp in employees
+    ]
+    return {
+        'user': user,
+        'employees': employees_list,
+        'available_years': list(range(today_j.year, today_j.year - 6, -1)),
+        'jalali_months': JALALI_MONTHS,
+        'employment_type_options': EMPLOYMENT_TYPE_OPTIONS,
+        'current_year': today_j.year,
+        'current_month': today_j.month,
+        'report': report,
+        'selected_user_id': selected_user_id or '',
+        'selected_year': selected_year or today_j.year,
+        'selected_month': selected_month or today_j.month,
+        'selected_employment_type': selected_employment_type,
+        'is_admin': True,
+    }
+
 
 router = APIRouter(tags=["Reports"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
+
+
+def format_hhmm(hours):
+    """تبدیل ساعت اعشاری به فرمت HH:MM (مبنای دقیقه)."""
+    if hours is None:
+        return '-'
+    total_minutes = int(round(float(hours) * 60))
+    if total_minutes == 0:
+        return '-'
+    sign = '-' if total_minutes < 0 else ''
+    total_minutes = abs(total_minutes)
+    h = total_minutes // 60
+    m = total_minutes % 60
+    return f"{sign}{h:02d}:{m:02d}"
+
+
+templates.env.filters['hhmm'] = format_hhmm
 
 # نام ماه‌های شمسی
 JALALI_MONTHS = {
@@ -338,114 +572,179 @@ async def monthly_detailed_report_form(
 ):
     """فرم انتخاب کاربر و ماه برای گزارش تفصیلی"""
     enforce_permission(db, user, 'view_reports')
-    # دریافت لیست کارمندان فعال
-    employees = db.query(Employee).filter(
-        Employee.is_active == True
-    ).order_by(Employee.first_name, Employee.last_name).all()
-
-    employees_list = [
-        {
-            'user_id': emp.user_id,
-            'full_name': emp.full_name,
-            'department': emp.department or '-',
-        }
-        for emp in employees
-    ]
-
-    # سال‌های موجود
-    current_year_j = jdatetime.date.today().year
-    available_years = list(range(current_year_j, current_year_j - 6, -1))
-
-    return templates.TemplateResponse(request, "admin/report_monthly_detailed.html", {
-        "user": user,
-        "employees": employees_list,
-        "available_years": available_years,
-        "jalali_months": JALALI_MONTHS,
-        "current_year": current_year_j,
-        "current_month": jdatetime.date.today().month,
-        "report": None,
-        "is_admin": True,
-    })
+    selected_employment_type = request.query_params.get(
+        'employment_type', 'all')
+    try:
+        _validate_monthly_employment_type(selected_employment_type)
+    except ValueError:
+        selected_employment_type = 'all'
+    return templates.TemplateResponse(
+        request,
+        "admin/report_monthly_detailed.html",
+        _monthly_form_context(
+            request, user, db,
+            selected_employment_type=selected_employment_type,
+        ),
+    )
 
 
 @router.post("/reports/monthly-detailed")
 async def monthly_detailed_report_generate(
         request: Request,
-        target_user_id: str = Form(...),
+        target_user_id: str = Form(''),
         year: int = Form(...),
         month: int = Form(...),
+        employment_type: str = Form('all'),
         user: User = Depends(require_admin),
         db: Session = Depends(get_db)
 ):
-    """تولید گزارش تفصیلی ماهانه"""
+    """تولید گزارش تفصیلی ماهانه.
+
+    سیاست مثل گزارش خام: با کارمند → فردی؛ بدون کارمند → گروهی.
+    """
     enforce_permission(db, user, 'view_reports')
     try:
-        # اعتبارسنجی ماه
         if month < 1 or month > 12:
             raise ValueError("ماه نامعتبر است")
-
-        # تولید گزارش با کلاس گزارش‌ساز
-        generator = DetailedMonthlyReportGeneratorV2()
-        try:
-            report = generator.generate_detailed_report(target_user_id, year, month)
-        finally:
-            generator.close()
-
-        if not report.get('success'):
-            raise ValueError(report.get('message', 'خطا در تولید گزارش'))
-
-        # دریافت لیست کارمندان برای فرم
-        employees = db.query(Employee).filter(
-            Employee.is_active == True
-        ).order_by(Employee.first_name, Employee.last_name).all()
-
-        employees_list = [
-            {
-                'user_id': emp.user_id,
-                'full_name': emp.full_name,
-                'department': emp.department or '-',
-            }
-            for emp in employees
-        ]
-
-        current_year_j = jdatetime.date.today().year
-        available_years = list(range(current_year_j, current_year_j - 6, -1))
-
-        return templates.TemplateResponse(request, "admin/report_monthly_detailed.html", {
-            "user": user,
-            "employees": employees_list,
-            "available_years": available_years,
-            "jalali_months": JALALI_MONTHS,
-            "current_year": current_year_j,
-            "current_month": jdatetime.date.today().month,
-            "report": report,
-            "selected_user_id": target_user_id,
-            "selected_year": year,
-            "selected_month": month,
-            "is_admin": True,
-        })
+        _validate_monthly_employment_type(employment_type)
+        target_user_id = (target_user_id or '').strip()
+        if not target_user_id:
+            return _monthly_group_print_redirect(
+                '/reports/monthly-detailed', year, month, employment_type)
+        report = _monthly_full_report_data(target_user_id, year, month)
+        return templates.TemplateResponse(
+            request,
+            "admin/report_monthly_detailed.html",
+            _monthly_form_context(
+                request, user, db,
+                report=report,
+                selected_user_id=target_user_id,
+                selected_year=year,
+                selected_month=month,
+                selected_employment_type=employment_type,
+            ),
+        )
     except Exception as e:
+        error = quote(str(e), safe='')
         return RedirectResponse(
-            url=f"/admin/reports/monthly-detailed?error={str(e)}",
+            url=f"/reports/monthly-detailed?error={error}",
             status_code=302
         )
 
 
-# ============================================
-# 🆕 تبدیل ساعت اعشاری به فرمت HH:MM
-# ============================================
-def format_hhmm(hours):
-    """تبدیل ساعت اعشاری به فرمت HH:MM"""
-    if hours is None or hours == 0:
-        return '-'
-    total_minutes = int(round(hours * 60))
-    h = total_minutes // 60
-    m = total_minutes % 60
-    return f"{h:02d}:{m:02d}"
+@router.get("/reports/monthly-detailed/export-excel")
+async def monthly_detailed_report_excel(
+        request: Request,
+        target_user_id: str = Query(...),
+        year: int = Query(...),
+        month: int = Query(...),
+        user: User = Depends(require_admin),
+        db: Session = Depends(get_db),
+):
+    """خروجی اکسل گزارش تفصیلی ماهانه"""
+    enforce_permission(db, user, 'view_reports')
+    try:
+        if month < 1 or month > 12:
+            raise ValueError("ماه نامعتبر است")
+        report = _monthly_full_report_data(target_user_id, year, month)
+        return _monthly_excel_response(report, year, month)
+    except Exception as e:
+        error = quote(str(e), safe='')
+        return RedirectResponse(
+            url=f"/reports/monthly-detailed?error={error}",
+            status_code=302,
+        )
 
 
-# ثبت filter در Jinja2
-templates.env.filters['hhmm'] = format_hhmm
+@router.get("/reports/monthly-detailed/export-pdf")
+async def monthly_detailed_report_pdf(
+        request: Request,
+        target_user_id: str = Query(...),
+        year: int = Query(...),
+        month: int = Query(...),
+        user: User = Depends(require_admin),
+        db: Session = Depends(get_db),
+):
+    """خروجی PDF گزارش تفصیلی ماهانه (یک صفحه)"""
+    enforce_permission(db, user, 'view_reports')
+    try:
+        if month < 1 or month > 12:
+            raise ValueError("ماه نامعتبر است")
+        report = _monthly_full_report_data(target_user_id, year, month)
+        return _monthly_pdf_response(report, year, month)
+    except Exception as e:
+        error = quote(str(e), safe='')
+        return RedirectResponse(
+            url=f"/reports/monthly-detailed?error={error}",
+            status_code=302,
+        )
+
+
+@router.get("/reports/monthly-detailed/export-pdf-group")
+async def monthly_detailed_report_pdf_group(
+        request: Request,
+        year: int = Query(...),
+        month: int = Query(...),
+        employment_type: str = Query('all'),
+        user: User = Depends(require_admin),
+        db: Session = Depends(get_db),
+):
+    """خروجی PDF گروهی بر اساس نوع عضویت"""
+    enforce_permission(db, user, 'view_reports')
+    try:
+        reports, group_label = _monthly_group_reports(
+            db, year, month, employment_type)
+        return _monthly_group_pdf_response(
+            reports, year, month, group_label)
+    except Exception as e:
+        error = quote(str(e), safe='')
+        return RedirectResponse(
+            url=f"/reports/monthly-detailed?error={error}",
+            status_code=302,
+        )
+
+
+@router.get("/reports/monthly-detailed/print-group", response_class=HTMLResponse)
+async def monthly_detailed_report_print_group(
+        request: Request,
+        year: int = Query(...),
+        month: int = Query(...),
+        employment_type: str = Query('all'),
+        user: User = Depends(require_admin),
+        db: Session = Depends(get_db),
+):
+    """صفحه چاپ گروهی گزارش تفصیلی (هر نفر یک صفحه)"""
+    enforce_permission(db, user, 'view_reports')
+    try:
+        reports, group_label = _monthly_group_reports(
+            db, year, month, employment_type)
+        return templates.TemplateResponse(
+            request,
+            "admin/report_monthly_print_group.html",
+            {
+                "user": user,
+                "reports": reports,
+                "year": year,
+                "month": month,
+                "month_name": JALALI_MONTHS.get(month, str(month)),
+                "group_label": group_label,
+                "employment_type": employment_type,
+                "back_url": "/reports/monthly-detailed",
+                "pdf_url": (
+                    "/reports/monthly-detailed/export-pdf-group"
+                    f"?year={year}&month={month}"
+                    f"&employment_type={quote(str(employment_type), safe='')}"
+                ),
+                "report_title": "گزارش تفصیلی ماهانه",
+                "is_admin": True,
+            },
+        )
+    except Exception as e:
+        error = quote(str(e), safe='')
+        return RedirectResponse(
+            url=f"/reports/monthly-detailed?error={error}",
+            status_code=302,
+        )
 
 
 # ============================================
@@ -460,98 +759,184 @@ async def monthly_full_report_form(
 ):
     """فرم گزارش کامل ماهانه (شبیه PDF)"""
     enforce_permission(db, user, 'view_reports')
-    employees = db.query(Employee).filter(
-        Employee.is_active == True
-    ).order_by(Employee.first_name, Employee.last_name).all()
-
-    employees_list = [
-        {
-            'user_id': emp.user_id,
-            'full_name': emp.full_name,
-            'department': emp.department or '-',
-        }
-        for emp in employees
-    ]
-
-    current_year_j = jdatetime.date.today().year
-    available_years = list(range(current_year_j, current_year_j - 6, -1))
-
-    return templates.TemplateResponse(request, "admin/report_monthly_full.html", {
-        "user": user,
-        "employees": employees_list,
-        "available_years": available_years,
-        "jalali_months": JALALI_MONTHS,
-        "current_year": current_year_j,
-        "current_month": jdatetime.date.today().month,
-        "report": None,
-        "is_admin": True,
-    })
+    selected_employment_type = request.query_params.get(
+        'employment_type', 'all')
+    try:
+        _validate_monthly_employment_type(selected_employment_type)
+    except ValueError:
+        selected_employment_type = 'all'
+    return templates.TemplateResponse(
+        request,
+        "admin/report_monthly_full.html",
+        _monthly_form_context(
+            request, user, db,
+            selected_employment_type=selected_employment_type,
+        ),
+    )
 
 
 @router.post("/reports/monthly-full")
 async def monthly_full_report_generate(
         request: Request,
-        target_user_id: str = Form(...),
+        target_user_id: str = Form(''),
         year: int = Form(...),
         month: int = Form(...),
+        employment_type: str = Form('all'),
         user: User = Depends(require_admin),
         db: Session = Depends(get_db)
 ):
-    """تولید گزارش کامل ماهانه (شبیه PDF)"""
+    """تولید گزارش کامل ماهانه.
+
+    سیاست مثل گزارش خام: با کارمند → فردی؛ بدون کارمند → گروهی.
+    """
     enforce_permission(db, user, 'view_reports')
     try:
         if month < 1 or month > 12:
             raise ValueError("ماه نامعتبر است")
-
-        generator = DetailedMonthlyReportGeneratorV2()
-        try:
-            report = generator.generate_detailed_report(target_user_id, year, month)
-        finally:
-            generator.close()
-
-        if not report.get('success'):
-            raise ValueError(report.get('message', 'خطا در تولید گزارش'))
-
-        employees = db.query(Employee).filter(
-            Employee.is_active == True
-        ).order_by(Employee.first_name, Employee.last_name).all()
-
-        employees_list = [
-            {
-                'user_id': emp.user_id,
-                'full_name': emp.full_name,
-                'department': emp.department or '-',
-            }
-            for emp in employees
-        ]
-
-        current_year_j = jdatetime.date.today().year
-        available_years = list(range(current_year_j, current_year_j - 6, -1))
-
-        return templates.TemplateResponse(request, "admin/report_monthly_full.html", {
-            "user": user,
-            "employees": employees_list,
-            "available_years": available_years,
-            "jalali_months": JALALI_MONTHS,
-            "current_year": current_year_j,
-            "current_month": jdatetime.date.today().month,
-            "report": report,
-            "selected_user_id": target_user_id,
-            "selected_year": year,
-            "selected_month": month,
-            "is_admin": True,
-        })
+        _validate_monthly_employment_type(employment_type)
+        target_user_id = (target_user_id or '').strip()
+        if not target_user_id:
+            return _monthly_group_print_redirect(
+                '/reports/monthly-full', year, month, employment_type)
+        report = _monthly_full_report_data(target_user_id, year, month)
+        return templates.TemplateResponse(
+            request,
+            "admin/report_monthly_full.html",
+            _monthly_form_context(
+                request, user, db,
+                report=report,
+                selected_user_id=target_user_id,
+                selected_year=year,
+                selected_month=month,
+                selected_employment_type=employment_type,
+            ),
+        )
     except Exception as e:
+        error = quote(str(e), safe='')
         return RedirectResponse(
-            url=f"/reports/monthly-full?error={str(e)}",
+            url=f"/reports/monthly-full?error={error}",
             status_code=302
+        )
+
+
+@router.get("/reports/monthly-full/export-excel")
+async def monthly_full_report_excel(
+        request: Request,
+        target_user_id: str = Query(...),
+        year: int = Query(...),
+        month: int = Query(...),
+        user: User = Depends(require_admin),
+        db: Session = Depends(get_db),
+):
+    """خروجی اکسل گزارش کامل ماهانه"""
+    enforce_permission(db, user, 'view_reports')
+    try:
+        if month < 1 or month > 12:
+            raise ValueError("ماه نامعتبر است")
+        report = _monthly_full_report_data(target_user_id, year, month)
+        return _monthly_excel_response(report, year, month)
+    except Exception as e:
+        error = quote(str(e), safe='')
+        return RedirectResponse(
+            url=f"/reports/monthly-full?error={error}",
+            status_code=302,
+        )
+
+
+@router.get("/reports/monthly-full/export-pdf")
+async def monthly_full_report_pdf(
+        request: Request,
+        target_user_id: str = Query(...),
+        year: int = Query(...),
+        month: int = Query(...),
+        user: User = Depends(require_admin),
+        db: Session = Depends(get_db),
+):
+    """خروجی PDF گزارش کامل ماهانه (یک صفحه)"""
+    enforce_permission(db, user, 'view_reports')
+    try:
+        if month < 1 or month > 12:
+            raise ValueError("ماه نامعتبر است")
+        report = _monthly_full_report_data(target_user_id, year, month)
+        return _monthly_pdf_response(report, year, month)
+    except Exception as e:
+        error = quote(str(e), safe='')
+        return RedirectResponse(
+            url=f"/reports/monthly-full?error={error}",
+            status_code=302,
+        )
+
+
+@router.get("/reports/monthly-full/export-pdf-group")
+async def monthly_full_report_pdf_group(
+        request: Request,
+        year: int = Query(...),
+        month: int = Query(...),
+        employment_type: str = Query('all'),
+        user: User = Depends(require_admin),
+        db: Session = Depends(get_db),
+):
+    """خروجی PDF گروهی بر اساس نوع عضویت"""
+    enforce_permission(db, user, 'view_reports')
+    try:
+        reports, group_label = _monthly_group_reports(
+            db, year, month, employment_type)
+        return _monthly_group_pdf_response(
+            reports, year, month, group_label)
+    except Exception as e:
+        error = quote(str(e), safe='')
+        return RedirectResponse(
+            url=f"/reports/monthly-full?error={error}",
+            status_code=302,
+        )
+
+
+@router.get("/reports/monthly-full/print-group", response_class=HTMLResponse)
+async def monthly_full_report_print_group(
+        request: Request,
+        year: int = Query(...),
+        month: int = Query(...),
+        employment_type: str = Query('all'),
+        user: User = Depends(require_admin),
+        db: Session = Depends(get_db),
+):
+    """صفحه چاپ گروهی گزارش کامل (هر نفر یک صفحه)"""
+    enforce_permission(db, user, 'view_reports')
+    try:
+        reports, group_label = _monthly_group_reports(
+            db, year, month, employment_type)
+        return templates.TemplateResponse(
+            request,
+            "admin/report_monthly_print_group.html",
+            {
+                "user": user,
+                "reports": reports,
+                "year": year,
+                "month": month,
+                "month_name": JALALI_MONTHS.get(month, str(month)),
+                "group_label": group_label,
+                "employment_type": employment_type,
+                "back_url": "/reports/monthly-full",
+                "pdf_url": (
+                    "/reports/monthly-full/export-pdf-group"
+                    f"?year={year}&month={month}"
+                    f"&employment_type={quote(str(employment_type), safe='')}"
+                ),
+                "report_title": "گزارش کامل ماهانه",
+                "is_admin": True,
+            },
+        )
+    except Exception as e:
+        error = quote(str(e), safe='')
+        return RedirectResponse(
+            url=f"/reports/monthly-full?error={error}",
+            status_code=302,
         )
 
 
 # ============================================
 # 📊 گزارش آمار ماهیانه
 # ============================================
-from io import BytesIO
 from models.attendance import Attendance
 from models.contract import Contract
 from models.holiday import Holiday

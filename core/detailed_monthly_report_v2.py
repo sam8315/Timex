@@ -1,8 +1,16 @@
 """
 ماژول گزارش تفصیلی ماهانه کارمند - نسخه ۲
 با ستون‌های متعدد ورود/خروج و مبنای محاسبه بر اساس سیاست گروه
+
+Phase 5: محاسبه «تردد واقعی» (Actual Attendance) از Central Attendance Engine
+(`core/attendance_calculator.compute_day_attendance`) انجام می‌شود؛
+این ماژول فقط لایه Report است:
+
+    Central Engine  → Actual Work / pairs / وضعیت تردد
+    Policy Engine   → Required Duty / موظفی روز
+    Report Layer    → surplus / deficit / weekly overtime / monthly summary
 """
-from datetime import date, timedelta, datetime
+from datetime import date, timedelta
 from typing import List, Dict, Optional
 from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
@@ -14,7 +22,12 @@ from models.attendance import Attendance
 from models.daily_status import DailyStatus
 from models.leave_request import LeaveRequest
 from models.holiday import Holiday
-from core.time_calculator import calculate_shift_hours
+from core.time_calculator import sum_shift_hours_from_pairs
+from core.attendance_calculator import (
+    STATUS_NIGHT_SHIFT,
+    STATUS_NO_ATTENDANCE,
+    compute_day_attendance,
+)
 from web.services.attendance_policy_service import (
     resolve_policy,
     resolve_policy_day,
@@ -26,6 +39,20 @@ from web.services.hourly_mission_service import (
     get_approved_hourly_missions_for_display,
     format_hm_display,
 )
+
+
+def _hours_to_minutes(hours: float) -> int:
+    """تبدیل ساعت اعشاری به دقیقهٔ صحیح (مبنای نمایش H:MM)."""
+    return int(round(float(hours or 0) * 60))
+
+
+def _minutes_to_hours(minutes: int) -> float:
+    """دقیقه → ساعت اعشاری طوری که round(h*60) همان دقیقه را برگرداند."""
+    return minutes / 60.0
+
+
+# موظفی پیش‌فرض وقتی Policy نباشد: ۷:۲۰ = ۴۴۰ دقیقه (نه ۷.۳۳ شناور)
+_DEFAULT_DUTY_MINUTES = 440
 
 
 class DetailedMonthlyReportGeneratorV2:
@@ -75,12 +102,15 @@ class DetailedMonthlyReportGeneratorV2:
         if not employee:
             return {'success': False, 'message': 'کارمند یافت نشد'}
 
-        # دریافت تمام رکوردهای تردد ماه
+        # دریافت رکوردهای تردد — با حاشیه مرز ماه (Phase 5)
+        # روزهای حاشیه (‎-1 / +2 روز) صرفاً context موتور مرکزی برای تشخیص
+        # شیفت شبِ عبور از مرز ماه هستند؛ فقط روزهای داخل ماه در گزارش و
+        # summary لحاظ می‌شوند (در حلقه ساخت `days` فقط ماه فیلتر می‌شود).
         attendances = self.db.query(Attendance).filter(
             and_(
                 Attendance.user_id == user_id,
-                func.date(Attendance.timestamp) >= g_start,
-                func.date(Attendance.timestamp) <= g_end,
+                func.date(Attendance.timestamp) >= g_start - timedelta(days=1),
+                func.date(Attendance.timestamp) <= g_end + timedelta(days=2),
                 Attendance.is_deleted == False
             )
         ).order_by(Attendance.timestamp).all()
@@ -157,7 +187,9 @@ class DetailedMonthlyReportGeneratorV2:
 
             # تعیین وضعیت روز
             is_friday = current.weekday() == 4
-            is_holiday = self._is_holiday(current, employee.department)
+            holiday = self._find_holiday(current, employee.department)
+            is_holiday = holiday is not None
+            holiday_title = holiday.title if holiday is not None else None
 
             # Phase 6C: سیاست گروه برای روز — روز غیرکاری Policy هم «تعطیل» است
             # (همان semantics resolve_required_minutes → Non-working = 0)
@@ -172,9 +204,15 @@ class DetailedMonthlyReportGeneratorV2:
                 current, statuses_by_date, attendances_by_day, is_day_off
             )
 
-            # محاسبه ساعات کاری با چند جفت ورود/خروج
-            day_data = self._calculate_day_work_hours_v2(
-                current, attendances_by_day.get(current, []), attendances
+            # Actual Attendance فقط از Central Engine (Phase 5) —
+            # با context روز قبل/بعد (روزهای حاشیه ماه هم fetch شده‌اند)
+            day_data = self._compute_day_actual(
+                current,
+                attendances_by_day.get(current, []),
+                attendances_by_day.get(current - timedelta(days=1), []),
+                attendances_by_day.get(current + timedelta(days=1), []),
+                is_friday=is_friday,
+                holiday_title=holiday_title,
             )
 
             work_hours = day_data['work_hours']
@@ -201,20 +239,18 @@ class DetailedMonthlyReportGeneratorV2:
                 hourly_leave_minutes=hl_mins,
                 hourly_mission_minutes=hm_mins,
             )
-            daily_required_hours = required_minutes / 60
+            daily_required_hours = _minutes_to_hours(int(required_minutes))
 
             # محاسبه اضافی/کسری بر اساس موظفی روز
             surplus, deficit = self._calculate_surplus_deficit(
                 work_hours, is_day_off, person_status, daily_required_hours
             )
 
-            # محاسبه ساعات تفکیکی
-            shift_hours = {'morning': 0.0, 'evening': 0.0, 'night': 0.0}
-            if attendance_pairs:
-                first_enter = attendance_pairs[0]['enter']
-                last_exit = attendance_pairs[-1]['exit']
-                if first_enter and last_exit and last_exit > first_enter:
-                    shift_hours = calculate_shift_hours(first_enter, last_exit)
+            # تفکیک صبح/عصر/شب روی *همه* جفت‌های موتور (نه first→last و
+            # نه فقط pairهای سقف‌خورده‌ی نمایشی). فاصله بین جفت‌ها کار نیست.
+            shift_hours = day_data.get('shift_hours') or {
+                'morning': 0.0, 'evening': 0.0, 'night': 0.0,
+            }
 
             # تعیین موظفی روز
             has_duty = daily_required_hours > 0
@@ -233,7 +269,7 @@ class DetailedMonthlyReportGeneratorV2:
                 'attendance_pairs': attendance_pairs,
                 'attendance_status': attendance_status,
                 'has_incomplete': has_incomplete,
-                'work_hours': work_hours,
+                'work_hours': float(work_hours),
                 'surplus': surplus,
                 'deficit': deficit,
                 'morning_hours': shift_hours['morning'],
@@ -305,257 +341,200 @@ class DetailedMonthlyReportGeneratorV2:
 
         return {'code': 'A', 'name': 'غایب'}
 
-    def _calculate_day_work_hours_v2(self, current: date, day_attendances: List, all_attendances: List) -> Dict:
+    def _compute_day_actual(
+        self,
+        current: date,
+        day_records: List,
+        prev_day_records: List,
+        next_day_records: List,
+        is_friday: bool,
+        holiday_title: Optional[str],
+    ) -> Dict:
         """
-        محاسبه ساعات کاری روز با چند جفت ورود/خروج - نسخه ۲
+        Actual Attendance یک روز - فقط از Central Attendance Engine.
+
+        خروجی موتور (status / night shift / pairs / work_hours) اینجا به
+        ساختار فعلی گزارش تبدیل می‌شود تا template بدون تغییر کار کند:
+            - work_hours: مقدار خام موتور (بدون round داخلی)
+            - pairs: همان pairهای موتور؛ نمایش حداکثر MAX_PAIRS جفت
+            - attendance_status: label نمایشی فعلی monthly-full
         """
-        if not day_attendances:
-            return {
-                'work_hours': 0.0,
-                'pairs': [],
-                'attendance_status': 'بدون تردد',
-                'has_incomplete': False
-            }
+        result = compute_day_attendance(
+            day=current,
+            day_records=day_records,
+            prev_day_records=prev_day_records,
+            next_day_records=next_day_records,
+            is_friday=is_friday,
+            holiday_title=holiday_title,
+        )
 
-        enters = sorted([a for a in day_attendances if a.punch == 0], key=lambda x: x.timestamp)
-        exits = sorted([a for a in day_attendances if a.punch == 1], key=lambda x: x.timestamp)
+        # موتور برای محاسبه، زمان‌ها را naive نگه می‌دارد؛ ساختار قدیمیِ گزارش
+        # pairها را با همان timezone رکوردهای تردد می‌دهد (فقط نمایش/سازگاری)
+        tzinfo = None
+        for rec in day_records:
+            if rec.timestamp.tzinfo is not None:
+                tzinfo = rec.timestamp.tzinfo
+                break
 
-        # تابع کمکی برای ساخت datetime با timezone صحیح
-        def make_aware_datetime(d: date, hour: int, minute: int, second: int, microsecond: int, ref_timestamp):
-            naive_dt = datetime.combine(d, datetime.min.time().replace(
-                hour=hour, minute=minute, second=second, microsecond=microsecond
-            ))
-            if ref_timestamp.tzinfo is not None:
-                return naive_dt.replace(tzinfo=ref_timestamp.tzinfo)
-            return naive_dt
+        def _with_tz(value):
+            if value is not None and tzinfo is not None and value.tzinfo is None:
+                return value.replace(tzinfo=tzinfo)
+            return value
 
-        # حالت ۱: ورود و خروج هر دو در این روز
-        if enters and exits:
-            first_enter = min(e.timestamp for e in enters)
-            last_exit = max(e.timestamp for e in exits)
-
-            # بررسی آیا خروج فردا است
-            if last_exit.date() > current:
-                end_of_day = make_aware_datetime(current, 23, 59, 59, 999999, first_enter)
-
-                pairs = []
-                for i, enter in enumerate(enters):
-                    if i < len(exits):
-                        exit_time = exits[i].timestamp
-                        if exit_time.date() > current:
-                            exit_time = end_of_day
-                        if exit_time > enter.timestamp:
-                            pairs.append({
-                                'enter': enter.timestamp,
-                                'exit': exit_time,
-                                'hours': round((exit_time - enter.timestamp).total_seconds() / 3600, 2)
-                            })
-
-                work_hours = sum(p['hours'] for p in pairs)
-
-                return {
-                    'work_hours': round(work_hours, 2),
-                    'pairs': pairs[:self.MAX_PAIRS],
-                    'attendance_status': f'کامل (خروج فردا)',
-                    'has_incomplete': False
-                }
-
-            # خروج در همان روز است
-            if last_exit > first_enter:
-                pairs = []
-                for i, enter in enumerate(enters):
-                    if i < len(exits):
-                        exit_time = exits[i].timestamp
-                        if exit_time > enter.timestamp:
-                            pairs.append({
-                                'enter': enter.timestamp,
-                                'exit': exit_time,
-                                'hours': round((exit_time - enter.timestamp).total_seconds() / 3600, 2)
-                            })
-
-                work_hours = sum(p['hours'] for p in pairs)
-
-                if len(enters) == len(exits):
-                    if len(enters) == 1:
-                        attendance_status = 'کامل'
-                    else:
-                        attendance_status = f'کامل{len(enters)}'
-                else:
-                    attendance_status = f'ناقص ({len(enters)}و/{len(exits)}خ)'
-
-                return {
-                    'work_hours': round(work_hours, 2),
-                    'pairs': pairs[:self.MAX_PAIRS],
-                    'attendance_status': attendance_status,
-                    'has_incomplete': len(enters) != len(exits)
-                }
-
-        # حالت ۲: فقط ورود (بررسی آیا فردا خروج دارد)
-        if enters and not exits:
-            first_enter = min(e.timestamp for e in enters)
-
-            next_day = current + timedelta(days=1)
-            next_day_attendances = [a for a in all_attendances if a.timestamp.date() == next_day]
-            next_day_exits = [a for a in next_day_attendances if a.punch == 1]
-
-            if next_day_exits:
-                end_of_day = make_aware_datetime(current, 23, 59, 59, 999999, first_enter)
-                work_hours = (end_of_day - first_enter).total_seconds() / 3600
-
-                pairs = [{
-                    'enter': first_enter,
-                    'exit': end_of_day,
-                    'hours': round(work_hours, 2)
-                }]
-
-                return {
-                    'work_hours': round(work_hours, 2),
-                    'pairs': pairs,
-                    'attendance_status': 'کامل (خروج فردا)',
-                    'has_incomplete': False
-                }
-            else:
-                return {
-                    'work_hours': 0.0,
-                    'pairs': [],
-                    'attendance_status': f'ورود بدون خروج ({len(enters)} ورود)',
-                    'has_incomplete': True
-                }
-
-        # حالت ۳: فقط خروج (بررسی آیا دیروز ورود داشته)
-        if exits and not enters:
-            last_exit = max(e.timestamp for e in exits)
-
-            prev_day = current - timedelta(days=1)
-            prev_day_attendances = [a for a in all_attendances if a.timestamp.date() == prev_day]
-            prev_day_enters = [a for a in prev_day_attendances if a.punch == 0]
-
-            if prev_day_enters:
-                start_of_day = make_aware_datetime(current, 0, 0, 0, 0, last_exit)
-                work_hours = (last_exit - start_of_day).total_seconds() / 3600
-
-                pairs = [{
-                    'enter': start_of_day,
-                    'exit': last_exit,
-                    'hours': round(work_hours, 2)
-                }]
-
-                return {
-                    'work_hours': round(work_hours, 2),
-                    'pairs': pairs,
-                    'attendance_status': 'کامل (ورود دیروز)',
-                    'has_incomplete': False
-                }
-            else:
-                return {
-                    'work_hours': 0.0,
-                    'pairs': [],
-                    'attendance_status': f'خروج بدون ورود ({len(exits)} خروج)',
-                    'has_incomplete': True
-                }
+        pairs = [
+            {'enter': _with_tz(pair['enter']),
+             'exit': _with_tz(pair['exit']),
+             'hours': pair['hours']}
+            for pair in result.pairs
+        ]
+        attendance_status, has_incomplete = self._display_status(result)
+        # تفکیک شیفت از همه جفت‌ها؛ سقف نمایشی فقط روی attendance_pairs است
+        shift_hours = sum_shift_hours_from_pairs(pairs)
 
         return {
-            'work_hours': 0.0,
-            'pairs': [],
-            'attendance_status': 'بدون تردد',
-            'has_incomplete': False
+            # مقدار خام موتور (بدون round داخلی)؛ float برای سازگاری نوع با خروجی قدیمی
+            'work_hours': float(result.work_hours),
+            'pairs': pairs[:self.MAX_PAIRS],
+            'shift_hours': shift_hours,
+            'first_enter': _with_tz(result.first_enter),
+            'last_exit': _with_tz(result.last_exit),
+            'attendance_status': attendance_status,
+            'has_incomplete': has_incomplete,
         }
 
-    def _calculate_surplus_deficit(self, work_hours: float, is_day_off: bool, person_status: Dict, daily_required_hours: float = 7.33) -> tuple:
+    @staticmethod
+    def _display_status(result) -> tuple:
         """
-        محاسبه اضافی و کسری بر اساس موظفی روز (Policy)
-        daily_required_hours: ساعات موظفی روز از Policy (در صورت نبود، 7.33)
+        نگاشت وضعیت فنی Central Engine به labelهای نمایشی فعلی گزارش.
+        (لایه نمایش - متن‌های UI به خاطر migration عوض نمی‌شوند.)
         """
-        # اگر روز تعطیل است و تردد ندارد
+        enters = result.enter_count
+        exits = result.exit_count
+
+        if result.main_status == STATUS_NO_ATTENDANCE or (enters == 0 and exits == 0):
+            return 'بدون تردد', False
+
+        if result.main_status == STATUS_NIGHT_SHIFT:
+            if exits == 0:
+                return 'کامل (خروج فردا)', False
+            if enters == 0:
+                return 'کامل (ورود دیروز)', False
+            # خروجِ صبحِ قبل از ورودِ شب در همان روز
+            if enters == exits:
+                return ('کامل' if enters == 1 else f'کامل{enters}'), False
+            return f'ناقص ({enters}و/{exits}خ)', True
+
+        if exits == 0:
+            return f'ورود بدون خروج ({enters} ورود)', True
+        if enters == 0:
+            return f'خروج بدون ورود ({exits} خروج)', True
+        if enters == exits:
+            return ('کامل' if enters == 1 else f'کامل{enters}'), False
+        return f'ناقص ({enters}و/{exits}خ)', True
+
+    def _calculate_surplus_deficit(
+        self,
+        work_hours: float,
+        is_day_off: bool,
+        person_status: Dict,
+        daily_required_hours: float = None,
+    ) -> tuple:
+        """
+        محاسبه اضافی و کسری بر اساس موظفی روز (Policy) با دقت دقیقه.
+
+        daily_required_hours: ساعات موظفی روز از Policy؛ اگر نباشد ۷:۲۰ (۴۴۰ دقیقه).
+        """
+        if daily_required_hours is None:
+            daily_required_hours = _minutes_to_hours(_DEFAULT_DUTY_MINUTES)
+
+        work_m = _hours_to_minutes(work_hours)
+        duty_m = _hours_to_minutes(daily_required_hours)
+
         if is_day_off and person_status['code'] == 'H':
             return 0.0, 0.0
 
-        # اگر روز تعطیل است و تردد دارد (تعطیل کاری)
         if is_day_off and person_status['code'] == 'P':
-            return work_hours, 0.0
+            return _minutes_to_hours(work_m), 0.0
 
-        # اگر مرخصی یا استراحت است
         if person_status['code'] in ['L', 'R']:
-            if work_hours > 0:
-                return work_hours, 0.0
+            if work_m > 0:
+                return _minutes_to_hours(work_m), 0.0
             return 0.0, 0.0
 
-        # روز کاری عادی
-        if work_hours > daily_required_hours:
-            surplus = work_hours - daily_required_hours
-            return round(surplus, 2), 0.0
-        elif work_hours < daily_required_hours and work_hours > 0:
-            deficit = daily_required_hours - work_hours
-            return 0.0, round(deficit, 2)
-        elif work_hours == 0:
-            # روز کاری ولی بدون تردد
-            return 0.0, daily_required_hours
+        if work_m > duty_m:
+            return _minutes_to_hours(work_m - duty_m), 0.0
+        if 0 < work_m < duty_m:
+            return 0.0, _minutes_to_hours(duty_m - work_m)
+        if work_m == 0:
+            return 0.0, _minutes_to_hours(duty_m)
 
         return 0.0, 0.0
 
     def _calculate_monthly_summary(self, days: List[Dict]) -> Dict:
-        """محاسبه خلاصه ماهانه"""
-        # ✅ شمارش روزها با تفکیک دقیق
-        # روزهای کاری (شامل روزهای غیرکاریِ Policy که تردد داشته — جمعه/تعطیل
-        # رسمی جداگانه شمارش می‌شوند)
+        """محاسبه خلاصه ماهانه (جمع‌ها با دقت دقیقه)."""
         present_days = sum(
             1 for d in days
             if d['person_status'] == 'P' and not d['is_friday'] and not d['is_holiday']
         )
 
-        # جمعه‌هایی که حاضر بوده (جمعه کاری)
         friday_work_days = sum(1 for d in days if d['is_friday'] and d['person_status'] == 'P')
-
-        # تعطیل‌های غیر جمعه که حاضر بوده (تعطیل کاری)
-        holiday_work_days = sum(1 for d in days if d['is_holiday'] and not d['is_friday'] and d['person_status'] == 'P')
+        holiday_work_days = sum(
+            1 for d in days if d['is_holiday'] and not d['is_friday'] and d['person_status'] == 'P'
+        )
 
         leave_days = sum(1 for d in days if d['person_status'] == 'L')
         absent_days = sum(1 for d in days if d['person_status'] == 'A')
         rest_days = sum(1 for d in days if d['person_status'] == 'R')
         holiday_days = sum(1 for d in days if d['person_status'] == 'H')
-        # Phase 6C: روزهای مأموریت روزانه (DailyStatus 'M') — قبلاً غایب شمرده می‌شد
         mission_days = sum(1 for d in days if d['person_status'] == 'M')
 
-        # محاسبه موظفی
         duty_days = sum(1 for d in days if d['has_duty'])
-        total_duty_hours = sum(d['daily_duty'] for d in days)
 
-        # محاسبه کارکرد
-        total_work_hours = sum(d['work_hours'] for d in days)
-        total_morning = sum(d['morning_hours'] for d in days)
-        total_evening = sum(d['evening_hours'] for d in days)
-        total_night = sum(d['night_hours'] for d in days)
+        def _sum_hours(key: str) -> float:
+            # جمع اعشاری روزها، سپس یک‌بار به دقیقه گرد می‌شود تا نمایش H:MM پایدار بماند
+            return _minutes_to_hours(
+                _hours_to_minutes(sum(float(d[key] or 0) for d in days))
+            )
 
-        # محاسبه اضافی و کسری بر اساس موظفی روز (Policy — بدون فرض 7:20)
-        total_surplus = sum(d['surplus'] for d in days)
-        total_deficit = sum(d['deficit'] for d in days)
+        total_duty_hours = _sum_hours('daily_duty')
+        total_work_hours = _sum_hours('work_hours')
+        total_morning = _sum_hours('morning_hours')
+        total_evening = _sum_hours('evening_hours')
+        total_night = _sum_hours('night_hours')
+        # اضافی/کسری از قبل دقیقه‌ای‌اند → جمع دقیقه‌ای
+        total_surplus = _minutes_to_hours(
+            sum(_hours_to_minutes(d['surplus']) for d in days))
+        total_deficit = _minutes_to_hours(
+            sum(_hours_to_minutes(d['deficit']) for d in days))
 
-        # تهاتر و وضعیت کلی
-        net_balance = total_surplus - total_deficit
+        net_balance_m = _hours_to_minutes(total_surplus) - _hours_to_minutes(total_deficit)
+        net_balance = _minutes_to_hours(net_balance_m)
 
-        if net_balance > 0:
+        if net_balance_m > 0:
             overall_status = 'اضافی'
             net_balance_hours = net_balance
-        elif net_balance < 0:
+        elif net_balance_m < 0:
             overall_status = 'کسری'
             net_balance_hours = abs(net_balance)
         else:
             overall_status = 'متعادل'
             net_balance_hours = 0.0
 
-        # محاسبه اضافه کار هفتگی
         weekly_overtime = self._calculate_weekly_overtime(days)
 
-        # جمعه کاری (ساعات)
-        friday_work_hours = sum(d['work_hours'] for d in days if d['is_friday'] and d['person_status'] == 'P')
-
-        # تعطیل کاری (ساعات)
-        holiday_work_hours = sum(
-            d['work_hours'] for d in days if d['is_holiday'] and not d['is_friday'] and d['person_status'] == 'P')
+        friday_work_hours = _minutes_to_hours(sum(
+            _hours_to_minutes(d['work_hours'])
+            for d in days if d['is_friday'] and d['person_status'] == 'P'
+        ))
+        holiday_work_hours = _minutes_to_hours(sum(
+            _hours_to_minutes(d['work_hours'])
+            for d in days
+            if d['is_holiday'] and not d['is_friday'] and d['person_status'] == 'P'
+        ))
 
         return {
             'duty_days': duty_days,
-            'duty_hours': round(total_duty_hours, 2),
+            'duty_hours': total_duty_hours,
             'present_days': present_days,
             'leave_days': leave_days,
             'absent_days': absent_days,
@@ -563,24 +542,24 @@ class DetailedMonthlyReportGeneratorV2:
             'holiday_days': holiday_days,
             'mission_days': mission_days,
             'friday_work_days': friday_work_days,
-            'holiday_work_days': holiday_work_days,  # ✅ اضافه شد
-            'total_work_hours': round(total_work_hours, 2),
-            'total_morning': round(total_morning, 2),
-            'total_evening': round(total_evening, 2),
-            'total_night': round(total_night, 2),
-            'total_surplus': round(total_surplus, 2),
-            'total_deficit': round(total_deficit, 2),
-            'net_balance': round(net_balance, 2),
+            'holiday_work_days': holiday_work_days,
+            'total_work_hours': total_work_hours,
+            'total_morning': total_morning,
+            'total_evening': total_evening,
+            'total_night': total_night,
+            'total_surplus': total_surplus,
+            'total_deficit': total_deficit,
+            'net_balance': net_balance,
             'overall_status': overall_status,
-            'net_balance_hours': round(net_balance_hours, 2),
-            'weekly_overtime': round(weekly_overtime, 2),
-            'friday_work_hours': round(friday_work_hours, 2),
-            'holiday_work_hours': round(holiday_work_hours, 2)  # ✅ اضافه شد
+            'net_balance_hours': net_balance_hours,
+            'weekly_overtime': weekly_overtime,
+            'friday_work_hours': friday_work_hours,
+            'holiday_work_hours': holiday_work_hours,
         }
 
     def _calculate_weekly_overtime(self, days: List[Dict]) -> float:
-        """محاسبه اضافه کار هفتگی (بر اساس Policy هر روز)"""
-        weekly_overtime = 0.0
+        """محاسبه اضافه کار هفتگی با دقت دقیقه (بر اساس Policy هر روز)."""
+        weekly_overtime_m = 0
 
         weeks = {}
         for day in days:
@@ -594,27 +573,31 @@ class DetailedMonthlyReportGeneratorV2:
             weeks[week_start].append(day)
 
         for week_start, week_days in weeks.items():
-            total_hours = sum(d['work_hours'] for d in week_days)
-            week_required_hours = sum(d['daily_duty'] for d in week_days)
+            total_m = sum(_hours_to_minutes(d['work_hours']) for d in week_days)
+            required_m = sum(_hours_to_minutes(d['daily_duty']) for d in week_days)
 
-            if week_required_hours > 0 and total_hours > week_required_hours:
-                weekly_overtime += total_hours - week_required_hours
+            if required_m > 0 and total_m > required_m:
+                weekly_overtime_m += total_m - required_m
 
-        return weekly_overtime
+        return _minutes_to_hours(weekly_overtime_m)
 
-    def _is_holiday(self, target_date: date, department: str) -> bool:
-        """بررسی تعطیل بودن"""
+    def _find_holiday(self, target_date: date, department: str) -> Optional[Holiday]:
+        """رکورد تعطیلِ مؤثر برای تاریخ/گروه (برای عنوان و پرچم تعطیلی)"""
         holidays = self.db.query(Holiday).filter(
             Holiday.holiday_date == target_date
         ).all()
 
         for holiday in holidays:
             if holiday.group_id is None:
-                return True
+                return holiday
             elif holiday.group_id == department:
-                return True
+                return holiday
 
-        return False
+        return None
+
+    def _is_holiday(self, target_date: date, department: str) -> bool:
+        """بررسی تعطیل بودن"""
+        return self._find_holiday(target_date, department) is not None
 
     def _get_day_name(self, d: date) -> str:
         """دریافت نام روز هفته"""
