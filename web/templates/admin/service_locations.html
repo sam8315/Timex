@@ -93,19 +93,24 @@
                                 {% if current_city.province %}({{ current_city.province }}){% endif %}
                             {% else %}نامشخص{% endif %}
                         </h6>
+                        {% if current_region_name %}
+                        <div class="mt-1">
+                            <span class="badge bg-secondary">منطقه: {{ current_region_name }}</span>
+                        </div>
+                        {% endif %}
                         {% if current_location.address_text %}
                         <small class="text-muted">{{ current_location.address_text }}</small>
                         {% endif %}
                     </div>
                 {% else %}
-                    <div class="p-3 border rounded bg-warning-subtle">محل خدمت فعالی یافت نشد.</div>
+                    <div class="p-3 border rounded bg-warning-subtle">محل خدمت فعالی یافت نشد. منطقه خدمتی: عادی</div>
                 {% endif %}
             </div>
             <div class="col-md-6">
                 <label class="form-label text-muted small mb-1">مرجع محل خدمت</label>
                 <div class="alert alert-info mb-0">
                     <i class="bi bi-info-circle"></i>
-                    مبدأ مرخصی توراهی فقط از محل خدمت ثبت‌شده و فعال در تاریخ شروع مرخصی تعیین می‌شود.
+                    مبدأ مرخصی توراهی از محل خدمت؛ منطقه خدمتی (استحقاقی) نیز از منطقهٔ همین شهر مشتق می‌شود.
                 </div>
             </div>
         </div>
@@ -125,7 +130,7 @@
                 <select name="city_id" class="form-select" required>
                     <option value="">انتخاب شهر...</option>
                     {% for c in cities %}
-                    <option value="{{ c.id }}">{{ c.name }}{% if c.province %} ({{ c.province }}){% endif %}</option>
+                    <option value="{{ c.id }}">{{ c.name }}{% if c.province %} ({{ c.province }}){% endif %} — {{ region_names.get(c.region_code, c.region_code or 'NORMAL') }}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -170,6 +175,7 @@
                 <thead>
                     <tr>
                         <th>شهر</th>
+                        <th>منطقه</th>
                         <th>آدرس</th>
                         <th class="text-center">شروع</th>
                         <th class="text-center">پایان</th>
@@ -182,6 +188,7 @@
                     {% for item in locations %}
                     <tr>
                         <td>{{ item.city_name }}</td>
+                        <td><span class="badge bg-secondary">{{ item.region_name }}</span></td>
                         <td>{{ item.location.address_text or '-' }}</td>
                         <td class="text-center">{{ item.from_j }}</td>
                         <td class="text-center">{{ item.to_j or 'ادامه دارد' }}</td>
@@ -228,7 +235,7 @@
                                                 <select name="city_id" class="form-select" required>
                                                     {% for c in cities %}
                                                     <option value="{{ c.id }}" {% if c.id == item.location.city_id %}selected{% endif %}>
-                                                        {{ c.name }}{% if c.province %} ({{ c.province }}){% endif %}
+                                                        {{ c.name }}{% if c.province %} ({{ c.province }}){% endif %} — {{ region_names.get(c.region_code, c.region_code or 'NORMAL') }}
                                                     </option>
                                                     {% endfor %}
                                                 </select>

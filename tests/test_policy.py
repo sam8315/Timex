@@ -285,8 +285,9 @@ def test_buyback_save_persists(client, db, make_user):
     assert _param(db, "max_buyback").parameter_value == "12"
 
 
-def test_profile_edit_region_change_is_audited(client, db, make_user):
-    boss = _as_super(client, make_user)
+def test_profile_edit_manual_region_code_is_ignored(client, db, make_user):
+    """Region is derived from service-location city; form field must not stick."""
+    _as_super(client, make_user)
     target = make_user(role="user", balance_al=None)
     resp = client.post(
         f"/admin/profile/{target['user_id']}/edit",
@@ -298,13 +299,8 @@ def test_profile_edit_region_change_is_audited(client, db, make_user):
     db.expire_all()
     emp = db.query(Employee).filter(
         Employee.user_id == target["user_id"]).first()
-    assert emp.region_code == "GRADE_2"
+    assert emp.region_code == "NORMAL"
     hist = db.query(EmployeeRegion).filter(
         EmployeeRegion.user_id == target["user_id"],
         EmployeeRegion.region_code == "GRADE_2").first()
-    assert hist is not None
-    assert hist.approved_by == boss["user_id"]
-    audit = db.query(PolicyAuditLog).filter(
-        PolicyAuditLog.entity_type == "employee_region",
-        PolicyAuditLog.entity_id == target["user_id"]).first()
-    assert audit is not None
+    assert hist is None

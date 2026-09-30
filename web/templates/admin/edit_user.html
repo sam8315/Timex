@@ -111,13 +111,11 @@
                                    value="{{ employee.position or '' }}">
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label fw-bold">🌍 منطقه خدمتی</label>
-                            <select name="region_code" class="form-select">
-                                <option value="NORMAL" {% if employee.region_code == 'NORMAL' %}selected{% endif %}>عادی</option>
-                                <option value="GRADE_1" {% if employee.region_code == 'GRADE_1' %}selected{% endif %}>درجه یک</option>
-                                <option value="GRADE_2" {% if employee.region_code == 'GRADE_2' %}selected{% endif %}>درجه دو</option>
-                                <option value="GRADE_3" {% if employee.region_code == 'GRADE_3' %}selected{% endif %}>درجه سه</option>
-                            </select>
+                            <label class="form-label text-muted">منطقه خدمتی</label>
+                            <div class="form-control-plaintext">
+                                <code>{{ employee.region_code or 'NORMAL' }}</code>
+                                <small class="text-muted d-block">از شهر محل خدمت مشتق می‌شود (قابل ویرایش دستی نیست)</small>
+                            </div>
                         </div>
                         <div class="col-12">
                             <label class="form-label">یادداشت</label>

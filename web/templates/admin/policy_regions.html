@@ -54,6 +54,8 @@
     نام منطقه الزامی است.
     {% elif error_code == 'has-employees' %}
     حذف ممکن نیست؛ کارمند به این منطقه منتسب است.
+    {% elif error_code == 'has-cities' %}
+    حذف ممکن نیست؛ شهری به این منطقه منتسب است.
     {% elif error_code == 'protected' %}
     منطقه پیش‌فرض (عادی) قابل حذف نیست.
     {% elif error_code == 'not-found' %}

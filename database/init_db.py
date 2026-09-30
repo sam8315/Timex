@@ -525,14 +525,39 @@ def seed_banks(bind_engine=None) -> None:
         print(f"  + Iranian banks synchronized ({len(CANONICAL_BANKS)} active)")
 
 
+def migrate_city_region_code(bind_engine=None) -> None:
+    """Ensure cities.region_code exists with DEFAULT NORMAL (idempotent)."""
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
+    if "cities" not in inspector.get_table_names():
+        return
+    columns = {row["name"] for row in inspector.get_columns("cities")}
+    with target.connect() as conn:
+        if "region_code" not in columns:
+            conn.execute(text(
+                'ALTER TABLE "cities" '
+                "ADD COLUMN \"region_code\" VARCHAR(20) NOT NULL DEFAULT 'NORMAL'"
+            ))
+            conn.commit()
+            print("  + column cities.region_code added")
+        else:
+            conn.execute(text(
+                "UPDATE cities SET region_code = 'NORMAL' "
+                "WHERE region_code IS NULL OR BTRIM(region_code) = ''"
+            ))
+            conn.commit()
+
+
 def create_tables() -> None:
     """
     ساخت تمام جداول تعریف شده در مدل‌ها
-    اگر جدول از قبل وجود داشته باشد، تغییری ایجاد نمی‌کند
+    و افزودن ستون‌های جدید به جداول موجود بدون حذف داده.
     """
     try:
-        migrate_missing_columns()
+        # اول جداول جدید، بعد ستون‌های جدید روی جداول موجود
         Base.metadata.create_all(bind=engine)
+        migrate_missing_columns()
+        migrate_city_region_code()
         migrate_employee_address_city_id()
         migrate_employee_address_history()
         migrate_employee_address_coords_pair()

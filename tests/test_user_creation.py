@@ -324,7 +324,8 @@ def test_create_form_renders(client, db, make_user):
     assert 'name="national_code"' in resp.text
     assert 'name="first_name"' in resp.text
     assert 'name="last_name"' in resp.text
-    assert 'name="region_code"' in resp.text
+    assert 'name="region_code"' not in resp.text
+    assert "منطقه خدمتی" in resp.text
     assert "ایجاد کاربر" in resp.text
 
 

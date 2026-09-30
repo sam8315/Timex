@@ -256,8 +256,18 @@ async def submit_leave_request(
             days_count = calculate_leave_days(db, user.user_id, from_date, to_date)
             if days_count <= 0:
                 raise ValueError("در بازه انتخابی، هیچ روز کاری وجود ندارد (همه تعطیل هستند)")
-            balance = db.query(LeaveBalance).filter(and_(LeaveBalance.user_id == user.user_id, LeaveBalance.year == from_j.year, LeaveBalance.leave_type == leave_type)).first()
-            current_balance = balance.balance if balance else 0
+            if leave_type == 'AL':
+                from web.services.leave_service import get_available_leave
+                current_balance = get_available_leave(
+                    db, user.user_id, from_j.year, 'AL'
+                )['total']
+            else:
+                balance = db.query(LeaveBalance).filter(and_(
+                    LeaveBalance.user_id == user.user_id,
+                    LeaveBalance.year == from_j.year,
+                    LeaveBalance.leave_type == leave_type,
+                )).first()
+                current_balance = balance.balance if balance else 0
             if current_balance < days_count:
                 type_name = LEAVE_TYPES.get(leave_type, '')
                 raise ValueError(f"مانده کافی نیست! مانده {type_name}: {current_balance} روز، درخواست: {days_count} روز")

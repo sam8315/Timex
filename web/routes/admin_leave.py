@@ -36,6 +36,9 @@ from web.services.travel_leave_service import override_travel_days, resolve_effe
 from models.city import City
 from models.travel_leave_policy_rules import TravelLeavePolicyRule
 from core.distance_engine import calculate_distance_km
+from web.services.leave_service import get_available_leave, consume_leave
+from models.leave_buyback_quota import LeaveBuybackQuota
+from models.leave_glossary import TX_BURN, TX_IMPORT, LEAVE_TYPE_CW
 import threading
 
 router = APIRouter(tags=["Admin Leave"])
@@ -667,11 +670,6 @@ async def approve_leave_request(
 
     # بررسی مانده کافی (for non-HL types)
     year_j = jdatetime.date.fromgregorian(date=leave_req.from_date).year
-    balance = db.query(LeaveBalance).filter(
-        LeaveBalance.user_id == leave_req.user_id,
-        LeaveBalance.year == year_j,
-        LeaveBalance.leave_type == leave_req.leave_type
-    ).first()
 
     tl_detail = None
     deduct_days = leave_req.days_count
@@ -686,8 +684,16 @@ async def approve_leave_request(
                 0,
                 leave_req.days_count - tl_detail.final_travel_days
             )
+        available = get_available_leave(db, leave_req.user_id, year_j, 'AL')
+        current_balance = available['total']
+    else:
+        balance = db.query(LeaveBalance).filter(
+            LeaveBalance.user_id == leave_req.user_id,
+            LeaveBalance.year == year_j,
+            LeaveBalance.leave_type == leave_req.leave_type
+        ).first()
+        current_balance = balance.balance if balance else 0
 
-    current_balance = balance.balance if balance else 0
     forced_negative = False
     if current_balance < deduct_days:
         # مدیر ارشد می‌تواند با مانده منفی تایید کند (با تاییدیه جداگانه)
@@ -719,34 +725,65 @@ async def approve_leave_request(
         leave_req.approved_by = user.user_id
         leave_req.approved_at = datetime.now()
 
-        # ۲. کسر از مانده
-        if balance:
-            balance.balance -= deduct_days
+        # ۲. کسر از مانده (برای AL: اول CW سپس AL)
+        if leave_req.leave_type == 'AL':
+            consume_leave(
+                db,
+                leave_req.user_id,
+                year_j,
+                deduct_days,
+                leave_type='AL',
+                commit=False,
+                reference_id=leave_req.id,
+                allow_negative=forced_negative,
+            )
+            if forced_negative:
+                db.flush()
+                # توضیح اضافه روی تراکنش‌های USE همین درخواست
+                for last_tx in (
+                    db.query(LeaveTransaction)
+                    .filter(
+                        LeaveTransaction.user_id == leave_req.user_id,
+                        LeaveTransaction.reference_id == leave_req.id,
+                        LeaveTransaction.transaction_type == 'USE',
+                    )
+                    .all()
+                ):
+                    last_tx.description = (
+                        (last_tx.description or '')
+                        + " | تایید با مانده منفی توسط مدیر ارشد"
+                    )
         else:
-            balance = LeaveBalance(
+            balance = db.query(LeaveBalance).filter(
+                LeaveBalance.user_id == leave_req.user_id,
+                LeaveBalance.year == year_j,
+                LeaveBalance.leave_type == leave_req.leave_type
+            ).first()
+            if balance:
+                balance.balance -= deduct_days
+            else:
+                balance = LeaveBalance(
+                    user_id=leave_req.user_id,
+                    year=year_j,
+                    leave_type=leave_req.leave_type,
+                    balance=-deduct_days
+                )
+                db.add(balance)
+
+            tx_description = f"استفاده از مرخصی {LEAVE_TYPES.get(leave_req.leave_type, '')} - درخواست #{request_id}"
+            if forced_negative:
+                tx_description += " | تایید با مانده منفی توسط مدیر ارشد"
+            db.add(LeaveTransaction(
                 user_id=leave_req.user_id,
                 year=year_j,
                 leave_type=leave_req.leave_type,
-                balance=-deduct_days
-            )
-            db.add(balance)
+                amount=deduct_days,
+                transaction_type='USE',
+                description=tx_description,
+                reference_id=leave_req.id
+            ))
 
-        # ۳. ثبت تراکنش
-        tx_description = f"استفاده از مرخصی {LEAVE_TYPES.get(leave_req.leave_type, '')} - درخواست #{request_id}"
-        if forced_negative:
-            tx_description += " | تایید با مانده منفی توسط مدیر ارشد"
-        tx = LeaveTransaction(
-            user_id=leave_req.user_id,
-            year=year_j,
-            leave_type=leave_req.leave_type,
-            amount=deduct_days,
-            transaction_type='USE',
-            description=tx_description,
-            reference_id=leave_req.id
-        )
-        db.add(tx)
-
-        # ۴. Mark TravelLeaveDetail as approved if present
+        # ۳. Mark TravelLeaveDetail as approved if present
         if leave_req.leave_type == 'AL':
             tl_detail = db.query(TravelLeaveDetail).filter(
                 TravelLeaveDetail.leave_request_id == leave_req.id
@@ -996,27 +1033,29 @@ async def import_previous_leave_page(
 async def import_previous_leave(
     request: Request,
     year: int = Form(...),
-    leave_type: str = Form('AL'),
+    leave_type: str = Form('CW'),
+    import_mode: str = Form('hr'),
     data: str = Form(...),
     user: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
-    """پردازش وارد کردن مرخصی ذخیره"""
+    """پردازش وارد کردن مرخصی ذخیره / مهاجرت HR"""
     enforce_permission(db, user, 'view_leave_balances')
+    from web.services.hr_leave_import_service import import_hr_opening_line
+
     results = []
     lines = data.strip().split('\n')
 
     for line_num, line in enumerate(lines, 1):
         line = line.strip()
         if not line or line.startswith('#'):
-            continue  # رد کردن خطوط خالی و کامنت‌ها
+            continue
 
         try:
-            # پشتیبانی از جداکننده‌های مختلف: , یا tab یا فاصله
             if ',' in line:
-                parts = line.split(',')
+                parts = [p.strip() for p in line.split(',')]
             elif '\t' in line:
-                parts = line.split('\t')
+                parts = [p.strip() for p in line.split('\t')]
             else:
                 parts = line.split()
 
@@ -1025,13 +1064,46 @@ async def import_previous_leave(
                     'line': line_num,
                     'data': line,
                     'success': False,
-                    'error': 'فرمت نامعتبر (باید: کد_پرسنلی, تعداد_روز)'
+                    'error': 'فرمت نامعتبر'
                 })
                 continue
 
-            user_id = parts[0].strip()
-            days = int(parts[1].strip())
+            user_id = parts[0]
 
+            if import_mode == 'hr' and len(parts) >= 3:
+                stored = int(parts[1] or 0)
+                buyback = int(parts[2] or 0)
+                burned = int(parts[3] or 0) if len(parts) >= 4 else 0
+                outcome = import_hr_opening_line(
+                    db,
+                    user_id=user_id,
+                    year=year,
+                    stored_days=stored,
+                    buyback_days=buyback,
+                    burned_days=burned,
+                    admin_name=user.name or user.user_id,
+                )
+                if outcome.get('success'):
+                    results.append({
+                        'line': line_num,
+                        'data': line,
+                        'success': True,
+                        'user_id': outcome['user_id'],
+                        'full_name': outcome['full_name'],
+                        'days': stored + buyback + burned,
+                        'action': outcome['action'],
+                    })
+                else:
+                    results.append({
+                        'line': line_num,
+                        'data': line,
+                        'success': False,
+                        'error': outcome.get('error', 'خطا'),
+                    })
+                continue
+
+            # حالت ساده
+            days = int(parts[1])
             if days < 0:
                 results.append({
                     'line': line_num,
@@ -1041,7 +1113,6 @@ async def import_previous_leave(
                 })
                 continue
 
-            # بررسی وجود کاربر
             employee = db.query(Employee).filter(Employee.user_id == user_id).first()
             if not employee:
                 results.append({
@@ -1052,7 +1123,6 @@ async def import_previous_leave(
                 })
                 continue
 
-            # بررسی وجود balance
             balance = db.query(LeaveBalance).filter(
                 LeaveBalance.user_id == user_id,
                 LeaveBalance.year == year,
@@ -1073,17 +1143,15 @@ async def import_previous_leave(
                 db.add(balance)
                 action = f"ایجاد شد ({days} روز)"
 
-            # ثبت تراکنش
-            tx = LeaveTransaction(
+            db.add(LeaveTransaction(
                 user_id=user_id,
                 year=year,
                 leave_type=leave_type,
                 amount=days,
-                transaction_type='ADJUST',
-                description=f"مرخصی ذخیره سال {year} - ورود دستی توسط {user.name}",
+                transaction_type=TX_IMPORT,
+                description=f"ورود دستی مانده سال {year} توسط {user.name}",
                 reference_id=None
-            )
-            db.add(tx)
+            ))
 
             results.append({
                 'line': line_num,
@@ -1100,7 +1168,7 @@ async def import_previous_leave(
                 'line': line_num,
                 'data': line,
                 'success': False,
-                'error': f'خطا در تبدیل تعداد روز: {str(e)}'
+                'error': f'خطا در تبدیل عدد: {str(e)}'
             })
         except Exception as e:
             results.append({
@@ -1112,11 +1180,9 @@ async def import_previous_leave(
 
     db.commit()
 
-    # شمارش موفق/ناموفق
     success_count = sum(1 for r in results if r['success'])
     fail_count = len(results) - success_count
 
-    # ذخیره نتایج در session برای نمایش در صفحه
     request.session['import_results'] = results
     request.session['import_summary'] = {
         'total': len(results),

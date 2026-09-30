@@ -302,7 +302,7 @@ class TestAdminPagesRender:
         assert 'name="travel_leave_enabled"' in resp.text
         assert 'name="destination_city_id"' in resp.text
 
-    def test_service_locations_page_renders_for_admin(self, client, db, make_user):
+    def test_service_locations_redirects_to_profile(self, client, db, make_user):
         admin, user = _admin_and_user(make_user)
         city = db.query(City).filter(City.is_active == True).first()
         if not city:
@@ -315,10 +315,17 @@ class TestAdminPagesRender:
         db.add(loc)
         db.commit()
         login_as(client, admin["national_code"])
-        resp = client.get(f"/admin/service-locations?user_id={user['user_id']}")
-        assert resp.status_code == 200
-        assert city.name in resp.text
-        assert "تاریخچه محل خدمت" in resp.text
+        resp = client.get(
+            f"/admin/service-locations?user_id={user['user_id']}",
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+        assert f"/admin/profile/{user['user_id']}" in resp.headers["location"]
+        profile = client.get(f"/admin/profile/{user['user_id']}")
+        assert profile.status_code == 200
+        assert city.name in profile.text
+        assert "محل خدمت" in profile.text
+        assert 'id="service-location"' in profile.text
 
 
 # ---------------------------------------------------------------------------

@@ -533,6 +533,11 @@ async def admin_policies_regions_delete(
     if emp_count > 0:
         return RedirectResponse(
             url=build_redirect_url(referer, "error", "has-employees"), status_code=302)
+    from models.city import City
+    city_count = db.query(City).filter(City.region_code == region_code).count()
+    if city_count > 0:
+        return RedirectResponse(
+            url=build_redirect_url(referer, "error", "has-cities"), status_code=302)
 
     policy = _get_leave_policy(db)
     db.query(PolicyValue).filter(

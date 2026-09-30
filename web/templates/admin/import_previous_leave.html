@@ -2,7 +2,6 @@
 {% block title %}ورود مرخصی ذخیره سال قبل | پنل مدیریت{% endblock %}
 {% block content %}
 
-<!-- پیام‌ها -->
 {% if request.query_params.get('done') %}
 <div class="alert alert-success alert-dismissible fade show">
     <i class="bi bi-check-circle"></i>
@@ -15,42 +14,40 @@
 {% endif %}
 
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <h4><i class="bi bi-cloud-upload"></i> ورود مرخصی ذخیره سال قبل</h4>
+    <h4><i class="bi bi-cloud-upload"></i> ورود مانده از منابع انسانی</h4>
     <a href="/admin/" class="btn btn-outline-primary btn-sm">
         <i class="bi bi-arrow-right"></i> بازگشت به پنل مدیریت
     </a>
 </div>
 
 <div class="row">
-    <!-- راهنما -->
     <div class="col-md-4">
         <div class="card mb-4">
             <div class="card-header bg-info text-white">
                 <h6 class="mb-0"><i class="bi bi-info-circle"></i> راهنما</h6>
             </div>
             <div class="card-body">
-                <p><strong>فرمت هر خط:</strong></p>
-                <code class="d-block bg-light p-2 rounded mb-3">کد_پرسنلی, تعداد_روز</code>
-
-                <p><strong>مثال:</strong></p>
-                <pre class="bg-light p-2 rounded">NN-1234, 10
-NN-5678, 5
-NN-9012, 15</pre>
-
-                <hr>
-                <p><strong>نکات:</strong></p>
+                <p class="fw-bold">حالت مهاجرت HR (پیشنهادی):</p>
+                <code class="d-block bg-light p-2 rounded mb-2 small">
+                    کد_پرسنلی, ذخیره, قابل_بازخرید, سوخت
+                </code>
+                <pre class="bg-light p-2 rounded small">NN-1001, 20, 5, 0
+NN-1002, 9, 3, 6</pre>
                 <ul class="small">
-                    <li>هر خط یک کاربر</li>
-                    <li>جداکننده: ویرگول (,) یا Tab یا فاصله</li>
-                    <li>خطوط خالی و شروع با # نادیده گرفته می‌شوند</li>
-                    <li>اگر مانده قبلی وجود داشته باشد، به آن <strong>اضافه</strong> می‌شود</li>
-                    <li>بعد از ورود، هنگام لاگین کاربر، مودال انتقال نمایش داده می‌شود</li>
+                    <li><strong>رسمی:</strong> ذخیره + قابل‌بازخرید (سوخت معمولاً ۰)</li>
+                    <li><strong>قراردادی:</strong> ذخیره + قابل‌بازخرید + سوخت‌شده</li>
+                    <li>ذخیره → مانده <code>CW</code></li>
+                    <li>قابل‌بازخرید → سهمیه فرآیندی (نه درخواست مرخصی)</li>
+                    <li>سوخت → فقط دفترکل <code>BURN</code></li>
                 </ul>
+                <hr>
+                <p class="fw-bold">حالت ساده (سازگاری قبلی):</p>
+                <code class="d-block bg-light p-2 rounded small">کد_پرسنلی, تعداد_روز</code>
+                <p class="small text-muted mb-0">نوع از لیست زیر فرم انتخاب می‌شود (AL/CW/SL).</p>
             </div>
         </div>
     </div>
 
-    <!-- فرم -->
     <div class="col-md-8">
         <div class="card">
             <div class="card-header bg-white">
@@ -62,13 +59,21 @@ NN-9012, 15</pre>
 
                     <div class="row g-3 mb-3">
                         <div class="col-md-4">
-                            <label class="form-label">📅 سال <span class="text-danger">*</span></label>
-                            <input type="number" name="year" class="form-control" value="1404" required>
+                            <label class="form-label">📅 سال هدف <span class="text-danger">*</span></label>
+                            <input type="number" name="year" class="form-control" value="1405" required>
                         </div>
                         <div class="col-md-4">
+                            <label class="form-label">حالت ورود</label>
+                            <select name="import_mode" class="form-select" id="import_mode">
+                                <option value="hr" selected>مهاجرت HR (ذخیره/بازخرید/سوخت)</option>
+                                <option value="simple">ساده (یک ستون روز)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4" id="simple_type_wrap" style="display:none;">
                             <label class="form-label">🏷️ نوع مرخصی</label>
                             <select name="leave_type" class="form-select">
-                                <option value="AL" selected>استحقاقی</option>
+                                <option value="CW" selected>ذخیره (CW)</option>
+                                <option value="AL">استحقاقی</option>
                                 <option value="SL">استعلاجی</option>
                             </select>
                         </div>
@@ -77,12 +82,11 @@ NN-9012, 15</pre>
                     <div class="mb-3">
                         <label class="form-label">📋 داده‌ها <span class="text-danger">*</span></label>
                         <textarea name="data" class="form-control font-monospace" rows="15"
-                                  placeholder="NN-1234, 10&#10;NN-5678, 5&#10;NN-9012, 15" required></textarea>
-                        <small class="text-muted">هر خط: کد_پرسنلی, تعداد_روز</small>
+                                  placeholder="NN-1001, 20, 5, 0&#10;NN-1002, 9, 3, 6" required></textarea>
                     </div>
 
                     <button type="submit" class="btn btn-success">
-                        <i class="bi bi-check-lg"></i> ثبت مرخصی‌ها
+                        <i class="bi bi-upload"></i> ورود اطلاعات
                     </button>
                 </form>
             </div>
@@ -90,4 +94,10 @@ NN-9012, 15</pre>
     </div>
 </div>
 
+<script>
+document.getElementById('import_mode').addEventListener('change', function () {
+    document.getElementById('simple_type_wrap').style.display =
+        this.value === 'simple' ? 'block' : 'none';
+});
+</script>
 {% endblock %}

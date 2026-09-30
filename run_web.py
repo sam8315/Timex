@@ -38,24 +38,39 @@ def create_database_if_missing() -> None:
     try:
         with maintenance_engine.connect() as connection:
             connection.execute(text(f'CREATE DATABASE "{DB_NAME}"'))
+            print(f"✅ دیتابیس «{DB_NAME}» ساخته شد.")
     finally:
         maintenance_engine.dispose()
 
 
 def ensure_database_tables() -> None:
-    """Create the database and any mapped tables required by the web application."""
+    """
+    در هر اجرای سرور:
+    - اگر دیتابیس نباشد، ساخته می‌شود
+    - جداول جدید مدل‌ها ساخته می‌شوند (create_all)
+    - ستون‌های جدید به جداول موجود اضافه می‌شوند (migrate_missing_columns)
+    - سایر migrationهای داخلی init_db اجرا می‌شوند
+    """
+    # ثبت همهٔ مدل‌ها در MetaData قبل از create_all / migrate
+    import models  # noqa: F401
     from database.engine import engine
-    from database.init_db import create_tables
+    from database.init_db import create_tables, check_tables
 
+    print("🗄️  در حال ساخت/به‌روزرسانی جداول دیتابیس...")
     try:
         create_tables()
+        check_tables()
     except OperationalError as error:
         # PostgreSQL error 3D000 means the configured database does not exist.
         if getattr(error.orig, "pgcode", None) != "3D000":
             raise
+        print("⚠️  دیتابیس وجود ندارد؛ در حال ایجاد...")
         create_database_if_missing()
         engine.dispose()
         create_tables()
+        check_tables()
+
+    print("✅ جداول دیتابیس آماده است (ساخته یا به‌روز شد).")
 
 
 def ensure_test_access() -> None:

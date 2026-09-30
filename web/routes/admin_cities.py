@@ -13,8 +13,10 @@ from typing import Optional
 
 from web.dependencies import get_db, require_admin
 from web.permissions import enforce_permission
+from web.services.leave_entitlement_service import sync_employees_for_city
 from models.user import User
 from models.city import City
+from models.region import Region
 
 router = APIRouter(tags=["Admin Cities"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
@@ -49,6 +51,20 @@ def _validate_name(name: str) -> str:
     return name
 
 
+def _validate_region_code(db: Session, region_code: str) -> str:
+    code = (region_code or "").strip() or "NORMAL"
+    region = db.query(Region).filter(
+        Region.code == code, Region.is_active == True
+    ).first()
+    if not region:
+        raise ValueError("منطقه خدمتی انتخاب‌شده نامعتبر یا غیرفعال است")
+    return code
+
+
+def _regions_list(db: Session):
+    return db.query(Region).filter(Region.is_active == True).order_by(Region.sort_order).all()
+
+
 @router.get("/cities", response_class=HTMLResponse)
 async def cities_page(
     request: Request,
@@ -78,9 +94,11 @@ async def cities_page(
             query = query.filter(City.is_active == False)
 
         cities = query.order_by(City.is_active.desc(), City.name).all()
+        region_names = {r.code: r.name for r in db.query(Region).all()}
         for c in cities:
             cities_data.append({
                 'city': c,
+                'region_name': region_names.get(c.region_code, c.region_code or 'NORMAL'),
                 'created_j': jdatetime.datetime.fromgregorian(
                     datetime=c.created_at).strftime('%Y/%m/%d %H:%M') if c.created_at else '-',
             })
@@ -88,6 +106,7 @@ async def cities_page(
     return templates.TemplateResponse(request, "admin/cities.html", {
         "user": user,
         "cities": cities_data,
+        "regions": _regions_list(db),
         "total_count": len(cities_data),
         "has_filter": has_filter,
         "show_all": show_all,
@@ -104,6 +123,7 @@ async def add_city(
     province: str = Form(""),
     latitude: str = Form(...),
     longitude: str = Form(...),
+    region_code: str = Form("NORMAL"),
     is_active: str = Form("on"),
     user: User = Depends(require_admin),
     db: Session = Depends(get_db)
@@ -115,6 +135,7 @@ async def add_city(
         clean_name = _validate_name(name)
         clean_province = province.strip() or None
         lat, lon = _parse_lat_lon(latitude, longitude)
+        clean_region = _validate_region_code(db, region_code)
 
         # رد کردن شهر تکراری (نام + استان)
         duplicate_q = db.query(City).filter(func.lower(City.name) == clean_name.lower())
@@ -130,6 +151,7 @@ async def add_city(
             province=clean_province,
             latitude=lat,
             longitude=lon,
+            region_code=clean_region,
             is_active=(is_active == "on"),
         )
         db.add(city)
@@ -160,6 +182,7 @@ async def edit_city(
     province: str = Form(""),
     latitude: str = Form(...),
     longitude: str = Form(...),
+    region_code: str = Form("NORMAL"),
     is_active: str = Form("on"),
     user: User = Depends(require_admin),
     db: Session = Depends(get_db)
@@ -177,6 +200,7 @@ async def edit_city(
         clean_name = _validate_name(name)
         clean_province = province.strip() or None
         lat, lon = _parse_lat_lon(latitude, longitude)
+        clean_region = _validate_region_code(db, region_code)
 
         # رد کردن شهر تکراری (به جز خود شهر)
         duplicate_q = db.query(City).filter(
@@ -190,11 +214,18 @@ async def edit_city(
         if duplicate_q.first():
             raise ValueError("شهری با همین نام و استان قبلاً ثبت شده است")
 
+        old_region = city.region_code or "NORMAL"
         city.name = clean_name
         city.province = clean_province
         city.latitude = lat
         city.longitude = lon
+        city.region_code = clean_region
         city.is_active = (is_active == "on")
+        db.flush()
+        if old_region != clean_region:
+            sync_employees_for_city(
+                db, city.id, commit=False, approved_by=user.user_id,
+            )
         db.commit()
 
         return RedirectResponse(

@@ -1,197 +1,133 @@
 """
-سرویس مدیریت شارژ مرخصی بر اساس قرارداد
+سرویس مدیریت شارژ مرخصی بر اساس قرارداد + سیاست عضویت
 """
-import math
 import logging
-from datetime import date, timedelta
-from typing import List, Tuple
+from datetime import date
+from typing import List, Optional, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
-import jdatetime
 
 from models.contract import Contract
+from models.employee import Employee
 from models.leave_balance import LeaveBalance
 from models.leave_transaction import LeaveTransaction
+from models.leave_glossary import (
+    LEAVE_TYPE_NAMES as GLOSSARY_LEAVE_TYPE_NAMES,
+    LEAVE_TYPE_CW,
+    MEMBERSHIP_PERMANENT,
+    TX_CHARGE,
+    TX_DEDUCT,
+    TX_REVERSE,
+    TX_USE,
+)
+from web.services.leave_entitlement_service import (
+    calculate_entitlement_by_year,
+    get_jalali_year_days,
+    split_contract_coverage_by_year,
+    sync_employee_department_from_active_contract,
+)
 
 logger = logging.getLogger(__name__)
 
-
-def get_jalali_year_days(year: int) -> int:
-    """تعداد روزهای سال شمسی (365 یا 366)"""
-    try:
-        jdatetime.date(year, 12, 30)
-        return 366  # سال کبیسه
-    except ValueError:
-        return 365  # سال عادی
+# سازگاری با importهای قدیمی
+LEAVE_TYPE_NAMES = dict(GLOSSARY_LEAVE_TYPE_NAMES)
 
 
-def split_contract_by_year(contract: Contract) -> List[Tuple[int, date, date]]:
+def split_contract_by_year(contract: Contract) -> List[Tuple[int, date, Optional[date]]]:
+    return split_contract_coverage_by_year(contract)
+
+
+def calculate_prorated_leave_by_year(
+    contract: Contract,
+    db: Optional[Session] = None,
+    employee: Optional[Employee] = None,
+    annual_override: Optional[int] = None,
+) -> dict:
     """
-    🆕 تقسیم قرارداد بر اساس سال‌های شمسی (نسخه اصلاح‌شده)
+    محاسبه مرخصی به تفکیک سال با قواعد عضویت.
 
-    Returns:
-        لیستی از (سال شمسی, تاریخ شروع میلادی, تاریخ پایان میلادی)
+    اگر db داده شود از سیاست عضویت/منطقه خوانده می‌شود؛
+    در غیر این صورت از annual_leave_days روی قرارداد (یا annual_override).
     """
-    segments = []
-
-    start_j = jdatetime.date.fromgregorian(date=contract.start_date)
-
-    # قرارداد باز (دائمی)
-    if contract.end_date is None:
-        segments.append((start_j.year, contract.start_date, None))
-        logger.info(f"📅 Contract {contract.id}: Open contract, year {start_j.year}")
-        return segments
-
-    end_j = jdatetime.date.fromgregorian(date=contract.end_date)
-
-    # 🆕 پیمایش سال به سال از start تا end
-    current_year = start_j.year
-    current_start_g = contract.start_date
-
-    while current_year <= end_j.year:
-        # پیدا کردن آخرین روز این سال شمسی (اسفند ۲۹ یا ۳۰)
-        try:
-            year_end_j = jdatetime.date(current_year, 12, 30)
-        except ValueError:
-            year_end_j = jdatetime.date(current_year, 12, 29)
-
-        year_end_g = year_end_j.togregorian()
-
-        if current_year == end_j.year:
-            # سال آخر: پایان = end_date قرارداد
-            segment_end_g = contract.end_date
-        else:
-            # سال‌های دیگر: پایان = پایان سال شمسی
-            segment_end_g = year_end_g
-
-        segments.append((current_year, current_start_g, segment_end_g))
-
-        logger.info(
-            f"📅 Contract {contract.id}: Year {current_year}, "
-            f"from {current_start_g} to {segment_end_g}"
+    if db is not None:
+        return calculate_entitlement_by_year(
+            db, contract, employee=employee, annual_override=annual_override
         )
 
-        # شروع سال بعد
-        current_year += 1
-        if current_year <= end_j.year:
-            next_year_start_j = jdatetime.date(current_year, 1, 1)
-            current_start_g = next_year_start_j.togregorian()
+    from web.services.leave_entitlement_service import charge_amount_for_segment
 
-    return segments
-
-
-def calculate_prorated_leave_by_year(contract: Contract) -> dict:
-    """
-    محاسبه مرخصی به نسبت برای هر سال شمسی
-
-    Returns:
-        dict: {سال شمسی: {'AL': مقدار, 'SL': مقدار}}
-    """
+    annual = float(
+        annual_override if annual_override is not None else contract.annual_leave_days
+    )
+    sick = float(contract.sick_leave_days or 0)
     result = {}
-    segments = split_contract_by_year(contract)
-
-    for year_j, start_g, end_g in segments:
-        year_days = get_jalali_year_days(year_j)
-
-        # قرارداد باز (دائمی) → مرخصی کامل
-        if end_g is None:
-            result[year_j] = {
-                'AL': float(contract.annual_leave_days),
-                'SL': float(contract.sick_leave_days),
-            }
-            logger.info(
-                f"💰 Year {year_j}: Open contract, "
-                f"AL={contract.annual_leave_days}, SL={contract.sick_leave_days}"
-            )
-            continue
-
-        # محاسبه تعداد روزهای این بخش
-        duration_days = (end_g - start_g).days + 1
-
-        if duration_days >= year_days:
-            # سال کامل → مرخصی کامل
-            result[year_j] = {
-                'AL': float(contract.annual_leave_days),
-                'SL': float(contract.sick_leave_days),
-            }
-            logger.info(
-                f"💰 Year {year_j}: Full year ({duration_days} days), "
-                f"AL={contract.annual_leave_days}, SL={contract.sick_leave_days}"
-            )
-        else:
-            # محاسبه به نسبت با round
-            ratio = duration_days / year_days
-            result[year_j] = {
-                'AL': contract.annual_leave_days * ratio,
-                'SL': contract.sick_leave_days * ratio,
-            }
-            logger.info(
-                f"💰 Year {year_j}: Prorated ({duration_days}/{year_days} days), "
-                f"AL={contract.annual_leave_days * ratio:.2f}, "
-                f"SL={contract.sick_leave_days * ratio:.2f}"
-            )
-
+    for year_j, seg_start, seg_end in split_contract_coverage_by_year(contract):
+        al = charge_amount_for_segment(
+            contract.contract_type_code, annual, year_j, seg_start, seg_end
+        )
+        sl = charge_amount_for_segment(
+            contract.contract_type_code, sick, year_j, seg_start, seg_end
+        )
+        if year_j not in result:
+            result[year_j] = {'AL': 0.0, 'SL': 0.0}
+        result[year_j]['AL'] += al
+        result[year_j]['SL'] += sl
     return result
 
 
 def charge_leave_for_new_contract(db: Session, contract: Contract) -> dict:
-    """شارژ مرخصی هنگام ثبت قرارداد جدید"""
-    prorated_by_year = calculate_prorated_leave_by_year(contract)
-    charged = {}
-
+    """شارژ مرخصی هنگام ثبت قرارداد جدید (قواعد عضویت + سیاست)."""
+    employee = db.query(Employee).filter(Employee.user_id == contract.user_id).first()
+    prorated_by_year = calculate_prorated_leave_by_year(
+        contract, db=db, employee=employee, annual_override=contract.annual_leave_days
+    )
     logger.info(f"🔍 Charging leave for contract {contract.id}: {prorated_by_year}")
 
+    charged = {}
     for year_j, leaves in prorated_by_year.items():
         charged[year_j] = {}
-
         for leave_type, amount in leaves.items():
-            # استفاده از round
             amount_rounded = round(amount)
-
             logger.info(
                 f"📊 Year {year_j}, Type {leave_type}: "
                 f"raw={amount:.2f}, rounded={amount_rounded}"
             )
-
             if amount_rounded <= 0:
                 continue
 
-            # بررسی balance موجود
             balance = db.query(LeaveBalance).filter(
                 and_(
                     LeaveBalance.user_id == contract.user_id,
                     LeaveBalance.year == year_j,
-                    LeaveBalance.leave_type == leave_type
+                    LeaveBalance.leave_type == leave_type,
                 )
             ).first()
 
             if balance:
                 balance.balance += amount_rounded
-                logger.info(f"✅ Updated balance: year={year_j}, new_balance={balance.balance}")
             else:
                 balance = LeaveBalance(
                     user_id=contract.user_id,
                     year=year_j,
                     leave_type=leave_type,
-                    balance=amount_rounded
+                    balance=amount_rounded,
                 )
                 db.add(balance)
-                logger.info(f"✅ Created balance: year={year_j}, balance={amount_rounded}")
 
-            # ثبت تراکنش
-            tx = LeaveTransaction(
+            db.add(LeaveTransaction(
                 user_id=contract.user_id,
                 year=year_j,
                 leave_type=leave_type,
                 amount=amount_rounded,
-                transaction_type='CHARGE',
-                description=f"شارژ مرخصی قرارداد {contract.contract_type_name} - سال {year_j}",
-                reference_id=contract.id
-            )
-            db.add(tx)
-
+                transaction_type=TX_CHARGE,
+                description=(
+                    f"شارژ مرخصی قرارداد {contract.contract_type_name} - سال {year_j}"
+                ),
+                reference_id=contract.id,
+            ))
             charged[year_j][leave_type] = amount_rounded
 
+    sync_employee_department_from_active_contract(db, contract.user_id, commit=False)
     db.commit()
     return charged
 
@@ -203,21 +139,29 @@ def update_leave_for_contract(
     old_sick_leave: int,
     old_start_date: date,
     old_end_date: date,
-    old_deduction: int
+    old_deduction: int,
+    old_type_code: Optional[str] = None,
 ) -> dict:
-    """بروزرسانی مرخصی هنگام ویرایش قرارداد"""
+    """بروزرسانی مرخصی هنگام ویرایش قرارداد با قواعد عضویت."""
+    employee = db.query(Employee).filter(Employee.user_id == contract.user_id).first()
+    old_code = old_type_code or contract.contract_type_code
+
     old_contract = Contract(
         user_id=contract.user_id,
-        contract_type_code=contract.contract_type_code,
+        contract_type_code=old_code,
         start_date=old_start_date,
         end_date=old_end_date,
         annual_leave_days=old_annual_leave,
         sick_leave_days=old_sick_leave,
-        service_deduction_days=old_deduction
+        service_deduction_days=old_deduction,
     )
 
-    old_prorated = calculate_prorated_leave_by_year(old_contract)
-    new_prorated = calculate_prorated_leave_by_year(contract)
+    old_prorated = calculate_prorated_leave_by_year(
+        old_contract, db=db, employee=employee, annual_override=old_annual_leave
+    )
+    new_prorated = calculate_prorated_leave_by_year(
+        contract, db=db, employee=employee, annual_override=contract.annual_leave_days
+    )
 
     logger.info(f"🔄 Old prorated: {old_prorated}")
     logger.info(f"🔄 New prorated: {new_prorated}")
@@ -230,10 +174,20 @@ def update_leave_for_contract(
         new_leaves = new_prorated.get(year_j, {'AL': 0, 'SL': 0})
 
         for leave_type in ['AL', 'SL']:
+            # رسمی: تغییر صرفاً end_date نباید AL را عوض کند
+            if (
+                contract.contract_type_code == MEMBERSHIP_PERMANENT
+                and old_code == MEMBERSHIP_PERMANENT
+                and leave_type == 'AL'
+                and old_start_date == contract.start_date
+                and old_annual_leave == contract.annual_leave_days
+                and old_end_date != contract.end_date
+            ):
+                continue
+
             old_val = round(old_leaves.get(leave_type, 0))
             new_val = round(new_leaves.get(leave_type, 0))
             diff = new_val - old_val
-
             if diff == 0:
                 continue
 
@@ -241,7 +195,7 @@ def update_leave_for_contract(
                 and_(
                     LeaveBalance.user_id == contract.user_id,
                     LeaveBalance.year == year_j,
-                    LeaveBalance.leave_type == leave_type
+                    LeaveBalance.leave_type == leave_type,
                 )
             ).first()
 
@@ -254,40 +208,41 @@ def update_leave_for_contract(
                     user_id=contract.user_id,
                     year=year_j,
                     leave_type=leave_type,
-                    balance=diff
+                    balance=diff,
                 )
                 db.add(balance)
 
-            tx_type = 'CHARGE' if diff > 0 else 'DEDUCT'
-            tx_desc = f"{'افزایش' if diff > 0 else 'کسر'} مرخصی قرارداد {contract.contract_type_name} - سال {year_j}"
-
-            tx = LeaveTransaction(
+            tx_type = TX_CHARGE if diff > 0 else TX_DEDUCT
+            tx_desc = (
+                f"{'افزایش' if diff > 0 else 'کسر'} مرخصی قرارداد "
+                f"{contract.contract_type_name} - سال {year_j}"
+            )
+            db.add(LeaveTransaction(
                 user_id=contract.user_id,
                 year=year_j,
                 leave_type=leave_type,
                 amount=abs(diff),
                 transaction_type=tx_type,
                 description=tx_desc,
-                reference_id=contract.id
-            )
-            db.add(tx)
+                reference_id=contract.id,
+            ))
+            changes.setdefault(year_j, {})[leave_type] = diff
 
-            if year_j not in changes:
-                changes[year_j] = {}
-            changes[year_j][leave_type] = diff
-
+    sync_employee_department_from_active_contract(db, contract.user_id, commit=False)
     db.commit()
     return changes
 
 
 def remove_leave_for_contract(db: Session, contract: Contract) -> dict:
     """حذف مرخصی هنگام حذف قرارداد"""
-    prorated_by_year = calculate_prorated_leave_by_year(contract)
+    employee = db.query(Employee).filter(Employee.user_id == contract.user_id).first()
+    prorated_by_year = calculate_prorated_leave_by_year(
+        contract, db=db, employee=employee, annual_override=contract.annual_leave_days
+    )
     removed = {}
 
     for year_j, leaves in prorated_by_year.items():
         removed[year_j] = {}
-
         for leave_type, amount in leaves.items():
             amount_rounded = round(amount)
             if amount_rounded <= 0:
@@ -297,7 +252,7 @@ def remove_leave_for_contract(db: Session, contract: Contract) -> dict:
                 and_(
                     LeaveBalance.user_id == contract.user_id,
                     LeaveBalance.year == year_j,
-                    LeaveBalance.leave_type == leave_type
+                    LeaveBalance.leave_type == leave_type,
                 )
             ).first()
 
@@ -306,53 +261,111 @@ def remove_leave_for_contract(db: Session, contract: Contract) -> dict:
                 if balance.balance < 0:
                     balance.balance = 0
 
-            tx = LeaveTransaction(
+            db.add(LeaveTransaction(
                 user_id=contract.user_id,
                 year=year_j,
                 leave_type=leave_type,
                 amount=amount_rounded,
-                transaction_type='REVERSE',
-                description=f"حذف مرخصی قرارداد {contract.contract_type_name} - سال {year_j}",
-                reference_id=contract.id
-            )
-            db.add(tx)
-
+                transaction_type=TX_REVERSE,
+                description=(
+                    f"حذف مرخصی قرارداد {contract.contract_type_name} - سال {year_j}"
+                ),
+                reference_id=contract.id,
+            ))
             removed[year_j][leave_type] = amount_rounded
 
+    db.flush()
+    sync_employee_department_from_active_contract(db, contract.user_id, commit=False)
     db.commit()
     return removed
 
 
-# ============================================
-# 🆕 منطق مصرف مرخصی - استاندارد صنعتی (FIFO معکوس)
-# ============================================
+def get_stored_leave_balance(db: Session, user_id: str, year: int) -> int:
+    """مانده CW برای یک سال شمسی."""
+    bal = db.query(LeaveBalance).filter(
+        and_(
+            LeaveBalance.user_id == user_id,
+            LeaveBalance.year == year,
+            LeaveBalance.leave_type == LEAVE_TYPE_CW,
+        )
+    ).first()
+    return bal.balance if bal else 0
 
-LEAVE_TYPE_NAMES = {
-    'AL': 'استحقاقی',
-    'SL': 'استعلاجی',
-    'RL': 'تشویقی',
-    'UL': 'بدون حقوق',
-    'CW': 'ذخیره سال قبل'
-}
 
+def set_stored_leave_for_year(
+    db: Session,
+    *,
+    user_id: str,
+    year: int,
+    target_days: int,
+    reference_id: Optional[int] = None,
+    description: str = "",
+    commit: bool = True,
+) -> dict:
+    """
+    تنظیم مطلق مانده CW به target_days با اعمال مابه‌التفاوت.
+    Returns: {'old': int, 'new': int, 'diff': int}
+    """
+    if target_days < 0:
+        raise ValueError("مرخصی ذخیره نمی‌تواند منفی باشد")
+
+    balance = db.query(LeaveBalance).filter(
+        and_(
+            LeaveBalance.user_id == user_id,
+            LeaveBalance.year == year,
+            LeaveBalance.leave_type == LEAVE_TYPE_CW,
+        )
+    ).first()
+    old = balance.balance if balance else 0
+    diff = target_days - old
+    if diff == 0:
+        return {'old': old, 'new': old, 'diff': 0}
+
+    if balance:
+        balance.balance = target_days
+    else:
+        balance = LeaveBalance(
+            user_id=user_id,
+            year=year,
+            leave_type=LEAVE_TYPE_CW,
+            balance=target_days,
+            is_carried_forward=True,
+            carried_from_year=year - 1,
+        )
+        db.add(balance)
+
+    db.add(LeaveTransaction(
+        user_id=user_id,
+        year=year,
+        leave_type=LEAVE_TYPE_CW,
+        amount=abs(diff),
+        transaction_type=TX_CHARGE if diff > 0 else TX_DEDUCT,
+        description=description or (
+            f"{'افزایش' if diff > 0 else 'کسر'} مرخصی ذخیره سال {year}"
+        ),
+        reference_id=reference_id,
+    ))
+    if commit:
+        db.commit()
+    return {'old': old, 'new': target_days, 'diff': diff}
+
+
+# ============================================
+# منطق مصرف مرخصی - استاندارد صنعتی (FIFO معکوس)
+# ============================================
 
 def get_available_leave(db: Session, user_id: str, year: int, leave_type: str = 'AL') -> dict:
     """
-    🆕 محاسبه مرخصی قابل استفاده (نمایش یکپارچه)
+    محاسبه مرخصی قابل استفاده (نمایش یکپارچه)
     برای نوع استحقاقی: AL + CW (انتقالی)
-    برای سایر انواع: فقط خود نوع
-
-    Returns:
-        dict: {'total': مقدار کل, 'breakdown': {نوع: مقدار}}
     """
     result = {'total': 0, 'breakdown': {}}
 
-    # مرخصی اصلی
     main_balance = db.query(LeaveBalance).filter(
         and_(
             LeaveBalance.user_id == user_id,
             LeaveBalance.year == year,
-            LeaveBalance.leave_type == leave_type
+            LeaveBalance.leave_type == leave_type,
         )
     ).first()
 
@@ -360,13 +373,12 @@ def get_available_leave(db: Session, user_id: str, year: int, leave_type: str = 
         result['breakdown'][leave_type] = main_balance.balance
         result['total'] += main_balance.balance
 
-    # 🆕 برای استحقاقی، انتقالی را هم اضافه کن
     if leave_type == 'AL':
         cw_balance = db.query(LeaveBalance).filter(
             and_(
                 LeaveBalance.user_id == user_id,
                 LeaveBalance.year == year,
-                LeaveBalance.leave_type == 'CW'
+                LeaveBalance.leave_type == 'CW',
             )
         ).first()
 
@@ -378,105 +390,99 @@ def get_available_leave(db: Session, user_id: str, year: int, leave_type: str = 
 
 
 def consume_leave(
-        db: Session,
-        user_id: str,
-        year: int,
-        days_needed: float,
-        leave_type: str = 'AL'
+    db: Session,
+    user_id: str,
+    year: int,
+    days_needed: float,
+    leave_type: str = 'AL',
+    *,
+    commit: bool = True,
+    reference_id: Optional[int] = None,
+    allow_negative: bool = False,
 ) -> dict:
     """
-    🆕 مصرف مرخصی با منطق استاندارد صنعتی:
-
-    اولویت مصرف:
-    1. اول از CW (انتقالی) - چون زودتر منقضی می‌شود
+    مصرف مرخصی:
+    1. اول از CW (انتقالی)
     2. سپس از AL (استحقاقی)
-
-    ⚠️ فقط برای نوع استحقاقی (AL) از انتقالی کم می‌شود.
-    برای سایر انواع (استعلاجی، تشویقی و...) مستقیماً از خودش کم می‌شود.
-
-    Args:
-        db: Session دیتابیس
-        user_id: کد کاربر
-        year: سال شمسی
-        days_needed: تعداد روز مورد نیاز
-        leave_type: نوع مرخصی (پیش‌فرض: استحقاقی)
-
-    Returns:
-        dict: {
-            'success': bool,
-            'consumed': float,
-            'remaining': float,
-            'consumed_from': dict  # {'CW': مقدار, 'AL': مقدار}
-        }
     """
-    remaining = days_needed
+    remaining = float(days_needed)
     consumed_from = {}
 
-    # ============================================
-    # مرحله ۱: مصرف از انتقالی (فقط برای مرخصی استحقاقی)
-    # ============================================
     if leave_type == 'AL':
         cw = db.query(LeaveBalance).filter(
             and_(
                 LeaveBalance.user_id == user_id,
                 LeaveBalance.year == year,
-                LeaveBalance.leave_type == 'CW'
+                LeaveBalance.leave_type == 'CW',
             )
         ).first()
 
         if cw and cw.balance > 0:
-            use_from_cw = min(remaining, cw.balance)
+            use_from_cw = min(remaining, float(cw.balance))
             cw.balance -= use_from_cw
             remaining -= use_from_cw
             consumed_from['CW'] = use_from_cw
 
-            tx = LeaveTransaction(
+            db.add(LeaveTransaction(
                 user_id=user_id,
                 year=year,
                 leave_type='CW',
                 amount=use_from_cw,
-                transaction_type='USE',
-                description=f"مصرف مرخصی انتقالی از سال قبل (اولویت اول)"
-            )
-            db.add(tx)
-            logger.info(
-                f"📤 Consumed {use_from_cw} days from CW for user {user_id}, "
-                f"year {year}. Remaining CW: {cw.balance}"
-            )
+                transaction_type=TX_USE,
+                description="مصرف مرخصی انتقالی از سال قبل (اولویت اول)",
+                reference_id=reference_id,
+            ))
 
-    # ============================================
-    # مرحله ۲: مصرف از مرخصی اصلی
-    # ============================================
     if remaining > 0:
         main = db.query(LeaveBalance).filter(
             and_(
                 LeaveBalance.user_id == user_id,
                 LeaveBalance.year == year,
-                LeaveBalance.leave_type == leave_type
+                LeaveBalance.leave_type == leave_type,
             )
         ).first()
 
-        if main and main.balance > 0:
-            use_from_main = min(remaining, main.balance)
+        if main and (main.balance > 0 or allow_negative):
+            if allow_negative:
+                use_from_main = remaining
+            else:
+                use_from_main = min(remaining, float(main.balance))
             main.balance -= use_from_main
             remaining -= use_from_main
             consumed_from[leave_type] = use_from_main
 
-            tx = LeaveTransaction(
+            db.add(LeaveTransaction(
                 user_id=user_id,
                 year=year,
                 leave_type=leave_type,
                 amount=use_from_main,
-                transaction_type='USE',
-                description=f"مصرف مرخصی {LEAVE_TYPE_NAMES.get(leave_type, leave_type)}"
+                transaction_type=TX_USE,
+                description=f"مصرف مرخصی {LEAVE_TYPE_NAMES.get(leave_type, leave_type)}",
+                reference_id=reference_id,
+            ))
+        elif remaining > 0 and allow_negative:
+            use_from_main = remaining
+            main = LeaveBalance(
+                user_id=user_id,
+                year=year,
+                leave_type=leave_type,
+                balance=-use_from_main,
             )
-            db.add(tx)
-            logger.info(
-                f"📤 Consumed {use_from_main} days from {leave_type} for user {user_id}, "
-                f"year {year}. Remaining {leave_type}: {main.balance}"
-            )
+            db.add(main)
+            remaining = 0
+            consumed_from[leave_type] = use_from_main
+            db.add(LeaveTransaction(
+                user_id=user_id,
+                year=year,
+                leave_type=leave_type,
+                amount=use_from_main,
+                transaction_type=TX_USE,
+                description=f"مصرف مرخصی {LEAVE_TYPE_NAMES.get(leave_type, leave_type)}",
+                reference_id=reference_id,
+            ))
 
-    db.commit()
+    if commit:
+        db.commit()
 
     return {
         'success': remaining <= 0,

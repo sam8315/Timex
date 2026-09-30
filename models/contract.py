@@ -11,19 +11,19 @@ from models.base import Base, TimestampMixin
 CONTRACT_TYPES = {
     '1': {
         'name': 'رسمی',
-        'annual_leave': 35,
+        'annual_leave': 30,
         'sick_leave': 120,
         'allow_service_deduction': False,
         'editable_leave': False,
-        'carry_forward_max': 0,  # 🆕 رسمی: بدون سقف ذخیره (یا عدد دلخواه)
+        'carry_forward_max': 0,
     },
     '2': {
         'name': 'وظیفه',
-        'annual_leave': 35,
+        'annual_leave': 30,
         'sick_leave': 0,
         'allow_service_deduction': True,
         'editable_leave': False,
-        'carry_forward_max': 35,  # 🆕 وظیفه: بدون ذخیره
+        'carry_forward_max': 35,
     },
     '3': {
         'name': 'خریدخدمت',
@@ -31,7 +31,7 @@ CONTRACT_TYPES = {
         'sick_leave': 0,
         'allow_service_deduction': False,
         'editable_leave': False,
-        'carry_forward_max': 9,  # 🆕 بدون ذخیره
+        'carry_forward_max': 9,
     },
     '4': {
         'name': 'قراردادی',
@@ -39,7 +39,7 @@ CONTRACT_TYPES = {
         'sick_leave': 0,
         'allow_service_deduction': False,
         'editable_leave': False,
-        'carry_forward_max': 9,  # 🆕 قراردادی: حداکثر ۹ روز
+        'carry_forward_max': 9,
     },
     '5': {
         'name': 'پزشک',
@@ -47,7 +47,7 @@ CONTRACT_TYPES = {
         'sick_leave': 0,
         'allow_service_deduction': False,
         'editable_leave': False,
-        'carry_forward_max': 0,  # 🆕 بدون ذخیره
+        'carry_forward_max': 0,
     },
     '6': {
         'name': 'سایر / متفرقه',
@@ -55,7 +55,7 @@ CONTRACT_TYPES = {
         'sick_leave': 0,
         'allow_service_deduction': False,
         'editable_leave': True,
-        'carry_forward_max': 0,  # 🆕 قابل تنظیم
+        'carry_forward_max': 0,
     },
     '7': {
         'name': 'قرارداد با بیمه‌ها',
@@ -63,7 +63,7 @@ CONTRACT_TYPES = {
         'sick_leave': 0,
         'allow_service_deduction': False,
         'editable_leave': True,
-        'carry_forward_max': 0,  # 🆕 قابل تنظیم
+        'carry_forward_max': 0,
     },
 }
 

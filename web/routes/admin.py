@@ -53,8 +53,7 @@ from web.services.hourly_mission_service import (
 from web.services.travel_leave_service import build_leave_days_by_date
 from models.daily_status import DailyStatus
 from web.permissions import has_permission, get_effective_permissions, enforce_permission
-from models.employee_region import EmployeeRegion
-from models.policy import PolicyAuditLog
+
 
 def build_redirect_url(referer: str, key: str, value: str) -> str:
     """ساخت URL بازگشت با رعایت query string موجود"""
@@ -1827,6 +1826,78 @@ async def admin_view_profile(
         acc.card_masked = _mask_tail(acc.card_number)
         acc.sheba_masked = _mask_tail(acc.sheba)
 
+    from web.services.leave_entitlement_service import (
+        get_membership_timeline,
+        sync_employee_department_from_active_contract,
+        sync_employee_region_from_service_location,
+    )
+    from web.services.travel_leave_service import resolve_effective_service_location
+    from models.region import Region as RegionModel
+    from models.employee_region import EmployeeRegion as EmpRegionModel
+
+    sync_employee_department_from_active_contract(db, target_user_id, commit=True)
+    sync_employee_region_from_service_location(db, target_user_id, commit=True)
+    if employee:
+        db.refresh(employee)
+    membership_timeline = get_membership_timeline(db, target_user_id)
+
+    region_names = {
+        r.code: r.name for r in db.query(RegionModel).order_by(RegionModel.sort_order).all()
+    }
+    service_region_code = (employee.region_code if employee else None) or 'NORMAL'
+    service_region_name = region_names.get(service_region_code, service_region_code)
+    service_loc = resolve_effective_service_location(db, target_user_id, date.today())
+    service_city_name = None
+    if service_loc:
+        svc_city = db.query(City).filter(City.id == service_loc.city_id).first()
+        if svc_city:
+            service_city_name = (
+                f"{svc_city.name}"
+                + (f" ({svc_city.province})" if svc_city.province else "")
+            )
+    region_history_rows = (
+        db.query(EmpRegionModel)
+        .filter(EmpRegionModel.user_id == target_user_id)
+        .order_by(EmpRegionModel.effective_from.desc())
+        .limit(20)
+        .all()
+    )
+    region_history = []
+    for rh in region_history_rows:
+        region_history.append({
+            'region_code': rh.region_code,
+            'region_name': region_names.get(rh.region_code, rh.region_code),
+            'from_j': jdatetime.date.fromgregorian(date=rh.effective_from).strftime('%Y/%m/%d'),
+            'to_j': (
+                jdatetime.date.fromgregorian(date=rh.effective_to).strftime('%Y/%m/%d')
+                if rh.effective_to else None
+            ),
+            'reason': rh.reason,
+        })
+
+    from models.employee_service_location import EmployeeServiceLocation
+    can_manage_service_locations = has_permission(db, user, 'manage_service_locations')
+    service_locations = []
+    for loc in (
+        db.query(EmployeeServiceLocation)
+        .filter(EmployeeServiceLocation.user_id == target_user_id)
+        .order_by(EmployeeServiceLocation.effective_from.desc())
+        .all()
+    ):
+        loc_city = db.query(City).filter(City.id == loc.city_id).first()
+        loc_region = (loc_city.region_code if loc_city else None) or 'NORMAL'
+        service_locations.append({
+            'location': loc,
+            'city_name': loc_city.name if loc_city else 'نامشخص',
+            'region_code': loc_region,
+            'region_name': region_names.get(loc_region, loc_region),
+            'from_j': jdatetime.date.fromgregorian(date=loc.effective_from).strftime('%Y/%m/%d'),
+            'to_j': (
+                jdatetime.date.fromgregorian(date=loc.effective_to).strftime('%Y/%m/%d')
+                if loc.effective_to else None
+            ),
+        })
+
     return templates.TemplateResponse(request, "admin/user_profile.html", {
         "user": user,
         "target_user": target_user,
@@ -1850,11 +1921,18 @@ async def admin_view_profile(
         "inactive_linked": inactive_linked,
         "address_history": address_history,
         "history_cities": history_cities,
-        "history_truncated": history_truncated,
         "target_bank_accounts": target_bank_accounts,
         "banks": banks,
         "active_bank_ids": active_bank_ids,
         "bank_accounts_error": bank_accounts_error,
+        "membership_timeline": membership_timeline,
+        "service_region_code": service_region_code,
+        "service_region_name": service_region_name,
+        "service_city_name": service_city_name,
+        "region_history": region_history,
+        "service_locations": service_locations,
+        "region_names": region_names,
+        "can_manage_service_locations": can_manage_service_locations,
     })
 
 
@@ -1914,7 +1992,6 @@ async def admin_edit_profile_submit(
     is_active: str = Form(""),
     termination_date_str: str = Form(""),
     termination_reason: str = Form(""),
-    region_code: str = Form("NORMAL"),
     user: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
@@ -1950,30 +2027,13 @@ async def admin_edit_profile_submit(
         # وضعیت فعال/غیرفعال
         employee.is_active = (is_active == "on")
 
-        # 🆕 ذخیره منطقه و ثبت در تاریخچه
-        old_region = employee.region_code
-        employee.region_code = region_code
-        
-        if old_region != region_code:
-            region_history = EmployeeRegion(
-                user_id=target_user_id,
-                region_code=region_code,
-                effective_from=date.today(),
-                approved_by=user.user_id,
-                reason=f"تغییر منطقه از {old_region} توسط مدیر ارشد"
-            )
-            db.add(region_history)
-            
-            audit_log = PolicyAuditLog(
-                entity_type='employee_region',
-                entity_id=target_user_id,
-                action='CHANGE',
-                old_value=old_region,
-                new_value=region_code,
-                changed_by=user.user_id,
-                reason="تغییر منطقه توسط مدیر ارشد"
-            )
-            db.add(audit_log)
+        # منطقه خدمتی دستی نیست؛ از شهر محل خدمت مشتق می‌شود
+        from web.services.leave_entitlement_service import (
+            sync_employee_region_from_service_location,
+        )
+        sync_employee_region_from_service_location(
+            db, target_user_id, commit=False, approved_by=user.user_id,
+        )
 
         if employee.is_active:
             # اگر فعال شد، اطلاعات ترک کار پاک شود

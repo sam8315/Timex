@@ -102,6 +102,7 @@ from database.init_db import (  # noqa: E402
     migrate_employee_address_coords_pair,
     migrate_employee_address_nan_check,
     migrate_employee_address_range_check,
+    migrate_city_region_code,
 )
 from sqlalchemy import text as _sql_text
 
@@ -224,6 +225,8 @@ with test_engine.connect() as _conn:
         $$;
     """))
     _conn.commit()
+
+migrate_city_region_code(bind_engine=test_engine)
 
 # Audit history must not be cascade-deleted: drop the legacy user_id FK
 # on the persistent test table using the real startup migration.

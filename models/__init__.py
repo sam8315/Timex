@@ -19,6 +19,8 @@ from models.bank import Bank
 from models.employee_bank_account import EmployeeBankAccount
 from models.education import Education
 from models.leave_carry_forward_request import LeaveCarryForwardRequest
+from models.leave_buyback_quota import LeaveBuybackQuota
+from models import leave_glossary  # noqa: F401 — domain constants
 from models.user_permission import UserPermission, UserPermissionHistory
 from models.bale_user import BaleUser
 from models.password_reset import PasswordResetRequest
@@ -36,7 +38,8 @@ __all__ = [
     'Base', 'User', 'Attendance', 'AttendancePolicy', 'AttendancePolicyDay',
     'HourlyLeavePolicy', 'HourlyLeaveResolution', 'HourlyLeaveTransaction',
     'Contract', 'LeaveBalance', 'LeaveTransaction',
-    'LeaveRequest', 'LeaveCarryForwardRequest', 'Holiday', 'DailyStatus',
+    'LeaveRequest', 'LeaveCarryForwardRequest', 'LeaveBuybackQuota',
+    'Holiday', 'DailyStatus',
     'HourlyMission', 'HourlyMissionPolicy',
     'EmployeePhone', 'EmployeeAddress', 'EmployeeAddressHistory', 'Education', 'UserPermission', 'UserPermissionHistory', 'BaleUser',
     'Employee', 'Region', 'Policy', 'PolicyValue', 'PolicyAuditLog',

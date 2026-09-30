@@ -15,14 +15,6 @@ import jdatetime
 router = APIRouter(tags=["Admin User Create"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
 
-REGION_OPTIONS = [
-    {"code": "NORMAL", "label": "عادی"},
-    {"code": "GRADE_1", "label": "درجه یک"},
-    {"code": "GRADE_2", "label": "درجه دو"},
-    {"code": "GRADE_3", "label": "درجه سه"},
-]
-
-
 def _j_to_g(date_str: str):
     """تبدیل تاریخ شمسی (YYYY/MM/DD) به میلادی — همان فرمت edit_user.html."""
     if not date_str or not date_str.strip():
@@ -42,7 +34,6 @@ async def create_user_form(
         "is_admin": True,
         "is_super_admin": True,
         "csrf_token": make_csrf_token(user.user_id),
-        "region_options": REGION_OPTIONS,
         "error": None,
         "form": {},
     })
@@ -64,7 +55,6 @@ async def create_user_submit(
     hire_date_str: str = Form(""),
     department: str = Form(""),
     position: str = Form(""),
-    region_code: str = Form("NORMAL"),
     notes: str = Form(""),
     is_active: str = Form("on"),
     csrf_token: str = Form(""),
@@ -88,45 +78,45 @@ async def create_user_submit(
         return _form_response(request, cur_user, "شناسه کاربری باید ۱ تا ۵۰ کاراکتر باشد.",
                               uid, uname, fn, ln, nc, father_name, birth_date_str,
                               gender, marital_status, email, hire_date_str, department,
-                              position, region_code, notes)
+                              position, notes)
     if not all(c.isalnum() or c in "_-" for c in uid):
         return _form_response(request, cur_user, "شناسه کاربری فقط حروف، عدد، زیرخط و خط تیره مجاز است.",
                               uid, uname, fn, ln, nc, father_name, birth_date_str,
                               gender, marital_status, email, hire_date_str, department,
-                              position, region_code, notes)
+                              position, notes)
 
     # national_code: دقیقاً ۱۰ رقم
     if not nc or len(nc) != 10 or not nc.isdigit():
         return _form_response(request, cur_user, "کد ملی باید دقیقاً ۱۰ رقم باشد.",
                               uid, uname, fn, ln, nc, father_name, birth_date_str,
                               gender, marital_status, email, hire_date_str, department,
-                              position, region_code, notes)
+                              position, notes)
 
     # نام و نام خانوادگی الزامی
     if not fn:
         return _form_response(request, cur_user, "نام الزامی است.",
                               uid, uname, fn, ln, nc, father_name, birth_date_str,
                               gender, marital_status, email, hire_date_str, department,
-                              position, region_code, notes)
+                              position, notes)
     if not ln:
         return _form_response(request, cur_user, "نام خانوادگی الزامی است.",
                               uid, uname, fn, ln, nc, father_name, birth_date_str,
                               gender, marital_status, email, hire_date_str, department,
-                              position, region_code, notes)
+                              position, notes)
 
     # تکراری: user_id
     if db.query(User).filter(User.user_id == uid).first():
         return _form_response(request, cur_user, "این شناسه کاربری قبلاً ثبت شده است.",
                               uid, uname, fn, ln, nc, father_name, birth_date_str,
                               gender, marital_status, email, hire_date_str, department,
-                              position, region_code, notes)
+                              position, notes)
 
     # تکراری: national_code
     if db.query(Employee).filter(Employee.national_code == nc).first():
         return _form_response(request, cur_user, "این کد ملی قبلاً ثبت شده است.",
                               uid, uname, fn, ln, nc, father_name, birth_date_str,
                               gender, marital_status, email, hire_date_str, department,
-                              position, region_code, notes)
+                              position, notes)
 
     # ── ایجاد اتمیک ──
     try:
@@ -154,7 +144,7 @@ async def create_user_submit(
             email=email.strip() or None,
             department=department.strip() or None,
             position=position.strip() or None,
-            region_code=region_code or "NORMAL",
+            region_code="NORMAL",
             notes=notes.strip() or None,
             is_active=(is_active == "on"),
         )
@@ -169,13 +159,13 @@ async def create_user_submit(
         return _form_response(request, cur_user, "خطای یکپارچگی: ممکن است این شناسه یا کد ملی هم‌اکنون ثبت شده باشد.",
                               uid, uname, fn, ln, nc, father_name, birth_date_str,
                               gender, marital_status, email, hire_date_str, department,
-                              position, region_code, notes)
+                              position, notes)
     except Exception:
         db.rollback()
         return _form_response(request, cur_user, "خطای سرور هنگام ایجاد کاربر. لطفاً دوباره تلاش کنید.",
                               uid, uname, fn, ln, nc, father_name, birth_date_str,
                               gender, marital_status, email, hire_date_str, department,
-                              position, region_code, notes)
+                              position, notes)
 
     return RedirectResponse(url=f"/admin/profile/{uid}?created=1", status_code=302)
 
@@ -184,14 +174,13 @@ def _form_response(request, cur_user, error,
                    uid="", uname="", fn="", ln="", nc="",
                    father_name="", birth_date_str="", gender="",
                    marital_status="", email="", hire_date_str="",
-                   department="", position="", region_code="NORMAL", notes=""):
+                   department="", position="", notes=""):
     """رندر مجدد فرم با پیام خطا و مقادیر قبلی."""
     return templates.TemplateResponse(request, "admin/create_user.html", {
         "user": cur_user,
         "is_admin": True,
         "is_super_admin": True,
         "csrf_token": make_csrf_token(cur_user.user_id),
-        "region_options": REGION_OPTIONS,
         "error": error,
         "form": {
             "user_id": uid,
@@ -207,7 +196,6 @@ def _form_response(request, cur_user, error,
             "hire_date_str": hire_date_str,
             "department": department,
             "position": position,
-            "region_code": region_code,
             "notes": notes,
         },
     })

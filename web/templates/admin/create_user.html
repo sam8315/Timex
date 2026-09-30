@@ -130,12 +130,11 @@
                                    value="{{ form.get('position', '') }}">
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label fw-bold">🌍 منطقه خدمتی</label>
-                            <select name="region_code" class="form-select">
-                                {% for r in region_options %}
-                                <option value="{{ r.code }}" {% if form.get('region_code', 'NORMAL') == r.code %}selected{% endif %}>{{ r.label }}</option>
-                                {% endfor %}
-                            </select>
+                            <label class="form-label text-muted">منطقه خدمتی</label>
+                            <div class="form-control-plaintext">
+                                <code>NORMAL</code>
+                                <small class="text-muted d-block">پس از ثبت محل خدمت از منطقهٔ شهر مشتق می‌شود</small>
+                            </div>
                         </div>
                         <div class="col-md-6">
                             <div class="form-check form-switch mt-4">
