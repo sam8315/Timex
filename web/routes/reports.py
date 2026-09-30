@@ -33,6 +33,9 @@ from core.pdf_raw_report import (
 from core.detailed_monthly_report_v2 import DetailedMonthlyReportGeneratorV2
 from core.excel_detailed_export_v2 import DetailedExcelExporterV2
 from core.pdf_detailed_export_v2 import DetailedPDFExporterV2
+from core.legal_overtime_monthly_report import LegalOvertimeMonthlyReportGenerator
+from core.excel_legal_overtime_export import LegalOvertimeExcelExporter
+from core.pdf_legal_overtime_export import LegalOvertimePDFExporter
 
 
 def _monthly_full_report_data(target_user_id: str, year: int, month: int):
@@ -90,6 +93,8 @@ def _monthly_group_reports(
     year: int,
     month: int,
     employment_type: str,
+    *,
+    data_fn=None,
 ):
     """لیست گزارش‌های ماهانه برای یک نوع عضویت (یا همه).
 
@@ -101,15 +106,106 @@ def _monthly_group_reports(
     if month < 1 or month > 12:
         raise ValueError('ماه نامعتبر است')
     _validate_monthly_employment_type(employment_type)
+    build = data_fn or _monthly_full_report_data
     reports = []
     for employee in _employees_for_employment_type(db, employment_type):
         try:
-            reports.append(
-                _monthly_full_report_data(employee.user_id, year, month)
-            )
+            reports.append(build(employee.user_id, year, month))
         except ValueError:
             continue
     return reports, _employment_type_label(employment_type)
+
+
+def _monthly_legal_ot_report_data(target_user_id: str, year: int, month: int):
+    """گزارش اضافه‌کار قانونی (۸/۴۴) از لایهٔ جدا روی همان روزساز V2."""
+    generator = LegalOvertimeMonthlyReportGenerator()
+    try:
+        report = generator.generate_report(target_user_id, year, month)
+    finally:
+        generator.close()
+    if not report.get('success'):
+        raise ValueError(report.get('message', 'خطا در تولید گزارش'))
+    return report
+
+
+def _monthly_legal_ot_excel_response(report: dict, year: int, month: int):
+    output = BytesIO()
+    LegalOvertimeExcelExporter().export_detailed_report(report, output)
+    emp_name = report['employee']['full_name']
+    month_name = report['month_name']
+    ascii_name = _ascii_filename_part(
+        report['employee']['user_id'], 'legal_ot')
+    filename = f'{ascii_name}_legal_ot_{year}_{month:02d}.xlsx'
+    utf8_filename = quote(
+        f'گزارش_اضافه‌کار_قانونی_{emp_name}_{month_name}_{year}.xlsx',
+        safe='',
+    )
+    return StreamingResponse(
+        output,
+        media_type=(
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        ),
+        headers={
+            'Content-Disposition': (
+                f'attachment; filename="{filename}"; '
+                f'filename*=UTF-8\'\'{utf8_filename}'
+            )
+        },
+    )
+
+
+def _monthly_legal_ot_pdf_response(report: dict, year: int, month: int):
+    output = BytesIO()
+    LegalOvertimePDFExporter().export_detailed_report(report, output)
+    emp_name = report['employee']['full_name']
+    month_name = report['month_name']
+    ascii_name = _ascii_filename_part(
+        report['employee']['user_id'], 'legal_ot')
+    filename = f'{ascii_name}_legal_ot_{year}_{month:02d}.pdf'
+    utf8_filename = quote(
+        f'گزارش_اضافه‌کار_قانونی_{emp_name}_{month_name}_{year}.pdf',
+        safe='',
+    )
+    return StreamingResponse(
+        output,
+        media_type='application/pdf',
+        headers={
+            'Content-Disposition': (
+                f'attachment; filename="{filename}"; '
+                f'filename*=UTF-8\'\'{utf8_filename}'
+            )
+        },
+    )
+
+
+def _monthly_legal_ot_group_pdf_response(
+    reports: list,
+    year: int,
+    month: int,
+    group_label: str,
+):
+    output = BytesIO()
+    month_name = JALALI_MONTHS.get(month, str(month))
+    LegalOvertimePDFExporter().export_group_reports(
+        reports, year, month, month_name,
+        group_label=group_label, output=output,
+    )
+    ascii_label = _ascii_filename_part(group_label, 'group')
+    filename = f'group_legal_ot_{ascii_label}_{year}_{month:02d}.pdf'
+    utf8_filename = quote(
+        f'گزارش_گروهی_اضافه‌کار_{group_label}_{month_name}_{year}.pdf',
+        safe='',
+    )
+    return StreamingResponse(
+        output,
+        media_type='application/pdf',
+        headers={
+            'Content-Disposition': (
+                f'attachment; filename="{filename}"; '
+                f'filename*=UTF-8\'\'{utf8_filename}'
+            )
+        },
+    )
 
 
 def _monthly_group_print_redirect(
@@ -930,6 +1026,190 @@ async def monthly_full_report_print_group(
         error = quote(str(e), safe='')
         return RedirectResponse(
             url=f"/reports/monthly-full?error={error}",
+            status_code=302,
+        )
+
+
+# ============================================
+# گزارش اضافه‌کار قانونی (۸ ساعت / ۴۴ ساعت)
+# ============================================
+
+@router.get("/reports/monthly-legal-ot", response_class=HTMLResponse)
+async def monthly_legal_ot_report_form(
+        request: Request,
+        user: User = Depends(require_admin),
+        db: Session = Depends(get_db)
+):
+    """فرم گزارش اضافه‌کار قانونی"""
+    enforce_permission(db, user, 'view_reports')
+    selected_employment_type = request.query_params.get(
+        'employment_type', 'all')
+    try:
+        _validate_monthly_employment_type(selected_employment_type)
+    except ValueError:
+        selected_employment_type = 'all'
+    return templates.TemplateResponse(
+        request,
+        "admin/report_monthly_legal_ot.html",
+        _monthly_form_context(
+            request, user, db,
+            selected_employment_type=selected_employment_type,
+        ),
+    )
+
+
+@router.post("/reports/monthly-legal-ot")
+async def monthly_legal_ot_report_generate(
+        request: Request,
+        target_user_id: str = Form(''),
+        year: int = Form(...),
+        month: int = Form(...),
+        employment_type: str = Form('all'),
+        user: User = Depends(require_admin),
+        db: Session = Depends(get_db)
+):
+    """تولید گزارش اضافه‌کار قانونی (فردی یا گروهی)."""
+    enforce_permission(db, user, 'view_reports')
+    try:
+        if month < 1 or month > 12:
+            raise ValueError("ماه نامعتبر است")
+        _validate_monthly_employment_type(employment_type)
+        target_user_id = (target_user_id or '').strip()
+        if not target_user_id:
+            return _monthly_group_print_redirect(
+                '/reports/monthly-legal-ot', year, month, employment_type)
+        report = _monthly_legal_ot_report_data(target_user_id, year, month)
+        return templates.TemplateResponse(
+            request,
+            "admin/report_monthly_legal_ot.html",
+            _monthly_form_context(
+                request, user, db,
+                report=report,
+                selected_user_id=target_user_id,
+                selected_year=year,
+                selected_month=month,
+                selected_employment_type=employment_type,
+            ),
+        )
+    except Exception as e:
+        error = quote(str(e), safe='')
+        return RedirectResponse(
+            url=f"/reports/monthly-legal-ot?error={error}",
+            status_code=302
+        )
+
+
+@router.get("/reports/monthly-legal-ot/export-excel")
+async def monthly_legal_ot_report_excel(
+        request: Request,
+        target_user_id: str = Query(...),
+        year: int = Query(...),
+        month: int = Query(...),
+        user: User = Depends(require_admin),
+        db: Session = Depends(get_db),
+):
+    enforce_permission(db, user, 'view_reports')
+    try:
+        if month < 1 or month > 12:
+            raise ValueError("ماه نامعتبر است")
+        report = _monthly_legal_ot_report_data(target_user_id, year, month)
+        return _monthly_legal_ot_excel_response(report, year, month)
+    except Exception as e:
+        error = quote(str(e), safe='')
+        return RedirectResponse(
+            url=f"/reports/monthly-legal-ot?error={error}",
+            status_code=302,
+        )
+
+
+@router.get("/reports/monthly-legal-ot/export-pdf")
+async def monthly_legal_ot_report_pdf(
+        request: Request,
+        target_user_id: str = Query(...),
+        year: int = Query(...),
+        month: int = Query(...),
+        user: User = Depends(require_admin),
+        db: Session = Depends(get_db),
+):
+    enforce_permission(db, user, 'view_reports')
+    try:
+        if month < 1 or month > 12:
+            raise ValueError("ماه نامعتبر است")
+        report = _monthly_legal_ot_report_data(target_user_id, year, month)
+        return _monthly_legal_ot_pdf_response(report, year, month)
+    except Exception as e:
+        error = quote(str(e), safe='')
+        return RedirectResponse(
+            url=f"/reports/monthly-legal-ot?error={error}",
+            status_code=302,
+        )
+
+
+@router.get("/reports/monthly-legal-ot/export-pdf-group")
+async def monthly_legal_ot_report_pdf_group(
+        request: Request,
+        year: int = Query(...),
+        month: int = Query(...),
+        employment_type: str = Query('all'),
+        user: User = Depends(require_admin),
+        db: Session = Depends(get_db),
+):
+    enforce_permission(db, user, 'view_reports')
+    try:
+        reports, group_label = _monthly_group_reports(
+            db, year, month, employment_type,
+            data_fn=_monthly_legal_ot_report_data,
+        )
+        return _monthly_legal_ot_group_pdf_response(
+            reports, year, month, group_label)
+    except Exception as e:
+        error = quote(str(e), safe='')
+        return RedirectResponse(
+            url=f"/reports/monthly-legal-ot?error={error}",
+            status_code=302,
+        )
+
+
+@router.get("/reports/monthly-legal-ot/print-group", response_class=HTMLResponse)
+async def monthly_legal_ot_report_print_group(
+        request: Request,
+        year: int = Query(...),
+        month: int = Query(...),
+        employment_type: str = Query('all'),
+        user: User = Depends(require_admin),
+        db: Session = Depends(get_db),
+):
+    enforce_permission(db, user, 'view_reports')
+    try:
+        reports, group_label = _monthly_group_reports(
+            db, year, month, employment_type,
+            data_fn=_monthly_legal_ot_report_data,
+        )
+        return templates.TemplateResponse(
+            request,
+            "admin/report_monthly_legal_ot_print_group.html",
+            {
+                "user": user,
+                "reports": reports,
+                "year": year,
+                "month": month,
+                "month_name": JALALI_MONTHS.get(month, str(month)),
+                "group_label": group_label,
+                "employment_type": employment_type,
+                "back_url": "/reports/monthly-legal-ot",
+                "pdf_url": (
+                    "/reports/monthly-legal-ot/export-pdf-group"
+                    f"?year={year}&month={month}"
+                    f"&employment_type={quote(str(employment_type), safe='')}"
+                ),
+                "report_title": "گزارش اضافه‌کار قانونی",
+                "is_admin": True,
+            },
+        )
+    except Exception as e:
+        error = quote(str(e), safe='')
+        return RedirectResponse(
+            url=f"/reports/monthly-legal-ot?error={error}",
             status_code=302,
         )
 
