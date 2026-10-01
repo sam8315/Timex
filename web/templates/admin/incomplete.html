@@ -42,13 +42,14 @@
                         <option value="missing_exit" {% if issue_type == 'missing_exit' %}selected{% endif %}>ورود بدون خروج</option>
                         <option value="imbalance" {% if issue_type == 'imbalance' %}selected{% endif %}>عدم تعادل</option>
                         <option value="sequence_error" {% if issue_type == 'sequence_error' %}selected{% endif %}>خطای ترتیب</option>
+                        <option value="night_shift" {% if issue_type == 'night_shift' %}selected{% endif %}>شیفت شب</option>
                     </select>
                 </div>
                 <div class="col-md-2">
                     <label class="form-label">🌙 شیفت شب</label>
                     <select name="include_night_shift" class="form-select">
-                        <option value="0" {% if include_night_shift == '0' %}selected{% endif %}>حذف شیفت شب</option>
-                        <option value="1" {% if include_night_shift == '1' %}selected{% endif %}>نمایش همه</option>
+                        <option value="0" {% if include_night_shift == '0' %}selected{% endif %}>فقط موارد ناقص واقعی</option>
+                        <option value="1" {% if include_night_shift == '1' %}selected{% endif %}>نمایش موارد شیفت شب</option>
                     </select>
                 </div>
             </div>
@@ -56,7 +57,7 @@
                 <button type="submit" class="btn btn-primary">
                     <i class="bi bi-search"></i> اعمال فیلترها
                 </button>
-                <a href="/admin/incomplete?show_all=1" class="btn btn-success {% if show_all %}disabled{% endif %}">
+                <a href="/admin/incomplete?show_all=1&include_night_shift=1" class="btn btn-success {% if show_all %}disabled{% endif %}">
                     <i class="bi bi-list"></i> نمایش همه
                 </a>
                 {% if has_filter %}
@@ -68,6 +69,12 @@
         </form>
     </div>
 </div>
+
+{% if date_error %}
+<div class="alert alert-danger">
+    <i class="bi bi-exclamation-circle"></i> {{ date_error }}
+</div>
+{% endif %}
 
 <!-- 📊 نمایش نتایج -->
 {% if not has_filter %}
@@ -81,8 +88,20 @@
             <br>
             یا روی دکمه <strong>"نمایش همه ترددهای ناقص ماه جاری"</strong> کلیک کنید
         </p>
-        <a href="/admin/incomplete?show_all=1" class="btn btn-warning mt-2">
+        <a href="/admin/incomplete?show_all=1&include_night_shift=1" class="btn btn-warning mt-2">
             <i class="bi bi-list"></i> نمایش همه ترددهای ناقص ماه جاری
+        </a>
+    </div>
+</div>
+
+{% elif date_error %}
+<div class="card">
+    <div class="card-body text-center py-5">
+        <i class="bi bi-calendar-x display-4 text-danger"></i>
+        <h5 class="mt-3 text-danger">بازه تاریخ نامعتبر است</h5>
+        <p class="text-muted">{{ date_error }}</p>
+        <a href="/admin/incomplete" class="btn btn-outline-secondary mt-2">
+            <i class="bi bi-arrow-clockwise"></i> پاک کردن فیلترها
         </a>
     </div>
 </div>
@@ -188,9 +207,14 @@
                             <span class="badge bg-info">⚠️ عدم تعادل</span>
                             {% elif item.issue == 'sequence_error' %}
                             <span class="badge bg-danger">❌ خطای ترتیب</span>
+                            {% elif item.issue == 'night_shift' %}
+                            <span class="badge bg-info">🌙 شیفت شب</span>
                             {% endif %}
-                            {% if item.is_night_shift %}
+                            {% if item.is_night_shift and item.issue != 'night_shift' %}
                             <span class="badge bg-info">🌙 شب</span>
+                            {% endif %}
+                            {% if item.issue_detail %}
+                            <br><small class="text-muted">{{ item.issue_detail }}</small>
                             {% endif %}
                         </td>
                         <td class="text-center">

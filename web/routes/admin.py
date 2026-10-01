@@ -170,6 +170,13 @@ from models.bale_user import BaleUser  # 🆕 ربات بله
 router = APIRouter(tags=["Admin"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
 
+
+def _admin_nav_flags(db: Session, user: User) -> dict:
+    """فلگ‌های Sidebar بر اساس دسترسی مؤثر (بدون تغییر مدل Permission)."""
+    return {
+        "can_view_incomplete": has_permission(db, user, "view_incomplete"),
+    }
+
 # نام انواع مرخصی
 LEAVE_TYPE_NAMES = {
     'AL': 'استحقاقی',
@@ -552,6 +559,7 @@ async def admin_dashboard(
 
         "is_admin": True,
         "test_status": read_test_status(),  # 🆕 وضعیت تست‌های خودکار
+        **_admin_nav_flags(db, user),
     })
 
 
@@ -704,6 +712,7 @@ async def admin_users(
         "users": user_details,
         "is_admin": True,
         "is_super_admin": user.is_super_admin,
+        **_admin_nav_flags(db, user),
         "total_count": total_count,
         "has_filter": has_filter,
         "show_all": show_all,
@@ -982,6 +991,7 @@ async def admin_attendance(
         "leave_count": leave_count,
         "no_attendance_count": no_attendance_count,
         "is_admin": True,
+        **_admin_nav_flags(db, user),
         # 🆕 متغیرهای ناوبری
         "prev_date_str": prev_date_j.strftime('%Y/%m/%d'),
         "next_date_str": next_date_j.strftime('%Y/%m/%d'),
@@ -1586,6 +1596,7 @@ async def admin_user_attendance(
         "total_records": total_records,
         "is_admin": True,
         "is_super_admin": user.is_super_admin,
+        **_admin_nav_flags(db, user),
         "status_filter": status_filter or 'all',
 
         # ناوبری
@@ -1912,6 +1923,7 @@ async def admin_view_profile(
         "avatar_color": avatar_color,
         "is_admin": True,
         "is_super_admin": user.is_super_admin,
+        **_admin_nav_flags(db, user),
         "target_phones": target_phones,
         "target_addresses": target_addresses,
         "addresses_error": addresses_error,
@@ -1970,6 +1982,7 @@ async def admin_edit_profile_page(
         "term_j_value": term_j_value,
         "is_admin": True,
         "is_super_admin": True,
+        **_admin_nav_flags(db, user),
     })
 
 
@@ -2333,232 +2346,69 @@ async def admin_incomplete_attendance(
     user: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
-    """نمایش ترددهای ناقص با فیلترهای پیشرفته"""
+    """نمایش ترددهای ناقص — تشخیص وضعیت فقط از Central Attendance Engine."""
     enforce_permission(db, user, 'view_incomplete')
-    from core.attendance_analyzer import AttendanceAnalyzer
-    from models.employee import Employee
-    from models.attendance import Attendance
-    from sqlalchemy import and_, func
+    from web.services.incomplete_attendance_service import (
+        IncompleteDateError,
+        build_incomplete_stats,
+        find_incomplete_attendances,
+        group_by_department,
+        resolve_date_range,
+    )
 
-    # 🆕 بررسی اینکه آیا فیلتری اعمال شده یا خیر
-    has_filter = any([from_date_str, to_date_str, department, issue_type, show_all])
+    show_all_flag = show_all == '1'
+    # «نمایش همه» = ماه جاری + شامل شیفت شب
+    include_night = include_night_shift == '1' or show_all_flag
+    if show_all_flag and include_night_shift is None:
+        include_night_shift = '1'
+
+    has_filter = any([
+        from_date_str,
+        to_date_str,
+        department,
+        issue_type,
+        show_all_flag,
+        include_night_shift is not None,
+    ])
 
     filtered_incomplete = []
-    stats = {'total': 0, 'missing_enter': 0, 'missing_exit': 0, 'imbalance': 0, 'sequence_error': 0}
+    stats = {
+        'total': 0, 'missing_enter': 0, 'missing_exit': 0,
+        'imbalance': 0, 'sequence_error': 0, 'night_shift': 0,
+    }
     by_department = {}
-    from_date_display = ""
-    to_date_display = ""
+    from_date_display = from_date_str or ""
+    to_date_display = to_date_str or ""
+    date_error = None
 
     if has_filter:
-        today_j = jdatetime.date.today()
-
-        # تاریخ پیش‌فرض
-        if from_date_str:
-            try:
-                j_from = jdatetime.datetime.strptime(from_date_str, "%Y/%m/%d").date()
-                from_date = j_from.togregorian()
-            except:
-                from_date = date(today_j.year, today_j.month, 1)
-        else:
-            from_date = date(today_j.year, today_j.month, 1)
-
-        if to_date_str:
-            try:
-                j_to = jdatetime.datetime.strptime(to_date_str, "%Y/%m/%d").date()
-                to_date = j_to.togregorian()
-            except:
-                to_date = today_j.togregorian()
-        else:
-            to_date = today_j.togregorian()
-
-        from_date_display = jdatetime.date.fromgregorian(date=from_date).strftime('%Y/%m/%d')
-        to_date_display = jdatetime.date.fromgregorian(date=to_date).strftime('%Y/%m/%d')
-
-        # تحلیلگر
-        analyzer = AttendanceAnalyzer()
         try:
-            incomplete_raw = analyzer.get_incomplete_attendances(from_date, to_date)
+            from_date, to_date = resolve_date_range(
+                from_date_str,
+                to_date_str,
+                show_all=show_all_flag,
+            )
+            from_date_display = jdatetime.date.fromgregorian(
+                date=from_date
+            ).strftime('%Y/%m/%d')
+            to_date_display = jdatetime.date.fromgregorian(
+                date=to_date
+            ).strftime('%Y/%m/%d')
 
-            # 🆕 بازطبقه‌بندی: تفکیک خطای ترتیب از ورود/خروج بدون خروج/ورود
-            for item in incomplete_raw:
-                # دریافت رکوردهای کامل روز
-                day_attendances = analyzer.db.query(Attendance).filter(
-                    and_(
-                        Attendance.user_id == item['user_id'],
-                        func.date(Attendance.timestamp) == item['date'],
-                        Attendance.is_deleted == False
-                    )
-                ).order_by(Attendance.timestamp).all()
-
-                sorted_records = sorted(day_attendances, key=lambda x: x.timestamp)
-
-                if not sorted_records:
-                    continue
-
-                # بررسی ۱: دو رکورد هم‌نوع پشت سر هم = خطای ترتیب واقعی
-                has_consecutive_error = False
-                consecutive_detail = ""
-                for i in range(1, len(sorted_records)):
-                    if sorted_records[i].punch == sorted_records[i - 1].punch:
-                        has_consecutive_error = True
-                        if sorted_records[i].punch == 0:
-                            consecutive_detail = "دو ورود پشت سر هم"
-                        else:
-                            consecutive_detail = "دو خروج پشت سر هم"
-                        break
-
-                if has_consecutive_error:
-                    item['issue'] = 'sequence_error'
-                    item['issue_detail'] = consecutive_detail
-                    item['enter_count'] = len([a for a in sorted_records if a.punch == 0])
-                    item['exit_count'] = len([a for a in sorted_records if a.punch == 1])
-                else:
-                    # بررسی ۲: اگر قبلاً sequence_error بوده ولی واقعاً ناقص است
-                    enters = [a for a in sorted_records if a.punch == 0]
-                    exits = [a for a in sorted_records if a.punch == 1]
-
-                    if item['issue'] == 'sequence_error':
-                        if len(enters) > len(exits):
-                            item['issue'] = 'missing_exit'
-                            item['issue_detail'] = ""
-                        elif len(exits) > len(enters):
-                            item['issue'] = 'missing_enter'
-                            item['issue_detail'] = ""
-                    else:
-                        item['issue_detail'] = ""
-
-            # 🆕 فیلتر شیفت شب - منطق ساده‌تر و دقیق‌تر
-            for item in incomplete_raw:
-                is_night_shift = False
-
-                # حالت ۱: ورود بدون خروج → بررسی اولین تردد فردا
-                if item['issue'] == 'missing_exit' and item['enter_count'] > 0 and item['exit_count'] == 0:
-                    next_day = item['date'] + timedelta(days=1)
-                    first_next_day_record = analyzer.db.query(Attendance).filter(
-                        and_(
-                            Attendance.user_id == item['user_id'],
-                            func.date(Attendance.timestamp) == next_day,
-                            Attendance.is_deleted == False
-                        )
-                    ).order_by(Attendance.timestamp.asc()).first()
-
-                    # ✅ فقط بررسی کنیم اولین تردد فردا خروج باشد
-                    if first_next_day_record and first_next_day_record.punch == 1:
-                        is_night_shift = True
-
-                # حالت ۲: خروج بدون ورود → بررسی آخرین تردد دیروز
-                elif item['issue'] == 'missing_enter' and item['exit_count'] > 0 and item['enter_count'] == 0:
-                    prev_day = item['date'] - timedelta(days=1)
-                    last_prev_day_record = analyzer.db.query(Attendance).filter(
-                        and_(
-                            Attendance.user_id == item['user_id'],
-                            func.date(Attendance.timestamp) == prev_day,
-                            Attendance.is_deleted == False
-                        )
-                    ).order_by(Attendance.timestamp.desc()).first()
-
-                    # ✅ فقط بررسی کنیم آخرین تردد دیروز ورود باشد
-                    if last_prev_day_record and last_prev_day_record.punch == 0:
-                        is_night_shift = True
-
-                # حالت ۳: عدم تعادل
-                elif item['issue'] == 'imbalance':
-                    day_attendances = analyzer.db.query(Attendance).filter(
-                        and_(
-                            Attendance.user_id == item['user_id'],
-                            func.date(Attendance.timestamp) == item['date'],
-                            Attendance.is_deleted == False
-                        )
-                    ).order_by(Attendance.timestamp).all()
-                    enters = [a for a in day_attendances if a.punch == 0]
-                    exits = [a for a in day_attendances if a.punch == 1]
-
-                    # خروج بیشتر از ورود → بررسی آخرین تردد دیروز
-                    if len(exits) > len(enters):
-                        prev_day = item['date'] - timedelta(days=1)
-                        last_prev_day_record = analyzer.db.query(Attendance).filter(
-                            and_(
-                                Attendance.user_id == item['user_id'],
-                                func.date(Attendance.timestamp) == prev_day,
-                                Attendance.is_deleted == False
-                            )
-                        ).order_by(Attendance.timestamp.desc()).first()
-
-                        # ✅ فقط بررسی کنیم آخرین تردد دیروز ورود باشد
-                        if last_prev_day_record and last_prev_day_record.punch == 0:
-                            # بررسی کنیم با حذف خروج‌های صبح زود، تعادل برقرار می‌شود
-                            early_exits = [e for e in exits if e.timestamp.hour < 8]
-                            if early_exits:
-                                adjusted_exit_count = len(exits) - len(early_exits)
-                                if len(enters) == adjusted_exit_count:
-                                    is_night_shift = True
-
-                    # ورود بیشتر از خروج → بررسی اولین تردد فردا
-                    elif len(enters) > len(exits):
-                        next_day = item['date'] + timedelta(days=1)
-                        first_next_day_record = analyzer.db.query(Attendance).filter(
-                            and_(
-                                Attendance.user_id == item['user_id'],
-                                func.date(Attendance.timestamp) == next_day,
-                                Attendance.is_deleted == False
-                            )
-                        ).order_by(Attendance.timestamp.asc()).first()
-
-                        # ✅ فقط بررسی کنیم اولین تردد فردا خروج باشد
-                        if first_next_day_record and first_next_day_record.punch == 1:
-                            late_enters = [e for e in enters if e.timestamp.hour >= 22]
-                            if late_enters:
-                                adjusted_enter_count = len(enters) - len(late_enters)
-                                if adjusted_enter_count == len(exits):
-                                    is_night_shift = True
-
-                # اگر شیفت شب است و کاربر نخواسته نمایش دهد، رد کن
-                if is_night_shift and include_night_shift != '1':
-                    continue
-                employee = analyzer.db.query(Employee).filter(Employee.user_id == item['user_id']).first()
-                if employee:
-                    item['full_name'] = employee.full_name
-                    item['department'] = employee.department or 'بدون گروه'
-                else:
-                    item['full_name'] = f"کاربر {item['user_id']}"
-                    item['department'] = 'بدون گروه'
-
-                item['is_night_shift'] = is_night_shift
-
-                # 🆕 تبدیل تاریخ به شمسی برای نمایش و لینک‌ها
-                j_date = jdatetime.date.fromgregorian(date=item['date'])
-                item['date_j'] = j_date.strftime('%Y/%m/%d')
-                item['year_j'] = j_date.year
-                item['month_j'] = j_date.month
-
-                filtered_incomplete.append(item)
-
-            # فیلتر دپارتمان
-            if department:
-                filtered_incomplete = [i for i in filtered_incomplete if i['department'] == department]
-
-            # فیلتر نوع نقص
-            if issue_type:
-                filtered_incomplete = [i for i in filtered_incomplete if i['issue'] == issue_type]
-
-            # آمار
-            stats = {
-                'total': len(filtered_incomplete),
-                'missing_enter': sum(1 for i in filtered_incomplete if i['issue'] == 'missing_enter'),
-                'missing_exit': sum(1 for i in filtered_incomplete if i['issue'] == 'missing_exit'),
-                'imbalance': sum(1 for i in filtered_incomplete if i['issue'] == 'imbalance'),
-                'sequence_error': sum(1 for i in filtered_incomplete if i['issue'] == 'sequence_error'),
-            }
-
-            # گروه‌بندی بر اساس دپارتمان
-            for item in filtered_incomplete:
-                dept = item['department']
-                if dept not in by_department:
-                    by_department[dept] = []
-                by_department[dept].append(item)
-
-        finally:
-            analyzer.close()
+            filtered_incomplete = find_incomplete_attendances(
+                db,
+                from_date,
+                to_date,
+                department=department or None,
+                issue_type=issue_type or None,
+                include_night_shift=include_night,
+            )
+            stats = build_incomplete_stats(filtered_incomplete)
+            by_department = group_by_department(filtered_incomplete)
+        except IncompleteDateError as exc:
+            date_error = str(exc)
+            filtered_incomplete = []
+            by_department = {}
 
     dept_names = {
         '1': 'رسمی', '2': 'وظیفه', '3': 'خریدخدمت',
@@ -2571,12 +2421,14 @@ async def admin_incomplete_attendance(
         "to_date_str": to_date_display,
         "department": department or "",
         "issue_type": issue_type or "",
-        "include_night_shift": include_night_shift or "0",
+        "include_night_shift": "1" if include_night else "0",
         "show_all": show_all,
         "has_filter": has_filter,
+        "date_error": date_error,
         "incomplete_list": filtered_incomplete,
         "stats": stats,
         "by_department": by_department,
         "dept_names": dept_names,
         "is_admin": True,
+        **_admin_nav_flags(db, user),
     })
