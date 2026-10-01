@@ -37,7 +37,11 @@ from web.routes.attendance import (
     STATUS_MISSING_ENTER, STATUS_SEQUENCE_ERROR, STATUS_IMBALANCE,
     STATUS_NO_ATTENDANCE
 )
-from web.services.attendance_policy_service import compute_required_minutes_for_range
+from web.services.attendance_policy_service import (
+    compute_required_minutes_for_range,
+    resolve_policy,
+    compute_late_early_for_day,
+)
 # Phase 4: وابستگی مستقیم Admin → Central Attendance Engine (بدون واسطه route)
 from core.attendance_calculator import compute_day_attendance
 from web.services.hourly_leave_service import (
@@ -1368,6 +1372,18 @@ async def admin_user_attendance(
                 is_night_shift=is_night_shift
             )
 
+        resolved = resolve_policy(db, target_employee, current)
+        late_early = compute_late_early_for_day(
+            resolved=resolved,
+            target_date=current,
+            first_enter=first_enter,
+            last_exit=last_exit,
+            skip=(
+                status_info['main_status'] == STATUS_LEAVE
+                or current in rest_dates
+            ),
+        )
+
         days_list.append({
             'date': current,
             'jalali_date': j_day.strftime('%Y/%m/%d'),
@@ -1388,6 +1404,13 @@ async def admin_user_attendance(
             'hourly_leave_display': format_hl_display(hourly_leave_minutes_by_date.get(current, 0)),
             # 🚗 HM تأییدشده برای نمایش (بدون تاثیر روی وضعیت اصلی/محاسبات)
             'hourly_mission_display': format_hm_display(hourly_missions_by_date.get(current)),
+            # تأخیر / تعجیل
+            'late_minutes': late_early['late_minutes'],
+            'late_violation_minutes': late_early['late_violation_minutes'],
+            'is_late': late_early['is_late'],
+            'early_leave_minutes': late_early['early_leave_minutes'],
+            'early_leave_violation_minutes': late_early['early_leave_violation_minutes'],
+            'is_early_leave': late_early['is_early_leave'],
         })
         current += timedelta(days=1)
 
@@ -1506,8 +1529,23 @@ async def admin_user_attendance(
     if monthly_duty_hours > 0:
         progress_percent = min(100, round((total_work_hours_month / monthly_duty_hours) * 100, 1))
 
-    monthly_balance = total_work_hours_month - monthly_duty_hours
-    instant_balance = work_hours_until_ref - instant_duty_hours
+    month_late_early_m = sum(
+        int(d.get('late_violation_minutes') or 0)
+        + int(d.get('early_leave_violation_minutes') or 0)
+        for d in summary_days
+    )
+    instant_late_early_m = sum(
+        int(d.get('late_violation_minutes') or 0)
+        + int(d.get('early_leave_violation_minutes') or 0)
+        for d in summary_days
+        if d['date'] <= reference_date
+    )
+    monthly_balance = (
+        total_work_hours_month - monthly_duty_hours - (month_late_early_m / 60.0)
+    )
+    instant_balance = (
+        work_hours_until_ref - instant_duty_hours - (instant_late_early_m / 60.0)
+    )
 
     reference_date_j = jdatetime.date.fromgregorian(date=reference_date)
     reference_date_display = reference_date_j.strftime('%Y/%m/%d')

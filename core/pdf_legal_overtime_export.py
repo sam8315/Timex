@@ -73,9 +73,9 @@ class LegalOvertimePDFExporter(DetailedPDFExporterV2):
         headers = [
             'تاریخ', 'روز', 'وضعیت روز', 'وضعیت فرد',
             'و۱', 'خ۱', 'و۲', 'خ۲', 'و۳', 'خ۳',
-            'وضعیت تردد', 'کارکرد', 'هفتگی',
+            'وضعیت تردد', 'کارکرد', 'تأخیر', 'تعجیل', 'هفتگی',
         ]
-        col_widths = [17, 13, 13, 17, 11, 11, 11, 11, 11, 11, 18, 13, 22]
+        col_widths = [14, 11, 11, 14, 9, 9, 9, 9, 9, 9, 14, 11, 10, 10, 18]
         page_width = pdf.w - pdf.l_margin - pdf.r_margin
         table_width = sum(col_widths)
         scale = min(1.0, page_width / table_width)
@@ -117,6 +117,8 @@ class LegalOvertimePDFExporter(DetailedPDFExporterV2):
             elif not day.get('week_rowspan'):
                 week_cell = ''
 
+            late_v = day.get('late_violation_minutes') or 0
+            early_v = day.get('early_leave_violation_minutes') or 0
             values = [
                 day.get('jalali_date', ''),
                 (day.get('day_name') or '')[:6],
@@ -125,10 +127,12 @@ class LegalOvertimePDFExporter(DetailedPDFExporterV2):
                 enter1, exit1, enter2, exit2, enter3, exit3,
                 attendance_str[:12],
                 self._fmt_hours(day.get('work_hours') or 0),
+                self._fmt_hours(late_v / 60.0) if late_v else '-',
+                self._fmt_hours(early_v / 60.0) if early_v else '-',
                 week_cell,
             ]
             # ستون هفتگی ممکن است فارسی/مختلط باشد
-            ltr_cols = {0, 4, 5, 6, 7, 8, 9, 11}
+            ltr_cols = {0, 4, 5, 6, 7, 8, 9, 11, 12, 13}
             self._draw_row(
                 pdf, start_x, table_width, col_widths, values, row_h,
                 ltr_cols=ltr_cols,
@@ -249,7 +253,9 @@ class LegalOvertimePDFExporter(DetailedPDFExporterV2):
             f"استراحت {summary.get('rest_days', 0)} | "
             f"تعطیل {summary.get('holiday_days', 0)} | "
             f"تعطیل‌کاری {self._fmt_hours(summary.get('holiday_work_hours') or 0)} | "
-            f"کسرکار {self._fmt_hours(summary.get('monthly_deficit') or 0)}"
+            f"کسرکار {self._fmt_hours(summary.get('monthly_deficit') or 0)} | "
+            f"تأخیر {self._fmt_hours(summary.get('total_late_violation') or 0)} | "
+            f"تعجیل {self._fmt_hours(summary.get('total_early_leave_violation') or 0)}"
         )
         pdf.cell(
             0, 4.5, self._fix_rtl(meta),

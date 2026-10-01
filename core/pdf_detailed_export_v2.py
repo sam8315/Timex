@@ -173,9 +173,9 @@ class DetailedPDFExporterV2:
         headers = [
             'تاریخ', 'روز', 'وضعیت روز', 'وضعیت فرد',
             'و۱', 'خ۱', 'و۲', 'خ۲', 'و۳', 'خ۳',
-            'وضعیت تردد', 'کارکرد', 'اضافی', 'کسری',
+            'وضعیت تردد', 'کارکرد', 'تأخیر', 'تعجیل', 'اضافی', 'کسری',
         ]
-        col_widths = [16, 12, 12, 16, 10, 10, 10, 10, 10, 10, 18, 12, 11, 11]
+        col_widths = [14, 10, 10, 14, 9, 9, 9, 9, 9, 9, 14, 10, 10, 10, 10, 10]
         page_width = pdf.w - pdf.l_margin - pdf.r_margin
         table_width = sum(col_widths)
         # اگر جدول پهن‌تر از صفحه بود، مقیاس افقی
@@ -204,6 +204,8 @@ class DetailedPDFExporterV2:
             if attendance_str == 'بدون تردد':
                 attendance_str = '-'
 
+            late_v = day.get('late_violation_minutes') or 0
+            early_v = day.get('early_leave_violation_minutes') or 0
             values = [
                 day.get('jalali_date', ''),
                 (day.get('day_name') or '')[:6],
@@ -212,11 +214,13 @@ class DetailedPDFExporterV2:
                 enter1, exit1, enter2, exit2, enter3, exit3,
                 attendance_str[:12],
                 self._fmt_hours(day.get('work_hours') or 0),
+                self._fmt_hours(late_v / 60.0) if late_v else '-',
+                self._fmt_hours(early_v / 60.0) if early_v else '-',
                 self._fmt_hours(day.get('surplus') or 0),
                 self._fmt_hours(day.get('deficit') or 0),
             ]
             # ستون‌های عددی/زمان بدون reshape
-            ltr_cols = {0, 4, 5, 6, 7, 8, 9, 11, 12, 13}
+            ltr_cols = {0, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14, 15}
             self._draw_row(
                 pdf, start_x, table_width, col_widths, values, row_h,
                 ltr_cols=ltr_cols,
@@ -242,6 +246,8 @@ class DetailedPDFExporterV2:
             f"شب: {self._fmt_hours(summary['total_night'])}",
             f"اضافی: {self._fmt_hours(summary['total_surplus'])} | "
             f"کسری: {self._fmt_hours(summary['total_deficit'])} | "
+            f"تأخیر: {self._fmt_hours(summary.get('total_late_violation') or 0)} | "
+            f"تعجیل: {self._fmt_hours(summary.get('total_early_leave_violation') or 0)} | "
             f"هفتگی: {self._fmt_hours(summary['weekly_overtime'])} | "
             f"جمعه‌کاری: {self._fmt_hours(summary['friday_work_hours'])} | "
             f"تعطیل‌کاری: {self._fmt_hours(summary['holiday_work_hours'])}",

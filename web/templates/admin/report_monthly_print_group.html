@@ -255,6 +255,8 @@
                     <th colspan="6" class="group-header">ورود / خروج</th>
                     <th rowspan="2">وضعیت تردد</th>
                     <th rowspan="2">کارکرد</th>
+                    <th rowspan="2">تأخیر</th>
+                    <th rowspan="2">تعجیل</th>
                     <th rowspan="2">اضافی</th>
                     <th rowspan="2">کسری</th>
                 </tr>
@@ -324,6 +326,20 @@
                     </td>
                     <td><span class="time-value">{{ day.work_hours | hhmm }}</span></td>
                     <td>
+                        {% if day.late_violation_minutes %}
+                        <span class="time-value time-deficit">{{ (day.late_violation_minutes / 60) | hhmm }}</span>
+                        {% else %}
+                        <span class="time-value time-empty">-</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if day.early_leave_violation_minutes %}
+                        <span class="time-value time-deficit">{{ (day.early_leave_violation_minutes / 60) | hhmm }}</span>
+                        {% else %}
+                        <span class="time-value time-empty">-</span>
+                        {% endif %}
+                    </td>
+                    <td>
                         {% if day.surplus > 0 %}
                         <span class="time-value time-surplus">{{ day.surplus | hhmm }}</span>
                         {% else %}
@@ -362,6 +378,8 @@
             <div class="col-md-4">
                 <div class="summary-item"><span>اضافی:</span><span class="value">{{ report.summary.total_surplus | hhmm }}</span></div>
                 <div class="summary-item"><span>کسری:</span><span class="value">{{ report.summary.total_deficit | hhmm }}</span></div>
+                <div class="summary-item"><span>تأخیر:</span><span class="value">{{ report.summary.total_late_violation | hhmm }}</span></div>
+                <div class="summary-item"><span>تعجیل:</span><span class="value">{{ report.summary.total_early_leave_violation | hhmm }}</span></div>
                 <div class="summary-item"><span>جمعه‌کاری:</span><span class="value">{{ report.summary.friday_work_hours | hhmm }}</span></div>
                 <div class="summary-item"><span>تعطیل‌کاری:</span><span class="value">{{ report.summary.holiday_work_hours | hhmm }}</span></div>
                 <div class="summary-item"><span>وضعیت / خالص:</span><span class="value">{{ report.summary.overall_status }} / {{ report.summary.net_balance | hhmm }}</span></div>

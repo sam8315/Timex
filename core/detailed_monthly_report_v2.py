@@ -32,6 +32,7 @@ from web.services.attendance_policy_service import (
     resolve_policy,
     resolve_policy_day,
     compute_effective_required_minutes_for_day,
+    compute_late_early_for_day,
 )
 from web.services.hourly_leave_service import get_approved_hl_minutes, format_hl_display
 from web.services.hourly_mission_service import (
@@ -241,9 +242,23 @@ class DetailedMonthlyReportGeneratorV2:
             )
             daily_required_hours = _minutes_to_hours(int(required_minutes))
 
-            # محاسبه اضافی/کسری بر اساس موظفی روز
+            # تأخیر / تعجیل از سیاست (Grace کامل؛ در مرخصی/استراحت صفر)
+            late_early = compute_late_early_for_day(
+                resolved=resolved,
+                target_date=current,
+                first_enter=day_data.get('first_enter'),
+                last_exit=day_data.get('last_exit'),
+                skip=person_status['code'] in ('L', 'R'),
+            )
+
+            # محاسبه اضافی/کسری بر اساس موظفی روز + تخلف تأخیر/تعجیل
             surplus, deficit = self._calculate_surplus_deficit(
-                work_hours, is_day_off, person_status, daily_required_hours
+                work_hours,
+                is_day_off,
+                person_status,
+                daily_required_hours,
+                late_violation_minutes=late_early['late_violation_minutes'],
+                early_leave_violation_minutes=late_early['early_leave_violation_minutes'],
             )
 
             # تفکیک صبح/عصر/شب روی *همه* جفت‌های موتور (نه first→last و
@@ -284,6 +299,15 @@ class DetailedMonthlyReportGeneratorV2:
                 # نمایش همیشگی است، حتی اگر policy کسر خاموش باشد)
                 'hourly_mission_minutes': hm_mins,
                 'hourly_mission_display': format_hm_display(hm_by_date.get(current)),
+                # تأخیر / تعجیل
+                'late_minutes': late_early['late_minutes'],
+                'late_violation_minutes': late_early['late_violation_minutes'],
+                'late_allowed_minutes': late_early['late_allowed_minutes'],
+                'is_late': late_early['is_late'],
+                'early_leave_minutes': late_early['early_leave_minutes'],
+                'early_leave_violation_minutes': late_early['early_leave_violation_minutes'],
+                'early_leave_allowed_minutes': late_early['early_leave_allowed_minutes'],
+                'is_early_leave': late_early['is_early_leave'],
             })
 
             current += timedelta(days=1)
@@ -438,37 +462,44 @@ class DetailedMonthlyReportGeneratorV2:
         is_day_off: bool,
         person_status: Dict,
         daily_required_hours: float = None,
+        late_violation_minutes: int = 0,
+        early_leave_violation_minutes: int = 0,
     ) -> tuple:
         """
         محاسبه اضافی و کسری بر اساس موظفی روز (Policy) با دقت دقیقه.
 
         daily_required_hours: ساعات موظفی روز از Policy؛ اگر نباشد ۷:۲۰ (۴۴۰ دقیقه).
+        کسری نهایی = کسری کارکرد + تخلف تأخیر + تخلف تعجیل (بعد از Grace).
         """
         if daily_required_hours is None:
             daily_required_hours = _minutes_to_hours(_DEFAULT_DUTY_MINUTES)
 
         work_m = _hours_to_minutes(work_hours)
         duty_m = _hours_to_minutes(daily_required_hours)
+        violation_m = max(0, int(late_violation_minutes or 0)) + max(
+            0, int(early_leave_violation_minutes or 0)
+        )
 
         if is_day_off and person_status['code'] == 'H':
-            return 0.0, 0.0
+            return 0.0, _minutes_to_hours(violation_m) if violation_m else 0.0
 
         if is_day_off and person_status['code'] == 'P':
-            return _minutes_to_hours(work_m), 0.0
+            return _minutes_to_hours(work_m), _minutes_to_hours(violation_m)
 
         if person_status['code'] in ['L', 'R']:
             if work_m > 0:
-                return _minutes_to_hours(work_m), 0.0
-            return 0.0, 0.0
+                return _minutes_to_hours(work_m), _minutes_to_hours(violation_m)
+            return 0.0, _minutes_to_hours(violation_m)
 
         if work_m > duty_m:
-            return _minutes_to_hours(work_m - duty_m), 0.0
+            return _minutes_to_hours(work_m - duty_m), _minutes_to_hours(violation_m)
         if 0 < work_m < duty_m:
-            return 0.0, _minutes_to_hours(duty_m - work_m)
+            return 0.0, _minutes_to_hours((duty_m - work_m) + violation_m)
         if work_m == 0:
-            return 0.0, _minutes_to_hours(duty_m)
+            return 0.0, _minutes_to_hours(duty_m + violation_m)
 
-        return 0.0, 0.0
+        # work_m == duty_m
+        return 0.0, _minutes_to_hours(violation_m)
 
     def _calculate_monthly_summary(self, days: List[Dict]) -> Dict:
         """محاسبه خلاصه ماهانه (جمع‌ها با دقت دقیقه)."""
@@ -506,6 +537,14 @@ class DetailedMonthlyReportGeneratorV2:
             sum(_hours_to_minutes(d['surplus']) for d in days))
         total_deficit = _minutes_to_hours(
             sum(_hours_to_minutes(d['deficit']) for d in days))
+        total_late_violation_m = sum(
+            int(d.get('late_violation_minutes') or 0) for d in days
+        )
+        total_early_leave_violation_m = sum(
+            int(d.get('early_leave_violation_minutes') or 0) for d in days
+        )
+        total_late_violation = _minutes_to_hours(total_late_violation_m)
+        total_early_leave_violation = _minutes_to_hours(total_early_leave_violation_m)
 
         net_balance_m = _hours_to_minutes(total_surplus) - _hours_to_minutes(total_deficit)
         net_balance = _minutes_to_hours(net_balance_m)
@@ -549,6 +588,10 @@ class DetailedMonthlyReportGeneratorV2:
             'total_night': total_night,
             'total_surplus': total_surplus,
             'total_deficit': total_deficit,
+            'total_late_violation': total_late_violation,
+            'total_early_leave_violation': total_early_leave_violation,
+            'total_late_violation_minutes': total_late_violation_m,
+            'total_early_leave_violation_minutes': total_early_leave_violation_m,
             'net_balance': net_balance,
             'overall_status': overall_status,
             'net_balance_hours': net_balance_hours,

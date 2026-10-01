@@ -617,6 +617,8 @@
                         <th colspan="6" class="group-header">ورود / خروج</th>
                         <th rowspan="2">وضعیت تردد</th>
                         <th rowspan="2">کارکرد</th>
+                        <th rowspan="2">تأخیر</th>
+                        <th rowspan="2">تعجیل</th>
                         <th rowspan="2">هفتگی</th>
                     </tr>
                     <tr>
@@ -696,6 +698,21 @@
 
                         <!-- کارکرد -->
                         <td><span class="time-value">{{ day.work_hours | hhmm }}</span></td>
+
+                        <td>
+                            {% if day.late_violation_minutes %}
+                            <span class="time-value time-deficit">{{ (day.late_violation_minutes / 60) | hhmm }}</span>
+                            {% else %}
+                            <span class="time-value time-empty">-</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if day.early_leave_violation_minutes %}
+                            <span class="time-value time-deficit">{{ (day.early_leave_violation_minutes / 60) | hhmm }}</span>
+                            {% else %}
+                            <span class="time-value time-empty">-</span>
+                            {% endif %}
+                        </td>
 
                         {% if day.week_rowspan %}
                         <td class="week-block-cell" rowspan="{{ day.week_rowspan }}">
@@ -817,6 +834,14 @@
             <div class="meta-chip">
                 <span class="chip-label">کسر کار ماهانه</span>
                 <span class="chip-value" style="color:#f87171;"><span class="num">{{ report.summary.monthly_deficit | hhmm }}</span></span>
+            </div>
+            <div class="meta-chip">
+                <span class="chip-label">تخلف تأخیر</span>
+                <span class="chip-value" style="color:#f59e0b;"><span class="num">{{ report.summary.total_late_violation | hhmm }}</span></span>
+            </div>
+            <div class="meta-chip">
+                <span class="chip-label">تخلف تعجیل</span>
+                <span class="chip-value" style="color:#f59e0b;"><span class="num">{{ report.summary.total_early_leave_violation | hhmm }}</span></span>
             </div>
         </div>
     </div>

@@ -6,7 +6,8 @@ Contract (current implementation — Phase 7 aligned):
   not a writable column.
 - compute_late / compute_early_leave take datetime check-in/out + scheduled
   time, return dicts (not tuples).
-- is_late / is_early_leave mean grace exceeded (violation), not mere delay.
+- is_late / is_early_leave mean grace exceeded (chargeable delay).
+- When past grace, *_violation_minutes = full total (not total - grace).
 - compute_daily_balance(actual, required, late_info, early_info) =
   actual - required; late/early are not subtracted again.
 
@@ -25,10 +26,13 @@ from web.services.attendance_policy_service import (
     resolve_required_minutes,
     compute_late,
     compute_early_leave,
+    compute_late_early_for_day,
     compute_daily_balance,
     time_to_minutes,
     minutes_to_hours_hhmm,
     DEFAULT_REQUIRED_MINUTES,
+    ResolvedPolicy,
+    PolicyDayInfo,
 )
 
 # Fixed calendar day for combining time → datetime in pure unit tests
@@ -468,7 +472,7 @@ class TestComputeLate:
         assert result['is_late'] is False
 
     def test_late_exceeds_grace(self):
-        """Delay past grace: violation and is_late=True."""
+        """Delay past grace: chargeable = full total (not total - grace)."""
         result = compute_late(
             actual_first_check_in=_dt(time(8, 15)),
             scheduled_start=time(8, 0),
@@ -477,7 +481,33 @@ class TestComputeLate:
             reference_mode='FIXED_TIME',
         )
         assert result['total_late_minutes'] == 15
-        assert result['late_violation_minutes'] == 5
+        assert result['late_violation_minutes'] == 15
+        assert result['is_late'] is True
+
+    def test_late_grace_boundary_seven_fifteen(self):
+        """Start 07:00, grace 15: arrive 07:15 → no chargeable late."""
+        result = compute_late(
+            actual_first_check_in=_dt(time(7, 15)),
+            scheduled_start=time(7, 0),
+            late_enabled=True,
+            late_allowed_minutes=15,
+            reference_mode='FIXED_TIME',
+        )
+        assert result['total_late_minutes'] == 15
+        assert result['late_violation_minutes'] == 0
+        assert result['is_late'] is False
+
+    def test_late_past_grace_full_sixteen(self):
+        """Start 07:00, grace 15: arrive 07:16 → chargeable 16 (full)."""
+        result = compute_late(
+            actual_first_check_in=_dt(time(7, 16)),
+            scheduled_start=time(7, 0),
+            late_enabled=True,
+            late_allowed_minutes=15,
+            reference_mode='FIXED_TIME',
+        )
+        assert result['total_late_minutes'] == 16
+        assert result['late_violation_minutes'] == 16
         assert result['is_late'] is True
 
     def test_late_disabled(self):
@@ -541,7 +571,7 @@ class TestComputeEarlyLeave:
         assert result['is_early_leave'] is False
 
     def test_early_leave_exceeds_grace(self):
-        """Early past grace: violation and is_early_leave=True."""
+        """Early past grace: chargeable = full total (not total - grace)."""
         result = compute_early_leave(
             actual_last_check_out=_dt(time(16, 20)),
             scheduled_end=time(16, 40),
@@ -550,7 +580,7 @@ class TestComputeEarlyLeave:
             reference_mode='FIXED_TIME',
         )
         assert result['total_early_leave_minutes'] == 20
-        assert result['early_leave_violation_minutes'] == 10
+        assert result['early_leave_violation_minutes'] == 20
         assert result['is_early_leave'] is True
 
     def test_early_leave_disabled(self):
@@ -733,3 +763,98 @@ class TestPhase7RegressionCases:
         assert at_grace['total_late_minutes'] == 10
         assert at_grace['late_violation_minutes'] == 0
         assert at_grace['is_late'] is False
+
+
+class TestComputeLateEarlyForDay:
+    """Tests for the shared late/early helper used by reports and views."""
+
+    def _resolved(self, late_allowed=10, early_allowed=10, late_on=True, early_on=True):
+        from types import SimpleNamespace
+
+        policy = SimpleNamespace(
+            late_enabled=late_on,
+            late_allowed_minutes=late_allowed,
+            late_reference_mode='FIXED_TIME',
+            early_leave_enabled=early_on,
+            early_leave_allowed_minutes=early_allowed,
+            early_leave_reference_mode='FIXED_TIME',
+        )
+        days = {
+            _REF_DAY.weekday(): PolicyDayInfo(
+                weekday=_REF_DAY.weekday(),
+                is_working_day=True,
+                start_time=time(8, 0),
+                end_time=time(16, 40),
+                required_minutes=520,
+            )
+        }
+        return ResolvedPolicy(
+            policy=policy,
+            employment_type_code='1',
+            policy_days=days,
+            is_employee_override=False,
+        )
+
+    def test_within_grace_no_violation(self):
+        result = compute_late_early_for_day(
+            resolved=self._resolved(),
+            target_date=_REF_DAY,
+            first_enter=_dt(time(8, 5)),
+            last_exit=_dt(time(16, 35)),
+        )
+        assert result['late_minutes'] == 5
+        assert result['late_violation_minutes'] == 0
+        assert result['is_late'] is False
+        assert result['early_leave_minutes'] == 5
+        assert result['early_leave_violation_minutes'] == 0
+        assert result['is_early_leave'] is False
+
+    def test_past_grace_violation(self):
+        result = compute_late_early_for_day(
+            resolved=self._resolved(late_allowed=5, early_allowed=5),
+            target_date=_REF_DAY,
+            first_enter=_dt(time(8, 20)),
+            last_exit=_dt(time(16, 20)),
+        )
+        assert result['late_violation_minutes'] == 20
+        assert result['is_late'] is True
+        assert result['early_leave_violation_minutes'] == 20
+        assert result['is_early_leave'] is True
+
+    def test_disabled_policy_zeros_violation(self):
+        result = compute_late_early_for_day(
+            resolved=self._resolved(late_on=False, early_on=False),
+            target_date=_REF_DAY,
+            first_enter=_dt(time(9, 0)),
+            last_exit=_dt(time(15, 0)),
+        )
+        assert result['late_violation_minutes'] == 0
+        assert result['early_leave_violation_minutes'] == 0
+        assert result['is_late'] is False
+        assert result['is_early_leave'] is False
+
+    def test_no_resolved_policy_defaults(self):
+        result = compute_late_early_for_day(
+            resolved=None,
+            target_date=_REF_DAY,
+            first_enter=_dt(time(9, 0)),
+            last_exit=_dt(time(15, 0)),
+        )
+        assert result['late_minutes'] == 0
+        assert result['early_leave_minutes'] == 0
+
+    def test_skip_leave_or_rest_zeros_all(self):
+        """On leave/rest days, late/early must not be calculated even with punches."""
+        result = compute_late_early_for_day(
+            resolved=self._resolved(late_allowed=0, early_allowed=0),
+            target_date=_REF_DAY,
+            first_enter=_dt(time(9, 0)),
+            last_exit=_dt(time(15, 0)),
+            skip=True,
+        )
+        assert result['late_minutes'] == 0
+        assert result['late_violation_minutes'] == 0
+        assert result['is_late'] is False
+        assert result['early_leave_minutes'] == 0
+        assert result['early_leave_violation_minutes'] == 0
+        assert result['is_early_leave'] is False

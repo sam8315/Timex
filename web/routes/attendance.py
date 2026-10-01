@@ -16,7 +16,11 @@ from models.attendance import Attendance
 from models.holiday import Holiday
 from models.leave_request import LeaveRequest  # 🆕
 from models.daily_status import DailyStatus
-from web.services.attendance_policy_service import compute_required_minutes_for_range
+from web.services.attendance_policy_service import (
+    compute_required_minutes_for_range,
+    resolve_policy,
+    compute_late_early_for_day,
+)
 from web.services.hourly_leave_service import get_approved_hl_minutes, format_hl_display
 from web.services.hourly_mission_service import (
     get_approved_hourly_mission_minutes,
@@ -264,6 +268,18 @@ async def attendance_page(
                 is_night_shift=is_night_shift
             )
 
+        resolved = resolve_policy(db, emp, current)
+        late_early = compute_late_early_for_day(
+            resolved=resolved,
+            target_date=current,
+            first_enter=first_enter,
+            last_exit=last_exit,
+            skip=(
+                status_info['main_status'] == STATUS_LEAVE
+                or current in rest_dates
+            ),
+        )
+
         days_list.append({
             'date': current,
             'jalali_date': j_day.strftime('%Y/%m/%d'),
@@ -285,6 +301,13 @@ async def attendance_page(
             'hourly_leave_display': format_hl_display(hourly_leave_minutes_by_date.get(current, 0)),
             # 🚗 HM تأییدشده برای نمایش (بدون تاثیر روی وضعیت اصلی/محاسبات)
             'hourly_mission_display': format_hm_display(hourly_missions_by_date.get(current)),
+            # تأخیر / تعجیل
+            'late_minutes': late_early['late_minutes'],
+            'late_violation_minutes': late_early['late_violation_minutes'],
+            'is_late': late_early['is_late'],
+            'early_leave_minutes': late_early['early_leave_minutes'],
+            'early_leave_violation_minutes': late_early['early_leave_violation_minutes'],
+            'is_early_leave': late_early['is_early_leave'],
         })
         current += timedelta(days=1)
     # کارکرد کل ماه — قبل از فیلتر وضعیت (کارت‌های خلاصه همیشه روی ماه کامل‌اند)
@@ -400,11 +423,26 @@ async def attendance_page(
     if monthly_duty_hours > 0:
         progress_percent = min(100, round((total_work_hours_month / monthly_duty_hours) * 100, 1))
 
+    # تخلف تأخیر/تعجیل (بعد از Grace) از بالانس کم می‌شود
+    month_late_early_m = sum(
+        int(d.get('late_violation_minutes') or 0)
+        + int(d.get('early_leave_violation_minutes') or 0)
+        for d in summary_days
+    )
+    instant_late_early_m = sum(
+        int(d.get('late_violation_minutes') or 0)
+        + int(d.get('early_leave_violation_minutes') or 0)
+        for d in summary_days
+        if d['date'] <= reference_date
+    )
+    month_late_early_h = month_late_early_m / 60.0
+    instant_late_early_h = instant_late_early_m / 60.0
+
     # اضافه/کسر کار ماهانه
-    monthly_balance = total_work_hours_month - monthly_duty_hours
+    monthly_balance = total_work_hours_month - monthly_duty_hours - month_late_early_h
 
     # اضافه/کسر کار لحظه‌ای
-    instant_balance = work_hours_until_ref - instant_duty_hours
+    instant_balance = work_hours_until_ref - instant_duty_hours - instant_late_early_h
 
     # تاریخ مرجع به شمسی برای نمایش
     reference_date_j = jdatetime.date.fromgregorian(date=reference_date)

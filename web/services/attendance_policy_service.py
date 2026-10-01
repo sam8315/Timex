@@ -444,9 +444,10 @@ def compute_late(
     """
     محاسبه دیرکرد
 
-    Formula:
+    Formula (Grace کامل):
         total_late_minutes = max(0, actual_first_check_in - scheduled_start)
-        late_violation_minutes = max(0, total_late_minutes - late_allowed_minutes)
+        اگر total <= grace → late_violation_minutes = 0
+        اگر total > grace  → late_violation_minutes = total  (کل دقایق، نه مازاد)
         is_late = total_late_minutes > late_allowed_minutes
     """
     if not late_enabled or not actual_first_check_in or not scheduled_start:
@@ -464,8 +465,8 @@ def compute_late(
     diff_seconds = (actual_first_check_in - scheduled_dt).total_seconds()
     total_late_minutes = max(0, int(diff_seconds / 60))
 
-    late_violation_minutes = max(0, total_late_minutes - late_allowed_minutes)
     is_late = total_late_minutes > late_allowed_minutes
+    late_violation_minutes = total_late_minutes if is_late else 0
 
     return {
         'total_late_minutes': total_late_minutes,
@@ -484,9 +485,10 @@ def compute_early_leave(
     """
     محاسبه خروج زود
 
-    Formula:
+    Formula (Grace کامل — متقارن با late):
         total_early_leave_minutes = max(0, scheduled_end - actual_last_check_out)
-        early_leave_violation_minutes = max(0, total_early_leave_minutes - early_leave_allowed_minutes)
+        اگر total <= grace → early_leave_violation_minutes = 0
+        اگر total > grace  → early_leave_violation_minutes = total
         is_early_leave = total_early_leave_minutes > early_leave_allowed_minutes
     """
     if not early_leave_enabled or not actual_last_check_out or not scheduled_end:
@@ -504,13 +506,106 @@ def compute_early_leave(
     diff_seconds = (scheduled_dt - actual_last_check_out).total_seconds()
     total_early_leave_minutes = max(0, int(diff_seconds / 60))
 
-    early_leave_violation_minutes = max(0, total_early_leave_minutes - early_leave_allowed_minutes)
     is_early_leave = total_early_leave_minutes > early_leave_allowed_minutes
+    early_leave_violation_minutes = total_early_leave_minutes if is_early_leave else 0
 
     return {
         'total_early_leave_minutes': total_early_leave_minutes,
         'early_leave_violation_minutes': early_leave_violation_minutes,
         'is_early_leave': is_early_leave
+    }
+
+
+def _zero_late_early_result(
+    late_enabled: bool = True,
+    late_allowed: int = 0,
+    early_enabled: bool = True,
+    early_allowed: int = 0,
+) -> Dict:
+    return {
+        'late_enabled': late_enabled,
+        'late_allowed_minutes': late_allowed,
+        'late_minutes': 0,
+        'late_violation_minutes': 0,
+        'is_late': False,
+        'early_leave_enabled': early_enabled,
+        'early_leave_allowed_minutes': early_allowed,
+        'early_leave_minutes': 0,
+        'early_leave_violation_minutes': 0,
+        'is_early_leave': False,
+    }
+
+
+def compute_late_early_for_day(
+    resolved: Optional[ResolvedPolicy],
+    target_date: date,
+    first_enter: Optional[datetime],
+    last_exit: Optional[datetime],
+    *,
+    skip: bool = False,
+) -> Dict:
+    """
+    محاسبه تأخیر و تعجیل یک روز از سیاست حل‌شده + اولین ورود / آخرین خروج.
+
+    skip=True (مثلاً مرخصی/استراحت): هیچ تأخیر/تعجیلی محاسبه نمی‌شود.
+
+    خروجی یک dict پایدار برای گزارش‌ها و ویوهای حضور:
+        late_enabled, late_allowed_minutes, late_minutes,
+        late_violation_minutes, is_late,
+        early_leave_enabled, early_leave_allowed_minutes, early_leave_minutes,
+        early_leave_violation_minutes, is_early_leave
+    """
+    late_enabled = True
+    late_allowed = 0
+    late_ref = 'FIXED_TIME'
+    early_enabled = True
+    early_allowed = 0
+    early_ref = 'FIXED_TIME'
+
+    if resolved and resolved.policy:
+        late_enabled = bool(resolved.policy.late_enabled)
+        late_allowed = int(resolved.policy.late_allowed_minutes or 0)
+        late_ref = resolved.policy.late_reference_mode or 'FIXED_TIME'
+        early_enabled = bool(resolved.policy.early_leave_enabled)
+        early_allowed = int(resolved.policy.early_leave_allowed_minutes or 0)
+        early_ref = resolved.policy.early_leave_reference_mode or 'FIXED_TIME'
+
+    if skip:
+        return _zero_late_early_result(
+            late_enabled=late_enabled,
+            late_allowed=late_allowed,
+            early_enabled=early_enabled,
+            early_allowed=early_allowed,
+        )
+
+    scheduled_start, scheduled_end = resolve_scheduled_times(resolved, target_date)
+
+    late_info = compute_late(
+        actual_first_check_in=first_enter,
+        scheduled_start=scheduled_start,
+        late_enabled=late_enabled,
+        late_allowed_minutes=late_allowed,
+        reference_mode=late_ref,
+    )
+    early_info = compute_early_leave(
+        actual_last_check_out=last_exit,
+        scheduled_end=scheduled_end,
+        early_leave_enabled=early_enabled,
+        early_leave_allowed_minutes=early_allowed,
+        reference_mode=early_ref,
+    )
+
+    return {
+        'late_enabled': late_enabled,
+        'late_allowed_minutes': late_allowed,
+        'late_minutes': late_info['total_late_minutes'],
+        'late_violation_minutes': late_info['late_violation_minutes'],
+        'is_late': late_info['is_late'],
+        'early_leave_enabled': early_enabled,
+        'early_leave_allowed_minutes': early_allowed,
+        'early_leave_minutes': early_info['total_early_leave_minutes'],
+        'early_leave_violation_minutes': early_info['early_leave_violation_minutes'],
+        'is_early_leave': early_info['is_early_leave'],
     }
 
 
@@ -629,31 +724,34 @@ def calculate_daily_attendance(
     work_hours, first_enter, last_exit = calculate_work_hours(day_records, is_night_shift)
     actual_minutes = int(work_hours * 60)
 
-    # ۸. Late Calculation
-    late_enabled = resolved.policy.late_enabled if resolved else True
-    late_allowed = resolved.policy.late_allowed_minutes if resolved else 0
-    late_ref_mode = resolved.policy.late_reference_mode if resolved else 'FIXED_TIME'
-
-    late_info = compute_late(
-        actual_first_check_in=first_enter,
-        scheduled_start=scheduled_start_time,
-        late_enabled=late_enabled,
-        late_allowed_minutes=late_allowed,
-        reference_mode=late_ref_mode
+    # ۸–۹. Late / Early (Grace کامل؛ در مرخصی/استراحت صفر)
+    late_early = compute_late_early_for_day(
+        resolved=resolved,
+        target_date=target_date,
+        first_enter=first_enter,
+        last_exit=last_exit,
+        skip=bool(is_leave or is_rest),
     )
-
-    # ۹. Early Leave Calculation
-    early_enabled = resolved.policy.early_leave_enabled if resolved else True
-    early_allowed = resolved.policy.early_leave_allowed_minutes if resolved else 0
-    early_ref_mode = resolved.policy.early_leave_reference_mode if resolved else 'FIXED_TIME'
-
-    early_info = compute_early_leave(
-        actual_last_check_out=last_exit,
-        scheduled_end=scheduled_end_time,
-        early_leave_enabled=early_enabled,
-        early_leave_allowed_minutes=early_allowed,
-        reference_mode=early_ref_mode
+    late_enabled = late_early['late_enabled']
+    late_allowed = late_early['late_allowed_minutes']
+    late_ref_mode = (
+        resolved.policy.late_reference_mode if resolved else 'FIXED_TIME'
     )
+    early_enabled = late_early['early_leave_enabled']
+    early_allowed = late_early['early_leave_allowed_minutes']
+    early_ref_mode = (
+        resolved.policy.early_leave_reference_mode if resolved else 'FIXED_TIME'
+    )
+    late_info = {
+        'total_late_minutes': late_early['late_minutes'],
+        'late_violation_minutes': late_early['late_violation_minutes'],
+        'is_late': late_early['is_late'],
+    }
+    early_info = {
+        'total_early_leave_minutes': late_early['early_leave_minutes'],
+        'early_leave_violation_minutes': late_early['early_leave_violation_minutes'],
+        'is_early_leave': late_early['is_early_leave'],
+    }
 
     # ۱۰. Balance
     balance_minutes = compute_daily_balance(

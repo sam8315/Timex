@@ -14,7 +14,7 @@ class LegalOvertimeExcelExporter(DetailedExcelExporterV2):
         headers = [
             'تاریخ', 'روز', 'وضعیت روز', 'وضعیت فرد',
             'ورود ۱', 'خروج ۱', 'ورود ۲', 'خروج ۲', 'ورود ۳', 'خروج ۳',
-            'وضعیت تردد', 'کارکرد', 'هفتگی',
+            'وضعیت تردد', 'کارکرد', 'تأخیر', 'تعجیل', 'هفتگی',
         ]
         last_col = len(headers)
 
@@ -42,7 +42,7 @@ class LegalOvertimeExcelExporter(DetailedExcelExporterV2):
             cell.alignment = Alignment(horizontal='center')
 
         data_start_row = 5  # ردیف اول داده بعد از عنوان/هدر
-        week_col = 13  # ستون «هفتگی»
+        week_col = 15  # ستون «هفتگی» (بعد از تأخیر/تعجیل)
         merge_ranges = []
 
         for idx, day in enumerate(report['days']):
@@ -53,6 +53,11 @@ class LegalOvertimeExcelExporter(DetailedExcelExporterV2):
                 if not h:
                     return '-'
                 return self._fmt_hours(h)
+
+            def fmt_violation_m(minutes):
+                if not minutes:
+                    return '-'
+                return self._fmt_hours(int(minutes) / 60.0)
 
             pairs = day.get('attendance_pairs', [])
             enter1 = fmt_time(pairs[0]['enter']) if len(pairs) > 0 else '-'
@@ -90,6 +95,8 @@ class LegalOvertimeExcelExporter(DetailedExcelExporterV2):
                 enter3, exit3,
                 attendance_str,
                 fmt_hours(day.get('work_hours')),
+                fmt_violation_m(day.get('late_violation_minutes')),
+                fmt_violation_m(day.get('early_leave_violation_minutes')),
                 week_text,
             ])
 
@@ -169,5 +176,7 @@ class LegalOvertimeExcelExporter(DetailedExcelExporterV2):
         entry('استراحت', summary.get('rest_days', 0))
         entry('تعطیل', summary.get('holiday_days', 0))
         entry('کسر کار ماهانه', self._fmt_hours(summary.get('monthly_deficit') or 0))
+        entry('تخلف تأخیر', self._fmt_hours(summary.get('total_late_violation') or 0))
+        entry('تخلف تعجیل', self._fmt_hours(summary.get('total_early_leave_violation') or 0))
 
         self._auto_adjust_column_width(ws)

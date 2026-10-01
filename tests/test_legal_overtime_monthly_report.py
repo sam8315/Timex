@@ -24,6 +24,8 @@ def _day(
     is_holiday: bool = False,
     person_status: str = 'P',
     daily_duty: Optional[float] = None,
+    late_violation_minutes: int = 0,
+    early_leave_violation_minutes: int = 0,
 ):
     if daily_duty is None:
         if is_friday or is_day_off or is_holiday or person_status in ('L', 'R', 'M', 'H'):
@@ -38,6 +40,8 @@ def _day(
         'is_holiday': is_holiday,
         'person_status': person_status,
         'daily_duty': daily_duty,
+        'late_violation_minutes': late_violation_minutes,
+        'early_leave_violation_minutes': early_leave_violation_minutes,
     }
 
 
@@ -308,3 +312,25 @@ class TestStatusDayCounts:
             + summary['evening_percent']
             + summary['night_percent']
         ) == pytest.approx(100.0)
+
+    def test_monthly_deficit_includes_late_early_violations(self):
+        """کسری ماهانه = max(0, duty-work) + تخلف تأخیر/تعجیل؛ OT تغییر نمی‌کند."""
+        days = _full_week([
+            (8, {'late_violation_minutes': 20, 'early_leave_violation_minutes': 10}),
+            8, 8, 8, 8, 8, 0,
+        ])
+        ot_before_days = _full_week([8, 8, 8, 8, 8, 8, 0])
+        base = {
+            'duty_hours': 44.0,
+            'total_work_hours': 48.0,
+            'duty_days': 6,
+        }
+        summary = build_legal_ot_summary(days, dict(base))
+        summary_no_late = build_legal_ot_summary(ot_before_days, dict(base))
+
+        # کارکرد ۴۸ > موظفی ۴۴ → کمبود کارکرد ۰؛ فقط ۳۰د تخلف
+        assert summary['monthly_deficit'] == pytest.approx(0.5)
+        assert summary['total_late_violation'] == pytest.approx(20 / 60)
+        assert summary['total_early_leave_violation'] == pytest.approx(10 / 60)
+        # فرمول OT نباید به‌خاطر تأخیر/تعجیل عوض شود
+        assert summary['overtime_total'] == pytest.approx(summary_no_late['overtime_total'])

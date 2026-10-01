@@ -374,6 +374,8 @@
             | کارکرد: {{ report.summary.total_work_hours | hhmm }}
             | اضافی: {{ report.summary.total_surplus | hhmm }}
             | کسری: {{ report.summary.total_deficit | hhmm }}
+            | تأخیر: {{ report.summary.total_late_violation | hhmm }}
+            | تعجیل: {{ report.summary.total_early_leave_violation | hhmm }}
             | {{ report.summary.overall_status }} / {{ report.summary.net_balance | hhmm }}
         </div>
 
@@ -457,6 +459,29 @@
             </div>
         </div>
 
+        <div class="row g-3 mb-4 screen-summary-cards">
+            <div class="col-md-3 col-6">
+                <div class="card summary-card bg-warning bg-opacity-10">
+                    <div class="card-body text-center">
+                        <div class="value text-warning">
+                            <span class="hour-value">{{ report.summary.total_late_violation | hhmm }}</span>
+                        </div>
+                        <div class="label text-warning">تخلف تأخیر</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="card summary-card bg-warning bg-opacity-10">
+                    <div class="card-body text-center">
+                        <div class="value text-warning">
+                            <span class="hour-value">{{ report.summary.total_early_leave_violation | hhmm }}</span>
+                        </div>
+                        <div class="label text-warning">تخلف تعجیل</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- 📊 وضعیت کلی -->
         <div class="alert screen-summary-cards {% if report.summary.overall_status == 'اضافی' %}alert-success{% elif report.summary.overall_status == 'کسری' %}alert-danger{% else %}alert-info{% endif %}">
             <i class="bi bi-info-circle"></i>
@@ -482,6 +507,8 @@
                     <th>وضعیت فرد</th>
                     <th>ورود / خروج</th>
                     <th>ساعت کاری</th>
+                    <th>تأخیر</th>
+                    <th>تعجیل</th>
                     <th>اضافی</th>
                     <th>کسری</th>
                     <th>صبح</th>
@@ -551,6 +578,20 @@
                         {% endif %}
                     </td>
                     <td><span class="hour-value">{{ day.work_hours | hhmm }}</span></td>
+                    <td>
+                        {% if day.late_violation_minutes %}
+                        <span class="badge bg-warning text-dark">{{ (day.late_violation_minutes / 60) | hhmm }}</span>
+                        {% else %}
+                        <span class="text-muted">-</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if day.early_leave_violation_minutes %}
+                        <span class="badge bg-warning text-dark">{{ (day.early_leave_violation_minutes / 60) | hhmm }}</span>
+                        {% else %}
+                        <span class="text-muted">-</span>
+                        {% endif %}
+                    </td>
                     <td>
                         {% if day.surplus > 0 %}
                         <span class="hour-value hour-positive">+{{ day.surplus | hhmm }}</span>

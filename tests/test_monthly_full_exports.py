@@ -144,14 +144,19 @@ class TestExcelExport:
         report = _generate_report(uid)
         ws = load_workbook(io.BytesIO(resp.content))['گزارش روزانه']
 
-        headers = [c.value for c in ws[4]][:14]
+        headers = [c.value for c in ws[4]][:16]
         assert headers == [
             'تاریخ', 'روز', 'وضعیت روز', 'وضعیت فرد',
             'ورود ۱', 'خروج ۱', 'ورود ۲', 'خروج ۲', 'ورود ۳', 'خروج ۳',
-            'وضعیت تردد', 'کارکرد', 'اضافی', 'کسری',
+            'وضعیت تردد', 'کارکرد', 'تأخیر', 'تعجیل', 'اضافی', 'کسری',
         ]
         # ستون اضافه‌ای نباید وجود داشته باشد (ادغام سلول با هدرها هم‌تراز است)
-        assert ws.cell(row=1, column=15).value is None
+        assert ws.cell(row=1, column=17).value is None
+
+        def _fmt_violation(minutes):
+            if not minutes:
+                return '-'
+            return _fmt_cell_hours(int(minutes) / 60.0)
 
         rows = list(ws.iter_rows(min_row=5, values_only=True))
         assert len(rows) == len(report['days'])
@@ -160,8 +165,10 @@ class TestExcelExport:
             assert row[1] == day['day_name']
             assert row[3] == day['person_status_name']
             assert row[11] == _fmt_cell_hours(day['work_hours'])
-            assert row[12] == _fmt_cell_hours(day['surplus'])
-            assert row[13] == _fmt_cell_hours(day['deficit'])
+            assert row[12] == _fmt_violation(day.get('late_violation_minutes'))
+            assert row[13] == _fmt_violation(day.get('early_leave_violation_minutes'))
+            assert row[14] == _fmt_cell_hours(day['surplus'])
+            assert row[15] == _fmt_cell_hours(day['deficit'])
 
     def test_night_shift_pairs_preserved_in_excel(self, client, monthly_full):
         """جفت‌های مرز ماه (شیفت شب) باید در اکسل هم دیده شوند."""

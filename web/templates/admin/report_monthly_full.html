@@ -424,6 +424,8 @@
                         <th colspan="6" class="group-header">ورود / خروج</th>
                         <th rowspan="2">وضعیت تردد</th>
                         <th rowspan="2">کارکرد</th>
+                        <th rowspan="2">تأخیر</th>
+                        <th rowspan="2">تعجیل</th>
                         <th rowspan="2">اضافی</th>
                         <th rowspan="2">کسری</th>
                     </tr>
@@ -504,6 +506,24 @@
 
                         <!-- کارکرد -->
                         <td><span class="time-value">{{ day.work_hours | hhmm }}</span></td>
+
+                        <!-- تأخیر (تخلف بعد از Grace) -->
+                        <td>
+                            {% if day.late_violation_minutes %}
+                            <span class="time-value time-deficit">{{ (day.late_violation_minutes / 60) | hhmm }}</span>
+                            {% else %}
+                            <span class="time-value time-empty">-</span>
+                            {% endif %}
+                        </td>
+
+                        <!-- تعجیل (تخلف بعد از Grace) -->
+                        <td>
+                            {% if day.early_leave_violation_minutes %}
+                            <span class="time-value time-deficit">{{ (day.early_leave_violation_minutes / 60) | hhmm }}</span>
+                            {% else %}
+                            <span class="time-value time-empty">-</span>
+                            {% endif %}
+                        </td>
 
                         <!-- اضافی -->
                         <td>
@@ -598,6 +618,14 @@
             <div class="summary-item">
                 <span>➖ کسری:</span>
                 <span class="value" style="color: #f87171;">{{ report.summary.total_deficit | hhmm }}</span>
+            </div>
+            <div class="summary-item">
+                <span>⏰ تأخیر:</span>
+                <span class="value" style="color: #f59e0b;">{{ report.summary.total_late_violation | hhmm }}</span>
+            </div>
+            <div class="summary-item">
+                <span>🚪 تعجیل:</span>
+                <span class="value" style="color: #f59e0b;">{{ report.summary.total_early_leave_violation | hhmm }}</span>
             </div>
             <div class="summary-item">
                 <span>📊 هفتگی:</span>

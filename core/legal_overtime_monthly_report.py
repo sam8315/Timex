@@ -219,7 +219,10 @@ def build_legal_ot_summary(days: List[Dict], base_summary: Dict) -> Dict:
     summary = dict(base_summary)
     duty_m = _hours_to_minutes(summary.get('duty_hours') or 0)
     work_m = _hours_to_minutes(summary.get('total_work_hours') or 0)
-    monthly_deficit = _minutes_to_hours(max(0, duty_m - work_m))
+    late_v_m = sum(int(d.get('late_violation_minutes') or 0) for d in days)
+    early_v_m = sum(int(d.get('early_leave_violation_minutes') or 0) for d in days)
+    # کسری ماهانه = کمبود کارکرد نسبت به موظفی + تخلف تأخیر/تعجیل
+    monthly_deficit = _minutes_to_hours(max(0, duty_m - work_m) + late_v_m + early_v_m)
 
     # حضور = هر روز با وضعیت P (جمعه/تعطیل‌کاری هم شمرده می‌شود)
     present_days = sum(1 for d in days if d.get('person_status') == 'P')
@@ -287,6 +290,10 @@ def build_legal_ot_summary(days: List[Dict], base_summary: Dict) -> Dict:
         'hourly_mission_hours': _minutes_to_hours(hourly_mission_minutes),
         'monthly_deficit': monthly_deficit,
         'total_deficit': monthly_deficit,
+        'total_late_violation': _minutes_to_hours(late_v_m),
+        'total_early_leave_violation': _minutes_to_hours(early_v_m),
+        'total_late_violation_minutes': late_v_m,
+        'total_early_leave_violation_minutes': early_v_m,
         'total_surplus': overtime_total,
         'overtime_coefficient': OVERTIME_COEFFICIENT,
         'friday_work_coefficient': FRIDAY_WORK_COEFFICIENT,

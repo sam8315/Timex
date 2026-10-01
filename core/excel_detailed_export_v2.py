@@ -102,7 +102,7 @@ class DetailedExcelExporterV2:
         headers = [
             'تاریخ', 'روز', 'وضعیت روز', 'وضعیت فرد',
             'ورود ۱', 'خروج ۱', 'ورود ۲', 'خروج ۲', 'ورود ۳', 'خروج ۳',
-            'وضعیت تردد', 'کارکرد', 'اضافی', 'کسری'
+            'وضعیت تردد', 'کارکرد', 'تأخیر', 'تعجیل', 'اضافی', 'کسری'
         ]
         last_col = len(headers)
 
@@ -149,6 +149,11 @@ class DetailedExcelExporterV2:
             if attendance_str == 'بدون تردد':
                 attendance_str = '-'
 
+            def fmt_violation_m(minutes):
+                if not minutes:
+                    return '-'
+                return self._fmt_hours(int(minutes) / 60.0)
+
             ws.append([
                 day['jalali_date'],
                 day['day_name'],
@@ -159,6 +164,8 @@ class DetailedExcelExporterV2:
                 enter3, exit3,
                 attendance_str,
                 fmt_hours(day['work_hours']),
+                fmt_violation_m(day.get('late_violation_minutes')),
+                fmt_violation_m(day.get('early_leave_violation_minutes')),
                 fmt_hours(day['surplus']),
                 fmt_hours(day['deficit'])
             ])
@@ -221,6 +228,8 @@ class DetailedExcelExporterV2:
         # مبنای اضافه/کسری، موظفی هر روز از Policy/Schedule است (نه مقدار ثابت)
         entry('اضافه کاری روزانه', self._fmt_hours(summary['total_surplus']))
         entry('کسری کار', self._fmt_hours(summary['total_deficit']))
+        entry('تخلف تأخیر', self._fmt_hours(summary.get('total_late_violation') or 0))
+        entry('تخلف تعجیل', self._fmt_hours(summary.get('total_early_leave_violation') or 0))
         entry('اضافه کاری هفتگی', self._fmt_hours(summary['weekly_overtime']))
 
         section('وضعیت کلی')

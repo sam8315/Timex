@@ -560,6 +560,8 @@
                         <th>اولین ورود</th>
                         <th>آخرین خروج</th>
                         <th>ساعات</th>
+                        <th>تأخیر</th>
+                        <th>تعجیل</th>
                         <th>تردد</th>
                         <th class="text-center">وضعیت</th>
                         <th class="text-center">جزئیات</th>
@@ -588,6 +590,16 @@
                             {% else %}<span class="text-muted">-</span>{% endif %}
                         </td>
                         <td>{{ day.work_hours_display }}</td>
+                        <td>
+                            {% if day.late_violation_minutes %}
+                            <span class="badge bg-warning text-dark">{{ day.late_violation_minutes }}د</span>
+                            {% else %}<span class="text-muted">-</span>{% endif %}
+                        </td>
+                        <td>
+                            {% if day.early_leave_violation_minutes %}
+                            <span class="badge bg-warning text-dark">{{ day.early_leave_violation_minutes }}د</span>
+                            {% else %}<span class="text-muted">-</span>{% endif %}
+                        </td>
                         <td>
                             <span class="badge {% if day.records | length > 2 %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
                                 {{ day.records | length }}
@@ -651,7 +663,7 @@
 
                     {% if day.records | length > 0 %}
                     <tr>
-                        <td colspan="{% if is_super_admin %}9{% else %}8{% endif %}" class="p-0">
+                        <td colspan="{% if is_super_admin %}11{% else %}10{% endif %}" class="p-0">
                             <div class="collapse" id="details-{{ day.date.strftime('%Y%m%d') }}">
                                 <div class="card card-body bg-light border-0 py-2">
                                     <table class="table table-sm table-bordered mb-0">
