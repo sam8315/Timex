@@ -852,10 +852,12 @@
                class="sidebar-link {% if request.url.path == '/admin/attendance' %}active{% endif %}">
                 <i class="bi bi-clock"></i> تردد کارمندان
             </a>
+            {% if can_view_incomplete | default(true) %}
             <a href="/admin/incomplete"
                class="sidebar-link {% if request.url.path == '/admin/incomplete' %}active{% endif %}">
                 <i class="bi bi-exclamation-triangle"></i> ترددهای ناقص
             </a>
+            {% endif %}
             <a href="/admin/daily-status"
                class="sidebar-link {% if request.url.path == '/admin/daily-status' %}active{% endif %}">
                 <i class="bi bi-calendar-day"></i> مأموریت و استراحت
