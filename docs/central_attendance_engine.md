@@ -88,8 +88,12 @@ prev/next-day records.
   `seconds / 3600.0`, never rounded).
 - `MAX_PAIRS = 3` is a **presentation cap** in the report layer only; work
   hours are always computed from all pairs.
-- Day-level `work_hours` is never rounded; rounding exists only in report
-  summaries (`round(total, 2)`) and display formatters.
+- Day-level `work_hours` is never rounded (raw `seconds / 3600.0`).
+- Monthly-full v2 summaries aggregate exact daily values, then quantize
+  **once** to the nearest minute via
+  `_minutes_to_hours(_hours_to_minutes(sum(...)))` — not `round(total, 2)`.
+  Example: `109.5075 h → 6570.45 min → 6570 min → 109.5 h → 109:30`.
+  Display formatters (`H:MM` / PDF / Excel) use the same minute rule.
 
 ## 7. Display mapping (class A)
 

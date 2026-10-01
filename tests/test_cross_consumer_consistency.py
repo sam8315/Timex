@@ -9,6 +9,8 @@ Phase 6 — Cross-Consumer Consistency Audit (یک dataset → سه مصرف‌�
 
 قراردادها:
     - work_hours خام (بدون round در سطح روز) از یک منبع: compute_day_attendance
+    - summary ماهانه: جمع exact روزانه → یک‌بار quantize به نزدیک‌ترین دقیقه
+      (_minutes_to_hours(_hours_to_minutes(sum(...)))) — نه round(total, 2)
     - status / warnings / first_enter / last_exit در دو مسیر یکسان
     - نگاشت display ماهانه فقط در لایه گزارش (_display_status)
     - مرز ماه: روزهای context فقط context موتورند، در ماه لحاظ نمی‌شوند
@@ -34,7 +36,11 @@ from core.attendance_calculator import (
     STATUS_NO_ATTENDANCE,
     compute_day_attendance,
 )
-from core.detailed_monthly_report_v2 import DetailedMonthlyReportGeneratorV2
+from core.detailed_monthly_report_v2 import (
+    DetailedMonthlyReportGeneratorV2,
+    _hours_to_minutes,
+    _minutes_to_hours,
+)
 from models.holiday import Holiday
 from tests.conftest import TestingSessionLocal, login_as
 
@@ -250,7 +256,19 @@ def test_work_hours_single_source_engine_monthly_routes(
         assert total_att == total_adm
         assert total_mon == pytest.approx(
             total_att + (6 + 7199 / 3600), abs=1e-9)
-        assert report['summary']['total_work_hours'] == round(total_mon, 2)
+        # summary ماهانه = minute-quantize(جمع exact)، نه round(total, 2)
+        expected_summary = _minutes_to_hours(_hours_to_minutes(total_mon))
+        assert report['summary']['total_work_hours'] == pytest.approx(
+            expected_summary)
+
+        # Regression (Phase 9): 109.5075h → 6570.45min → 6570min → 109.5h
+        # round(total, 2) = 109.51 با contract نمایش H:MM ناسازگار است.
+        assert total_mon == pytest.approx(109.5075)
+        assert total_mon * 60 == pytest.approx(6570.45)
+        assert _hours_to_minutes(total_mon) == 6570
+        assert expected_summary == 109.5
+        assert round(total_mon, 2) == 109.51
+        assert report['summary']['total_work_hours'] != round(total_mon, 2)
     finally:
         _cleanup_holiday(db)
 
