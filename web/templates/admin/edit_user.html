@@ -107,8 +107,15 @@
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">سمت</label>
-                            <input type="text" name="position" class="form-control"
-                                   value="{{ employee.position or '' }}">
+                            <select name="position_id" class="form-select">
+                                <option value="">-</option>
+                                {% for p in positions %}
+                                <option value="{{ p.id }}"
+                                    {% if employee.position_id == p.id %}selected{% endif %}>
+                                    {{ p.name }}{% if not p.is_active %} (غیرفعال){% endif %}
+                                </option>
+                                {% endfor %}
+                            </select>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label text-muted">منطقه خدمتی</label>

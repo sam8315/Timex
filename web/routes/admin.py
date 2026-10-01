@@ -142,6 +142,7 @@ from web.routes.attendance import (
 )
 from models.attendance import Attendance
 from models.employee import Employee
+from models.position import Position
 from models.holiday import Holiday
 
 """
@@ -630,6 +631,7 @@ async def admin_users(
     request: Request,
     search: Optional[str] = Query(None),
     department: Optional[str] = Query(None),
+    position_id: Optional[str] = Query(None),
     role: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
     web_status: Optional[str] = Query(None),
@@ -639,7 +641,7 @@ async def admin_users(
 ):
     """مدیریت کاربران با فیلتر و جستجو"""
     enforce_permission(db, user, 'view_dashboard')
-    has_filter = any([search, department, role, status, web_status, show_all])
+    has_filter = any([search, department, position_id, role, status, web_status, show_all])
 
     user_details = []
     total_count = 0
@@ -648,7 +650,7 @@ async def admin_users(
         query = db.query(User)
 
         # 🆕 بررسی اینکه آیا نیاز به join با Employee داریم
-        needs_employee_join = any([search, department, status])
+        needs_employee_join = any([search, department, position_id, status])
         if needs_employee_join:
             query = query.outerjoin(Employee, User.user_id == Employee.user_id)
 
@@ -668,6 +670,14 @@ async def admin_users(
         # 🏢 فیلتر دپارتمان (بدون join مجدد)
         if department:
             query = query.filter(Employee.department == department)
+
+        # 👔 فیلتر سمت
+        if position_id:
+            try:
+                pid = int(position_id)
+                query = query.filter(Employee.position_id == pid)
+            except (TypeError, ValueError):
+                pass
 
         # 🎭 فیلتر نقش
         if role:
@@ -707,6 +717,10 @@ async def admin_users(
 
         total_count = len(user_details)
 
+    active_positions = db.query(Position).filter(Position.is_active == True).order_by(
+        Position.sort_order, Position.name
+    ).all()
+
     return templates.TemplateResponse(request, "admin/users.html", {
         "user": user,
         "users": user_details,
@@ -718,10 +732,114 @@ async def admin_users(
         "show_all": show_all,
         "search": search or "",
         "department": department or "",
+        "position_id": position_id or "",
+        "positions": active_positions,
         "role": role or "",
         "status": status or "",
         "web_status": web_status or "",
     })
+
+
+DEPT_LABELS = {
+    '1': 'رسمی',
+    '2': 'وظیفه',
+    '3': 'خریدخدمت',
+    '4': 'قراردادی',
+    '5': 'پزشک',
+}
+
+PRINT_FIELD_LABELS = {
+    'user_id': 'کد پرسنلی',
+    'name': 'نام',
+    'national_code': 'کد ملی',
+    'department': 'دپارتمان',
+    'position': 'سمت',
+    'role': 'نقش',
+    'status': 'وضعیت',
+    'web_status': 'وضعیت وب',
+    'last_login': 'آخرین ورود',
+}
+
+ROLE_LABELS = {
+    'user': 'کاربر',
+    'admin': 'مدیر',
+    'super_admin': 'مدیر ارشد',
+}
+
+ALLOWED_PRINT_FIELDS = set(PRINT_FIELD_LABELS.keys())
+
+
+@router.post("/admin/users/print", response_class=HTMLResponse)
+async def admin_users_print(
+    request: Request,
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """صفحه چاپ جداگانه برای کاربران انتخاب‌شده."""
+    enforce_permission(db, user, 'view_dashboard')
+    form = await request.form()
+    user_ids = form.getlist("user_ids")
+    fields = form.getlist("fields")
+
+    selected_fields = [f for f in fields if f in ALLOWED_PRINT_FIELDS]
+    if not selected_fields:
+        selected_fields = ['user_id', 'name', 'national_code', 'department', 'position', 'status']
+
+    # Deduplicate while preserving order
+    seen = set()
+    unique_ids = []
+    for uid in user_ids:
+        uid = (uid or "").strip()
+        if uid and uid not in seen:
+            seen.add(uid)
+            unique_ids.append(uid)
+
+    rows = []
+    if unique_ids:
+        users = (
+            db.query(User)
+            .filter(User.user_id.in_(unique_ids))
+            .order_by(User.user_id)
+            .all()
+        )
+        # Preserve client selection order
+        user_map = {u.user_id: u for u in users}
+        for uid in unique_ids:
+            wu = user_map.get(uid)
+            if not wu:
+                continue
+            emp = db.query(Employee).filter(Employee.user_id == uid).first()
+            last_login_display = '—'
+            if wu.last_login:
+                try:
+                    last_login_display = jdatetime.datetime.fromgregorian(
+                        datetime=wu.last_login
+                    ).strftime('%Y/%m/%d - %H:%M')
+                except Exception:
+                    last_login_display = wu.last_login.strftime('%Y/%m/%d - %H:%M')
+
+            rows.append({
+                'user_id': wu.user_id,
+                'name': emp.full_name if emp else wu.name,
+                'national_code': (emp.national_code if emp and emp.national_code else '—'),
+                'department': DEPT_LABELS.get(emp.department, emp.department or '—') if emp else '—',
+                'position': (emp.position_name if emp and emp.position_name else '—'),
+                'role': ROLE_LABELS.get(wu.role, wu.role or '—'),
+                'status': 'فعال' if (emp and emp.is_active) else 'غیرفعال',
+                'web_status': 'فعال' if wu.web_enabled else 'غیرفعال',
+                'last_login': last_login_display,
+            })
+
+    return templates.TemplateResponse(request, "admin/users_print.html", {
+        "user": user,
+        "is_admin": True,
+        "is_super_admin": user.is_super_admin,
+        **_admin_nav_flags(db, user),
+        "rows": rows,
+        "fields": selected_fields,
+        "field_labels": PRINT_FIELD_LABELS,
+    })
+
 
 @router.get("/admin/attendance", response_class=HTMLResponse)
 async def admin_attendance(
@@ -1672,6 +1790,8 @@ from web.dependencies import require_super_admin
 from web.security import hash_password
 from models.employee import Employee
 from models.user import User
+from models.position import Position
+from web.routes.admin_positions import resolve_position_id
 
 
 @router.get("/admin/profile/{target_user_id}", response_class=HTMLResponse)
@@ -1974,12 +2094,18 @@ async def admin_edit_profile_page(
     if employee.termination_date:
         term_j_value = jdatetime.date.fromgregorian(date=employee.termination_date).strftime('%Y/%m/%d')
 
+    # Active positions + current (possibly inactive) so edit can keep it
+    positions = db.query(Position).filter(
+        or_(Position.is_active == True, Position.id == employee.position_id)
+    ).order_by(Position.sort_order, Position.name).all()
+
     return templates.TemplateResponse(request, "admin/edit_user.html", {
         "user": user,
         "employee": employee,
         "birth_j_value": birth_j_value,
         "hire_j_value": hire_j_value,
         "term_j_value": term_j_value,
+        "positions": positions,
         "is_admin": True,
         "is_super_admin": True,
         **_admin_nav_flags(db, user),
@@ -2000,7 +2126,7 @@ async def admin_edit_profile_submit(
     email: str = Form(""),
     hire_date_str: str = Form(""),
     department: str = Form(""),
-    position: str = Form(""),
+    position_id: str = Form(""),
     notes: str = Form(""),
     is_active: str = Form(""),
     termination_date_str: str = Form(""),
@@ -2015,6 +2141,17 @@ async def admin_edit_profile_submit(
         return RedirectResponse(url="/admin/users", status_code=302)
 
     try:
+        try:
+            resolved_position_id = resolve_position_id(
+                db, position_id, allow_current_id=employee.position_id
+            )
+        except ValueError as e:
+            referer = request.headers.get("referer", f"/admin/profile/{target_user_id}/edit")
+            return RedirectResponse(
+                url=build_redirect_url(referer, "error", str(e)),
+                status_code=302,
+            )
+
         employee.first_name = first_name.strip()
         employee.last_name = last_name.strip()
         employee.father_name = father_name.strip() or None
@@ -2023,7 +2160,7 @@ async def admin_edit_profile_submit(
         employee.marital_status = marital_status or None
         employee.email = email.strip() or None
         employee.department = department or None
-        employee.position = position.strip() or None
+        employee.position_id = resolved_position_id
         employee.notes = notes.strip() or None
 
         # تاریخ‌ها

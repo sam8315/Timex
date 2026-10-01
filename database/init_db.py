@@ -525,6 +525,74 @@ def seed_banks(bind_engine=None) -> None:
         print(f"  + Iranian banks synchronized ({len(CANONICAL_BANKS)} active)")
 
 
+def migrate_employee_position_id(bind_engine=None) -> None:
+    """
+    Replace free-text employee.position with positions FK (no data migration).
+
+    Idempotent steps:
+      1. Ensure employee.position_id exists (nullable INTEGER)
+      2. Ensure index on position_id
+      3. Ensure FK employee.position_id -> positions.id ON DELETE SET NULL
+      4. Drop legacy text column employee.position if present (values discarded)
+    """
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
+    if "employee" not in inspector.get_table_names():
+        return
+    if "positions" not in inspector.get_table_names():
+        return
+
+    with target.connect() as conn:
+        columns = {row["name"] for row in inspector.get_columns("employee")}
+        if "position_id" not in columns:
+            conn.execute(text('ALTER TABLE "employee" ADD COLUMN "position_id" INTEGER NULL'))
+            conn.commit()
+            print("  + column employee.position_id added")
+
+        # Refresh inspector state after possible ADD COLUMN
+        inspector = inspect(target)
+        index_names = {idx["name"] for idx in inspector.get_indexes("employee")}
+        if "ix_employee_position_id" not in index_names:
+            conn.execute(text(
+                'CREATE INDEX "ix_employee_position_id" ON "employee" ("position_id")'
+            ))
+            conn.commit()
+            print("  + index ix_employee_position_id added")
+
+        has_fk = any(
+            fk.get("referred_table") == "positions"
+            and fk.get("referred_columns") == ["id"]
+            and "position_id" in (fk.get("constrained_columns") or [])
+            for fk in inspector.get_foreign_keys("employee")
+        )
+        if not has_fk:
+            conn.execute(text(
+                'ALTER TABLE "employee" '
+                'ADD CONSTRAINT "employee_position_id_fkey" '
+                'FOREIGN KEY ("position_id") REFERENCES "positions" ("id") '
+                'ON DELETE SET NULL'
+            ))
+            conn.commit()
+            print("  + fk employee.position_id -> positions.id added")
+
+        columns = {row["name"] for row in inspector.get_columns("employee")}
+        # Re-read after possible adds
+        inspector = inspect(target)
+        columns = {row["name"] for row in inspector.get_columns("employee")}
+        if "position" in columns:
+            # Drop any indexes that include only the legacy column first
+            for idx in inspector.get_indexes("employee"):
+                cols = idx.get("column_names") or []
+                if cols == ["position"]:
+                    idx_name = idx["name"]
+                    conn.execute(text(f'DROP INDEX IF EXISTS "{idx_name}"'))
+                    conn.commit()
+                    print(f"  - index {idx_name} dropped")
+            conn.execute(text('ALTER TABLE "employee" DROP COLUMN "position"'))
+            conn.commit()
+            print("  - column employee.position dropped (no data migrated)")
+
+
 def migrate_city_region_code(bind_engine=None) -> None:
     """Ensure cities.region_code exists with DEFAULT NORMAL (idempotent)."""
     target = bind_engine if bind_engine is not None else engine
@@ -558,6 +626,7 @@ def create_tables() -> None:
         Base.metadata.create_all(bind=engine)
         migrate_missing_columns()
         migrate_city_region_code()
+        migrate_employee_position_id()
         migrate_employee_address_city_id()
         migrate_employee_address_history()
         migrate_employee_address_coords_pair()

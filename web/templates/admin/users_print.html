@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}چاپ فهرست کاربران{% endblock %}
+
+{% block extra_css %}
+<style>
+    .print-toolbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-bottom: 1rem;
+    }
+    .users-print-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.85rem;
+    }
+    .users-print-table th,
+    .users-print-table td {
+        border: 1px solid #cbd5e1;
+        padding: 6px 8px;
+        text-align: center;
+        vertical-align: middle;
+    }
+    .users-print-table th {
+        background: #1e293b;
+        color: #fff;
+        font-weight: 600;
+    }
+    .users-print-table td.name-cell {
+        text-align: right;
+    }
+    .print-title {
+        text-align: center;
+        margin-bottom: 1rem;
+    }
+    .print-title h4 {
+        margin: 0 0 4px;
+        font-weight: 700;
+    }
+    .print-meta {
+        color: #64748b;
+        font-size: 0.85rem;
+    }
+
+    @media print {
+        @page {
+            size: A4 portrait;
+            margin: 10mm;
+        }
+        html, body {
+            background: #fff !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+        .app-sidebar,
+        .app-topbar,
+        .sidebar-overlay,
+        .no-print {
+            display: none !important;
+        }
+        .app-main,
+        .app-content,
+        main,
+        .container-fluid {
+            margin: 0 !important;
+            padding: 0 !important;
+            width: 100% !important;
+            max-width: none !important;
+        }
+        .users-print-table {
+            font-size: 10pt;
+        }
+        .users-print-table th {
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="print-toolbar no-print">
+    <a href="/admin/users" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-right"></i> بازگشت
+    </a>
+    <button type="button" class="btn btn-dark btn-sm" onclick="window.print()">
+        <i class="bi bi-printer"></i> چاپ
+    </button>
+</div>
+
+<div class="print-title">
+    <h4>فهرست کاربران</h4>
+    <div class="print-meta">تعداد: {{ rows|length }} نفر</div>
+</div>
+
+{% if not rows %}
+<div class="alert alert-warning text-center">هیچ کاربری برای چاپ انتخاب نشده است.</div>
+{% else %}
+<table class="users-print-table">
+    <thead>
+        <tr>
+            <th>ردیف</th>
+            {% for f in fields %}
+            <th>{{ field_labels.get(f, f) }}</th>
+            {% endfor %}
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in rows %}
+        <tr>
+            <td>{{ loop.index }}</td>
+            {% for f in fields %}
+            <td {% if f == 'name' %}class="name-cell"{% endif %}>{{ row.get(f, '—') }}</td>
+            {% endfor %}
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+{% endblock %}

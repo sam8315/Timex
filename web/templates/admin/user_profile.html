@@ -134,8 +134,8 @@
                         </h3>
                         <div class="text-muted">
                             <i class="bi bi-person-badge"></i> {{ target_user.user_id }}
-                            {% if employee and employee.position %}
-                            | <i class="bi bi-briefcase"></i> {{ employee.position }}
+                            {% if employee and employee.position_name %}
+                            | <i class="bi bi-briefcase"></i> {{ employee.position_name }}
                             {% endif %}
                         </div>
                     </div>
@@ -290,7 +290,7 @@
                     </div>
                     <div class="list-group-item d-flex justify-content-between px-0">
                         <span class="text-muted">سمت</span>
-                        <span class="fw-bold">{{ employee.position or '-' }}</span>
+                        <span class="fw-bold">{{ employee.position_name or '—' }}</span>
                     </div>
                     <div class="list-group-item d-flex justify-content-between px-0">
                         <span class="text-muted">منطقه خدمتی</span>

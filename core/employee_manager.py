@@ -10,6 +10,7 @@ import jdatetime
 from database.engine import SessionLocal
 from models.user import User
 from models.employee import Employee
+from models.position import Position
 
 
 class EmployeeManager:
@@ -35,7 +36,7 @@ class EmployeeManager:
             email: Optional[str] = None,
             hire_date: Optional[date] = None,
             department: Optional[str] = None,
-            position: Optional[str] = None,
+            position_id: Optional[int] = None,
             notes: Optional[str] = None
     ) -> Dict:
         """افزودن اطلاعات تکمیلی کارمند"""
@@ -76,7 +77,7 @@ class EmployeeManager:
                 email=email,
                 hire_date=hire_date,
                 department=department,
-                position=position,
+                position_id=position_id,
                 notes=notes
             )
             self.db.add(employee)
@@ -130,13 +131,13 @@ class EmployeeManager:
         q = self.db.query(Employee)
 
         if field == 'all':
-            q = q.filter(
+            q = q.outerjoin(Position, Employee.position_id == Position.id).filter(
                 or_(
                     Employee.first_name.ilike(f'%{query}%'),
                     Employee.last_name.ilike(f'%{query}%'),
                     Employee.national_code.ilike(f'%{query}%'),
                     Employee.department.ilike(f'%{query}%'),
-                    Employee.position.ilike(f'%{query}%')
+                    Position.name.ilike(f'%{query}%')
                 )
             )
         elif field == 'name':
@@ -151,7 +152,9 @@ class EmployeeManager:
         elif field == 'department':
             q = q.filter(Employee.department.ilike(f'%{query}%'))
         elif field == 'position':
-            q = q.filter(Employee.position.ilike(f'%{query}%'))
+            q = q.outerjoin(Position, Employee.position_id == Position.id).filter(
+                Position.name.ilike(f'%{query}%')
+            )
 
         return q.all()
 

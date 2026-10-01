@@ -4074,7 +4074,7 @@ class ConsoleUI:
                 print("  ⚠️  تاریخ استخدام نامعتبر - نادیده گرفته شد")
 
         department = input("  🏢 دپارتمان (اختیاری): ").strip() or None
-        position = input("  💼 سمت (اختیاری): ").strip() or None
+        position_id = None
         notes = input("  📝 یادداشت (اختیاری): ").strip() or None
 
         # پیش‌نمایش
@@ -4100,8 +4100,6 @@ class ConsoleUI:
             print(f"     • تاریخ استخدام: {j_hire.strftime('%Y/%m/%d')}")
         if department:
             print(f"     • دپارتمان     : {department}")
-        if position:
-            print(f"     • سمت          : {position}")
         print("-" * 70)
 
         confirm = input("\n  آیا تایید می‌کنید؟ (بله/خیر): ").strip()
@@ -4123,7 +4121,7 @@ class ConsoleUI:
                 email=email,
                 hire_date=hire_date,
                 department=department,
-                position=position,
+                position_id=position_id,
                 notes=notes
             )
             print(f"\n  {result['message']}")
@@ -4179,8 +4177,8 @@ class ConsoleUI:
                 print(f"     • تاریخ استخدام: {j_hire.strftime('%Y/%m/%d')}")
             if employee.department:
                 print(f"     • دپارتمان     : {employee.department}")
-            if employee.position:
-                print(f"     • سمت          : {employee.position}")
+            if employee.position_name:
+                print(f"     • سمت          : {employee.position_name}")
 
             # ✅ اطلاعات ترک کار
             if not employee.is_active:
@@ -4221,7 +4219,7 @@ class ConsoleUI:
 
             for i, emp in enumerate(employees, 1):
                 print(f"  │ {i:<4} │ {emp.user_id:<6} │ {emp.full_name[:16]:<16} │ "
-                      f"{emp.department or '-':<10} │ {emp.position or '-':<10} │ "
+                      f"{emp.department or '-':<10} │ {emp.position_name or '-':<10} │ "
                       f"{emp.gender_name:<10} │")
 
             print("  └──────┴────────┴──────────────────┴────────────┴────────────┴────────────┘")
@@ -4269,7 +4267,7 @@ class ConsoleUI:
 
             for i, emp in enumerate(results, 1):
                 print(f"  │ {i:<4} │ {emp.user_id:<6} │ {emp.full_name[:16]:<16} │ "
-                      f"{emp.department or '-':<10} │ {emp.position or '-':<10} │")
+                      f"{emp.department or '-':<10} │ {emp.position_name or '-':<10} │")
 
             print("  └──────┴────────┴──────────────────┴────────────┴────────────┘")
 
@@ -4677,7 +4675,7 @@ class ConsoleUI:
                     hire_str = j_hire.strftime('%Y/%m/%d')
 
                 print(f"  │ {i:<4} │ {emp.user_id:<6} │ {emp.full_name[:20]:<20} │ "
-                      f"{emp.department or '-':<10} │ {emp.position or '-':<10} │ {hire_str:<10} │")
+                      f"{emp.department or '-':<10} │ {emp.position_name or '-':<10} │ {hire_str:<10} │")
 
             print("  └──────┴────────┴──────────────────────┴────────────┴────────────┴────────────┘")
 
@@ -5174,7 +5172,7 @@ class ConsoleUI:
                 print(f"     • تاریخ استخدام   : -")
 
             print(f"     • دپارتمان        : {employee.department or '-'}")
-            print(f"     • سمت             : {employee.position or '-'}")
+            print(f"     • سمت             : {employee.position_name or '-'}")
             print(f"     • وضعیت           : {employee.status_name}")
             print(f"     • یادداشت         : {employee.notes or '-'}")
             print("-" * 70)
@@ -5309,9 +5307,32 @@ class ConsoleUI:
                     return
 
             elif field_choice == '11':
-                new_value = input(f"  سمت جدید [{employee.position or '-'}]: ").strip()
-                employee.position = new_value if new_value else None
-                updated = True
+                from models.position import Position
+                positions = manager.db.query(Position).filter(Position.is_active == True).order_by(
+                    Position.sort_order, Position.name).all()
+                if not positions:
+                    print("  ⚠️  هیچ سمت فعالی تعریف نشده است")
+                    return
+                print("  سمت‌های فعال:")
+                for ppos in positions:
+                    print(f"    {ppos.id}. {ppos.name}")
+                new_value = input(
+                    f"  شناسه سمت جدید [{employee.position_id or '-'}] (خالی=حذف): "
+                ).strip()
+                if not new_value:
+                    employee.position_id = None
+                    updated = True
+                else:
+                    try:
+                        pid = int(new_value)
+                    except ValueError:
+                        print("  ❌ شناسه نامعتبر")
+                        return
+                    if not any(ppos.id == pid for ppos in positions):
+                        print("  ❌ سمت یافت نشد یا غیرفعال است")
+                        return
+                    employee.position_id = pid
+                    updated = True
 
             elif field_choice == '12':
                 new_value = input(f"  یادداشت جدید [{employee.notes or '-'}]: ").strip()
@@ -5338,7 +5359,7 @@ class ConsoleUI:
                 print(f"     • کد پرسنلی     : {employee.user_id}")
                 print(f"     • نام کامل        : {employee.full_name}")
                 print(f"     • دپارتمان        : {employee.department or '-'}")
-                print(f"     • سمت             : {employee.position or '-'}")
+                print(f"     • سمت             : {employee.position_name or '-'}")
                 print(f"     • وضعیت           : {employee.status_name}")
                 print("-" * 70)
             except Exception as e:

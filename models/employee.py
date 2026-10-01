@@ -38,7 +38,12 @@ class Employee(TimestampMixin, Base):
     email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     hire_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True, index=True)
     department: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
-    position: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    position_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("positions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     # Service region used by future annual-leave policy calculations.
     region_code: Mapped[Optional[str]] = mapped_column(
         String(20),
@@ -56,8 +61,14 @@ class Employee(TimestampMixin, Base):
 
     # Relationships
     user = relationship("User", backref="employee")
+    position_rel = relationship("Position", foreign_keys=[position_id])
     # 🆕 عکس پروفایل
     photo_path: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+
+    @property
+    def position_name(self) -> Optional[str]:
+        """نام سمت از جدول مرجع (null-safe)."""
+        return self.position_rel.name if self.position_rel else None
 
     def __repr__(self) -> str:
         status = "فعال" if self.is_active else "غیرفعال"
@@ -100,7 +111,8 @@ class Employee(TimestampMixin, Base):
             'email': self.email,
             'hire_date': self.hire_date,
             'department': self.department,
-            'position': self.position,
+            'position_id': self.position_id,
+            'position': self.position_name,
             'region_code': self.region_code,
             'is_active': self.is_active,
             'status_name': self.status_name,

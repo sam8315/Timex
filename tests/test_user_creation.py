@@ -83,7 +83,7 @@ def _valid_payload(**overrides):
         "email": "ali@test.com",
         "hire_date_str": "1400/01/01",
         "department": "1",
-        "position": "برنامه‌نویس",
+        "position_id": "",
         "region_code": "NORMAL",
         "notes": "تست ایجاد",
         "is_active": "on",

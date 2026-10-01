@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% block title %}مدیریت سمت‌ها | پنل مدیریت{% endblock %}
+{% block content %}
+
+{% if request.query_params.get('success') %}
+<div class="alert alert-success alert-dismissible fade show">
+    <i class="bi bi-check-circle"></i> {{ request.query_params.get('success') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+{% if request.query_params.get('error') %}
+<div class="alert alert-danger alert-dismissible fade show">
+    <i class="bi bi-exclamation-triangle"></i> {{ request.query_params.get('error') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4><i class="bi bi-briefcase"></i> مدیریت سمت‌ها</h4>
+    <a href="/admin/" class="btn btn-outline-primary btn-sm">
+        <i class="bi bi-arrow-right"></i> بازگشت به پنل مدیریت
+    </a>
+</div>
+
+<!-- فرم افزودن سمت -->
+<div class="card mb-4">
+    <div class="card-header bg-white">
+        <h6><i class="bi bi-plus-circle"></i> افزودن سمت جدید</h6>
+    </div>
+    <div class="card-body">
+        <form method="post" action="/admin/positions/add" class="row g-3 align-items-end">
+            <div class="col-md-5">
+                <label class="form-label">نام سمت <span class="text-danger">*</span></label>
+                <input type="text" name="name" class="form-control" placeholder="مثلاً پزشک متخصص" required maxlength="100">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">ترتیب نمایش</label>
+                <input type="number" name="sort_order" class="form-control" value="0" dir="ltr">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">وضعیت</label>
+                <div class="form-check form-switch mt-2">
+                    <input class="form-check-input" type="checkbox" name="is_active" value="on" checked id="posActive">
+                    <label class="form-check-label" for="posActive">فعال</label>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <button type="submit" class="btn btn-success w-100">
+                    <i class="bi bi-plus"></i> ثبت سمت
+                </button>
+            </div>
+        </form>
+        <small class="text-muted d-block mt-2">
+            <i class="bi bi-info-circle"></i>
+            سمت استفاده‌شده توسط کارمند قابل حذف نیست؛ می‌توانید آن را غیرفعال کنید.
+        </small>
+    </div>
+</div>
+
+<!-- فیلترها -->
+<div class="card mb-4">
+    <div class="card-body py-2">
+        <form method="get" action="/admin/positions" class="d-flex flex-wrap align-items-center gap-2">
+            <input type="text" name="search" class="form-control form-control-sm" style="width: 220px;"
+                   value="{{ search }}" placeholder="🔍 جستجو: نام سمت">
+            <select name="status_filter" class="form-select form-select-sm" style="width: auto;">
+                <option value="">همه وضعیت‌ها</option>
+                <option value="active" {% if status_filter == 'active' %}selected{% endif %}>فعال</option>
+                <option value="inactive" {% if status_filter == 'inactive' %}selected{% endif %}>غیرفعال</option>
+            </select>
+            <button type="submit" class="btn btn-primary btn-sm">
+                <i class="bi bi-search"></i> اعمال
+            </button>
+            <a href="/admin/positions?show_all=1" class="btn btn-success btn-sm {% if show_all %}disabled{% endif %}">
+                <i class="bi bi-list"></i> نمایش همه
+            </a>
+            {% if has_filter %}
+            <a href="/admin/positions" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-x-circle"></i> پاک کردن
+            </a>
+            {% endif %}
+        </form>
+    </div>
+</div>
+
+{% if not has_filter %}
+<div class="card">
+    <div class="card-body text-center py-5">
+        <i class="bi bi-search display-4 text-muted"></i>
+        <h5 class="mt-3 text-muted">برای مشاهده سمت‌ها، جستجو یا فیلتر اعمال کنید</h5>
+        <a href="/admin/positions?show_all=1" class="btn btn-success mt-2">
+            <i class="bi bi-list"></i> نمایش همه سمت‌ها
+        </a>
+    </div>
+</div>
+
+{% elif total_count == 0 %}
+<div class="card">
+    <div class="card-body text-center py-5">
+        <i class="bi bi-emoji-frown display-4 text-muted"></i>
+        <h5 class="mt-3 text-muted">هیچ سمتی یافت نشد</h5>
+    </div>
+</div>
+
+{% else %}
+<div class="card">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h6 class="mb-0"><i class="bi bi-list-ul"></i> سمت‌ها</h6>
+        <span class="badge bg-primary fs-6">{{ total_count }} مورد</span>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>ردیف</th>
+                        <th>نام سمت</th>
+                        <th class="text-center">ترتیب</th>
+                        <th class="text-center">وضعیت</th>
+                        <th class="text-center">ثبت در</th>
+                        <th class="text-center">عملیات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in positions %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td>{{ item.position.name }}</td>
+                        <td class="text-center" dir="ltr">{{ item.position.sort_order }}</td>
+                        <td class="text-center">
+                            {% if item.position.is_active %}
+                            <span class="badge bg-success">فعال</span>
+                            {% else %}
+                            <span class="badge bg-danger">غیرفعال</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">{{ item.created_j }}</td>
+                        <td class="text-center">
+                            <div class="btn-group btn-group-sm">
+                                <button type="button" class="btn btn-outline-warning"
+                                        data-bs-toggle="modal" data-bs-target="#editPosModal{{ item.position.id }}">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <form method="post" action="/admin/positions/{{ item.position.id }}/toggle"
+                                      class="d-inline"
+                                      onsubmit="return confirm('تغییر وضعیت سمت «{{ item.position.name | e }}»؟');">
+                                    <button type="submit" class="btn {% if item.position.is_active %}btn-outline-danger{% else %}btn-outline-success{% endif %}">
+                                        {% if item.position.is_active %}<i class="bi bi-pause-circle"></i>{% else %}<i class="bi bi-play-circle"></i>{% endif %}
+                                    </button>
+                                </form>
+                                <form method="post" action="/admin/positions/{{ item.position.id }}/delete"
+                                      class="d-inline"
+                                      onsubmit="return confirm('حذف سمت «{{ item.position.name | e }}»؟ این عمل برگشت‌پذیر نیست.');">
+                                    <button type="submit" class="btn btn-outline-danger" title="حذف">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+
+                    <div class="modal fade" id="editPosModal{{ item.position.id }}" tabindex="-1">
+                        <div class="modal-dialog">
+                            <div class="modal-content">
+                                <form method="post" action="/admin/positions/{{ item.position.id }}/edit">
+                                    <div class="modal-header">
+                                        <h5 class="modal-title">✏️ ویرایش سمت - {{ item.position.name }}</h5>
+                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <div class="row g-3">
+                                            <div class="col-12">
+                                                <label class="form-label">نام سمت <span class="text-danger">*</span></label>
+                                                <input type="text" name="name" class="form-control"
+                                                       value="{{ item.position.name }}" required maxlength="100">
+                                            </div>
+                                            <div class="col-md-6">
+                                                <label class="form-label">ترتیب نمایش</label>
+                                                <input type="number" name="sort_order" class="form-control" dir="ltr"
+                                                       value="{{ item.position.sort_order }}">
+                                            </div>
+                                            <div class="col-md-6">
+                                                <label class="form-label">وضعیت</label>
+                                                <div class="form-check form-switch mt-2">
+                                                    <input class="form-check-input" type="checkbox" name="is_active" value="on"
+                                                           id="editPosActive{{ item.position.id }}"
+                                                           {% if item.position.is_active %}checked{% endif %}>
+                                                    <label class="form-check-label" for="editPosActive{{ item.position.id }}">فعال</label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="modal-footer">
+                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
+                                        <button type="submit" class="btn btn-primary">ذخیره</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}

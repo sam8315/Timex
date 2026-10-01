@@ -22,7 +22,7 @@
         <form method="get" action="/admin/users">
             <div class="row g-3">
                 <!-- کادر جستجو -->
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <label class="form-label"><i class="bi bi-search"></i> جستجو</label>
                     <div class="input-group">
                         <input type="text" name="search" class="form-control"
@@ -47,8 +47,21 @@
                     </select>
                 </div>
 
-                <!-- نقش -->
+                <!-- سمت -->
                 <div class="col-md-2">
+                    <label class="form-label"><i class="bi bi-briefcase"></i> سمت</label>
+                    <select name="position_id" class="form-select">
+                        <option value="">همه</option>
+                        {% for p in positions %}
+                        <option value="{{ p.id }}" {% if position_id|string == p.id|string %}selected{% endif %}>
+                            {{ p.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- نقش -->
+                <div class="col-md-1">
                     <label class="form-label"><i class="bi bi-shield"></i> نقش</label>
                     <select name="role" class="form-select">
                         <option value="">همه</option>
@@ -107,7 +120,7 @@
         <i class="bi bi-search display-4 text-muted"></i>
         <h5 class="mt-3 text-muted">برای مشاهده کاربران، جستجو یا فیلتر اعمال کنید</h5>
         <p class="text-muted">
-            می‌توانید از کادر جستجو، فیلترهای دپارتمان، نقش یا وضعیت استفاده کنید
+            می‌توانید از کادر جستجو، فیلترهای دپارتمان، سمت، نقش یا وضعیت استفاده کنید
             <br>
             یا روی دکمه <strong>"نمایش همه کاربران"</strong> کلیک کنید
         </p>
@@ -130,7 +143,65 @@
 </div>
 
 {% else %}
-<!-- نمایش نتایج -->
+<!-- نمایش نتایج + چاپ -->
+<form method="post" action="/admin/users/print" id="usersPrintForm" target="_blank">
+<div class="card mb-3">
+    <div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <h6 class="mb-0"><i class="bi bi-printer"></i> گزینه‌های چاپ</h6>
+        <div class="d-flex flex-wrap gap-2">
+            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="togglePrintAll(true)">
+                انتخاب همه
+            </button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="togglePrintAll(false)">
+                هیچ‌کدام
+            </button>
+            <button type="submit" class="btn btn-dark btn-sm">
+                <i class="bi bi-printer"></i> پیش‌نمایش چاپ
+            </button>
+        </div>
+    </div>
+    <div class="card-body py-2">
+        <div class="d-flex flex-wrap gap-3 small">
+            <label class="form-check">
+                <input class="form-check-input" type="checkbox" name="fields" value="user_id" checked>
+                <span class="form-check-label">کد پرسنلی</span>
+            </label>
+            <label class="form-check">
+                <input class="form-check-input" type="checkbox" name="fields" value="name" checked>
+                <span class="form-check-label">نام</span>
+            </label>
+            <label class="form-check">
+                <input class="form-check-input" type="checkbox" name="fields" value="national_code" checked>
+                <span class="form-check-label">کد ملی</span>
+            </label>
+            <label class="form-check">
+                <input class="form-check-input" type="checkbox" name="fields" value="department" checked>
+                <span class="form-check-label">دپارتمان</span>
+            </label>
+            <label class="form-check">
+                <input class="form-check-input" type="checkbox" name="fields" value="position" checked>
+                <span class="form-check-label">سمت</span>
+            </label>
+            <label class="form-check">
+                <input class="form-check-input" type="checkbox" name="fields" value="role">
+                <span class="form-check-label">نقش</span>
+            </label>
+            <label class="form-check">
+                <input class="form-check-input" type="checkbox" name="fields" value="status" checked>
+                <span class="form-check-label">وضعیت</span>
+            </label>
+            <label class="form-check">
+                <input class="form-check-input" type="checkbox" name="fields" value="web_status">
+                <span class="form-check-label">وضعیت وب</span>
+            </label>
+            <label class="form-check">
+                <input class="form-check-input" type="checkbox" name="fields" value="last_login">
+                <span class="form-check-label">آخرین ورود</span>
+            </label>
+        </div>
+    </div>
+</div>
+
 <div class="card">
     <div class="card-header bg-white d-flex justify-content-between align-items-center">
         <h6 class="mb-0"><i class="bi bi-list-ul"></i> نتایج جستجو</h6>
@@ -141,11 +212,13 @@
             <table class="table table-hover">
                 <thead>
                     <tr>
+                        <th class="text-center" style="width: 3rem;">چاپ</th>
                         <th>ردیف</th>
                         <th>کد پرسنلی</th>
                         <th>نام کامل</th>
                         <th>کد ملی</th>
                         <th>دپارتمان</th>
+                        <th>سمت</th>
                         <th class="text-center">نقش</th>
                         <th class="text-center">وضعیت</th>
                         <th class="text-center">وضعیت وب</th>
@@ -156,6 +229,11 @@
                 <tbody>
                     {% for item in users %}
                     <tr>
+                        <td class="text-center">
+                            <input type="checkbox" class="form-check-input print-user-cb"
+                                   name="user_ids" value="{{ item.web_user.user_id }}"
+                                   {% if item.employee and item.employee.is_active %}checked{% endif %}>
+                        </td>
                         <td>{{ loop.index }}</td>
                         <td>{{ item.web_user.user_id }}</td>
                         <td>
@@ -178,6 +256,7 @@
                             <span class="text-muted">-</span>
                             {% endif %}
                         </td>
+                        <td>{{ item.employee.position_name if item.employee and item.employee.position_name else '—' }}</td>
                         <td class="text-center">
                             {% if item.web_user.role == 'super_admin' %}
                             <span class="badge bg-danger"><i class="bi bi-shield-fill"></i> مدیر ارشد</span>
@@ -236,6 +315,14 @@
         </div>
     </div>
 </div>
+</form>
+<script>
+function togglePrintAll(checked) {
+    document.querySelectorAll('.print-user-cb').forEach(function (el) {
+        el.checked = checked;
+    });
+}
+</script>
 {% endif %}
 
 {% endblock %}
