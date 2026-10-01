@@ -88,12 +88,24 @@ prev/next-day records.
   `seconds / 3600.0`, never rounded).
 - `MAX_PAIRS = 3` is a **presentation cap** in the report layer only; work
   hours are always computed from all pairs.
-- Day-level `work_hours` is never rounded (raw `seconds / 3600.0`).
-- Monthly-full v2 summaries aggregate exact daily values, then quantize
-  **once** to the nearest minute via
-  `_minutes_to_hours(_hours_to_minutes(sum(...)))` — not `round(total, 2)`.
+
+**Central Engine / shared day contract (all consumers):**
+- Day-level `work_hours` from the engine is always **raw**
+  (`seconds / 3600.0`, no day-level round).
+
+**Monthly-full v2** (`core/detailed_monthly_report_v2.py` — `/reports/monthly-full`):
+- Day rows keep that raw engine value (no `round(..., 2)`).
+- Monthly summary (`total_work_hours`, …) aggregates exact daily values, then
+  quantizes **once** to the nearest minute via
+  `_minutes_to_hours(_hours_to_minutes(sum(...)))`.
   Example: `109.5075 h → 6570.45 min → 6570 min → 109.5 h → 109:30`.
-  Display formatters (`H:MM` / PDF / Excel) use the same minute rule.
+- v2 display formatters (`H:MM` / PDF / Excel for monthly-full) use the same
+  minute rule. This is **not** `round(total, 2)`.
+
+**Console monthly report v1 / legacy** (`core/detailed_monthly_report.py`):
+- Still applies `round(..., 2)` in the report layer (day `work_hours` and
+  summary totals). That legacy behavior is intentional and separate from
+  monthly-full v2; do not conflate the two contracts.
 
 ## 7. Display mapping (class A)
 
@@ -177,9 +189,11 @@ time-flaky `tests/test_session_security.py::test_session_token_rejects_tampering
 جایگزین: `_compute_day_actual` که فقط
 `compute_day_attendance(...)` را صدا می‌زند، به‌علاوه‌ی `_display_status`
 که نگاشت **نمایشی** وضعیت فنی موتور به labelهای قبلی همین گزارش است.
-گرد کردن ساعت (`round(..., 2)`) در لایه‌ی گزارش باقی ماند؛ خودِ موتور هرگز
-گرد نمی‌کند. Query رکوردها حاشیه‌ی `-1 / +2` روز گرفت (context شیفت شب) و
-روزهای بیرون از ماه فقط context موتور ماندند.
+در همین گزارش **کنسولی v1 / legacy**، گرد کردن ساعت با `round(..., 2)` در
+لایه‌ی گزارش باقی ماند (روز و summary)؛ خودِ موتور هرگز گرد نمی‌کند.
+این با قرارداد monthly-full v2 (nearest-minute روی summary) یکی نیست.
+Query رکوردها حاشیه‌ی `-1 / +2` روز گرفت (context شیفت شب) و روزهای بیرون
+از ماه فقط context موتور ماندند.
 
 ### تفاوت رفتار (Before/After) — ۴ روز، و موتور دوم در هر چهار مورد اشتباه می‌کرد
 
@@ -382,8 +396,14 @@ next_day_records, is_friday, holiday_title, schedule_context)`.
 ## 20. دقت خام
 
 موتور ثانیه‌ی خام را نگه می‌دارد. مثال قفل‌شده: `۳۰ ثانیه → 30/3600
-= 0.008333…` و **نه** `0.01`. گرد کردن فقط در لایه‌ی گزارش/نمایش اتفاق
-می‌افتد (`round(x, 2)` یا `format_hours_hhmm`).
+= 0.008333…` و **نه** `0.01`. گرد کردن فقط در لایه‌ی گزارش/نمایش است و
+بسته به مصرف‌کننده فرق دارد:
+
+- **monthly-full v2:** روز = raw؛ summary = nearest-minute quantization
+  (`_hours_to_minutes` / `_minutes_to_hours`)؛ نمایش `H:MM` همان قاعده.
+- **مسیرهای `/attendance` و admin:** روز = raw؛ نمایش با `format_hours_hhmm`
+  (دقیقه‌ای).
+- **گزارش کنسولی v1 / legacy:** `round(..., 2)` در لایه‌ی همان گزارش v1.
 
 ## 21. مرزبندی لایه‌ها و جهت وابستگی
 
@@ -519,8 +539,8 @@ Pre-existing (تغییری نکرده): `tests/test_attendance_policy_service.py
 |---|---|---|---|---|
 | `/attendance` | `web/routes/attendance.py:234` | `compute_day_attendance` | موتور + leave-override مسیر | `result.work_hours` |
 | `/admin/attendance/user/{id}` | `web/routes/admin.py:1211` | `compute_day_attendance` | موتور + leave-override مسیر | `result.work_hours` |
-| `/reports/monthly-full` | `core/detailed_monthly_report_v2.py:350` | `compute_day_attendance` | موتور → `_display_status` | `result.work_hours` خام |
-| گزارش کنسولی v1 | `core/detailed_monthly_report.py:244` | `compute_day_attendance` | موتور → `_display_status` | `result.work_hours` (گرد در گزارش) |
+| `/reports/monthly-full` (v2) | `core/detailed_monthly_report_v2.py:350` | `compute_day_attendance` | موتور → `_display_status` | روز: `work_hours` خام؛ summary: nearest-minute |
+| گزارش کنسولی v1 / legacy | `core/detailed_monthly_report.py:244` | `compute_day_attendance` | موتور → `_display_status` | `round(..., 2)` در لایه‌ی گزارش v1 (روز + summary) |
 
 دو مسیر وب پس از leave-override، در صورت تغییر پرچم شیفت شب، از
 `calculate_work_hours` خودِ موتور برای بازمحاسبه استفاده می‌کنند (همان تابع،
