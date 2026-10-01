@@ -41,7 +41,7 @@
                 <option value="2" {% if department == '2' %}selected{% endif %}>وظیفه</option>
                 <option value="3" {% if department == '3' %}selected{% endif %}>خریدخدمت</option>
                 <option value="4" {% if department == '4' %}selected{% endif %}>قراردادی</option>
-                <option value="5" {% if department == '5' %}selected{% endif %}>پزشک</option>
+                <option value="5" {% if department == '5' %}selected{% endif %}>پزشکی</option>
             </select>
 
             <button type="submit" class="btn btn-primary">
@@ -140,7 +140,7 @@
                             {% elif r.department == '2' %}وظیفه
                             {% elif r.department == '3' %}خریدخدمت
                             {% elif r.department == '4' %}قراردادی
-                            {% elif r.department == '5' %}پزشک
+                            {% elif r.department == '5' %}پزشکی
                             {% else %}-{% endif %}
                         </td>
                         <td>

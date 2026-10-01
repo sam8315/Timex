@@ -220,7 +220,7 @@ async def admin_dashboard(
     # 🆕 تفکیک کارمندان فعال بر اساس نوع قرارداد
     DEPT_NAMES = {
         '1': 'رسمی', '2': 'وظیفه', '3': 'خریدخدمت',
-        '4': 'قراردادی', '5': 'پزشک'
+        '4': 'قراردادی', '5': 'پزشکی'
     }
     dept_counts_raw = db.query(
         Employee.department,
@@ -745,7 +745,7 @@ DEPT_LABELS = {
     '2': 'وظیفه',
     '3': 'خریدخدمت',
     '4': 'قراردادی',
-    '5': 'پزشک',
+    '5': 'پزشکی',
 }
 
 PRINT_FIELD_LABELS = {
@@ -2549,7 +2549,7 @@ async def admin_incomplete_attendance(
 
     dept_names = {
         '1': 'رسمی', '2': 'وظیفه', '3': 'خریدخدمت',
-        '4': 'قراردادی', '5': 'پزشک', 'بدون گروه': 'بدون گروه'
+        '4': 'قراردادی', '5': 'پزشکی', 'بدون گروه': 'بدون گروه'
     }
 
     return templates.TemplateResponse(request, "admin/incomplete.html", {

@@ -43,7 +43,7 @@
                         <option value="2" {% if department == '2' %}selected{% endif %}>وظیفه</option>
                         <option value="3" {% if department == '3' %}selected{% endif %}>خریدخدمت</option>
                         <option value="4" {% if department == '4' %}selected{% endif %}>قراردادی</option>
-                        <option value="5" {% if department == '5' %}selected{% endif %}>پزشک</option>
+                        <option value="5" {% if department == '5' %}selected{% endif %}>پزشکی</option>
                     </select>
                 </div>
 
@@ -250,7 +250,7 @@
                             {% elif item.employee.department == '2' %}<span class="badge bg-info">وظیفه</span>
                             {% elif item.employee.department == '3' %}<span class="badge bg-warning text-dark">خریدخدمت</span>
                             {% elif item.employee.department == '4' %}<span class="badge bg-success">قراردادی</span>
-                            {% elif item.employee.department == '5' %}<span class="badge bg-danger">پزشک</span>
+                            {% elif item.employee.department == '5' %}<span class="badge bg-danger">پزشکی</span>
                             {% else %}<span class="badge bg-secondary">-</span>{% endif %}
                             {% else %}
                             <span class="text-muted">-</span>

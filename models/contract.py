@@ -42,7 +42,7 @@ CONTRACT_TYPES = {
         'carry_forward_max': 9,
     },
     '5': {
-        'name': 'پزشک',
+        'name': 'پزشکی',
         'annual_leave': 0,
         'sick_leave': 0,
         'allow_service_deduction': False,

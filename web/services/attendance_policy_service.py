@@ -5,7 +5,7 @@
 را متمرکز کرده و توسط User View، Manager View و Reports استفاده می‌شود.
 
 طراحی شده برای پشتیبانی از:
-- Employment Type Policy (رسمی، وظیفه، خریدخدمت، قراردادی، پزشک)
+- Employment Type Policy (رسمی، وظیفه، خریدخدمت، قراردادی، پزشکی)
 - Employee Override (سیاست مخصوص یک کارمند)
 - Historical Policies (سیاست‌های تاریخی با effective_from/effective_to)
 - Future Shift Integration (رابط برای شیفت در آینده)

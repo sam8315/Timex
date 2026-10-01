@@ -46,7 +46,7 @@
                     <option value="2">وظیفه</option>
                     <option value="3">خریدخدمت</option>
                     <option value="4">قراردادی</option>
-                    <option value="5">پزشک</option>
+                    <option value="5">پزشکی</option>
                 </select>
             </div>
             <div class="col-md-2">
@@ -75,7 +75,7 @@
                 <option value="2" {% if group_filter == '2' %}selected{% endif %}>وظیفه</option>
                 <option value="3" {% if group_filter == '3' %}selected{% endif %}>خریدخدمت</option>
                 <option value="4" {% if group_filter == '4' %}selected{% endif %}>قراردادی</option>
-                <option value="5" {% if group_filter == '5' %}selected{% endif %}>پزشک</option>
+                <option value="5" {% if group_filter == '5' %}selected{% endif %}>پزشکی</option>
             </select>
             <button type="submit" class="btn btn-primary btn-sm">
                 <i class="bi bi-search"></i> اعمال
@@ -128,7 +128,7 @@
                             {% elif h.group_id == '4' %}
                             <span class="badge bg-success">قراردادی</span>
                             {% elif h.group_id == '5' %}
-                            <span class="badge bg-danger">پزشک</span>
+                            <span class="badge bg-danger">پزشکی</span>
                             {% endif %}
                         </td>
                         <td class="text-center">
@@ -175,7 +175,7 @@
                                                 <option value="2" {% if h.group_id == '2' %}selected{% endif %}>وظیفه</option>
                                                 <option value="3" {% if h.group_id == '3' %}selected{% endif %}>خریدخدمت</option>
                                                 <option value="4" {% if h.group_id == '4' %}selected{% endif %}>قراردادی</option>
-                                                <option value="5" {% if h.group_id == '5' %}selected{% endif %}>پزشک</option>
+                                                <option value="5" {% if h.group_id == '5' %}selected{% endif %}>پزشکی</option>
                                             </select>
                                         </div>
                                     </div>

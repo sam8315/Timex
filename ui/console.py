@@ -1658,12 +1658,12 @@ class ConsoleUI:
         print("    2. وظیفه")
         print("    3. خریدخدمت")
         print("    4. قراردادی")
-        print("    5. پزشک")
+        print("    5. پزشکی")
         print("    6. سایر (دستی)")
         type_choice = input("  انتخاب [1-6]: ").strip()
         type_map = {
             '1': 'رسمی', '2': 'وظیفه', '3': 'خریدخدمت',
-            '4': 'قراردادی', '5': 'پزشک'
+            '4': 'قراردادی', '5': 'پزشکی'
         }
         contract_type = type_map.get(type_choice, input("  نام قرارداد: ").strip())
         if not contract_type:
@@ -1702,7 +1702,7 @@ class ConsoleUI:
             'وظیفه': (36, 0, 0, 0),
             'خریدخدمت': (30, 0, 0, 0),
             'قراردادی': (30, 0, 0, 0),
-            'پزشک': (0, 0, 0, 0),
+            'پزشکی': (0, 0, 0, 0),
         }
         default_values = defaults.get(contract_type, (0, 0, 0, 0))
         print(f"\n  💡 مقادیر پیش‌فرض برای قرارداد {contract_type}:")
@@ -1960,7 +1960,7 @@ class ConsoleUI:
             print("    2. وظیفه")
             print("    3. خریدخدمت")
             print("    4. قراردادی")
-            print("    5. پزشک")
+            print("    5. پزشکی")
             group_choice = input("  انتخاب [1-5]: ").strip()
 
             group_map = {
@@ -1968,7 +1968,7 @@ class ConsoleUI:
                 '2': ('2', 'وظیفه'),
                 '3': ('3', 'خریدخدمت'),
                 '4': ('4', 'قراردادی'),
-                '5': ('5', 'پزشک')
+                '5': ('5', 'پزشکی')
             }
 
             if group_choice not in group_map:
@@ -2052,7 +2052,7 @@ class ConsoleUI:
                 '2': 'وظیفه',
                 '3': 'خریدخدمت',
                 '4': 'قراردادی',
-                '5': 'پزشک'
+                '5': 'پزشکی'
             }
 
             for h in holidays:
@@ -3243,7 +3243,7 @@ class ConsoleUI:
             '2': 'وظیفه',
             '3': 'خریدخدمت',
             '4': 'قراردادی',
-            '5': 'پزشک',
+            '5': 'پزشکی',
             None: 'بدون گروه',
             '': 'بدون گروه'
         }
@@ -3276,7 +3276,7 @@ class ConsoleUI:
         print("    2. وظیفه")
         print("    3. خریدخدمت")
         print("    4. قراردادی")
-        print("    5. پزشک")
+        print("    5. پزشکی")
         group_choice = input("  انتخاب [0-5] [پیش‌فرض: 0]: ").strip() or '0'
 
         if group_choice == '0':
@@ -3609,7 +3609,7 @@ class ConsoleUI:
         print("    2. وظیفه")
         print("    3. خریدخدمت")
         print("    4. قراردادی")
-        print("    5. پزشک")
+        print("    5. پزشکی")
         dept_choice = input("  انتخاب [0-5]: ").strip()
         department = dept_choice if dept_choice != '0' else None
 
@@ -3725,7 +3725,7 @@ class ConsoleUI:
                 '2': 'وظیفه',
                 '3': 'خریدخدمت',
                 '4': 'قراردادی',
-                '5': 'پزشک'
+                '5': 'پزشکی'
             }
             for i, r in enumerate(reports, 1):
                 # ✅ استفاده مستقیم از full_name و department
@@ -3793,7 +3793,7 @@ class ConsoleUI:
                 '2': 'وظیفه',
                 '3': 'خریدخدمت',
                 '4': 'قراردادی',
-                '5': 'پزشک',
+                '5': 'پزشکی',
                 None: 'بدون گروه',
                 '': 'بدون گروه'
             }
@@ -5115,7 +5115,7 @@ class ConsoleUI:
             '2': 'وظیفه',
             '3': 'خریدخدمت',
             '4': 'قراردادی',
-            '5': 'پزشک',
+            '5': 'پزشکی',
             None: 'بدون گروه',
             '': 'بدون گروه'
         }
@@ -5297,7 +5297,7 @@ class ConsoleUI:
                 print("    2. وظیفه")
                 print("    3. خریدخدمت")
                 print("    4. قراردادی")
-                print("    5. پزشک")
+                print("    5. پزشکی")
                 new_value = input(f"  دپارتمان جدید [{employee.department or '-'}]: ").strip()
                 if new_value in ['1', '2', '3', '4', '5']:
                     employee.department = new_value

@@ -48,7 +48,7 @@ class HourlyMissionPolicy(TimestampMixin, Base):
         String(10),
         nullable=False,
         index=True,
-        comment="کد نوع عضویت: 1=رسمی، 2=وظیفه، 3=خریدخدمت، 4=قراردادی، 5=پزشک",
+        comment="کد نوع عضویت: 1=رسمی، 2=وظیفه، 3=خریدخدمت، 4=قراردادی، 5=پزشکی",
     )
 
     user_id: Mapped[Optional[str]] = mapped_column(

@@ -76,7 +76,7 @@ def _get_employment_type(employee) -> str:
         '2': 'CONSCRIPT',   # وظیفه
         '3': 'CONTRACTOR',  # خریدخدمت
         '4': 'LABOR_LAW',   # قراردادی اداره کار
-        '5': 'PHYSICIAN',   # پزشک
+        '5': 'PHYSICIAN',   # پزشکی
     }
     if hasattr(employee, 'department') and getattr(employee, 'department', None):
         return DEPT_TO_EMP_TYPE.get(str(employee.department), 'LABOR_LAW')

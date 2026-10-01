@@ -429,7 +429,7 @@ def split_contract_coverage_by_year(
             return [(current_year, seg_start, seg_end)]
         return []
 
-    # قراردادی / خریدخدمت / سایر / بیمه / پزشک
+    # قراردادی / خریدخدمت / سایر / بیمه / پزشکی
     end_g = contract.end_date
     if end_g is None:
         seg_start = max(start_g, y_start)

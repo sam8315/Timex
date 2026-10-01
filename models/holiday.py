@@ -31,6 +31,6 @@ class Holiday(TimestampMixin, Base):
             '2': 'وظیفه',
             '3': 'خریدخدمت',
             '4': 'قراردادی',
-            '5': 'پزشک'
+            '5': 'پزشکی'
         }
         return group_names.get(self.group_id, f'گروه {self.group_id}')
