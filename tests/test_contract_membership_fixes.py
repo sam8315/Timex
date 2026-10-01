@@ -21,7 +21,9 @@ from web.services.leave_entitlement_service import (
 )
 from web.services.leave_service import (
     charge_leave_for_new_contract,
+    get_buyback_quota,
     get_stored_leave_balance,
+    set_buyback_quota_for_year,
     set_stored_leave_for_year,
 )
 
@@ -141,7 +143,7 @@ class TestPermanent:
         assert add_years(d(2020, 3, 1), 30) == d(2050, 3, 1)
         assert add_years(d(2020, 2, 29), 30).year == 2050
 
-    def test_permanent_long_end_charges_only_start_year(self, db, make_user):
+    def test_permanent_long_end_charges_only_current_year(self, db, make_user):
         user = make_user(department="1", balance_al=None, contract_type_code="1")
         _seed_policy(db, {'1': 30}, region_applies={'1': False})
         year = jdatetime.date.today().year
@@ -162,6 +164,7 @@ class TestPermanent:
         result = calculate_entitlement_by_year(db, c, annual_override=30)
         assert list(result.keys()) == [year]
         assert round(result[year]['AL']) == 30
+        assert result[year]['SL'] == 0.0
 
 
 class TestStoredLeave:
@@ -179,6 +182,84 @@ class TestStoredLeave:
         )
         assert r2['diff'] == 5
         assert get_stored_leave_balance(db, user["user_id"], year) == 15
+
+
+class TestBuybackQuotaOnContract:
+    def test_set_buyback_quota_absolute(self, db, make_user):
+        user = make_user(department="1", balance_al=None)
+        year = jdatetime.date.today().year
+        r1 = set_buyback_quota_for_year(
+            db, user_id=user["user_id"], year=year, target_days=5, notes="t1"
+        )
+        assert r1['new'] == 5
+        assert get_buyback_quota(db, user["user_id"], year) == 5
+
+        r2 = set_buyback_quota_for_year(
+            db, user_id=user["user_id"], year=year, target_days=8, notes="t2"
+        )
+        assert r2['diff'] == 3
+        assert get_buyback_quota(db, user["user_id"], year) == 8
+
+    def test_permanent_contract_add_sets_stored_and_buyback(self, client, db, make_user):
+        from models.leave_buyback_quota import LeaveBuybackQuota
+        from .conftest import login_as
+
+        admin = make_user(role="super_admin", balance_al=None)
+        target = make_user(role="user", balance_al=None, department="1", contract_type_code="4")
+        db.query(Contract).filter(Contract.user_id == target["user_id"]).delete()
+        db.commit()
+
+        login_as(client, admin["national_code"])
+        year = jdatetime.date.today().year
+        start_j = jdatetime.date(year, 1, 1).strftime("%Y/%m/%d")
+
+        resp = client.post(
+            "/admin/contracts/add",
+            data={
+                "user_id": target["user_id"],
+                "contract_type_code": "1",
+                "start_date_str": start_j,
+                "end_date_str": "",
+                "annual_leave_days": "0",
+                "sick_leave_days": "0",
+                "service_deduction_days": "0",
+                "stored_leave_days": "20",
+                "buyback_leave_days": "5",
+                "description": "",
+            },
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+        assert "error" not in (resp.headers.get("location") or "")
+
+        assert get_stored_leave_balance(db, target["user_id"], year) == 20
+        quota = db.query(LeaveBuybackQuota).filter_by(
+            user_id=target["user_id"], year=year
+        ).first()
+        assert quota is not None and quota.days == 5
+
+        contract = db.query(Contract).filter_by(user_id=target["user_id"]).first()
+        assert contract and contract.contract_type_code == "1"
+
+        # edit: change buyback to 7
+        resp2 = client.post(
+            f"/admin/contracts/{contract.id}/edit",
+            data={
+                "contract_type_code": "1",
+                "start_date_str": start_j,
+                "end_date_str": "",
+                "annual_leave_days": str(contract.annual_leave_days),
+                "sick_leave_days": str(contract.sick_leave_days),
+                "service_deduction_days": "0",
+                "stored_leave_days": "20",
+                "buyback_leave_days": "7",
+                "description": "",
+            },
+            follow_redirects=False,
+        )
+        assert resp2.status_code == 302
+        db.expire_all()
+        assert get_buyback_quota(db, target["user_id"], year) == 7
 
 
 class TestDepartmentSync:

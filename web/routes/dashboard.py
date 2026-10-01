@@ -28,6 +28,9 @@ from models.leave_carry_forward_request import LeaveCarryForwardRequest
 router = APIRouter(tags=["Dashboard"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
 
+# موقتاً خاموش تا پایان بازسازی و تأیید دفترکل مرخصی
+CARRY_FORWARD_MODAL_ENABLED = False
+
 # دیکشنری ترجمه انواع مرخصی
 LEAVE_TYPE_NAMES = {
     'AL': 'استحقاقی',
@@ -231,14 +234,14 @@ async def dashboard(
     # ============================================
     # 🆕 منطق یکپارچه انتقال مرخصی (بدون کد تکراری)
     # ============================================
-    unused_leave = get_unused_leave_from_previous_year(db, user.user_id)
+    unused_leave = get_unused_leave_from_previous_year(db, user.user_id) if CARRY_FORWARD_MODAL_ENABLED else {}
     carry_forward_year = today_j.year - 1  # همیشه سال قبل
     show_carry_forward_modal = False
     has_pending_carry_forward = False
     carry_forward_limit = None
     contract_analysis = None  # 🆕 تحلیل قراردادهای سال قبل
 
-    if unused_leave:
+    if CARRY_FORWARD_MODAL_ENABLED and unused_leave:
         # بررسی وجود درخواست قبلی (جلوگیری از نمایش مجدد مودال)
         has_pending_carry_forward = not has_carry_forward_request(db, user.user_id, carry_forward_year)
 

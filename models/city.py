@@ -18,7 +18,7 @@ class City(TimestampMixin, Base):
     latitude: Mapped[float] = mapped_column(Float, nullable=False)
     longitude: Mapped[float] = mapped_column(Float, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    # Service region grade (NORMAL / GRADE_1..3); source of truth for employee region
+    # Service region grade (NORMAL / GRADE_2..4); source of truth for employee region
     region_code: Mapped[str] = mapped_column(
         String(20), nullable=False, default='NORMAL', server_default='NORMAL',
     )

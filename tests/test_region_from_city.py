@@ -68,7 +68,7 @@ def test_service_location_sets_employee_region(db, make_user):
 def test_end_service_location_resets_to_normal(client, db, make_user):
     admin = make_user(role="super_admin")
     user = make_user(role="user", region_code="NORMAL")
-    city = _make_city(db, name=f"RegionCityB{user['user_id']}", region_code="GRADE_1")
+    city = _make_city(db, name=f"RegionCityB{user['user_id']}", region_code="GRADE_2")
 
     login_as(client, admin["national_code"])
     resp = client.post(
@@ -85,7 +85,7 @@ def test_end_service_location_resets_to_normal(client, db, make_user):
     assert resp.status_code == 302
     db.expire_all()
     emp = db.query(Employee).filter(Employee.user_id == user["user_id"]).first()
-    assert emp.region_code == "GRADE_1"
+    assert emp.region_code == "GRADE_2"
 
     loc = (
         db.query(EmployeeServiceLocation)

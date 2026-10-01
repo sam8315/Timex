@@ -26,6 +26,25 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templa
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
     session = get_session_from_request(request)
+    # #region agent log
+    try:
+        import json, time
+        with open(r"d:\Projects\Timex\debug-cc9069.log", "a", encoding="utf-8") as _f:
+            _f.write(json.dumps({
+                "sessionId": "cc9069", "runId": "pre-fix", "hypothesisId": "A,B",
+                "location": "web/routes/auth.py:login_page",
+                "message": "login page hit",
+                "data": {
+                    "has_session": bool(session),
+                    "session_user_id": (session or {}).get("user_id"),
+                    "cookie_keys": list(request.cookies.keys())[:8],
+                    "will_redirect_dashboard": bool(session),
+                },
+                "timestamp": int(time.time() * 1000),
+            }, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+    # #endregion
     if session:
         return RedirectResponse(url="/dashboard", status_code=302)
     msg = request.query_params.get("msg")

@@ -82,6 +82,243 @@ def resolve_membership_code_for_policy(contract_type_code: str) -> str:
     return '4'
 
 
+def _parse_buyback_cap(raw: Optional[str]) -> Optional[int]:
+    """
+    سقف بازخرید از رشته سیاست.
+    None / empty / 'none' / '-1' / 'unlimited' → نامحدود (همه CW قابل‌بازخرید).
+    """
+    if raw is None:
+        return None
+    text = str(raw).strip().lower()
+    if text in ('', 'none', 'null', '-1', 'unlimited'):
+        return None
+    try:
+        return max(0, int(float(text)))
+    except (TypeError, ValueError):
+        return None
+
+
+DEFAULT_BUYBACK_BY_REGION = {
+    'NORMAL': 15,
+    'GRADE_2': 18,
+    'GRADE_3': 20,
+    'GRADE_4': 22,
+}
+
+ARTICLE11_REGION_DISPLAY_NAMES = {
+    'NORMAL': 'عادی',
+    'GRADE_2': 'درجه دو',
+    'GRADE_3': 'درجه سه',
+    'GRADE_4': 'درجه چهار',
+}
+
+DEFAULT_ERA_PRE_1390 = 'none'
+DEFAULT_ERA_1390_1398 = 15
+DEFAULT_ERA_GRADE4_FROM = '1391/07/15'
+DEFAULT_ERA_GRADE4_CAP = 25
+DEFAULT_ERA_MODERN_FROM = 1399
+
+
+def default_buyback_cap_for_membership(membership_code: str) -> Optional[int]:
+    """پیش‌فرض بدون رکورد سیاست: غیررسمی نامحدود؛ رسمی ۱۵."""
+    code = resolve_membership_code_for_policy(membership_code)
+    if code in MEMBERSHIP_PRORATE_BY_CONTRACT or code == MEMBERSHIP_PHYSICIAN:
+        return None
+    if code == MEMBERSHIP_CONSCRIPT:
+        return None
+    if code == MEMBERSHIP_PERMANENT:
+        return 15
+    return None
+
+
+def resolve_max_carry_forward(db: Session, membership_code: str) -> Optional[int]:
+    """
+    سقف انتقال مرخصی به سال بعد برای نوع عضویت.
+    None = بدون سقف (همه مانده قابل‌انتقال).
+    """
+    policy_code = resolve_membership_code_for_policy(membership_code)
+    policy = _get_leave_policy(db)
+    if policy:
+        dept_pv = _get_policy_param(db, policy.id, f'carry_forward_dept_{policy_code}')
+        if dept_pv is not None and dept_pv.parameter_value is not None:
+            return _parse_buyback_cap(dept_pv.parameter_value)  # same none/int parser
+        global_pv = _get_policy_param(db, policy.id, 'max_carry_forward')
+        if global_pv is not None and global_pv.parameter_value is not None:
+            return _parse_buyback_cap(global_pv.parameter_value)
+
+    # پیش‌فرض از CONTRACT_TYPES
+    from models.contract import CONTRACT_TYPES
+    cfg = CONTRACT_TYPES.get(policy_code, {})
+    raw = cfg.get('carry_forward_max', 0)
+    try:
+        return max(0, int(raw))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _region_applies_for_membership(db: Session, policy_id: int, membership_code: str) -> bool:
+    flag = _get_policy_param(db, policy_id, f'region_applies_dept_{membership_code}')
+    if flag is None:
+        return True
+    return flag.parameter_value not in ('false', '0', 'off', '')
+
+
+def _parse_jalali_ymd(text: str) -> Optional[jdatetime.date]:
+    try:
+        parts = [int(p) for p in str(text).strip().replace('-', '/').split('/')]
+        if len(parts) != 3:
+            return None
+        return jdatetime.date(parts[0], parts[1], parts[2])
+    except Exception:
+        return None
+
+
+def resolve_buyback_cap_for_region(
+    db: Session,
+    region_code: Optional[str],
+) -> int:
+    """سقف ماده ۱۱ از ۱۳۹۹ برای یک منطقه."""
+    code = (region_code or DEFAULT_REGION_CODE).strip().upper() or DEFAULT_REGION_CODE
+    # سازگاری عقب‌رو: درجه یک دیگر منطقه جدا نیست
+    if code == 'GRADE_1':
+        code = DEFAULT_REGION_CODE
+    policy = _get_leave_policy(db)
+    if policy:
+        pv = _get_policy_param(db, policy.id, 'buyback_cap', region_code=code)
+        if pv is not None and pv.parameter_value is not None:
+            parsed = _parse_buyback_cap(pv.parameter_value)
+            if parsed is not None:
+                return parsed
+    return DEFAULT_BUYBACK_BY_REGION.get(code, 15)
+
+
+def resolve_historical_buyback_cap(
+    db: Session,
+    *,
+    region_code: Optional[str],
+    year_j: int,
+    as_of_j: Optional[jdatetime.date] = None,
+) -> Optional[int]:
+    """سقف بازخرید طبق بازه‌های تاریخی ماده ۱۱/۱."""
+    policy = _get_leave_policy(db)
+
+    def _era_val(key: str, default):
+        if not policy:
+            return default
+        pv = _get_policy_param(db, policy.id, key)
+        if pv is None or pv.parameter_value is None:
+            return default
+        return pv.parameter_value
+
+    modern_raw = _era_val('buyback_era_modern_from_year', str(DEFAULT_ERA_MODERN_FROM))
+    try:
+        modern_from = int(float(modern_raw))
+    except (TypeError, ValueError):
+        modern_from = DEFAULT_ERA_MODERN_FROM
+
+    if year_j >= modern_from:
+        return resolve_buyback_cap_for_region(db, region_code)
+
+    if year_j <= 1389:
+        return _parse_buyback_cap(str(_era_val('buyback_era_pre_1390_cap', DEFAULT_ERA_PRE_1390)))
+
+    # 1390 .. modern_from-1
+    base = _parse_buyback_cap(str(_era_val('buyback_era_1390_1398_cap', str(DEFAULT_ERA_1390_1398))))
+    region = (region_code or DEFAULT_REGION_CODE).strip().upper()
+    if region == 'GRADE_4':
+        from_raw = str(_era_val('buyback_era_grade4_from', DEFAULT_ERA_GRADE4_FROM))
+        grade4_cap = _parse_buyback_cap(
+            str(_era_val('buyback_era_grade4_cap', str(DEFAULT_ERA_GRADE4_CAP)))
+        )
+        start_j = _parse_jalali_ymd(from_raw) or jdatetime.date(1391, 7, 15)
+        point = as_of_j or jdatetime.date(year_j, 12, 29)
+        try:
+            # سال کبیسه ممکن است ۳۰ داشته باشد
+            point = as_of_j or jdatetime.date(year_j, 12, 30)
+        except ValueError:
+            point = as_of_j or jdatetime.date(year_j, 12, 29)
+        if point >= start_j and grade4_cap is not None:
+            return grade4_cap
+    return base if base is not None else 15
+
+
+def resolve_max_buyback(
+    db: Session,
+    membership_code: str,
+    *,
+    user_id: Optional[str] = None,
+    region_code: Optional[str] = None,
+    year_j: Optional[int] = None,
+) -> Optional[int]:
+    """
+    سقف بازخرید روز برای تقسیم منطقی CW.
+
+    - غیررسمی با buyback_dept=none → None (همه CW قابل‌بازخرید)
+    - رسمی + اعمال منطقه → ماده ۱۱/منطقه یا عصر تاریخی
+    - در غیر این صورت buyback_dept یا پیش‌فرض عضویت
+    """
+    policy_code = resolve_membership_code_for_policy(membership_code)
+    policy = _get_leave_policy(db)
+    year = year_j if year_j is not None else jdatetime.date.today().year
+
+    # صریح گروه: برای غیررسمی اولویت دارد
+    if policy:
+        dept_pv = _get_policy_param(db, policy.id, f'buyback_dept_{policy_code}')
+        if policy_code != MEMBERSHIP_PERMANENT:
+            if dept_pv is not None and dept_pv.parameter_value is not None:
+                return _parse_buyback_cap(dept_pv.parameter_value)
+            if policy_code in MEMBERSHIP_PRORATE_BY_CONTRACT or policy_code == MEMBERSHIP_PHYSICIAN:
+                return None
+            if policy_code == MEMBERSHIP_CONSCRIPT:
+                return None
+
+        # رسمی با اعمال منطقه → سقف منطقه/عصر
+        if policy_code == MEMBERSHIP_PERMANENT and _region_applies_for_membership(
+            db, policy.id, policy_code
+        ):
+            effective_region = region_code
+            if not effective_region and user_id:
+                effective_region = resolve_region_code_from_service_location(db, user_id)
+            if not effective_region:
+                effective_region = DEFAULT_REGION_CODE
+            return resolve_historical_buyback_cap(
+                db,
+                region_code=effective_region,
+                year_j=year,
+            )
+
+        # رسمی بدون اعمال منطقه → buyback_dept_1 یا max_buyback
+        if policy_code == MEMBERSHIP_PERMANENT:
+            if dept_pv is not None and dept_pv.parameter_value is not None:
+                return _parse_buyback_cap(dept_pv.parameter_value)
+            global_pv = _get_policy_param(db, policy.id, 'max_buyback')
+            if global_pv is not None and global_pv.parameter_value is not None:
+                return _parse_buyback_cap(global_pv.parameter_value)
+
+    return default_buyback_cap_for_membership(policy_code)
+
+
+def resolve_membership_for_user(db: Session, user_id: str) -> str:
+    """عضویت مؤثر کاربر از قرارداد فعال یا Employee.department."""
+    today = date.today()
+    contracts = (
+        db.query(Contract)
+        .filter(Contract.user_id == user_id)
+        .order_by(Contract.start_date.desc())
+        .all()
+    )
+    for c in contracts:
+        if c.start_date <= today and c.is_active:
+            return resolve_membership_code_for_policy(c.contract_type_code)
+    if contracts:
+        return resolve_membership_code_for_policy(contracts[0].contract_type_code)
+
+    employee = db.query(Employee).filter(Employee.user_id == user_id).first()
+    if employee and employee.department:
+        return resolve_membership_code_for_policy(str(employee.department))
+    return '4'
+
+
 def resolve_annual_leave_days(
     db: Session,
     membership_code: str,
@@ -151,57 +388,60 @@ def split_contract_coverage_by_year(
     contract: Contract,
 ) -> List[Tuple[int, date, Optional[date]]]:
     """
-    تقسیم پوشش قرارداد بر سال شمسی با توجه به نوع عضویت.
+    تقسیم پوشش قرارداد برای شارژ مرخصی — فقط سال شمسی جاری.
 
-    - رسمی: پایان قرارداد نادیده گرفته می‌شود → از start تا پایان سال شروع
-      (یا سال‌های بین start و امروز/سال جاری برای قرارداد باز فقط سال شروع در رویداد شارژ)
-    - وظیفه: تا actual_end_date
-    - قراردادی و مشابه: تا end_date قرارداد
+    - رسمی: اگر در سال جاری فعال باشد، از max(شروع، اول سال) تا پایان سال جاری
+      (پایان بلندمدت قرارداد روی سال‌های قبل/بعد شارژ نمی‌سازد)
+    - وظیفه: تا actual_end_date، فقط بخش سال جاری
+    - قراردادی و مشابه: تا end_date، فقط بخش سال جاری
     """
     code = contract.contract_type_code
     start_g = contract.start_date
-    start_j = jdatetime.date.fromgregorian(date=start_g)
+    current_year = jdatetime.date.today().year
+    y_start, y_end = jalali_year_bounds_g(current_year)
+
+    if start_g > y_end:
+        return []
 
     if code == MEMBERSHIP_PERMANENT:
-        # رسمی: فقط سال شمسی شروع شارژ می‌شود (حتی اگر end_date سی‌ساله باشد)
-        _, year_end = jalali_year_bounds_g(start_j.year)
-        return [(start_j.year, start_g, year_end)]
+        # رسمی: پایان قرارداد روی شارژ سال جاری اثر ندارد (تا پایان سال جاری)
+        if start_g > y_end:
+            return []
+        # اگر قرارداد صریحاً قبل از سال جاری تمام شده باشد، شارژ نکن
+        if contract.end_date is not None and contract.end_date < y_start:
+            return []
+        seg_start = max(start_g, y_start)
+        return [(current_year, seg_start, y_end)]
 
     # وظیفه: actual_end_date
     if code == MEMBERSHIP_CONSCRIPT:
         end_g = contract_effective_end(contract)
         if end_g is None:
-            _, year_end = jalali_year_bounds_g(start_j.year)
-            return [(start_j.year, start_g, year_end)]
-        if end_g < start_g:
-            return []
-        end_j = jdatetime.date.fromgregorian(date=end_g)
-        segments = []
-        for year in range(start_j.year, end_j.year + 1):
-            y_start, y_end = jalali_year_bounds_g(year)
+            if start_g > y_end:
+                return []
             seg_start = max(start_g, y_start)
-            seg_end = min(end_g, y_end)
-            if seg_start <= seg_end:
-                segments.append((year, seg_start, seg_end))
-        return segments
-
-    # قراردادی / خریدخدمت / سایر / بیمه / پزشک
-    if contract.end_date is None:
-        _, year_end = jalali_year_bounds_g(start_j.year)
-        return [(start_j.year, start_g, year_end)]
-
-    end_g = contract.end_date
-    if end_g < start_g:
-        return []
-    end_j = jdatetime.date.fromgregorian(date=end_g)
-    segments = []
-    for year in range(start_j.year, end_j.year + 1):
-        y_start, y_end = jalali_year_bounds_g(year)
+            return [(current_year, seg_start, y_end)]
+        if end_g < start_g or end_g < y_start:
+            return []
         seg_start = max(start_g, y_start)
         seg_end = min(end_g, y_end)
         if seg_start <= seg_end:
-            segments.append((year, seg_start, seg_end))
-    return segments
+            return [(current_year, seg_start, seg_end)]
+        return []
+
+    # قراردادی / خریدخدمت / سایر / بیمه / پزشک
+    end_g = contract.end_date
+    if end_g is None:
+        seg_start = max(start_g, y_start)
+        return [(current_year, seg_start, y_end)]
+
+    if end_g < start_g or end_g < y_start:
+        return []
+    seg_start = max(start_g, y_start)
+    seg_end = min(end_g, y_end)
+    if seg_start <= seg_end:
+        return [(current_year, seg_start, seg_end)]
+    return []
 
 
 def charge_amount_for_segment(
@@ -251,9 +491,11 @@ def calculate_entitlement_by_year(
     annual_override: Optional[int] = None,
 ) -> Dict[int, Dict[str, float]]:
     """
-    محاسبه AL (و SL از فیلد قرارداد) به تفکیک سال شمسی با قواعد عضویت.
+    محاسبه استحقاق قابل‌شارژ هنگام تنظیم قرارداد.
 
-    Returns: {year: {'AL': float, 'SL': float}}
+    فقط AL سال شمسی جاری؛ استعلاجی (SL) هرگز شارژ نمی‌شود.
+
+    Returns: {year: {'AL': float, 'SL': 0.0}}
     """
     if employee is None:
         employee = db.query(Employee).filter(Employee.user_id == contract.user_id).first()
@@ -263,23 +505,21 @@ def calculate_entitlement_by_year(
         if annual_override is not None
         else resolve_annual_for_employee_contract(db, employee, contract)
     )
-    sick = float(contract.sick_leave_days or 0)
     code = contract.contract_type_code
     segments = split_contract_coverage_by_year(contract)
     result: Dict[int, Dict[str, float]] = {}
 
     for year_j, seg_start, seg_end in segments:
         al = charge_amount_for_segment(code, annual, year_j, seg_start, seg_end)
-        # SL: همان تناسب زمانی برای غیررسمی؛ برای رسمی مثل AL
-        sl = charge_amount_for_segment(code, sick, year_j, seg_start, seg_end)
         if year_j not in result:
             result[year_j] = {'AL': 0.0, 'SL': 0.0}
         result[year_j]['AL'] += al
-        result[year_j]['SL'] += sl
+        # سیاست: هنگام تنظیم قرارداد استعلاجی شارژ نمی‌شود
+        result[year_j]['SL'] = 0.0
         logger.info(
-            "Entitlement contract=%s type=%s year=%s AL=%.2f SL=%.2f "
+            "Entitlement contract=%s type=%s year=%s AL=%.2f SL=0 "
             "seg=%s..%s annual_base=%s",
-            contract.id, code, year_j, al, sl, seg_start, seg_end, annual,
+            contract.id, code, year_j, al, seg_start, seg_end, annual,
         )
 
     return result

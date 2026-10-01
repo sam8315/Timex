@@ -2,177 +2,224 @@
 {% block title %}سیاست مرخصی | مدیریت{% endblock %}
 {% block content %}
 
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h4>
-        <i class="bi bi-sun text-warning"></i>
-        🏖️ سیاست مرخصی
-    </h4>
-    <div>
-        <a href="/admin/policies" class="btn btn-outline-secondary btn-sm">
-            <i class="bi bi-arrow-right"></i> بازگشت
-        </a>
-    </div>
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0">سیاست مرخصی</h4>
+    <a href="/admin/policies" class="btn btn-outline-secondary btn-sm">بازگشت</a>
 </div>
 
 {% if request.query_params.get('success') == 'saved' %}
-<div class="alert alert-success alert-dismissible fade show" role="alert">
-    <i class="bi bi-check-circle"></i>
-    اطلاعات با موفقیت ذخیره شد.
+<div class="alert alert-success alert-dismissible fade show py-2" role="alert">
+    ذخیره شد.
     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
 </div>
 {% endif %}
 
-<div class="row g-4">
-    <!-- Section B: Carry Forward Limits per Department -->
-    <div class="col-md-6">
-        <form method="post" action="/admin/policies/carry-forward/save">
-            <div class="card shadow-sm mb-4">
-                <div class="card-header bg-white">
-                    <h6 class="mb-0"><i class="bi bi-arrow-left-right text-success"></i> سقف انتقال مرخصی به سال بعد (به‌ازای هر گروه)</h6>
+<div class="row g-3">
+    <div class="col-lg-6">
+        <form method="post" action="/admin/policies/carry-forward/save" class="card mb-3">
+            <div class="card-header py-2">سقف انتقال به سال بعد</div>
+            <div class="card-body py-3">
+                <p class="small text-muted mb-2">خالی = بدون محدودیت</p>
+                <table class="table table-sm table-bordered align-middle mb-3">
+                    <thead class="table-light">
+                        <tr><th>عضویت</th><th style="width:7rem">سقف</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for row in carry_rows %}
+                        <tr>
+                            <td>{{ row.name }}</td>
+                            <td>
+                                <input type="text" name="cf_{{ row.code }}"
+                                       class="form-control form-control-sm"
+                                       value="{{ row.limit }}"
+                                       inputmode="numeric"
+                                       autocomplete="off"
+                                       placeholder="خالی">
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <div class="mb-3">
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" name="pro_rata_method"
+                               value="false" id="cf_full" {% if not pro_rata_method %}checked{% endif %}>
+                        <label class="form-check-label" for="cf_full">کل سال با منطقه جدید</label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" name="pro_rata_method"
+                               value="true" id="cf_prorata" {% if pro_rata_method %}checked{% endif %}>
+                        <label class="form-check-label" for="cf_prorata">به نسبت زمان</label>
+                    </div>
                 </div>
-                <div class="card-body">
-                    <p class="text-muted small mb-3">
-                        <i class="bi bi-info-circle"></i>
-                        سقف انتقال برای هر نوع عضویت جداگانه و مستقل از منطقه می‌باشد.
-                    </p>
-                    <div class="table-responsive">
-                        <table class="table table-bordered align-middle">
+                <button type="submit" class="btn btn-sm btn-primary">ذخیره</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="col-lg-6">
+        <form method="post" action="/admin/policies/buyback/save" class="card mb-3">
+            <div class="card-header py-2">سقف بازخرید غیررسمی</div>
+            <div class="card-body py-3">
+                <p class="small text-muted mb-2">خالی = بدون سقف</p>
+                <table class="table table-sm table-bordered align-middle mb-3">
+                    <thead class="table-light">
+                        <tr><th>عضویت</th><th style="width:7rem">سقف</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for row in buyback_rows %}
+                        <tr>
+                            <td>{{ row.name }}</td>
+                            <td>
+                                <input type="text" name="bb_{{ row.code }}"
+                                       class="form-control form-control-sm"
+                                       value="{{ row.limit }}"
+                                       inputmode="numeric"
+                                       autocomplete="off"
+                                       placeholder="خالی">
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <button type="submit" class="btn btn-sm btn-primary">ذخیره</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="col-12">
+        <form method="post" action="/admin/policies/buyback-permanent/save" class="card mb-3">
+            <div class="card-header py-2">بازخرید رسمی (ماده ۱۱)</div>
+            <div class="card-body py-3">
+                <p class="small text-muted mb-3">
+                    با روشن بودن «اعمال منطقه» برای رسمی، سقف از جدول مناطق خوانده می‌شود.
+                    {% if not permanent_uses_article11 %}
+                    <span class="text-warning">اکنون اعمال منطقه خاموش است — از سقف بدون‌منطقه استفاده می‌شود.</span>
+                    {% endif %}
+                </p>
+
+                <div class="row g-3">
+                    <div class="col-md-5">
+                        <h6 class="small fw-bold mb-2">سقف به‌ازای منطقه (از عصر منطقه‌ای)</h6>
+                        {% if buyback_region_rows %}
+                        <table class="table table-sm table-bordered align-middle mb-0">
                             <thead class="table-light">
-                                <tr>
-                                    <th>نوع عضویت</th>
-                                    <th>سقف انتقال (روز)</th>
-                                </tr>
+                                <tr><th>منطقه</th><th style="width:7rem">سقف</th></tr>
                             </thead>
                             <tbody>
-                                {% for row in carry_rows %}
+                                {% for row in buyback_region_rows %}
                                 <tr>
                                     <td>{{ row.name }}</td>
                                     <td>
-                                        <input type="number" name="cf_{{ row.code }}"
+                                        <input type="text" name="bb_region_{{ row.code }}"
                                                class="form-control form-control-sm"
-                                               value="{{ row.limit }}"
-                                               min="0" max="30" style="width: 90px;">
+                                               value="{{ row.limit }}" inputmode="numeric"
+                                               autocomplete="off">
                                     </td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
                         </table>
+                        {% else %}
+                        <p class="small text-muted mb-0">
+                            منطقه‌ای نیست.
+                            <a href="/admin/policies/regions">مدیریت مناطق</a>
+                        </p>
+                        {% endif %}
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label fw-bold d-block">روش اعمال تغییر منطقه:</label>
-                        <div class="form-check">
-                            <input class="form-check-input" type="radio" name="pro_rata_method"
-                                   value="false" {% if not pro_rata_method %}checked{% endif %}>
-                            <label class="form-check-label">کل سال با منطقه جدید</label>
+
+                    <div class="col-md-3">
+                        <h6 class="small fw-bold mb-2">بدون اعمال منطقه</h6>
+                        <label class="form-label small mb-1">سقف بازخرید رسمی</label>
+                        <input type="text" name="bb_1" class="form-control form-control-sm"
+                               value="{{ permanent_buyback_fallback }}"
+                               inputmode="numeric" autocomplete="off" placeholder="خالی=نامحدود">
+                        <div class="form-text">فقط وقتی سوییچ منطقه برای رسمی خاموش باشد</div>
+                    </div>
+
+                    <div class="col-md-4">
+                        <h6 class="small fw-bold mb-2">بازه‌های تاریخی (۱۱/۱)</h6>
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <label class="form-label small mb-1">تا ۱۳۸۹</label>
+                                <input type="text" name="pre_1390_cap" class="form-control form-control-sm"
+                                       value="{{ buyback_eras.pre_1390_cap }}"
+                                       inputmode="numeric" autocomplete="off" placeholder="خالی">
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small mb-1">۱۳۹۰ تا عصر جدید</label>
+                                <input type="text" name="era_1390_1398_cap" class="form-control form-control-sm"
+                                       value="{{ buyback_eras.era_1390_1398_cap }}"
+                                       inputmode="numeric" autocomplete="off">
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small mb-1">درجه۴ از</label>
+                                <input type="text" name="grade4_from" class="form-control form-control-sm"
+                                       value="{{ buyback_eras.grade4_from }}"
+                                       placeholder="1391/07/15" dir="ltr" autocomplete="off">
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small mb-1">سقف درجه۴</label>
+                                <input type="text" name="grade4_cap" class="form-control form-control-sm"
+                                       value="{{ buyback_eras.grade4_cap }}"
+                                       inputmode="numeric" autocomplete="off">
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small mb-1">شروع عصر منطقه‌ای</label>
+                                <input type="text" name="modern_from_year" class="form-control form-control-sm"
+                                       value="{{ buyback_eras.modern_from_year }}"
+                                       inputmode="numeric" autocomplete="off">
+                            </div>
                         </div>
-                        <div class="form-check">
-                            <input class="form-check-input" type="radio" name="pro_rata_method"
-                                   value="true" {% if pro_rata_method %}checked{% endif %}>
-                            <label class="form-check-label">به نسبت زمان حضور در هر منطقه</label>
-                        </div>
                     </div>
-                    <div class="text-end">
-                        <button type="submit" class="btn btn-primary">
-                            <i class="bi bi-save"></i> ذخیره
-                        </button>
-                    </div>
+                </div>
+
+                <div class="text-end mt-3">
+                    <button type="submit" class="btn btn-sm btn-primary">ذخیره بازخرید رسمی</button>
                 </div>
             </div>
         </form>
     </div>
 
-    <!-- Section C: Buyback Limits -->
-    <div class="col-md-6">
-        <form method="post" action="/admin/policies/buyback/save">
-            <div class="card shadow-sm mb-4">
-                <div class="card-header bg-white">
-                    <h6 class="mb-0"><i class="bi bi-cash text-info"></i> سقف بازخرید مرخصی</h6>
-                </div>
-                <div class="card-body">
-                    <p class="text-muted small mb-3">
-                        <i class="bi bi-info-circle"></i>
-                        برای کارکنان رسمی، سقف بر اساس سال و درجه به صورت خودکار محاسبه می‌شود.
-                    </p>
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">سقف بازخرید پیش‌فرض (روز)</label>
-                        <div class="d-flex align-items-center gap-2">
-                            <input type="number" name="buyback_limit"
-                                   class="form-control"
-                                   value="{{ buyback_limit }}"
-                                   min="0" max="30" style="width: 120px;">
-                            <span class="text-muted">روز</span>
-                        </div>
-                    </div>
-                    <div class="text-end">
-                        <button type="submit" class="btn btn-primary">
-                            <i class="bi bi-save"></i> ذخیره
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </form>
-        <div class="alert alert-info small">
-            <i class="bi bi-info-circle"></i>
-            ویرایش مرخصی استحقاقی مناطق در صفحه
-            <a href="/admin/policies/regions" class="alert-link">مدیریت مناطق خدمتی</a>
-            انجام می‌شود.
-        </div>
-    </div>
-
-    <!-- Section D: Leave by Employment Type -->
-    <div class="col-12">
-        <div class="card shadow-sm">
-            <div class="card-header bg-white">
-                <h6 class="mb-0"><i class="bi bi-people text-warning"></i> میزان مرخصی استحقاقی پیش‌فرض بر اساس نوع عضویت (مستقل از منطقه)</h6>
-            </div>
-            <div class="card-body">
-                <p class="text-muted small mb-3">
-                    <i class="bi bi-info-circle"></i>
-                    با سوییچ «اعمال منطقه» مشخص کنید قوانین منطقه برای آن گروه اجرا شود یا خیر.
+    <div class="col-lg-6">
+        <form method="post" action="/admin/policies/employment/save" class="card mb-3">
+            <div class="card-header py-2">استحقاقی پیش‌فرض عضویت</div>
+            <div class="card-body py-3">
+                <p class="small text-muted mb-2">
+                    اعمال منطقه: استحقاقی منطقه + ماده ۱۱ برای رسمی.
+                    <a href="/admin/policies/regions">مناطق</a>
                 </p>
-                <form method="post" action="/admin/policies/employment/save">
-                    <div class="table-responsive">
-                        <table class="table table-bordered align-middle">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>نوع عضویت</th>
-                                    <th>استحقاقی (روز)</th>
-                                    <th>اعمال قوانین منطقه</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for dept in employment_rows %}
-                                <tr>
-                                    <td>{{ dept.name }}</td>
-                                    <td>
-                                        <input type="number" name="annual_{{ dept.code }}"
-                                               class="form-control form-control-sm"
-                                               value="{{ dept.annual }}"
-                                               min="0" max="100" style="width: 90px;">
-                                    </td>
-                                    <td>
-                                        <div class="form-check form-switch">
-                                            <input class="form-check-input" type="checkbox"
-                                                   name="region_applies_{{ dept.code }}" value="on"
-                                                   {% if dept.region_applies %}checked{% endif %}>
-                                            <label class="form-check-label small">
-                                                {% if dept.region_applies %}اعمال می‌شود{% else %}اعمال نمی‌شود{% endif %}
-                                            </label>
-                                        </div>
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                    <div class="text-end">
-                        <button type="submit" class="btn btn-primary">
-                            <i class="bi bi-save"></i> ذخیره مرخصی انواع عضویت
-                        </button>
-                    </div>
-                </form>
+                <table class="table table-sm table-bordered align-middle mb-3">
+                    <thead class="table-light">
+                        <tr>
+                            <th>عضویت</th>
+                            <th style="width:6rem">روز</th>
+                            <th style="width:7rem">منطقه</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for dept in employment_rows %}
+                        <tr>
+                            <td>{{ dept.name }}</td>
+                            <td>
+                                <input type="number" name="annual_{{ dept.code }}"
+                                       class="form-control form-control-sm"
+                                       value="{{ dept.annual }}" min="0" max="100">
+                            </td>
+                            <td>
+                                <div class="form-check form-switch mb-0">
+                                    <input class="form-check-input" type="checkbox"
+                                           name="region_applies_{{ dept.code }}" value="on"
+                                           {% if dept.region_applies %}checked{% endif %}>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <button type="submit" class="btn btn-sm btn-primary">ذخیره</button>
             </div>
-        </div>
+        </form>
     </div>
 </div>
 

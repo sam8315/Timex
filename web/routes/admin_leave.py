@@ -725,7 +725,7 @@ async def approve_leave_request(
         leave_req.approved_by = user.user_id
         leave_req.approved_at = datetime.now()
 
-        # ۲. کسر از مانده (برای AL: اول CW سپس AL)
+        # ۲. کسر از مانده (برای AL: غیرقابل‌بازخرید CW → AL → قابل‌بازخرید CW)
         if leave_req.leave_type == 'AL':
             consume_leave(
                 db,

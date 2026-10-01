@@ -124,18 +124,18 @@ def test_add_region_invalid_code_rejected(client, make_user):
 def test_update_region_days(client, db, make_user):
     _as_super(client, make_user)
     resp = client.post(
-        "/admin/policies/regions/GRADE_1/update",
+        "/admin/policies/regions/GRADE_2/update",
         data={"annual_leave_days": "36"},
         follow_redirects=False,
     )
     assert resp.status_code == 302
     db.expire_all()
-    region = db.query(Region).filter(Region.code == "GRADE_1").first()
+    region = db.query(Region).filter(Region.code == "GRADE_2").first()
     assert int(region.default_annual_leave_days) == 36
-    assert _param(db, "annual_leave_days", "GRADE_1").parameter_value == "36"
+    assert _param(db, "annual_leave_days", "GRADE_2").parameter_value == "36"
     # restore seed value
-    client.post("/admin/policies/regions/GRADE_1/update",
-                data={"annual_leave_days": "35"},
+    client.post("/admin/policies/regions/GRADE_2/update",
+                data={"annual_leave_days": "40"},
                 follow_redirects=False)
 
 
@@ -273,16 +273,144 @@ def test_carry_forward_save_persists(client, db, make_user):
     assert _param(db, "region_change_method").parameter_value == "pro_rata"
 
 
-def test_buyback_save_persists(client, db, make_user):
+def test_carry_forward_save_empty_means_unlimited(client, db, make_user):
     _as_super(client, make_user)
     resp = client.post(
-        "/admin/policies/buyback/save",
-        data={"buyback_limit": "12"},
+        "/admin/policies/carry-forward/save",
+        data={"cf_1": "", "cf_2": "0", "cf_3": "", "cf_4": "9",
+              "cf_5": "", "pro_rata_method": "true"},
         follow_redirects=False,
     )
     assert resp.status_code == 302
     db.expire_all()
+    assert _param(db, "carry_forward_dept_1").parameter_value == "none"
+    assert _param(db, "carry_forward_dept_2").parameter_value == "0"
+    assert _param(db, "carry_forward_dept_3").parameter_value == "none"
+    from web.services.leave_entitlement_service import resolve_max_carry_forward
+    assert resolve_max_carry_forward(db, "1") is None
+    assert resolve_max_carry_forward(db, "2") == 0
+
+
+def test_buyback_save_persists(client, db, make_user):
+    _as_super(client, make_user)
+    resp = client.post(
+        "/admin/policies/buyback/save",
+        data={
+            "bb_2": "0",
+            "bb_3": "",
+            "bb_4": "",
+            "bb_5": "5",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 302
+    db.expire_all()
+    assert _param(db, "buyback_dept_2").parameter_value == "0"
+    assert _param(db, "buyback_dept_4").parameter_value == "none"
+    assert _param(db, "buyback_dept_5").parameter_value == "5"
+
+
+def test_buyback_save_empty_clears_cap(client, db, make_user):
+    """فیلد خالی باید به none ذخیره شود (بدون سقف)."""
+    _as_super(client, make_user)
+    client.post(
+        "/admin/policies/buyback/save",
+        data={"bb_2": "3", "bb_3": "4", "bb_4": "9", "bb_5": "5"},
+        follow_redirects=False,
+    )
+    resp = client.post(
+        "/admin/policies/buyback/save",
+        data={"bb_2": "", "bb_3": "", "bb_4": "", "bb_5": ""},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 302
+    db.expire_all()
+    assert _param(db, "buyback_dept_2").parameter_value == "none"
+    assert _param(db, "buyback_dept_4").parameter_value == "none"
+    assert _param(db, "buyback_dept_5").parameter_value == "none"
+
+
+def test_buyback_permanent_save_merges_rules(client, db, make_user):
+    _as_super(client, make_user)
+    resp = client.post(
+        "/admin/policies/buyback-permanent/save",
+        data={
+            "bb_region_NORMAL": "15",
+            "bb_region_GRADE_2": "18",
+            "bb_region_GRADE_3": "20",
+            "bb_region_GRADE_4": "22",
+            "bb_1": "12",
+            "pre_1390_cap": "",
+            "era_1390_1398_cap": "15",
+            "grade4_from": "1391/07/15",
+            "grade4_cap": "25",
+            "modern_from_year": "1399",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 302
+    db.expire_all()
+    assert _param(db, "buyback_cap", region_code="NORMAL").parameter_value == "15"
+    assert _param(db, "buyback_cap", region_code="GRADE_2").parameter_value == "18"
+    assert _param(db, "buyback_dept_1").parameter_value == "12"
     assert _param(db, "max_buyback").parameter_value == "12"
+    assert _param(db, "buyback_era_pre_1390_cap").parameter_value == "none"
+    assert _param(db, "buyback_era_modern_from_year").parameter_value == "1399"
+
+
+def test_buyback_regions_save_persists(client, db, make_user):
+    _as_super(client, make_user)
+    resp = client.post(
+        "/admin/policies/buyback-regions/save",
+        data={
+            "bb_region_NORMAL": "15",
+            "bb_region_GRADE_2": "18",
+            "bb_region_GRADE_3": "20",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 302
+    db.expire_all()
+    assert _param(db, "buyback_cap", region_code="NORMAL").parameter_value == "15"
+    assert _param(db, "buyback_cap", region_code="GRADE_2").parameter_value == "18"
+    assert _param(db, "buyback_cap", region_code="GRADE_3").parameter_value == "20"
+
+
+def test_buyback_eras_save_persists(client, db, make_user):
+    _as_super(client, make_user)
+    resp = client.post(
+        "/admin/policies/buyback-eras/save",
+        data={
+            "pre_1390_cap": "",
+            "era_1390_1398_cap": "15",
+            "grade4_from": "1391/07/15",
+            "grade4_cap": "25",
+            "modern_from_year": "1399",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 302
+    db.expire_all()
+    assert _param(db, "buyback_era_pre_1390_cap").parameter_value == "none"
+    assert _param(db, "buyback_era_1390_1398_cap").parameter_value == "15"
+    assert _param(db, "buyback_era_grade4_from").parameter_value == "1391/07/15"
+    assert _param(db, "buyback_era_grade4_cap").parameter_value == "25"
+    assert _param(db, "buyback_era_modern_from_year").parameter_value == "1399"
+
+
+def test_leave_policy_page_shows_article11_sections(client, db, make_user):
+    _as_super(client, make_user)
+    resp = client.get("/admin/policies/leave")
+    assert resp.status_code == 200
+    body = resp.text
+    assert "buyback-permanent/save" in body
+    assert "بازخرید رسمی" in body
+    assert "bb_region_NORMAL" in body
+    assert "عادی" in body
+    assert "درجه دو" in body
+    assert "bb_region_GRADE_1" not in body
+    assert "ماده ۱۱" in body
+    assert "name=\"bb_1\"" in body
 
 
 def test_profile_edit_manual_region_code_is_ignored(client, db, make_user):

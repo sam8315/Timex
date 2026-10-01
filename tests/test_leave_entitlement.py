@@ -20,6 +20,7 @@ from web.services.leave_entitlement_service import (
     get_membership_timeline,
     jalali_year_bounds_g,
     resolve_annual_leave_days,
+    resolve_max_buyback,
     split_contract_coverage_by_year,
 )
 from web.services.leave_service import (
@@ -89,8 +90,8 @@ class TestPolicyResolve:
         assert resolve_annual_leave_days(db, '4', region_code='NORMAL') == 28
 
     def test_resolve_uses_region_when_flag_on(self, db, make_user):
-        make_user(department="1", region_code="GRADE_1")
-        db.query(Region).filter(Region.code == 'GRADE_1').update(
+        make_user(department="1", region_code="GRADE_2")
+        db.query(Region).filter(Region.code == 'GRADE_2').update(
             {'default_annual_leave_days': 40}
         )
         db.commit()
@@ -99,7 +100,7 @@ class TestPolicyResolve:
         scoped = db.query(PolicyValue).filter(
             PolicyValue.policy_id == policy.id,
             PolicyValue.parameter_key == 'annual_leave_days',
-            PolicyValue.region_code == 'GRADE_1',
+            PolicyValue.region_code == 'GRADE_2',
         ).first()
         if scoped:
             scoped.parameter_value = '40'
@@ -108,10 +109,10 @@ class TestPolicyResolve:
                 policy_id=policy.id,
                 parameter_key='annual_leave_days',
                 parameter_value='40',
-                region_code='GRADE_1',
+                region_code='GRADE_2',
             ))
         db.commit()
-        assert resolve_annual_leave_days(db, '1', region_code='GRADE_1') == 40
+        assert resolve_annual_leave_days(db, '1', region_code='GRADE_2') == 40
 
     def test_resolve_uses_region_when_flag_missing(self, db, make_user):
         """UI پیش‌فرض اعمال منطقه است؛ flag غایب نباید منطقه را حذف کند."""
@@ -176,13 +177,66 @@ class TestMembershipChargeRules:
         assert abs(amount - 35 * expected_days / year_days) < 0.01
 
     def test_permanent_split_ignores_early_end(self):
-        year = 1404
+        year = jdatetime.date.today().year
         y_start, y_end = jalali_year_bounds_g(year)
         segs = split_contract_coverage_by_year(
             _make_contract('x', '1', y_start, end=y_start + timedelta(days=30), annual=35)
         )
         assert len(segs) == 1
+        assert segs[0][0] == year
         assert segs[0][2] == y_end
+
+    def test_permanent_past_hire_charges_current_year_only(self, db, make_user):
+        """رسمی با استخدام قدیمی: فقط AL سال جاری شارژ می‌شود، بدون SL."""
+        from web.routes.admin_contracts import add_years
+
+        user = make_user(department="1", balance_al=None, contract_type_code="1")
+        _seed_leave_policy(db, {'1': 30}, region_applies={'1': False})
+        year = jdatetime.date.today().year
+        past_start, _ = jalali_year_bounds_g(year - 5)
+        end = add_years(past_start, 30)
+
+        db.query(Contract).filter(Contract.user_id == user["user_id"]).delete()
+        db.query(LeaveBalance).filter(LeaveBalance.user_id == user["user_id"]).delete()
+        db.commit()
+        c = _make_contract(user["user_id"], '1', past_start, end=end, annual=30, sick=120)
+        db.add(c)
+        db.commit()
+        db.refresh(c)
+
+        result = calculate_entitlement_by_year(db, c, annual_override=30)
+        assert list(result.keys()) == [year]
+        assert round(result[year]['AL']) == 30
+        assert result[year]['SL'] == 0.0
+
+        charged = charge_leave_for_new_contract(db, c)
+        assert list(charged.keys()) == [year]
+        assert charged[year].get('AL') == 30
+        assert 'SL' not in charged[year]
+        sl_bal = db.query(LeaveBalance).filter_by(
+            user_id=user["user_id"], year=year, leave_type='SL'
+        ).first()
+        assert sl_bal is None or sl_bal.balance == 0
+
+    def test_no_sl_charged_even_when_sick_days_set(self, db, make_user):
+        user = make_user(department="1", balance_al=None, contract_type_code="1")
+        _seed_leave_policy(db, {'1': 30}, region_applies={'1': False})
+        year = jdatetime.date.today().year
+        y_start, _ = jalali_year_bounds_g(year)
+        db.query(Contract).filter(Contract.user_id == user["user_id"]).delete()
+        db.query(LeaveBalance).filter(LeaveBalance.user_id == user["user_id"]).delete()
+        db.commit()
+        c = _make_contract(user["user_id"], '1', y_start, end=None, annual=30, sick=120)
+        db.add(c)
+        db.commit()
+        db.refresh(c)
+
+        charged = charge_leave_for_new_contract(db, c)
+        assert charged[year]['AL'] == 30
+        assert 'SL' not in charged.get(year, {})
+        assert db.query(LeaveTransaction).filter_by(
+            user_id=user["user_id"], leave_type='SL', transaction_type='CHARGE'
+        ).count() == 0
 
     def test_contractual_three_months_approx_quarter(self, db, make_user):
         user = make_user(department="4", balance_al=None)
@@ -266,22 +320,129 @@ class TestChargeAndSync:
         assert [t['contract_type_code'] for t in timeline] == ['2', '4', '1']
 
 
-class TestConsumeLeaveCwFirst:
-    def test_consume_prefers_cw(self, db, make_user):
-        user = make_user(department="1", balance_al=None)
+def _ensure_leave_policy(db) -> Policy:
+    policy = db.query(Policy).filter(Policy.category == 'leave').first()
+    if not policy:
+        policy = Policy(category='leave', name='leave', is_active=True)
+        db.add(policy)
+        db.flush()
+    return policy
+
+
+def _set_policy_value(db, policy_id: int, key: str, value: str, region_code=None):
+    q = db.query(PolicyValue).filter(
+        PolicyValue.policy_id == policy_id,
+        PolicyValue.parameter_key == key,
+    )
+    if region_code is None:
+        q = q.filter(PolicyValue.region_code.is_(None))
+    else:
+        q = q.filter(PolicyValue.region_code == region_code)
+    existing = q.first()
+    if existing:
+        existing.parameter_value = value
+    else:
+        db.add(PolicyValue(
+            policy_id=policy_id,
+            parameter_key=key,
+            parameter_value=value,
+            region_code=region_code,
+        ))
+
+
+class TestArticle11Buyback:
+    def test_permanent_normal_modern_cap_15(self, db, make_user):
+        make_user(department="1", balance_al=None, contract_type_code="1")
+        policy = _ensure_leave_policy(db)
+        _set_policy_value(db, policy.id, 'region_applies_dept_1', 'true')
+        _set_policy_value(db, policy.id, 'buyback_cap', '15', region_code='NORMAL')
+        db.commit()
+        assert resolve_max_buyback(db, '1', region_code='NORMAL', year_j=1404) == 15
+
+    def test_permanent_grade1_legacy_maps_to_normal(self, db, make_user):
+        """کد قدیمی GRADE_1 برای سقف بازخرید مثل عادی رفتار می‌کند."""
+        make_user(department="1", balance_al=None, contract_type_code="1")
+        policy = _ensure_leave_policy(db)
+        _set_policy_value(db, policy.id, 'region_applies_dept_1', 'true')
+        _set_policy_value(db, policy.id, 'buyback_cap', '15', region_code='NORMAL')
+        db.commit()
+        assert resolve_max_buyback(db, '1', region_code='GRADE_1', year_j=1404) == 15
+
+    def test_permanent_grade4_modern_cap_22(self, db, make_user):
+        make_user(department="1", balance_al=None, contract_type_code="1")
+        policy = _ensure_leave_policy(db)
+        _set_policy_value(db, policy.id, 'region_applies_dept_1', 'true')
+        _set_policy_value(db, policy.id, 'buyback_cap', '22', region_code='GRADE_4')
+        db.commit()
+        assert resolve_max_buyback(db, '1', region_code='GRADE_4', year_j=1404) == 22
+
+    def test_permanent_historical_1395_cap_15(self, db, make_user):
+        make_user(department="1", balance_al=None, contract_type_code="1")
+        policy = _ensure_leave_policy(db)
+        _set_policy_value(db, policy.id, 'region_applies_dept_1', 'true')
+        _set_policy_value(db, policy.id, 'buyback_era_1390_1398_cap', '15')
+        _set_policy_value(db, policy.id, 'buyback_era_modern_from_year', '1399')
+        db.commit()
+        assert resolve_max_buyback(db, '1', region_code='NORMAL', year_j=1395) == 15
+
+    def test_permanent_grade4_exception_cap_25(self, db, make_user):
+        make_user(department="1", balance_al=None, contract_type_code="1")
+        policy = _ensure_leave_policy(db)
+        _set_policy_value(db, policy.id, 'region_applies_dept_1', 'true')
+        _set_policy_value(db, policy.id, 'buyback_era_1390_1398_cap', '15')
+        _set_policy_value(db, policy.id, 'buyback_era_grade4_from', '1391/07/15')
+        _set_policy_value(db, policy.id, 'buyback_era_grade4_cap', '25')
+        _set_policy_value(db, policy.id, 'buyback_era_modern_from_year', '1399')
+        db.commit()
+        assert resolve_max_buyback(db, '1', region_code='GRADE_4', year_j=1395) == 25
+
+    def test_contractual_buyback_none_returns_none(self, db, make_user):
+        make_user(department="4", balance_al=None, contract_type_code="4")
+        policy = _ensure_leave_policy(db)
+        _set_policy_value(db, policy.id, 'buyback_dept_4', 'none')
+        db.commit()
+        assert resolve_max_buyback(db, '4', year_j=1404) is None
+
+    def test_permanent_region_overrides_buyback_dept(self, db, make_user):
+        make_user(department="1", balance_al=None, contract_type_code="1")
+        policy = _ensure_leave_policy(db)
+        _set_policy_value(db, policy.id, 'region_applies_dept_1', 'true')
+        _set_policy_value(db, policy.id, 'buyback_dept_1', '9')
+        _set_policy_value(db, policy.id, 'buyback_cap', '18', region_code='GRADE_2')
+        db.commit()
+        assert resolve_max_buyback(db, '1', region_code='GRADE_2', year_j=1404) == 18
+
+
+class TestConsumeLeavePriority:
+    def test_permanent_cw_over_cap_uses_non_buyback_first(self, db, make_user):
+        """رسمی: CW بالای سقف منطقه → اول non-buyback، بعد AL، بعد buyback CW."""
+        user = make_user(
+            department="1",
+            balance_al=None,
+            contract_type_code="1",
+            region_code="NORMAL",
+        )
         year = jdatetime.date.today().year
+        policy = _ensure_leave_policy(db)
+        _set_policy_value(db, policy.id, 'region_applies_dept_1', 'true')
+        _set_policy_value(db, policy.id, 'buyback_cap', '15', region_code='NORMAL')
+
         db.query(LeaveBalance).filter(LeaveBalance.user_id == user["user_id"]).delete()
-        db.add(LeaveBalance(user_id=user["user_id"], year=year, leave_type='CW', balance=5))
+        db.add(LeaveBalance(user_id=user["user_id"], year=year, leave_type='CW', balance=40))
         db.add(LeaveBalance(user_id=user["user_id"], year=year, leave_type='AL', balance=10))
         db.commit()
 
         avail = get_available_leave(db, user["user_id"], year, 'AL')
-        assert avail['total'] == 15
+        assert avail['total'] == 50
+        assert avail['breakdown']['CW_NON_BUYBACK'] == 25
+        assert avail['breakdown']['CW_BUYBACK'] == 15
+        assert avail['breakdown']['AL'] == 10
 
-        res = consume_leave(db, user["user_id"], year, 7, 'AL')
+        # 30 روز: 25 از non-buyback CW + 5 از AL
+        res = consume_leave(db, user["user_id"], year, 30, 'AL')
         assert res['success']
-        assert res['consumed_from']['CW'] == 5
-        assert res['consumed_from']['AL'] == 2
+        assert res['consumed_from']['CW'] == 25
+        assert res['consumed_from']['AL'] == 5
 
         cw = db.query(LeaveBalance).filter_by(
             user_id=user["user_id"], year=year, leave_type='CW'
@@ -289,8 +450,53 @@ class TestConsumeLeaveCwFirst:
         al = db.query(LeaveBalance).filter_by(
             user_id=user["user_id"], year=year, leave_type='AL'
         ).first()
-        assert cw.balance == 0
-        assert al.balance == 8
+        assert cw.balance == 15
+        assert al.balance == 5
+
+        # ادامه: تمام AL سپس buyback CW
+        res2 = consume_leave(db, user["user_id"], year, 10, 'AL')
+        assert res2['success']
+        assert res2['consumed_from'].get('AL', 0) == 5
+        assert res2['consumed_from'].get('CW', 0) == 5
+        assert cw.balance == 10
+        assert al.balance == 0
+
+    def test_contractual_all_cw_buybackable_uses_al_first(self, db, make_user):
+        """قراردادی: همه CW قابل‌بازخرید → اول AL، بعد CW."""
+        user = make_user(department="4", balance_al=None, contract_type_code="4")
+        year = jdatetime.date.today().year
+        policy = _ensure_leave_policy(db)
+        _set_policy_value(db, policy.id, 'buyback_dept_4', 'none')
+
+        db.query(LeaveBalance).filter(LeaveBalance.user_id == user["user_id"]).delete()
+        db.add(LeaveBalance(user_id=user["user_id"], year=year, leave_type='CW', balance=9))
+        db.add(LeaveBalance(user_id=user["user_id"], year=year, leave_type='AL', balance=10))
+        db.commit()
+
+        avail = get_available_leave(db, user["user_id"], year, 'AL')
+        assert avail['breakdown']['CW_NON_BUYBACK'] == 0
+        assert avail['breakdown']['CW_BUYBACK'] == 9
+
+        res = consume_leave(db, user["user_id"], year, 7, 'AL')
+        assert res['success']
+        assert res['consumed_from'].get('AL') == 7
+        assert 'CW' not in res['consumed_from']
+
+        cw = db.query(LeaveBalance).filter_by(
+            user_id=user["user_id"], year=year, leave_type='CW'
+        ).first()
+        al = db.query(LeaveBalance).filter_by(
+            user_id=user["user_id"], year=year, leave_type='AL'
+        ).first()
+        assert cw.balance == 9
+        assert al.balance == 3
+
+        res2 = consume_leave(db, user["user_id"], year, 5, 'AL')
+        assert res2['success']
+        assert res2['consumed_from'].get('AL') == 3
+        assert res2['consumed_from'].get('CW') == 2
+        assert al.balance == 0
+        assert cw.balance == 7
 
 
 class TestHrImport:

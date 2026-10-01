@@ -10,6 +10,7 @@ from sqlalchemy import and_
 from models.contract import Contract
 from models.employee import Employee
 from models.leave_balance import LeaveBalance
+from models.leave_buyback_quota import LeaveBuybackQuota
 from models.leave_transaction import LeaveTransaction
 from models.leave_glossary import (
     LEAVE_TYPE_NAMES as GLOSSARY_LEAVE_TYPE_NAMES,
@@ -23,6 +24,8 @@ from models.leave_glossary import (
 from web.services.leave_entitlement_service import (
     calculate_entitlement_by_year,
     get_jalali_year_days,
+    resolve_max_buyback,
+    resolve_membership_for_user,
     split_contract_coverage_by_year,
     sync_employee_department_from_active_contract,
 )
@@ -44,7 +47,7 @@ def calculate_prorated_leave_by_year(
     annual_override: Optional[int] = None,
 ) -> dict:
     """
-    محاسبه مرخصی به تفکیک سال با قواعد عضویت.
+    محاسبه مرخصی قابل‌شارژ به تفکیک سال (فقط سال جاری، بدون SL).
 
     اگر db داده شود از سیاست عضویت/منطقه خوانده می‌شود؛
     در غیر این صورت از annual_leave_days روی قرارداد (یا annual_override).
@@ -59,19 +62,15 @@ def calculate_prorated_leave_by_year(
     annual = float(
         annual_override if annual_override is not None else contract.annual_leave_days
     )
-    sick = float(contract.sick_leave_days or 0)
     result = {}
     for year_j, seg_start, seg_end in split_contract_coverage_by_year(contract):
         al = charge_amount_for_segment(
             contract.contract_type_code, annual, year_j, seg_start, seg_end
         )
-        sl = charge_amount_for_segment(
-            contract.contract_type_code, sick, year_j, seg_start, seg_end
-        )
         if year_j not in result:
             result[year_j] = {'AL': 0.0, 'SL': 0.0}
         result[year_j]['AL'] += al
-        result[year_j]['SL'] += sl
+        result[year_j]['SL'] = 0.0
     return result
 
 
@@ -87,6 +86,8 @@ def charge_leave_for_new_contract(db: Session, contract: Contract) -> dict:
     for year_j, leaves in prorated_by_year.items():
         charged[year_j] = {}
         for leave_type, amount in leaves.items():
+            if leave_type == 'SL':
+                continue
             amount_rounded = round(amount)
             logger.info(
                 f"📊 Year {year_j}, Type {leave_type}: "
@@ -173,7 +174,7 @@ def update_leave_for_contract(
         old_leaves = old_prorated.get(year_j, {'AL': 0, 'SL': 0})
         new_leaves = new_prorated.get(year_j, {'AL': 0, 'SL': 0})
 
-        for leave_type in ['AL', 'SL']:
+        for leave_type in ['AL']:
             # رسمی: تغییر صرفاً end_date نباید AL را عوض کند
             if (
                 contract.contract_type_code == MEMBERSHIP_PERMANENT
@@ -244,6 +245,8 @@ def remove_leave_for_contract(db: Session, contract: Contract) -> dict:
     for year_j, leaves in prorated_by_year.items():
         removed[year_j] = {}
         for leave_type, amount in leaves.items():
+            if leave_type == 'SL':
+                continue
             amount_rounded = round(amount)
             if amount_rounded <= 0:
                 continue
@@ -350,14 +353,86 @@ def set_stored_leave_for_year(
     return {'old': old, 'new': target_days, 'diff': diff}
 
 
+def get_buyback_quota(db: Session, user_id: str, year: int) -> int:
+    """سهمیه قابل‌بازخرید ثبت‌شده برای کاربر/سال."""
+    quota = db.query(LeaveBuybackQuota).filter(
+        and_(
+            LeaveBuybackQuota.user_id == user_id,
+            LeaveBuybackQuota.year == year,
+        )
+    ).first()
+    return int(quota.days) if quota else 0
+
+
+def set_buyback_quota_for_year(
+    db: Session,
+    *,
+    user_id: str,
+    year: int,
+    target_days: int,
+    source: str = 'MANUAL',
+    notes: str = "",
+    commit: bool = True,
+) -> dict:
+    """
+    تنظیم مطلق سهمیه قابل‌بازخرید به target_days.
+    Returns: {'old': int, 'new': int, 'diff': int}
+    """
+    if target_days < 0:
+        raise ValueError("قابل‌بازخرید نمی‌تواند منفی باشد")
+
+    quota = db.query(LeaveBuybackQuota).filter(
+        and_(
+            LeaveBuybackQuota.user_id == user_id,
+            LeaveBuybackQuota.year == year,
+        )
+    ).first()
+    old = int(quota.days) if quota else 0
+    if old == target_days:
+        return {'old': old, 'new': old, 'diff': 0}
+
+    if quota:
+        quota.days = target_days
+        quota.source = source
+        if notes:
+            quota.notes = notes
+    else:
+        db.add(LeaveBuybackQuota(
+            user_id=user_id,
+            year=year,
+            days=target_days,
+            source=source,
+            notes=notes or None,
+        ))
+
+    if commit:
+        db.commit()
+    return {'old': old, 'new': target_days, 'diff': target_days - old}
+
+
 # ============================================
-# منطق مصرف مرخصی - استاندارد صنعتی (FIFO معکوس)
+# منطق مصرف مرخصی — اولویت سطل‌ها
+# ذخیره غیرقابل‌بازخرید → AL → ذخیره قابل‌بازخرید
 # ============================================
+
+def split_cw_buckets(cw_balance: float, max_buyback: Optional[int]) -> dict:
+    """
+    تقسیم منطقی مانده CW بر اساس سقف بازخرید سیاست.
+
+    max_buyback=None → همه CW قابل‌بازخرید (non_buyback=0)
+    """
+    cw = max(0.0, float(cw_balance or 0))
+    if max_buyback is None:
+        return {'non_buyback': 0.0, 'buybackable': cw}
+    cap = max(0, int(max_buyback))
+    buybackable = min(cw, float(cap))
+    return {'non_buyback': cw - buybackable, 'buybackable': buybackable}
+
 
 def get_available_leave(db: Session, user_id: str, year: int, leave_type: str = 'AL') -> dict:
     """
-    محاسبه مرخصی قابل استفاده (نمایش یکپارچه)
-    برای نوع استحقاقی: AL + CW (انتقالی)
+    محاسبه مرخصی قابل استفاده (نمایش یکپارچه).
+    برای AL: مجموع AL+CW و breakdown سه‌سطلی منطقی.
     """
     result = {'total': 0, 'breakdown': {}}
 
@@ -369,9 +444,10 @@ def get_available_leave(db: Session, user_id: str, year: int, leave_type: str = 
         )
     ).first()
 
-    if main_balance and main_balance.balance > 0:
-        result['breakdown'][leave_type] = main_balance.balance
-        result['total'] += main_balance.balance
+    al_days = float(main_balance.balance) if main_balance and main_balance.balance > 0 else 0.0
+    if al_days > 0:
+        result['breakdown'][leave_type] = al_days
+        result['total'] += al_days
 
     if leave_type == 'AL':
         cw_balance = db.query(LeaveBalance).filter(
@@ -381,10 +457,18 @@ def get_available_leave(db: Session, user_id: str, year: int, leave_type: str = 
                 LeaveBalance.leave_type == 'CW',
             )
         ).first()
+        cw_days = float(cw_balance.balance) if cw_balance and cw_balance.balance > 0 else 0.0
+        if cw_days > 0:
+            result['breakdown']['CW'] = cw_days
+            result['total'] += cw_days
 
-        if cw_balance and cw_balance.balance > 0:
-            result['breakdown']['CW'] = cw_balance.balance
-            result['total'] += cw_balance.balance
+        membership = resolve_membership_for_user(db, user_id)
+        cap = resolve_max_buyback(db, membership, user_id=user_id, year_j=year)
+        buckets = split_cw_buckets(cw_days, cap)
+        result['breakdown']['CW_NON_BUYBACK'] = buckets['non_buyback']
+        result['breakdown']['CW_BUYBACK'] = buckets['buybackable']
+        result['buyback_cap'] = cap
+        result['membership_code'] = membership
 
     return result
 
@@ -401,12 +485,73 @@ def consume_leave(
     allow_negative: bool = False,
 ) -> dict:
     """
-    مصرف مرخصی:
-    1. اول از CW (انتقالی)
-    2. سپس از AL (استحقاقی)
+    مصرف مرخصی برای درخواست استحقاقی (AL):
+    1. بخش غیرقابل‌بازخرید CW
+    2. AL
+    3. بخش قابل‌بازخرید CW
+
+    سایر انواع: فقط از همان leave_type.
     """
     remaining = float(days_needed)
-    consumed_from = {}
+    consumed_from: dict = {}
+
+    def _use_from_balance(
+        bal: Optional[LeaveBalance],
+        lt: str,
+        amount: float,
+        description: str,
+        *,
+        allow_neg: bool = False,
+    ) -> float:
+        nonlocal remaining
+        if amount <= 0 or remaining <= 0:
+            return 0.0
+        if bal is None and not allow_neg:
+            return 0.0
+        if bal is None and allow_neg:
+            use = remaining
+            bal = LeaveBalance(
+                user_id=user_id,
+                year=year,
+                leave_type=lt,
+                balance=-use,
+            )
+            db.add(bal)
+            remaining = 0.0
+            consumed_from[lt] = consumed_from.get(lt, 0) + use
+            db.add(LeaveTransaction(
+                user_id=user_id,
+                year=year,
+                leave_type=lt,
+                amount=use,
+                transaction_type=TX_USE,
+                description=description,
+                reference_id=reference_id,
+            ))
+            return use
+
+        available = float(bal.balance)
+        if available <= 0 and not allow_neg:
+            return 0.0
+        if allow_neg:
+            use = min(amount, remaining)
+        else:
+            use = min(amount, remaining, available)
+        if use <= 0:
+            return 0.0
+        bal.balance = float(bal.balance) - use
+        remaining -= use
+        consumed_from[lt] = consumed_from.get(lt, 0) + use
+        db.add(LeaveTransaction(
+            user_id=user_id,
+            year=year,
+            leave_type=lt,
+            amount=use,
+            transaction_type=TX_USE,
+            description=description,
+            reference_id=reference_id,
+        ))
+        return use
 
     if leave_type == 'AL':
         cw = db.query(LeaveBalance).filter(
@@ -416,24 +561,55 @@ def consume_leave(
                 LeaveBalance.leave_type == 'CW',
             )
         ).first()
+        cw_days = float(cw.balance) if cw and cw.balance > 0 else 0.0
+        membership = resolve_membership_for_user(db, user_id)
+        cap = resolve_max_buyback(db, membership, user_id=user_id, year_j=year)
+        buckets = split_cw_buckets(cw_days, cap)
 
-        if cw and cw.balance > 0:
-            use_from_cw = min(remaining, float(cw.balance))
-            cw.balance -= use_from_cw
-            remaining -= use_from_cw
-            consumed_from['CW'] = use_from_cw
+        # 1) non-buyback CW
+        if buckets['non_buyback'] > 0 and remaining > 0:
+            _use_from_balance(
+                cw,
+                'CW',
+                buckets['non_buyback'],
+                "مصرف ذخیره غیرقابل‌بازخرید (اولویت ۱)",
+            )
 
-            db.add(LeaveTransaction(
-                user_id=user_id,
-                year=year,
-                leave_type='CW',
-                amount=use_from_cw,
-                transaction_type=TX_USE,
-                description="مصرف مرخصی انتقالی از سال قبل (اولویت اول)",
-                reference_id=reference_id,
-            ))
+        # 2) AL
+        if remaining > 0:
+            main = db.query(LeaveBalance).filter(
+                and_(
+                    LeaveBalance.user_id == user_id,
+                    LeaveBalance.year == year,
+                    LeaveBalance.leave_type == 'AL',
+                )
+            ).first()
+            if main or allow_negative:
+                _use_from_balance(
+                    main,
+                    'AL',
+                    remaining,
+                    f"مصرف مرخصی {LEAVE_TYPE_NAMES.get('AL', 'AL')} (اولویت ۲)",
+                    allow_neg=allow_negative,
+                )
 
-    if remaining > 0:
+        # 3) buybackable CW (باقی‌مانده CW)
+        if remaining > 0:
+            cw = db.query(LeaveBalance).filter(
+                and_(
+                    LeaveBalance.user_id == user_id,
+                    LeaveBalance.year == year,
+                    LeaveBalance.leave_type == 'CW',
+                )
+            ).first()
+            if cw and cw.balance > 0:
+                _use_from_balance(
+                    cw,
+                    'CW',
+                    float(cw.balance),
+                    "مصرف ذخیره قابل‌بازخرید (اولویت ۳)",
+                )
+    else:
         main = db.query(LeaveBalance).filter(
             and_(
                 LeaveBalance.user_id == user_id,
@@ -441,45 +617,14 @@ def consume_leave(
                 LeaveBalance.leave_type == leave_type,
             )
         ).first()
-
-        if main and (main.balance > 0 or allow_negative):
-            if allow_negative:
-                use_from_main = remaining
-            else:
-                use_from_main = min(remaining, float(main.balance))
-            main.balance -= use_from_main
-            remaining -= use_from_main
-            consumed_from[leave_type] = use_from_main
-
-            db.add(LeaveTransaction(
-                user_id=user_id,
-                year=year,
-                leave_type=leave_type,
-                amount=use_from_main,
-                transaction_type=TX_USE,
-                description=f"مصرف مرخصی {LEAVE_TYPE_NAMES.get(leave_type, leave_type)}",
-                reference_id=reference_id,
-            ))
-        elif remaining > 0 and allow_negative:
-            use_from_main = remaining
-            main = LeaveBalance(
-                user_id=user_id,
-                year=year,
-                leave_type=leave_type,
-                balance=-use_from_main,
+        if main or allow_negative:
+            _use_from_balance(
+                main,
+                leave_type,
+                remaining,
+                f"مصرف مرخصی {LEAVE_TYPE_NAMES.get(leave_type, leave_type)}",
+                allow_neg=allow_negative,
             )
-            db.add(main)
-            remaining = 0
-            consumed_from[leave_type] = use_from_main
-            db.add(LeaveTransaction(
-                user_id=user_id,
-                year=year,
-                leave_type=leave_type,
-                amount=use_from_main,
-                transaction_type=TX_USE,
-                description=f"مصرف مرخصی {LEAVE_TYPE_NAMES.get(leave_type, leave_type)}",
-                reference_id=reference_id,
-            ))
 
     if commit:
         db.commit()

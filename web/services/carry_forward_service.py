@@ -242,22 +242,38 @@ def calculate_leave_ceiling(year: int, employment_type: str, grade: int = 1) -> 
 # 🆕 توابع کمکی برای calculate_carry_forward_limit
 # ============================================
 
-def _get_contract_limit_days(contracts: list, year_start_g, year_end_g) -> tuple:
+def _get_contract_limit_days(contracts: list, year_start_g, year_end_g, db=None) -> tuple:
     """
-    🆕 محاسبه روزهای کارکرد و سقف پایه از لیست قراردادها
+    محاسبه روزهای کارکرد و سقف پایه از لیست قراردادها (+ سیاست در صورت وجود).
     Returns: (total_worked_days, base_limit, last_contract_type)
+    base_limit=None یعنی بدون سقف سیاستی.
     """
     from models.contract import CONTRACT_TYPES
+    from web.services.leave_entitlement_service import resolve_max_carry_forward
 
     total_worked_days = 0
     base_limit = 0
     last_contract_type = None
+    unlimited = False
 
     for contract in contracts:
         type_config = CONTRACT_TYPES.get(contract.contract_type_code, {})
-        type_limit = type_config.get('carry_forward_max', 0)
-        if type_limit > base_limit:
+        if db is not None:
+            policy_cap = resolve_max_carry_forward(db, contract.contract_type_code)
+            if policy_cap is None:
+                unlimited = True
+                type_limit = None
+            else:
+                type_limit = policy_cap
+        else:
+            type_limit = type_config.get('carry_forward_max', 0)
+
+        if type_limit is None:
+            last_contract_type = contract.contract_type_code
+        elif type_limit > (base_limit or 0):
             base_limit = type_limit
+            last_contract_type = contract.contract_type_code
+        elif last_contract_type is None:
             last_contract_type = contract.contract_type_code
 
         period_start = max(contract.start_date, year_start_g)
@@ -270,6 +286,8 @@ def _get_contract_limit_days(contracts: list, year_start_g, year_end_g) -> tuple
             days = (period_end - period_start).days + 1
             total_worked_days += days
 
+    if unlimited:
+        return total_worked_days, None, last_contract_type
     return total_worked_days, base_limit, last_contract_type
 
 
@@ -306,11 +324,15 @@ def calculate_carry_forward_limit(db: Session, user_id: str, from_year: int) -> 
 
         if _was_employee_active_in_year(db, user_id, from_year):
             # ✅ کارمند فعال بوده ولی قرارداد ثبت نشده
-            # → کل سال را در نظر بگیر و سقف را بر اساس نوع استخدام محاسبه کن
-            ceiling = calculate_leave_ceiling(from_year, employment_type)
+            from web.services.leave_entitlement_service import resolve_max_carry_forward
+            emp_code = '1' if employment_type == 'PERMANENT' else (
+                '2' if employment_type == 'CONSCRIPT' else '4'
+            )
+            policy_cap = resolve_max_carry_forward(db, emp_code)
             return {
-                'max_days': ceiling['max_carry_forward'],
-                'base_limit': ceiling['max_carry_forward'],
+                'max_days': policy_cap if policy_cap is not None else year_days,
+                'base_limit': policy_cap,
+                'unlimited': policy_cap is None,
                 'worked_days': year_days,
                 'year_days': year_days,
                 'full_year': True,
@@ -336,7 +358,7 @@ def calculate_carry_forward_limit(db: Session, user_id: str, from_year: int) -> 
 
     # محاسبه روزهای کارکرد و سقف پایه
     total_worked_days, base_limit, last_contract_type = _get_contract_limit_days(
-        contracts, year_start_g, year_end_g
+        contracts, year_start_g, year_end_g, db=db
     )
 
     # اگر در سال مورد نظر کارکردی نبود
@@ -349,10 +371,25 @@ def calculate_carry_forward_limit(db: Session, user_id: str, from_year: int) -> 
                 days = (contract.end_date - contract.start_date).days + 1
                 total_worked_days += min(days, year_days)
 
+    # بدون سقف سیاستی → عملاً تا سقف کارکرد سال (بدون برش عددی سیاست)
+    if base_limit is None:
+        return {
+            'max_days': total_worked_days if total_worked_days > 0 else year_days,
+            'base_limit': None,
+            'unlimited': True,
+            'worked_days': total_worked_days,
+            'year_days': year_days,
+            'full_year': total_worked_days >= year_days,
+            'contract_type_code': last_contract_type,
+            'contract_type_name': CONTRACT_TYPES.get(last_contract_type, {}).get('name', 'نامشخص'),
+            'source': source,
+        }
+
     if base_limit <= 0:
         return {
             'max_days': 0,
             'base_limit': 0,
+            'unlimited': False,
             'worked_days': total_worked_days,
             'year_days': year_days,
             'full_year': total_worked_days >= year_days,
@@ -373,6 +410,7 @@ def calculate_carry_forward_limit(db: Session, user_id: str, from_year: int) -> 
     return {
         'max_days': final_limit,
         'base_limit': base_limit,
+        'unlimited': False,
         'worked_days': total_worked_days,
         'year_days': year_days,
         'full_year': full_year,
@@ -490,15 +528,25 @@ def user_chooses_use_leave(db, user_id: str, leave_type: str = 'AL', year: int =
         remaining_days = balance.balance
 
         employee = db.query(Employee).filter(Employee.user_id == user_id).first()
-        grade = getattr(employee, 'grade', 1) if employee else 1
-        ceiling = calculate_leave_ceiling(year, contract_info['employment_type'], grade)
+        from web.services.leave_entitlement_service import resolve_max_carry_forward
+        emp_code = '1' if contract_info['employment_type'] == 'PERMANENT' else (
+            '2' if contract_info['employment_type'] == 'CONSCRIPT' else '4'
+        )
+        if employee and getattr(employee, 'department', None):
+            emp_code = str(employee.department)
+        policy_cap = resolve_max_carry_forward(db, emp_code)
 
-        if contract_info['employment_type'] == 'LABOR_LAW':
-            max_days = min(remaining_days // 3, ceiling['max_carry_forward'])
+        if policy_cap is None:
+            max_days = remaining_days
+            if contract_info['employment_type'] == 'LABOR_LAW':
+                max_days = remaining_days // 3
         else:
-            max_days = min(remaining_days, ceiling['max_carry_forward'])
+            if contract_info['employment_type'] == 'LABOR_LAW':
+                max_days = min(remaining_days // 3, policy_cap)
+            else:
+                max_days = min(remaining_days, policy_cap)
 
-        # 🆕 تناسب با کارکرد واقعی
+        # تناسب با کارکرد واقعی
         if not contract_info['covers_full_year'] and contract_info['total_days'] > 0:
             year_total_days = 365
             proportional_ratio = contract_info['total_days'] / year_total_days

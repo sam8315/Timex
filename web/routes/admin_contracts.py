@@ -3,12 +3,13 @@
 """
 from datetime import date
 from fastapi import APIRouter, Request, Depends, Form, Query, File, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 import jdatetime
+import json
 import time
 from typing import Optional
 
@@ -25,6 +26,8 @@ from web.services.leave_service import (
     remove_leave_for_contract,
     get_stored_leave_balance,
     set_stored_leave_for_year,
+    get_buyback_quota,
+    set_buyback_quota_for_year,
 )
 from web.services.leave_entitlement_service import (
     get_membership_timeline,
@@ -33,6 +36,13 @@ from web.services.leave_entitlement_service import (
     add_years,
     sync_employee_department_from_active_contract,
     sync_employee_region_from_service_location,
+)
+from web.services.permanent_leave_history_service import (
+    apply_permanent_history,
+    clear_permanent_history,
+    get_used_by_year_from_contract,
+    parse_used_by_year_from_form,
+    preview_history_summary,
 )
 
 router = APIRouter(tags=["Admin Contracts"])
@@ -108,6 +118,9 @@ def format_charge_message(charged: dict, prefix: str) -> str:
             parts.append(f"استعلاجی {sl}")
         if cw:
             parts.append(f"ذخیره {cw}")
+        bb = leaves.get('BB', 0)
+        if bb:
+            parts.append(f"قابل‌بازخرید {bb}")
         if parts:
             year_parts.append(f"سال {year_j}: {' و '.join(parts)} روز")
     if not year_parts:
@@ -179,6 +192,12 @@ async def contracts_page(
             end_j = jdatetime.date.fromgregorian(date=c.end_date) if c.end_date else None
             start_year = start_j.year
             stored_cw = get_stored_leave_balance(db, c.user_id, start_year)
+            buyback_days = get_buyback_quota(db, c.user_id, start_year)
+            # برای نمایش ویرایش: CW/BB سال جاری + مصرف تاریخچه
+            current_year = jdatetime.date.today().year
+            stored_cw_current = get_stored_leave_balance(db, c.user_id, current_year)
+            buyback_current = get_buyback_quota(db, c.user_id, current_year)
+            history_used = get_used_by_year_from_contract(db, c.id) if c.contract_type_code == MEMBERSHIP_PERMANENT else {}
 
             contracts_data.append({
                 'contract': c,
@@ -188,7 +207,10 @@ async def contracts_page(
                 'end_j': end_j.strftime('%Y/%m/%d') if end_j else 'دائمی',
                 'is_active': c.is_active,
                 'charged_by_year': get_charged_by_year(db, c.id),
-                'stored_leave_days': stored_cw,
+                'stored_leave_days': stored_cw_current if c.contract_type_code == MEMBERSHIP_PERMANENT else stored_cw,
+                'buyback_leave_days': buyback_current if c.contract_type_code == MEMBERSHIP_PERMANENT else buyback_days,
+                'history_used': history_used,
+                'history_used_json': json.dumps({str(k): v for k, v in history_used.items()}),
                 'start_year': start_year,
             })
 
@@ -236,6 +258,7 @@ async def add_contract(
     sick_leave_days: int = Form(0),
     service_deduction_days: int = Form(0),
     stored_leave_days: int = Form(0),
+    buyback_leave_days: int = Form(0),
     description: str = Form(""),
     contract_file: Optional[UploadFile] = File(None),
     user: User = Depends(require_admin),
@@ -248,6 +271,8 @@ async def add_contract(
             raise ValueError("نوع عضویت نامعتبر است")
         if stored_leave_days < 0:
             raise ValueError("مرخصی ذخیره نمی‌تواند منفی باشد")
+        if buyback_leave_days < 0:
+            raise ValueError("قابل‌بازخرید نمی‌تواند منفی باشد")
 
         start_j = jdatetime.datetime.strptime(start_date_str.strip(), "%Y/%m/%d").date()
         start_date = start_j.togregorian()
@@ -317,18 +342,45 @@ async def add_contract(
 
         charged = charge_leave_for_new_contract(db, new_contract)
 
-        start_year = jdatetime.date.fromgregorian(date=start_date).year
-        if stored_leave_days > 0:
-            cw_result = set_stored_leave_for_year(
-                db,
-                user_id=user_id,
-                year=start_year,
-                target_days=stored_leave_days,
-                reference_id=new_contract.id,
-                description=f"ورود مرخصی ذخیره هنگام ثبت عضویت #{new_contract.id}",
-                commit=True,
+        form = await request.form()
+        used_by_year = parse_used_by_year_from_form(form)
+        current_year = jdatetime.date.today().year
+        needs_history = (
+            contract_type_code == MEMBERSHIP_PERMANENT and start_j.year < current_year
+        )
+
+        if needs_history:
+            hist = apply_permanent_history(
+                db, new_contract, used_by_year, commit=True
             )
-            charged.setdefault(start_year, {})['CW'] = cw_result['new']
+            charged.setdefault(current_year, {})['CW'] = hist['stored_cw']
+            charged.setdefault(current_year, {})['BB'] = hist['buyback']
+        else:
+            start_year = jdatetime.date.fromgregorian(date=start_date).year
+            if stored_leave_days > 0:
+                cw_result = set_stored_leave_for_year(
+                    db,
+                    user_id=user_id,
+                    year=start_year,
+                    target_days=stored_leave_days,
+                    reference_id=new_contract.id,
+                    description=f"ورود مرخصی ذخیره هنگام ثبت عضویت #{new_contract.id}",
+                    commit=True,
+                )
+                charged.setdefault(start_year, {})['CW'] = cw_result['new']
+
+            if buyback_leave_days > 0 or get_buyback_quota(db, user_id, start_year) != buyback_leave_days:
+                bb_result = set_buyback_quota_for_year(
+                    db,
+                    user_id=user_id,
+                    year=start_year,
+                    target_days=buyback_leave_days,
+                    source='MANUAL',
+                    notes=f"ورود قابل‌بازخرید هنگام ثبت عضویت #{new_contract.id} توسط {user.user_id}",
+                    commit=True,
+                )
+                if bb_result['new'] or bb_result['diff']:
+                    charged.setdefault(start_year, {})['BB'] = bb_result['new']
 
         sync_employee_department_from_active_contract(db, user_id, commit=True)
         charge_msg = format_charge_message(charged, "مرخصی شارژ شد")
@@ -347,6 +399,36 @@ async def add_contract(
         )
 
 
+@router.get("/contracts/permanent-history-plan")
+async def permanent_history_plan(
+    request: Request,
+    user_id: str = Query(...),
+    start_date_str: str = Query(...),
+    contract_id: Optional[int] = Query(None),
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """پیش‌نمایش سال‌ها و استحقاق تاریخچه رسمی برای مودال."""
+    enforce_permission(db, user, 'view_contracts')
+    try:
+        start_j = jdatetime.datetime.strptime(start_date_str.strip(), "%Y/%m/%d").date()
+        start_date = start_j.togregorian()
+    except Exception:
+        return JSONResponse({"error": "تاریخ شروع نامعتبر است"}, status_code=400)
+
+    used_by_year = {}
+    if contract_id:
+        used_by_year = get_used_by_year_from_contract(db, contract_id)
+
+    summary = preview_history_summary(
+        db,
+        user_id=user_id,
+        start_date=start_date,
+        used_by_year=used_by_year,
+    )
+    return JSONResponse(summary)
+
+
 @router.post("/contracts/{contract_id}/edit")
 async def edit_contract(
     request: Request,
@@ -358,6 +440,7 @@ async def edit_contract(
     sick_leave_days: int = Form(0),
     service_deduction_days: int = Form(0),
     stored_leave_days: int = Form(0),
+    buyback_leave_days: int = Form(0),
     description: str = Form(""),
     remove_contract_file: str = Form(""),
     contract_file: Optional[UploadFile] = File(None),
@@ -377,6 +460,8 @@ async def edit_contract(
     try:
         if stored_leave_days < 0:
             raise ValueError("مرخصی ذخیره نمی‌تواند منفی باشد")
+        if buyback_leave_days < 0:
+            raise ValueError("قابل‌بازخرید نمی‌تواند منفی باشد")
 
         old_annual = contract.annual_leave_days
         old_sick = contract.sick_leave_days
@@ -458,18 +543,47 @@ async def edit_contract(
             old_type_code=old_type_code,
         )
 
-        start_year = jdatetime.date.fromgregorian(date=start_date).year
-        cw_result = set_stored_leave_for_year(
-            db,
-            user_id=contract.user_id,
-            year=start_year,
-            target_days=stored_leave_days,
-            reference_id=contract.id,
-            description=f"تنظیم مرخصی ذخیره هنگام ویرایش عضویت #{contract.id}",
-            commit=True,
+        form = await request.form()
+        used_by_year = parse_used_by_year_from_form(form)
+        current_year = jdatetime.date.today().year
+        needs_history = (
+            contract_type_code == MEMBERSHIP_PERMANENT and start_j.year < current_year
         )
-        if cw_result['diff'] != 0:
-            changes.setdefault(start_year, {})['CW'] = cw_result['diff']
+
+        if needs_history:
+            hist = apply_permanent_history(
+                db, contract, used_by_year, commit=True
+            )
+            changes.setdefault(current_year, {})['CW'] = hist['stored_cw']
+            changes.setdefault(current_year, {})['BB'] = hist['buyback']
+        else:
+            if old_type_code == MEMBERSHIP_PERMANENT or contract_type_code == MEMBERSHIP_PERMANENT:
+                clear_permanent_history(db, contract)
+                db.commit()
+            start_year = jdatetime.date.fromgregorian(date=start_date).year
+            cw_result = set_stored_leave_for_year(
+                db,
+                user_id=contract.user_id,
+                year=start_year,
+                target_days=stored_leave_days,
+                reference_id=contract.id,
+                description=f"تنظیم مرخصی ذخیره هنگام ویرایش عضویت #{contract.id}",
+                commit=True,
+            )
+            if cw_result['diff'] != 0:
+                changes.setdefault(start_year, {})['CW'] = cw_result['diff']
+
+            bb_result = set_buyback_quota_for_year(
+                db,
+                user_id=contract.user_id,
+                year=start_year,
+                target_days=buyback_leave_days,
+                source='MANUAL',
+                notes=f"تنظیم قابل‌بازخرید هنگام ویرایش عضویت #{contract.id} توسط {user.user_id}",
+                commit=True,
+            )
+            if bb_result['diff'] != 0:
+                changes.setdefault(start_year, {})['BB'] = bb_result['diff']
 
         sync_employee_department_from_active_contract(db, contract.user_id, commit=True)
         change_msg = format_charge_message(changes, "تغییرات مرخصی")
@@ -508,6 +622,9 @@ async def delete_contract(
     try:
         user_id = contract.user_id
         file_path = contract.file_path
+        if contract.contract_type_code == MEMBERSHIP_PERMANENT:
+            clear_permanent_history(db, contract)
+            db.flush()
         removed = remove_leave_for_contract(db, contract)
         remove_msg = format_charge_message(removed, "مرخصی کسر شد")
 

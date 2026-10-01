@@ -64,26 +64,121 @@
                 <label class="form-label">⏳ کسر خدمت</label>
                 <input type="number" name="service_deduction_days" class="form-control" value="0" min="0">
             </div>
-            <div class="col-md-1">
+            <div class="col-md-1 non-permanent-stored">
                 <label class="form-label">📦 ذخیره</label>
-                <input type="number" name="stored_leave_days" class="form-control" value="0" min="0">
+                <input type="number" name="stored_leave_days" id="add_stored" class="form-control" value="0" min="0"
+                       title="مانده ذخیره از سال‌های قبل">
             </div>
-            <div class="col-md-3">
+            <div class="col-md-1 non-permanent-stored">
+                <label class="form-label">💵 قابل‌بازخرید</label>
+                <input type="number" name="buyback_leave_days" id="add_buyback" class="form-control" value="0" min="0"
+                       title="سهمیه قابل‌بازخرید (مانده قبلی)">
+            </div>
+            <div class="col-md-2">
                 <label class="form-label">📎 فایل قرارداد</label>
                 <input type="file" name="contract_file" class="form-control"
                        accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/*">
             </div>
-            <div class="col-md-1">
-                <button type="submit" class="btn btn-success w-100">
+            <div class="col-md-1" id="add_submit_wrap">
+                <button type="submit" class="btn btn-success w-100" id="add_submit_btn">
                     <i class="bi bi-plus"></i> ثبت
+                </button>
+            </div>
+            <div class="col-md-2" id="add_history_btn_wrap" style="display:none;">
+                <button type="button" class="btn btn-primary w-100" id="openHistoryModalBtn">
+                    <i class="bi bi-clock-history"></i> ثبت با تاریخچه
                 </button>
             </div>
         </form>
         <small class="text-muted d-block mt-2">
             <i class="bi bi-info-circle"></i>
             استحقاق از سیاست عضویت خوانده می‌شود؛ رسمی بدون پایان → خودکار ۳۰ سال بعد؛
-            بازه‌های هم‌پوشان مجاز نیست. فایل قرارداد: PDF/JPG/PNG تا ۱۰MB.
+            بازه‌های هم‌پوشان مجاز نیست. برای رسمی قدیمی: «ثبت با تاریخچه» و ورود مصرف هر سال.
+            فایل قرارداد: PDF/JPG/PNG تا ۱۰MB.
         </small>
+    </div>
+</div>
+
+<!-- مودال تاریخچه مرخصی رسمی (ثبت) -->
+<div class="modal fade" id="permanentHistoryModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <form method="post" action="/admin/contracts/add" enctype="multipart/form-data" id="permanentHistoryForm">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-clock-history"></i> ثبت عضویت رسمی با تاریخچه مرخصی</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" name="contract_type_code" value="1">
+                    <input type="hidden" name="annual_leave_days" value="0">
+                    <input type="hidden" name="sick_leave_days" value="0">
+                    <input type="hidden" name="service_deduction_days" value="0">
+                    <input type="hidden" name="stored_leave_days" value="0">
+                    <input type="hidden" name="buyback_leave_days" value="0">
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-3">
+                            <label class="form-label">کد پرسنلی</label>
+                            <input type="text" name="user_id" id="hist_user_id" class="form-control" required>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">شروع (شمسی) <span class="text-danger">*</span></label>
+                            <input type="text" name="start_date_str" id="hist_start" class="form-control jalali-date" required autocomplete="off">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">پایان (شمسی)</label>
+                            <input type="text" name="end_date_str" id="hist_end" class="form-control jalali-date" placeholder="خالی=۳۰ سال" autocomplete="off">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">فایل قرارداد</label>
+                            <input type="file" name="contract_file" id="hist_file" class="form-control"
+                                   accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/*">
+                        </div>
+                    </div>
+                    <p class="small text-muted mb-2">
+                        استحقاق هر سال از سیاست (رسمی + منطقه خدمتی فعلی) محاسبه می‌شود.
+                        فقط سال‌های قبل از سال جاری در جدول هستند؛ استحقاق سال جاری با شارژ قرارداد ثبت می‌شود.
+                    </p>
+                    <div class="table-responsive" style="max-height: 360px;">
+                        <table class="table table-sm table-bordered align-middle mb-0">
+                            <thead class="table-light sticky-top">
+                                <tr>
+                                    <th class="text-center" style="width:20%">سال</th>
+                                    <th class="text-center" style="width:40%">استحقاق (روز)</th>
+                                    <th class="text-center" style="width:40%">مصرف (روز)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="hist_years_body">
+                                <tr><td colspan="3" class="text-center text-muted py-3">تاریخ شروع را وارد کنید</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="row g-3 mt-3">
+                        <div class="col-md-4">
+                            <div class="border rounded p-2 bg-light">
+                                <div class="small text-muted">مانده ذخیره محاسبه‌شده (CW)</div>
+                                <div class="fs-5" id="hist_stored_summary">0</div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="border rounded p-2 bg-light">
+                                <div class="small text-muted">قابل‌بازخرید (سقف ماده ۱۱)</div>
+                                <div class="fs-5" id="hist_buyback_summary">0</div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="border rounded p-2 bg-light">
+                                <div class="small text-muted">سقف انتقال / بازخرید</div>
+                                <div class="small" id="hist_caps_summary">—</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
+                    <button type="submit" class="btn btn-success">ثبت عضویت و تاریخچه</button>
+                </div>
+            </form>
+        </div>
     </div>
 </div>
 
@@ -204,6 +299,7 @@
                         <th>پایان</th>
                         <th class="text-center">🏖️ مرخصی شارژ شده</th>
                         <th class="text-center">📦 ذخیره</th>
+                        <th class="text-center">💵 قابل‌بازخرید</th>
                         <th class="text-center">فایل</th>
                         <th class="text-center">وضعیت</th>
                         <th class="text-center">عملیات</th>
@@ -249,6 +345,9 @@
                         </td>
                         <td class="text-center">
                             <span class="badge bg-secondary">{{ item.stored_leave_days }}</span>
+                        </td>
+                        <td class="text-center">
+                            <span class="badge bg-info text-dark">{{ item.buyback_leave_days }}</span>
                         </td>
                         <td class="text-center">
                             {% if item.contract.file_path %}
@@ -334,7 +433,14 @@
                                             <div class="col-md-2">
                                                 <label class="form-label">📦 ذخیره (روز)</label>
                                                 <input type="number" name="stored_leave_days" class="form-control"
-                                                       value="{{ item.stored_leave_days }}" min="0">
+                                                       value="{{ item.stored_leave_days }}" min="0"
+                                                       {% if item.contract.contract_type_code == '1' %}readonly title="از تاریخچه محاسبه می‌شود"{% endif %}>
+                                            </div>
+                                            <div class="col-md-2">
+                                                <label class="form-label">💵 قابل‌بازخرید</label>
+                                                <input type="number" name="buyback_leave_days" class="form-control"
+                                                       value="{{ item.buyback_leave_days }}" min="0"
+                                                       {% if item.contract.contract_type_code == '1' %}readonly title="از تاریخچه محاسبه می‌شود"{% endif %}>
                                             </div>
                                             <div class="col-md-2">
                                                 <label class="form-label">📝 توضیحات</label>
@@ -359,9 +465,44 @@
                                                 {% endif %}
                                             </div>
                                         </div>
+
+                                        {% if item.contract.contract_type_code == '1' %}
+                                        <div class="mt-3 permanent-history-edit"
+                                             data-contract-id="{{ item.contract.id }}"
+                                             data-user-id="{{ item.contract.user_id }}"
+                                             data-used='{{ item.history_used_json }}'>
+                                            <h6 class="mb-2"><i class="bi bi-clock-history"></i> تاریخچه مرخصی (سال‌های قبل)</h6>
+                                            <p class="small text-muted mb-2">
+                                                مصرف هر سال را ویرایش کنید؛ استحقاق از سیاست محاسبه می‌شود.
+                                                ذخیره و قابل‌بازخرید از همین تاریخچه روی سال جاری تنظیم می‌شود.
+                                            </p>
+                                            <div class="table-responsive" style="max-height: 280px;">
+                                                <table class="table table-sm table-bordered align-middle mb-0">
+                                                    <thead class="table-light sticky-top">
+                                                        <tr>
+                                                            <th class="text-center">سال</th>
+                                                            <th class="text-center">استحقاق</th>
+                                                            <th class="text-center">مصرف</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody class="edit-hist-years"></tbody>
+                                                </table>
+                                            </div>
+                                            <div class="row g-2 mt-2 small">
+                                                <div class="col-md-4">ذخیره محاسبه‌شده: <strong class="edit-hist-cw">—</strong></div>
+                                                <div class="col-md-4">قابل‌بازخرید: <strong class="edit-hist-bb">—</strong></div>
+                                                <div class="col-md-4 edit-hist-caps text-muted">—</div>
+                                            </div>
+                                        </div>
+                                        {% endif %}
+
                                         <div class="alert alert-info mt-3 mb-0">
                                             <i class="bi bi-info-circle"></i>
-                                            پس از ذخیره، مابه‌التفاوت استحقاقی و ذخیره به‌صورت خودکار اعمال می‌شود.
+                                            {% if item.contract.contract_type_code == '1' %}
+                                            پس از ذخیره، تاریخچه CHARGE/USE و ذخیره/بازخرید سال جاری به‌روز می‌شود.
+                                            {% else %}
+                                            پس از ذخیره، مابه‌التفاوت استحقاقی، ذخیره و قابل‌بازخرید به‌صورت خودکار اعمال می‌شود.
+                                            {% endif %}
                                             فایل جدید جایگزین فایل قبلی می‌شود (PDF/JPG/PNG تا ۱۰MB).
                                         </div>
                                     </div>
@@ -387,10 +528,12 @@
 <script>
 const editableTypes = ['6', '7'];
 const deductionTypes = ['2'];
+const PERMANENT_CODE = '1';
 
 function toggleLeaveFields() {
     const typeSelect = document.getElementById('add_type');
     const selectedType = typeSelect.value;
+    const isPermanent = selectedType === PERMANENT_CODE;
 
     document.querySelectorAll('.leave-editable').forEach(el => {
         el.style.display = editableTypes.includes(selectedType) ? 'block' : 'none';
@@ -398,10 +541,220 @@ function toggleLeaveFields() {
     document.querySelectorAll('.deduction-field').forEach(el => {
         el.style.display = deductionTypes.includes(selectedType) ? 'block' : 'none';
     });
+    document.querySelectorAll('.non-permanent-stored').forEach(el => {
+        el.style.display = isPermanent ? 'none' : 'block';
+    });
+    const submitWrap = document.getElementById('add_submit_wrap');
+    const histWrap = document.getElementById('add_history_btn_wrap');
+    if (submitWrap) submitWrap.style.display = isPermanent ? 'none' : 'block';
+    if (histWrap) histWrap.style.display = isPermanent ? 'block' : 'none';
+}
+
+function fmtCap(v) {
+    return (v === null || v === undefined) ? 'نامحدود' : String(v);
+}
+
+function renderHistoryRows(tbody, years, usedMap) {
+    tbody.innerHTML = '';
+    if (!years || !years.length) {
+        tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-3">سال گذشته‌ای برای تاریخچه نیست (شروع از سال جاری)</td></tr>';
+        return;
+    }
+    years.forEach(row => {
+        const used = (usedMap && usedMap[row.year] != null) ? usedMap[row.year] : (row.used || 0);
+        const tr = document.createElement('tr');
+        tr.innerHTML =
+            `<td class="text-center">${row.year}</td>` +
+            `<td class="text-center"><span class="ent-val">${row.entitlement}</span></td>` +
+            `<td class="text-center"><input type="number" class="form-control form-control-sm text-center hist-used-input" ` +
+            `name="used_${row.year}" min="0" max="${row.entitlement}" value="${used}"></td>`;
+        tbody.appendChild(tr);
+    });
+}
+
+async function fetchHistoryPlan(userId, startStr, contractId) {
+    const params = new URLSearchParams({
+        user_id: userId,
+        start_date_str: startStr,
+    });
+    if (contractId) params.set('contract_id', contractId);
+    const res = await fetch('/admin/contracts/permanent-history-plan?' + params.toString());
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'خطا در دریافت برنامه سال‌ها');
+    }
+    return res.json();
+}
+
+function updateSummaryEls(summary, storedEl, buybackEl, capsEl) {
+    if (storedEl) storedEl.textContent = summary.stored_cw;
+    if (buybackEl) buybackEl.textContent = summary.buyback;
+    if (capsEl) {
+        capsEl.textContent =
+            `انتقال: ${fmtCap(summary.carry_forward_cap)} | بازخرید: ${fmtCap(summary.buyback_cap)}` +
+            (summary.region_code ? ` | منطقه: ${summary.region_code}` : '');
+    }
+}
+
+function collectUsedFromTbody(tbody) {
+    const used = {};
+    tbody.querySelectorAll('.hist-used-input').forEach(inp => {
+        const year = parseInt(inp.name.replace('used_', ''), 10);
+        used[year] = parseInt(inp.value || '0', 10) || 0;
+    });
+    return used;
+}
+
+function recomputeClientSummary(years, usedMap, cfCap, bbCap) {
+    let stored = 0;
+    (years || []).forEach(row => {
+        const ent = Number(row.entitlement) || 0;
+        let used = Number(usedMap[row.year] || 0);
+        used = Math.max(0, Math.min(used, ent));
+        const unused = ent - used;
+        const carry = (cfCap === null || cfCap === undefined) ? unused : Math.min(unused, Number(cfCap));
+        stored += carry;
+    });
+    const bb = (bbCap === null || bbCap === undefined) ? stored : Math.min(stored, Number(bbCap));
+    return { stored_cw: stored, buyback: bb, carry_forward_cap: cfCap, buyback_cap: bbCap };
+}
+
+async function loadAddHistoryTable() {
+    const userId = document.getElementById('hist_user_id').value.trim();
+    const startStr = document.getElementById('hist_start').value.trim();
+    const tbody = document.getElementById('hist_years_body');
+    if (!userId || !startStr || startStr.length < 8) {
+        tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-3">کد پرسنلی و تاریخ شروع را وارد کنید</td></tr>';
+        return;
+    }
+    try {
+        const summary = await fetchHistoryPlan(userId, startStr, null);
+        window._histPlanCache = summary;
+        renderHistoryRows(tbody, summary.years, null);
+        updateSummaryEls(
+            summary,
+            document.getElementById('hist_stored_summary'),
+            document.getElementById('hist_buyback_summary'),
+            document.getElementById('hist_caps_summary')
+        );
+    } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="3" class="text-center text-danger py-3">${e.message}</td></tr>`;
+    }
+}
+
+async function loadEditHistoryBlock(block) {
+    const form = block.closest('form');
+    const startInp = form.querySelector('input[name="start_date_str"]');
+    const userId = block.dataset.userId;
+    const contractId = block.dataset.contractId;
+    const startStr = startInp ? startInp.value.trim() : '';
+    const tbody = block.querySelector('.edit-hist-years');
+    let usedMap = {};
+    try { usedMap = JSON.parse(block.dataset.used || '{}'); } catch (_) {}
+    if (!startStr) return;
+    try {
+        const summary = await fetchHistoryPlan(userId, startStr, contractId);
+        // merge saved used over plan defaults
+        summary.years.forEach(y => {
+            if (usedMap[y.year] != null) y.used = usedMap[y.year];
+            else if (usedMap[String(y.year)] != null) y.used = usedMap[String(y.year)];
+        });
+        block._planCache = summary;
+        renderHistoryRows(tbody, summary.years, usedMap);
+        const recomputed = recomputeClientSummary(
+            summary.years, collectUsedFromTbody(tbody),
+            summary.carry_forward_cap, summary.buyback_cap
+        );
+        recomputed.region_code = summary.region_code;
+        updateSummaryEls(
+            recomputed,
+            block.querySelector('.edit-hist-cw'),
+            block.querySelector('.edit-hist-bb'),
+            block.querySelector('.edit-hist-caps')
+        );
+        const cwInp = form.querySelector('input[name="stored_leave_days"]');
+        const bbInp = form.querySelector('input[name="buyback_leave_days"]');
+        if (cwInp) cwInp.value = recomputed.stored_cw;
+        if (bbInp) bbInp.value = recomputed.buyback;
+    } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="3" class="text-center text-danger">${e.message}</td></tr>`;
+    }
 }
 
 document.addEventListener('DOMContentLoaded', function() {
     toggleLeaveFields();
+
+    const openBtn = document.getElementById('openHistoryModalBtn');
+    if (openBtn) {
+        openBtn.addEventListener('click', function() {
+            const mainForm = document.querySelector('form[action="/admin/contracts/add"]');
+            document.getElementById('hist_user_id').value =
+                mainForm.querySelector('input[name="user_id"]').value;
+            document.getElementById('hist_start').value =
+                mainForm.querySelector('input[name="start_date_str"]').value;
+            document.getElementById('hist_end').value =
+                (mainForm.querySelector('input[name="end_date_str"]') || {}).value || '';
+            const modal = new bootstrap.Modal(document.getElementById('permanentHistoryModal'));
+            modal.show();
+            loadAddHistoryTable();
+        });
+    }
+
+    ['hist_user_id', 'hist_start'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('change', loadAddHistoryTable);
+        if (el) el.addEventListener('blur', loadAddHistoryTable);
+    });
+
+    document.getElementById('hist_years_body')?.addEventListener('input', function(e) {
+        if (!e.target.classList.contains('hist-used-input')) return;
+        const cache = window._histPlanCache;
+        if (!cache) return;
+        const used = collectUsedFromTbody(document.getElementById('hist_years_body'));
+        const recomputed = recomputeClientSummary(
+            cache.years, used, cache.carry_forward_cap, cache.buyback_cap
+        );
+        recomputed.region_code = cache.region_code;
+        updateSummaryEls(
+            recomputed,
+            document.getElementById('hist_stored_summary'),
+            document.getElementById('hist_buyback_summary'),
+            document.getElementById('hist_caps_summary')
+        );
+    });
+
+    document.querySelectorAll('.permanent-history-edit').forEach(block => {
+        const modal = block.closest('.modal');
+        if (modal) {
+            modal.addEventListener('shown.bs.modal', () => loadEditHistoryBlock(block));
+        }
+        const form = block.closest('form');
+        const startInp = form?.querySelector('input[name="start_date_str"]');
+        if (startInp) {
+            startInp.addEventListener('change', () => loadEditHistoryBlock(block));
+            startInp.addEventListener('blur', () => loadEditHistoryBlock(block));
+        }
+        block.addEventListener('input', function(e) {
+            if (!e.target.classList.contains('hist-used-input')) return;
+            const cache = block._planCache;
+            if (!cache) return;
+            const used = collectUsedFromTbody(block.querySelector('.edit-hist-years'));
+            const recomputed = recomputeClientSummary(
+                cache.years, used, cache.carry_forward_cap, cache.buyback_cap
+            );
+            recomputed.region_code = cache.region_code;
+            updateSummaryEls(
+                recomputed,
+                block.querySelector('.edit-hist-cw'),
+                block.querySelector('.edit-hist-bb'),
+                block.querySelector('.edit-hist-caps')
+            );
+            const cwInp = form.querySelector('input[name="stored_leave_days"]');
+            const bbInp = form.querySelector('input[name="buyback_leave_days"]');
+            if (cwInp) cwInp.value = recomputed.stored_cw;
+            if (bbInp) bbInp.value = recomputed.buyback;
+        });
+    });
 });
 </script>
 {% endblock %}

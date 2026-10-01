@@ -43,7 +43,7 @@ class Employee(TimestampMixin, Base):
     region_code: Mapped[Optional[str]] = mapped_column(
         String(20),
         default='NORMAL',
-        comment="Service region: NORMAL, GRADE_1, GRADE_2, GRADE_3"
+        comment="Service region: NORMAL, GRADE_2, GRADE_3, GRADE_4"
     )
 
     # ✅ فیلدهای جدید: وضعیت فعال و ترک کار

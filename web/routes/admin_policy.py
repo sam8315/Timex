@@ -193,17 +193,118 @@ async def admin_policies_leave(
     except (TypeError, ValueError):
         global_cf = 9
     bb_pv = _get_param(db, policy.id, 'max_buyback')
+    try:
+        global_bb = int(float(bb_pv.parameter_value)) if bb_pv else 15
+    except (TypeError, ValueError):
+        global_bb = 15
     method_pv = _get_param(db, policy.id, 'region_change_method')
 
-    # سقف انتقال به‌ازای هر گروه (سقوط به مقدار سراسری و بعد ۹)
+    # سقف انتقال به‌ازای هر گروه (خالی/none = بدون محدودیت)
     carry_rows = []
     for code, name in DEPT_TYPES:
         cf_pv = _get_param(db, policy.id, f'carry_forward_dept_{code}')
-        try:
-            limit = int(float(cf_pv.parameter_value)) if cf_pv else global_cf
-        except (TypeError, ValueError):
-            limit = global_cf
-        carry_rows.append({'code': code, 'name': name, 'limit': limit})
+        if cf_pv is not None and cf_pv.parameter_value is not None:
+            raw = str(cf_pv.parameter_value).strip().lower()
+            if raw in ('', 'none', 'null', '-1', 'unlimited'):
+                limit_display = ''
+            else:
+                try:
+                    limit_display = str(int(float(cf_pv.parameter_value)))
+                except (TypeError, ValueError):
+                    limit_display = ''
+        else:
+            limit_display = str(global_cf)
+        carry_rows.append({'code': code, 'name': name, 'limit': limit_display})
+
+    # بازخرید غیررسمی (بدون ردیف رسمی — رسمی در کارت ماده ۱۱)
+    buyback_rows = []
+    for code, name in DEPT_TYPES:
+        if code == '1':
+            continue
+        dept_pv = _get_param(db, policy.id, f'buyback_dept_{code}')
+        if dept_pv is not None and dept_pv.parameter_value is not None:
+            raw = str(dept_pv.parameter_value).strip().lower()
+            if raw in ('', 'none', 'null', '-1', 'unlimited'):
+                limit_display = ''
+            else:
+                try:
+                    limit_display = str(int(float(dept_pv.parameter_value)))
+                except (TypeError, ValueError):
+                    limit_display = ''
+        else:
+            limit_display = ''
+        buyback_rows.append({
+            'code': code,
+            'name': name,
+            'limit': limit_display,
+        })
+
+    # سقف بازخرید رسمی وقتی «اعمال منطقه» خاموش است
+    permanent_bb_pv = _get_param(db, policy.id, 'buyback_dept_1')
+    if permanent_bb_pv is not None and permanent_bb_pv.parameter_value is not None:
+        raw = str(permanent_bb_pv.parameter_value).strip().lower()
+        if raw in ('', 'none', 'null', '-1', 'unlimited'):
+            permanent_buyback_fallback = ''
+        else:
+            try:
+                permanent_buyback_fallback = str(int(float(permanent_bb_pv.parameter_value)))
+            except (TypeError, ValueError):
+                permanent_buyback_fallback = str(global_bb)
+    else:
+        permanent_buyback_fallback = str(global_bb)
+
+    permanent_region_applies_pv = _get_param(db, policy.id, 'region_applies_dept_1')
+    permanent_uses_article11 = (
+        permanent_region_applies_pv is None
+        or permanent_region_applies_pv.parameter_value not in ('false', '0', 'off', '')
+    )
+
+    # ماده ۱۱: سقف بازخرید به‌ازای منطقه (از ۱۳۹۹) — چهار منطقه
+    from web.services.leave_entitlement_service import (
+        ARTICLE11_REGION_DISPLAY_NAMES,
+        DEFAULT_BUYBACK_BY_REGION,
+    )
+    regions = (
+        db.query(Region)
+        .filter(Region.is_active == True)  # noqa: E712
+        .order_by(Region.sort_order, Region.code)
+        .all()
+    )
+    buyback_region_rows = []
+    for region in regions:
+        if region.code == 'GRADE_1':
+            continue  # دیگر استفاده نمی‌شود
+        pv = _get_param(db, policy.id, 'buyback_cap', region_code=region.code)
+        if pv is not None and pv.parameter_value is not None:
+            try:
+                limit_display = str(int(float(pv.parameter_value)))
+            except (TypeError, ValueError):
+                limit_display = str(DEFAULT_BUYBACK_BY_REGION.get(region.code, 15))
+        else:
+            limit_display = str(DEFAULT_BUYBACK_BY_REGION.get(region.code, 15))
+        display_name = ARTICLE11_REGION_DISPLAY_NAMES.get(region.code, region.name)
+        buyback_region_rows.append({
+            'code': region.code,
+            'name': display_name,
+            'limit': limit_display,
+        })
+
+    def _era_display(key: str, default: str) -> str:
+        pv = _get_param(db, policy.id, key)
+        if pv is None or pv.parameter_value is None:
+            return default
+        raw = str(pv.parameter_value).strip()
+        if raw.lower() in ('none', 'null', '-1', 'unlimited'):
+            return ''
+        return raw
+
+    buyback_eras = {
+        'pre_1390_cap': _era_display('buyback_era_pre_1390_cap', ''),
+        'era_1390_1398_cap': _era_display('buyback_era_1390_1398_cap', '15'),
+        'grade4_from': _era_display('buyback_era_grade4_from', '1391/07/15'),
+        'grade4_cap': _era_display('buyback_era_grade4_cap', '25'),
+        'modern_from_year': _era_display('buyback_era_modern_from_year', '1399'),
+    }
 
     # مرخصی استحقاقی پیش‌فرض بر اساس نوع عضویت + پرچم اعمال قوانین منطقه
     # (ویرایش مقادیر منطقه فقط در صفحه مدیریت مناطق انجام می‌شود)
@@ -227,7 +328,12 @@ async def admin_policies_leave(
         "is_admin": True,
         "is_super_admin": True,
         "carry_rows": carry_rows,
+        "buyback_rows": buyback_rows,
+        "buyback_region_rows": buyback_region_rows,
+        "buyback_eras": buyback_eras,
         "buyback_limit": bb_pv.parameter_value if bb_pv else '15',
+        "permanent_buyback_fallback": permanent_buyback_fallback,
+        "permanent_uses_article11": permanent_uses_article11,
         "pro_rata_method": (method_pv.parameter_value != 'full_year') if method_pv else True,
         "employment_rows": employment_rows,
     })
@@ -236,26 +342,38 @@ async def admin_policies_leave(
 @router.post("/admin/policies/carry-forward/save")
 async def admin_policies_carry_forward_save(
     request: Request,
-    cf_1: int = Form(9),
-    cf_2: int = Form(9),
-    cf_3: int = Form(9),
-    cf_4: int = Form(9),
-    cf_5: int = Form(9),
+    cf_1: str = Form(""),
+    cf_2: str = Form(""),
+    cf_3: str = Form(""),
+    cf_4: str = Form(""),
+    cf_5: str = Form(""),
     pro_rata_method: str = Form("true"),
     db: Session = Depends(get_db),
     user: User = Depends(require_super_admin)
 ):
-    """Save per-department carry-forward limits + region-change method"""
+    """Save per-department carry-forward limits (empty = unlimited) + region-change method"""
     if not has_permission(db, user, 'manage_users'):
         return RedirectResponse(url="/admin/", status_code=302)
 
     policy = _get_leave_policy(db)
-    dept_limits = {'1': cf_1, '2': cf_2, '3': cf_3, '4': cf_4, '5': cf_5}
+    raw_by_dept = {'1': cf_1, '2': cf_2, '3': cf_3, '4': cf_4, '5': cf_5}
+
+    def _normalize(raw: str) -> str:
+        text = (raw or "").strip().lower()
+        if text in ('', 'none', 'null', '-1', 'unlimited'):
+            return 'none'
+        try:
+            return str(max(0, min(365, int(float(text)))))
+        except (TypeError, ValueError):
+            return 'none'
+
     for code, name in DEPT_TYPES:
-        limit = max(0, min(30, dept_limits[code]))
-        _set_param(db, policy, f'carry_forward_dept_{code}', str(limit),
-                   notes=f'سقف انتقال مرخصی نوع عضویت {name}',
-                   changed_by=user.user_id)
+        value = _normalize(raw_by_dept[code])
+        _set_param(
+            db, policy, f'carry_forward_dept_{code}', value,
+            notes=f'سقف انتقال مرخصی نوع عضویت {name} (none=بدون محدودیت)',
+            changed_by=user.user_id,
+        )
     method_value = 'pro_rata' if pro_rata_method == 'true' else 'full_year'
     _set_param(db, policy, 'region_change_method', method_value,
                notes='روش اعمال تغییر منطقه وسط سال',
@@ -272,24 +390,234 @@ async def admin_policies_carry_forward_save(
 @router.post("/admin/policies/buyback/save")
 async def admin_policies_buyback_save(
     request: Request,
-    buyback_limit: int = Form(...),
+    bb_2: str = Form(""),
+    bb_3: str = Form(""),
+    bb_4: str = Form(""),
+    bb_5: str = Form(""),
     db: Session = Depends(get_db),
     user: User = Depends(require_super_admin)
 ):
-    """Save buyback limit"""
+    """Save non-permanent buyback caps (empty = unlimited). Official is saved elsewhere."""
     if not has_permission(db, user, 'manage_users'):
         return RedirectResponse(url="/admin/", status_code=302)
 
     policy = _get_leave_policy(db)
-    _set_param(db, policy, 'max_buyback', str(max(0, min(30, buyback_limit))),
-               notes='سقف بازخرید مرخصی (مستقل از منطقه)',
-               changed_by=user.user_id)
+    raw_by_dept = {'2': bb_2, '3': bb_3, '4': bb_4, '5': bb_5}
+
+    def _normalize(raw: str) -> str:
+        text = (raw or "").strip().lower()
+        if text in ('', 'none', 'null', '-1', 'unlimited'):
+            return 'none'
+        try:
+            return str(max(0, min(30, int(float(text)))))
+        except (TypeError, ValueError):
+            return 'none'
+
+    for code, name in DEPT_TYPES:
+        if code == '1':
+            continue
+        value = _normalize(raw_by_dept[code])
+        _set_param(
+            db, policy, f'buyback_dept_{code}', value,
+            notes=f'سقف بازخرید نوع عضویت {name} (none=همه ذخیره قابل‌بازخرید)',
+            changed_by=user.user_id,
+        )
     db.commit()
 
     referer = request.headers.get("referer", "/admin/policies/leave")
     return RedirectResponse(
         url=build_redirect_url(referer, "success", "saved"),
         status_code=302
+    )
+
+
+@router.post("/admin/policies/buyback-permanent/save")
+async def admin_policies_buyback_permanent_save(
+    request: Request,
+    bb_1: str = Form(""),
+    pre_1390_cap: str = Form(""),
+    era_1390_1398_cap: str = Form("15"),
+    grade4_from: str = Form("1391/07/15"),
+    grade4_cap: str = Form("25"),
+    modern_from_year: str = Form("1399"),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_super_admin),
+):
+    """ذخیره یکجای قوانین بازخرید رسمی: سقف مناطق + عصرها + سقف بدون‌منطقه."""
+    if not has_permission(db, user, 'manage_users'):
+        return RedirectResponse(url="/admin/", status_code=302)
+
+    from web.services.leave_entitlement_service import DEFAULT_BUYBACK_BY_REGION
+
+    policy = _get_leave_policy(db)
+    form = await request.form()
+
+    def _cap_or_none(raw: str, *, allow_none: bool = True, fallback: str | None = None) -> str:
+        text = (raw or "").strip().lower()
+        if text in ('', 'none', 'null', '-1', 'unlimited'):
+            if allow_none:
+                return 'none'
+            return fallback or '15'
+        try:
+            return str(max(0, min(60, int(float(text)))))
+        except (TypeError, ValueError):
+            if allow_none:
+                return 'none'
+            return fallback or '15'
+
+    # سقف منطقه‌ای ماده ۱۱
+    regions = db.query(Region).filter(Region.is_active == True).all()  # noqa: E712
+    for region in regions:
+        if region.code == 'GRADE_1':
+            continue
+        raw = str(form.get(f"bb_region_{region.code}", "") or "").strip()
+        try:
+            value = str(max(0, min(60, int(float(raw)))))
+        except (TypeError, ValueError):
+            value = str(DEFAULT_BUYBACK_BY_REGION.get(region.code, 15))
+        _set_param(
+            db, policy, 'buyback_cap', value,
+            region_code=region.code,
+            notes=f'سقف بازخرید ماده ۱۱ ({region.code})',
+            changed_by=user.user_id,
+        )
+
+    # سقف وقتی اعمال منطقه خاموش است
+    permanent_cap = _cap_or_none(bb_1, allow_none=True)
+    _set_param(
+        db, policy, 'buyback_dept_1', permanent_cap,
+        notes='سقف بازخرید رسمی بدون اعمال منطقه (none=نامحدود)',
+        changed_by=user.user_id,
+    )
+    if permanent_cap != 'none':
+        _set_param(
+            db, policy, 'max_buyback', permanent_cap,
+            notes='سقف بازخرید (هم‌تراز buyback_dept_1)',
+            changed_by=user.user_id,
+        )
+
+    # بازه‌های تاریخی ۱۱/۱
+    pre = _cap_or_none(pre_1390_cap, allow_none=True)
+    mid = _cap_or_none(era_1390_1398_cap, allow_none=False, fallback='15')
+    g4 = _cap_or_none(grade4_cap, allow_none=False, fallback='25')
+    g4_from = (grade4_from or "1391/07/15").strip() or "1391/07/15"
+    try:
+        modern = str(max(1300, min(1600, int(float((modern_from_year or "1399").strip())))))
+    except (TypeError, ValueError):
+        modern = '1399'
+
+    _set_param(db, policy, 'buyback_era_pre_1390_cap', pre,
+               notes='ماده ۱۱/۱ تا پایان ۱۳۸۹', changed_by=user.user_id)
+    _set_param(db, policy, 'buyback_era_1390_1398_cap', mid,
+               notes='ماده ۱۱/۱ از ۱۳۹۰ تا قبل از عصر جدید', changed_by=user.user_id)
+    _set_param(db, policy, 'buyback_era_grade4_from', g4_from,
+               notes='شروع استثنای درجه ۴', changed_by=user.user_id)
+    _set_param(db, policy, 'buyback_era_grade4_cap', g4,
+               notes='سقف استثنای درجه ۴', changed_by=user.user_id)
+    _set_param(db, policy, 'buyback_era_modern_from_year', modern,
+               notes='از این سال جدول منطقه‌ای ماده ۱۱', changed_by=user.user_id)
+
+    db.commit()
+    referer = request.headers.get("referer", "/admin/policies/leave")
+    return RedirectResponse(
+        url=build_redirect_url(referer, "success", "saved"),
+        status_code=302,
+    )
+
+
+@router.post("/admin/policies/buyback-regions/save")
+async def admin_policies_buyback_regions_save(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_super_admin),
+):
+    """Save Article 11 regional buyback caps (from 1399). Kept for compatibility."""
+    if not has_permission(db, user, 'manage_users'):
+        return RedirectResponse(url="/admin/", status_code=302)
+
+    from web.services.leave_entitlement_service import DEFAULT_BUYBACK_BY_REGION
+
+    policy = _get_leave_policy(db)
+    form = await request.form()
+    regions = db.query(Region).filter(Region.is_active == True).all()  # noqa: E712
+
+    for region in regions:
+        if region.code == 'GRADE_1':
+            continue
+        raw = str(form.get(f"bb_region_{region.code}", "") or "").strip()
+        try:
+            value = str(max(0, min(60, int(float(raw)))))
+        except (TypeError, ValueError):
+            value = str(DEFAULT_BUYBACK_BY_REGION.get(region.code, 15))
+        _set_param(
+            db, policy, 'buyback_cap', value,
+            region_code=region.code,
+            notes=f'سقف بازخرید ماده ۱۱ ({region.code})',
+            changed_by=user.user_id,
+        )
+    db.commit()
+    referer = request.headers.get("referer", "/admin/policies/leave")
+    return RedirectResponse(
+        url=build_redirect_url(referer, "success", "saved"),
+        status_code=302,
+    )
+
+
+@router.post("/admin/policies/buyback-eras/save")
+async def admin_policies_buyback_eras_save(
+    request: Request,
+    pre_1390_cap: str = Form(""),
+    era_1390_1398_cap: str = Form("15"),
+    grade4_from: str = Form("1391/07/15"),
+    grade4_cap: str = Form("25"),
+    modern_from_year: str = Form("1399"),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_super_admin),
+):
+    """Save Article 11/1 historical buyback eras."""
+    if not has_permission(db, user, 'manage_users'):
+        return RedirectResponse(url="/admin/", status_code=302)
+
+    policy = _get_leave_policy(db)
+
+    def _cap_or_none(raw: str) -> str:
+        text = (raw or "").strip().lower()
+        if text in ('', 'none', 'null', '-1', 'unlimited'):
+            return 'none'
+        try:
+            return str(max(0, min(60, int(float(text)))))
+        except (TypeError, ValueError):
+            return 'none'
+
+    pre = _cap_or_none(pre_1390_cap)
+    mid = _cap_or_none(era_1390_1398_cap)
+    if mid == 'none':
+        mid = '15'
+    g4 = _cap_or_none(grade4_cap)
+    if g4 == 'none':
+        g4 = '25'
+    g4_from = (grade4_from or "1391/07/15").strip() or "1391/07/15"
+    try:
+        modern = str(max(1300, min(1600, int(float((modern_from_year or "1399").strip())))))
+    except (TypeError, ValueError):
+        modern = '1399'
+
+    _set_param(db, policy, 'buyback_era_pre_1390_cap', pre,
+               notes='ماده ۱۱/۱ تا پایان ۱۳۸۹', changed_by=user.user_id)
+    _set_param(db, policy, 'buyback_era_1390_1398_cap', mid,
+               notes='ماده ۱۱/۱ از ۱۳۹۰ تا قبل از عصر جدید', changed_by=user.user_id)
+    _set_param(db, policy, 'buyback_era_grade4_from', g4_from,
+               notes='شروع استثنای درجه ۴', changed_by=user.user_id)
+    _set_param(db, policy, 'buyback_era_grade4_cap', g4,
+               notes='سقف استثنای درجه ۴', changed_by=user.user_id)
+    _set_param(db, policy, 'buyback_era_modern_from_year', modern,
+               notes='از این سال جدول منطقه‌ای ماده ۱۱', changed_by=user.user_id)
+    db.commit()
+
+    referer = request.headers.get("referer", "/admin/policies/leave")
+    return RedirectResponse(
+        url=build_redirect_url(referer, "success", "saved"),
+        status_code=302,
     )
 
 
