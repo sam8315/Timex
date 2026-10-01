@@ -118,43 +118,62 @@
         font-weight: 600;
     }
     .summary-box {
-        background: #1e293b;
-        color: #fff;
+        background: #f8fafc;
+        color: #0f172a;
+        border: 1px solid #cbd5e1;
         border-radius: 8px;
-        padding: 12px 14px;
+        padding: 10px 12px;
         margin-top: 8px;
         font-size: 0.95rem;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
     }
     .summary-box .summary-title {
         font-weight: 700;
-        font-size: 1.1rem;
+        font-size: 1rem;
         margin-bottom: 8px;
-        border-bottom: 1px solid rgba(255,255,255,0.2);
+        border-bottom: 1px solid #cbd5e1;
         padding-bottom: 4px;
+        color: #0f172a;
     }
     .pay-summary-grid {
         display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 8px;
+        grid-template-columns: repeat(6, 1fr);
+        gap: 6px;
+    }
+    .shift-summary-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 6px;
+        margin-top: 8px;
     }
     .pay-summary-card {
-        background: rgba(255,255,255,0.1);
-        border: 1px solid rgba(255,255,255,0.25);
-        border-radius: 8px;
-        padding: 10px 8px;
+        background: #fff;
+        border: 1px solid #94a3b8;
+        border-radius: 6px;
+        padding: 8px 6px;
         text-align: center;
+        color: #0f172a;
     }
-    .pay-summary-card .label { font-weight: 700; display: block; margin-bottom: 4px; }
+    .pay-summary-card .label {
+        font-weight: 700;
+        display: block;
+        margin-bottom: 4px;
+        font-size: 0.78rem;
+        color: #334155;
+        line-height: 1.2;
+    }
     .pay-summary-card .main-value {
-        font-size: 1.2rem;
+        font-size: 1.1rem;
         font-weight: 800;
         direction: ltr;
         unicode-bidi: embed;
         display: block;
+        color: #0f172a;
     }
     .pay-summary-card .sub-value {
-        font-size: 0.85rem;
-        opacity: 0.9;
+        font-size: 0.75rem;
+        color: #475569;
         direction: rtl;
         unicode-bidi: isolate;
         display: block;
@@ -166,21 +185,22 @@
     }
     .meta-chip-grid {
         display: grid;
-        grid-template-columns: repeat(5, 1fr);
-        gap: 6px;
+        grid-template-columns: repeat(9, 1fr);
+        gap: 4px;
         margin-top: 8px;
     }
     .meta-chip {
-        background: rgba(255,255,255,0.08);
-        border: 1px solid rgba(255,255,255,0.18);
+        background: #fff;
+        border: 1px solid #cbd5e1;
         border-radius: 6px;
-        padding: 6px;
+        padding: 6px 4px;
         text-align: center;
+        color: #0f172a;
     }
     .meta-chip .chip-label {
         display: block;
-        font-size: 0.7rem;
-        opacity: 0.85;
+        font-size: 0.68rem;
+        color: #64748b;
     }
     .meta-chip .chip-value {
         display: block;
@@ -188,6 +208,7 @@
         font-weight: 700;
         direction: rtl;
         unicode-bidi: isolate;
+        color: #0f172a;
     }
     .meta-chip .chip-value .num {
         direction: ltr;
@@ -239,11 +260,9 @@
             margin: 0 !important;
             page-break-after: always;
             break-after: page;
-            page-break-inside: avoid;
-            break-inside: avoid;
-            min-height: 270mm;
             display: flex;
             flex-direction: column;
+            min-height: 0;
         }
         .print-employee-page:last-child {
             page-break-after: auto;
@@ -289,19 +308,81 @@
             background: #fff !important;
             color: #000 !important;
         }
-        .summary-box {
-            border-radius: 0 !important;
-            padding: 10px 12px !important;
-            margin-top: auto !important;
-            font-size: 10pt !important;
-            min-height: 42mm;
-            break-inside: avoid;
-            page-break-inside: avoid;
+        .full-report-table th {
+            background: #1e293b !important;
+            color: #fff !important;
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
         }
-        .pay-summary-card .main-value { font-size: 12pt !important; }
-        .pay-summary-card .label { font-size: 10pt !important; }
+        .full-report-table th.group-header { background: #0f172a !important; }
+        .status-pill {
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+        .summary-box {
+            border-radius: 0 !important;
+            padding: 6px 8px !important;
+            margin-top: 4px !important;
+            font-size: 8pt !important;
+            min-height: 0 !important;
+            break-inside: avoid;
+            page-break-inside: avoid;
+            background: #f8fafc !important;
+            color: #0f172a !important;
+            border: 1px solid #94a3b8 !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+        .summary-box .summary-title {
+            font-size: 9pt !important;
+            color: #0f172a !important;
+            margin-bottom: 4px !important;
+            padding-bottom: 3px !important;
+            border-bottom-color: #94a3b8 !important;
+        }
+        .pay-summary-grid {
+            grid-template-columns: repeat(6, 1fr) !important;
+            gap: 4px !important;
+        }
+        .shift-summary-grid {
+            grid-template-columns: repeat(3, 1fr) !important;
+            gap: 4px !important;
+            margin-top: 4px !important;
+        }
+        .pay-summary-card {
+            background: #fff !important;
+            border: 1px solid #64748b !important;
+            color: #0f172a !important;
+            padding: 4px 3px !important;
+            border-radius: 3px !important;
+        }
+        .pay-summary-card .main-value {
+            font-size: 10pt !important;
+            color: #0f172a !important;
+            margin-bottom: 1px !important;
+        }
+        .pay-summary-card .label {
+            font-size: 7pt !important;
+            color: #334155 !important;
+            margin-bottom: 2px !important;
+        }
+        .pay-summary-card .sub-value {
+            font-size: 7pt !important;
+            color: #475569 !important;
+        }
+        .meta-chip-grid {
+            grid-template-columns: repeat(9, 1fr) !important;
+            gap: 3px !important;
+            margin-top: 4px !important;
+        }
+        .meta-chip {
+            background: #fff !important;
+            border: 1px solid #94a3b8 !important;
+            color: #0f172a !important;
+            padding: 3px 2px !important;
+        }
+        .meta-chip .chip-label { font-size: 6pt !important; color: #64748b !important; }
+        .meta-chip .chip-value { font-size: 7.5pt !important; color: #0f172a !important; }
         .summary-box .summary-item { padding: 1px 0 !important; }
     }
 </style>
@@ -405,7 +486,7 @@
                         {% elif day.person_status == 'L' %}
                         <span class="badge bg-info status-pill">مرخصی</span>
                         {% elif day.person_status == 'A' %}
-                        <span class="badge bg-danger status-pill">غایب</span>
+                        <span class="badge bg-danger status-pill">عدم حضور</span>
                         {% elif day.person_status == 'R' %}
                         <span class="badge bg-secondary status-pill">استراحت</span>
                         {% elif day.person_status == 'H' %}
@@ -478,12 +559,37 @@
             <div class="pay-summary-card">
                 <span class="label">اضافه‌کار</span>
                 <span class="main-value">{{ report.summary.overtime_total | hhmm }}</span>
-                <span class="sub-value">ضریب <span class="num">{{ report.summary.overtime_coefficient }}</span></span>
+            </div>
+            <div class="pay-summary-card">
+                <span class="label">تعطیل‌کاری</span>
+                <span class="main-value">{{ report.summary.holiday_work_hours | hhmm }}</span>
+                <span class="sub-value"><span class="num">{{ report.summary.holiday_work_days }}</span> روز</span>
+            </div>
+            <div class="pay-summary-card">
+                <span class="label">مجموع اضافه‌کار+تعطیل‌کاری</span>
+                <span class="main-value">{{ report.summary.overtime_holiday_total | hhmm }}</span>
             </div>
             <div class="pay-summary-card">
                 <span class="label">جمعه‌کاری</span>
                 <span class="main-value">{{ report.summary.friday_work_hours | hhmm }}</span>
-                <span class="sub-value"><span class="num">{{ report.summary.friday_work_days }}</span> روز · ضریب <span class="num">{{ report.summary.friday_work_coefficient }}</span></span>
+                <span class="sub-value"><span class="num">{{ report.summary.friday_work_days }}</span> روز</span>
+            </div>
+        </div>
+        <div class="shift-summary-grid">
+            <div class="pay-summary-card">
+                <span class="label">صبح</span>
+                <span class="main-value">{{ report.summary.total_morning | hhmm }}</span>
+                <span class="sub-value"><span class="num">{{ report.summary.morning_percent }}</span>٪</span>
+            </div>
+            <div class="pay-summary-card">
+                <span class="label">عصر</span>
+                <span class="main-value">{{ report.summary.total_evening | hhmm }}</span>
+                <span class="sub-value"><span class="num">{{ report.summary.evening_percent }}</span>٪</span>
+            </div>
+            <div class="pay-summary-card">
+                <span class="label">شب</span>
+                <span class="main-value">{{ report.summary.total_night | hhmm }}</span>
+                <span class="sub-value"><span class="num">{{ report.summary.night_percent }}</span>٪</span>
             </div>
         </div>
         <div class="meta-chip-grid">
@@ -492,7 +598,7 @@
             <div class="meta-chip"><span class="chip-label">مرخصی ساعتی</span><span class="chip-value"><span class="num">{{ report.summary.hourly_leave_hours | hhmm }}</span></span></div>
             <div class="meta-chip"><span class="chip-label">مأموریت</span><span class="chip-value"><span class="num">{{ report.summary.mission_days }}</span></span></div>
             <div class="meta-chip"><span class="chip-label">مأموریت ساعتی</span><span class="chip-value"><span class="num">{{ report.summary.hourly_mission_hours | hhmm }}</span></span></div>
-            <div class="meta-chip"><span class="chip-label">غیبت</span><span class="chip-value"><span class="num">{{ report.summary.absent_days }}</span></span></div>
+            <div class="meta-chip"><span class="chip-label">عدم حضور</span><span class="chip-value"><span class="num">{{ report.summary.absent_days }}</span></span></div>
             <div class="meta-chip"><span class="chip-label">استراحت</span><span class="chip-value"><span class="num">{{ report.summary.rest_days }}</span></span></div>
             <div class="meta-chip"><span class="chip-label">تعطیل</span><span class="chip-value"><span class="num">{{ report.summary.holiday_days }}</span></span></div>
             <div class="meta-chip"><span class="chip-label">کسر کار</span><span class="chip-value" style="color:#f87171;"><span class="num">{{ report.summary.monthly_deficit | hhmm }}</span></span></div>

@@ -134,6 +134,39 @@ class TestArticle51WithFridayInBase:
         assert wb['weekly_overtime'] == pytest.approx(6.0)
         assert '−' in wb['formula']
 
+    def test_holiday_work_separate_bucket(self):
+        """تعطیل‌کاری مثل جمعه از مبنای هفتگی کم و در سطل جدا می‌آید."""
+        days = _full_week([
+            8, 8, 8, 8, 8,
+            (5, {
+                'is_holiday': True,
+                'is_day_off': True,
+                'person_status': 'P',
+                'daily_duty': 0.0,
+            }),
+            0,
+        ])
+        # کارکرد ۴۵؛ تعطیل‌کاری ۵؛ موظفی ۵×۷:۲۰؛ مبنای OT = ۴۰
+        summary = build_legal_ot_summary(days, {
+            'duty_hours': _minutes_to_hours(5 * WORKING_DAY_DUTY_MINUTES),
+            'total_work_hours': 45.0,
+            'duty_days': 5,
+        })
+        assert summary['holiday_work_hours'] == pytest.approx(5.0)
+        assert summary['holiday_work_days'] == 1
+        assert summary['holiday_work_coefficient'] == pytest.approx(1.4)
+        assert summary['friday_work_hours'] == 0.0
+        expected_ot = _minutes_to_hours(
+            _hours_to_minutes(40.0) - 5 * WORKING_DAY_DUTY_MINUTES
+        )
+        assert summary['weekly_overtime'] == pytest.approx(expected_ot)
+        assert summary['overtime_holiday_total'] == pytest.approx(
+            expected_ot + 5.0
+        )
+        wb = days[0]['week_block']
+        assert wb['holiday_work_hours'] == pytest.approx(5.0)
+        assert wb['work_base_hours'] == pytest.approx(40.0)
+
     def test_leave_lowers_duty_increases_ot(self):
         """یک روز مرخصی: موظفی ۵×۷:۲۰؛ کارکرد ۴۰ → OT = ۴۰−۳۶:۴۰."""
         days = _full_week([
@@ -179,3 +212,99 @@ class TestSummaryWorkDays:
             'duty_days': 4,
         })
         assert summary['total_work_days'] == 5  # 8,8,8,8,4
+
+
+class TestStatusDayCounts:
+    def test_present_includes_friday_and_holiday_work(self):
+        """حضور هر روز با status=P را می‌شمارد (نه فقط روز کاری عادی)."""
+        days = _full_week([
+            8, 8, 8, 8, 8,
+            (5, {'is_holiday': True, 'is_day_off': True, 'person_status': 'P', 'daily_duty': 0.0}),
+            4,  # جمعه حاضر
+        ])
+        summary = build_legal_ot_summary(days, {
+            'duty_hours': 44.0,
+            'total_work_hours': 49.0,
+            'duty_days': 5,
+            # مقادیر قدیمی V2 که جمعه/تعطیل را از حضور حذف می‌کرد
+            'present_days': 5,
+        })
+        assert summary['present_days'] == 7
+        assert summary['friday_work_days'] == 1
+
+    def test_status_counts_sum_equals_month_days(self):
+        """جمع وضعیت‌های روزشمار باید برابر تعداد روزهای ماه باشد."""
+        # ماه ۳۰ روزهٔ ساختگی با وضعیت‌های متنوع
+        start = date(2024, 3, 1)
+        statuses = (
+            ['P'] * 12
+            + ['L'] * 5
+            + ['M'] * 3
+            + ['A'] * 2
+            + ['R'] * 2
+            + ['H'] * 4
+            + ['P'] * 2  # جمعه/تعطیل‌کاری هم P
+        )
+        assert len(statuses) == 30
+        days = []
+        for i, st in enumerate(statuses):
+            d = start + timedelta(days=i)
+            is_fri = d.weekday() == 4
+            is_hol = st == 'H'
+            work = 8.0 if st == 'P' else 0.0
+            days.append(_day(
+                d, work,
+                is_friday=is_fri,
+                is_holiday=is_hol,
+                is_day_off=is_fri or is_hol or st in ('L', 'R', 'M', 'H'),
+                person_status=st,
+                daily_duty=0.0 if st != 'P' or is_fri else _minutes_to_hours(WORKING_DAY_DUTY_MINUTES),
+            ))
+
+        summary = build_legal_ot_summary(days, {
+            'duty_hours': 100.0,
+            'total_work_hours': 100.0,
+            'duty_days': 12,
+        })
+        day_status_sum = (
+            summary['present_days']
+            + summary['leave_days']
+            + summary['mission_days']
+            + summary['absent_days']
+            + summary['rest_days']
+            + summary['holiday_days']
+        )
+        assert summary['month_days'] == 30
+        assert summary['status_days_total'] == 30
+        assert day_status_sum == len(days)
+        assert day_status_sum == summary['month_days']
+        assert summary['present_days'] == 14
+        assert summary['leave_days'] == 5
+        assert summary['mission_days'] == 3
+        assert summary['absent_days'] == 2
+        assert summary['rest_days'] == 2
+        assert summary['holiday_days'] == 4
+
+    def test_morning_evening_night_percentages(self):
+        """کارت‌های صبح/عصر/شب و درصد نسبت به جمع سه سطل."""
+        days = _full_week([8, 8, 8, 8, 8, 8, 0])
+        for d in days:
+            d['morning_hours'] = 5.0 if d['work_hours'] else 0.0
+            d['evening_hours'] = 3.0 if d['work_hours'] else 0.0
+            d['night_hours'] = 0.0
+        summary = build_legal_ot_summary(days, {
+            'duty_hours': 44.0,
+            'total_work_hours': 48.0,
+            'duty_days': 6,
+        })
+        assert summary['total_morning'] == pytest.approx(30.0)
+        assert summary['total_evening'] == pytest.approx(18.0)
+        assert summary['total_night'] == pytest.approx(0.0)
+        assert summary['morning_percent'] == pytest.approx(62.5)
+        assert summary['evening_percent'] == pytest.approx(37.5)
+        assert summary['night_percent'] == pytest.approx(0.0)
+        assert (
+            summary['morning_percent']
+            + summary['evening_percent']
+            + summary['night_percent']
+        ) == pytest.approx(100.0)

@@ -5,8 +5,8 @@
 - کارکرد هفته: همهٔ روزها از جمله جمعه
 - موظفی هفته: جمع daily_duty روزها (Effective Required از Policy؛
   مرخصی/HL/مأموریت/HM/استراحت/تعطیل رسمی موظفی را کم یا صفر می‌کنند)
-- جمعه‌کاری سطل جدا با نرخ متفاوت؛ از مبنای اضافه‌کار هفتگی کسر می‌شود
-تا دوباره‌شماری نشود.
+- جمعه‌کاری و تعطیل‌کاری سطل جدا با نرخ متفاوت؛ از مبنای اضافه‌کار هفتگی
+کسر می‌شوند تا دوباره‌شماری نشود.
 """
 from __future__ import annotations
 
@@ -25,6 +25,20 @@ WORKING_DAY_DUTY_MINUTES = 440
 # ضرایب پرداختی (نمایش در گزارش)
 OVERTIME_COEFFICIENT = 1.4
 FRIDAY_WORK_COEFFICIENT = 1.96
+HOLIDAY_WORK_COEFFICIENT = 1.4
+
+
+def _is_friday_work_day(day: Dict) -> bool:
+    return bool(day.get('is_friday') and day.get('person_status') == 'P')
+
+
+def _is_holiday_work_day(day: Dict) -> bool:
+    """تعطیل رسمی غیرجمعه با حضور."""
+    return bool(
+        day.get('is_holiday')
+        and not day.get('is_friday')
+        and day.get('person_status') == 'P'
+    )
 
 
 def count_duty_bearing_days(week_days: List[Dict]) -> int:
@@ -77,7 +91,7 @@ def _fmt_hhmm(hours: float) -> str:
 
 
 def _week_metrics(week_days: List[Dict]) -> Dict:
-    """اضافه‌کار هفته = max(0, کارکرد − جمعه − Σdaily_duty)."""
+    """اضافه‌کار هفته = max(0, کارکرد − جمعه − تعطیل‌کاری − Σdaily_duty)."""
     n_calendar = len(week_days)
     n_duty_days = count_duty_bearing_days(week_days)
     threshold_m = weekly_required_minutes(week_days)
@@ -88,10 +102,15 @@ def _week_metrics(week_days: List[Dict]) -> Dict:
     friday_m = sum(
         _hours_to_minutes(d.get('work_hours') or 0)
         for d in week_days
-        if d.get('is_friday')
+        if _is_friday_work_day(d)
     )
-    # مبنای اضافه‌کار عادی: کارکرد منهای جمعه (جمعه سطل جدا با ضریب ۱٫۹۶)
-    work_base_m = work_total_m - friday_m
+    holiday_work_m = sum(
+        _hours_to_minutes(d.get('work_hours') or 0)
+        for d in week_days
+        if _is_holiday_work_day(d)
+    )
+    # مبنای اضافه‌کار عادی: بدون جمعه و تعطیل‌کاری (سطل‌های جدا)
+    work_base_m = work_total_m - friday_m - holiday_work_m
 
     if threshold_m > 0 and work_base_m > threshold_m:
         week_ot_m = work_base_m - threshold_m
@@ -102,6 +121,7 @@ def _week_metrics(week_days: List[Dict]) -> Dict:
     work_total_h = _minutes_to_hours(work_total_m)
     work_base_h = _minutes_to_hours(work_base_m)
     friday_h = _minutes_to_hours(friday_m)
+    holiday_work_h = _minutes_to_hours(holiday_work_m)
     weekly_h = _minutes_to_hours(week_ot_m)
 
     if n_duty_days > 0 and threshold_m == n_duty_days * WORKING_DAY_DUTY_MINUTES:
@@ -112,16 +132,13 @@ def _week_metrics(week_days: List[Dict]) -> Dict:
     else:
         duty_note = f'Σ موظفی ({n_duty_days} روز)'
 
+    parts = [_fmt_hhmm(work_total_h)]
     if friday_m > 0:
-        formula = (
-            f"max(0, {_fmt_hhmm(work_total_h)} − {_fmt_hhmm(friday_h)} − "
-            f"{_fmt_hhmm(duty_h)}) = {_fmt_hhmm(weekly_h)}"
-        )
-    else:
-        formula = (
-            f"max(0, {_fmt_hhmm(work_base_h)} − {_fmt_hhmm(duty_h)}) "
-            f"= {_fmt_hhmm(weekly_h)}"
-        )
+        parts.append(_fmt_hhmm(friday_h))
+    if holiday_work_m > 0:
+        parts.append(_fmt_hhmm(holiday_work_h))
+    parts.append(_fmt_hhmm(duty_h))
+    formula = f"max(0, {' − '.join(parts)}) = {_fmt_hhmm(weekly_h)}"
 
     return {
         'day_count': n_calendar,
@@ -131,6 +148,7 @@ def _week_metrics(week_days: List[Dict]) -> Dict:
         'work_hours': work_total_h,
         'work_base_hours': work_base_h,
         'friday_hours': friday_h,
+        'holiday_work_hours': holiday_work_h,
         'hourly_overtime': 0.0,
         'weekly_overtime': weekly_h,
         'formula': formula,
@@ -174,14 +192,20 @@ def build_legal_ot_summary(days: List[Dict], base_summary: Dict) -> Dict:
     weekly = calculate_weekly_overtime(days)
     overtime_total = weekly
 
-    friday_days = [
-        d for d in days
-        if d.get('is_friday') and d.get('person_status') == 'P'
-    ]
+    friday_days = [d for d in days if _is_friday_work_day(d)]
     friday_work_hours = _minutes_to_hours(
         sum(_hours_to_minutes(d.get('work_hours') or 0) for d in friday_days)
     )
     friday_work_days = len(friday_days)
+
+    holiday_work_days_list = [d for d in days if _is_holiday_work_day(d)]
+    holiday_work_hours = _minutes_to_hours(
+        sum(
+            _hours_to_minutes(d.get('work_hours') or 0)
+            for d in holiday_work_days_list
+        )
+    )
+    holiday_work_days = len(holiday_work_days_list)
 
     # روزهایی که واقعاً کارکرد داشته‌اند
     total_work_days = sum(
@@ -197,6 +221,41 @@ def build_legal_ot_summary(days: List[Dict], base_summary: Dict) -> Dict:
     work_m = _hours_to_minutes(summary.get('total_work_hours') or 0)
     monthly_deficit = _minutes_to_hours(max(0, duty_m - work_m))
 
+    # حضور = هر روز با وضعیت P (جمعه/تعطیل‌کاری هم شمرده می‌شود)
+    present_days = sum(1 for d in days if d.get('person_status') == 'P')
+    leave_days = sum(1 for d in days if d.get('person_status') == 'L')
+    absent_days = sum(1 for d in days if d.get('person_status') == 'A')
+    rest_days = sum(1 for d in days if d.get('person_status') == 'R')
+    holiday_days = sum(1 for d in days if d.get('person_status') == 'H')
+    mission_days = sum(1 for d in days if d.get('person_status') == 'M')
+    status_days_total = (
+        present_days + leave_days + absent_days
+        + rest_days + holiday_days + mission_days
+    )
+
+    overtime_holiday_total = _minutes_to_hours(
+        _hours_to_minutes(overtime_total) + _hours_to_minutes(holiday_work_hours)
+    )
+
+    morning_m = sum(_hours_to_minutes(d.get('morning_hours') or 0) for d in days)
+    evening_m = sum(_hours_to_minutes(d.get('evening_hours') or 0) for d in days)
+    night_m = sum(_hours_to_minutes(d.get('night_hours') or 0) for d in days)
+    # اگر روزها شیفت ندارند (تست‌های واحد ساده)، از خلاصهٔ پایه استفاده کن
+    if morning_m + evening_m + night_m == 0:
+        morning_m = _hours_to_minutes(summary.get('total_morning') or 0)
+        evening_m = _hours_to_minutes(summary.get('total_evening') or 0)
+        night_m = _hours_to_minutes(summary.get('total_night') or 0)
+    total_morning = _minutes_to_hours(morning_m)
+    total_evening = _minutes_to_hours(evening_m)
+    total_night = _minutes_to_hours(night_m)
+    shift_total_m = morning_m + evening_m + night_m
+    if shift_total_m > 0:
+        morning_percent = round(100.0 * morning_m / shift_total_m, 1)
+        evening_percent = round(100.0 * evening_m / shift_total_m, 1)
+        night_percent = round(max(0.0, 100.0 - morning_percent - evening_percent), 1)
+    else:
+        morning_percent = evening_percent = night_percent = 0.0
+
     summary.update({
         'hourly_overtime': 0.0,
         'daily_overtime': 0.0,
@@ -204,7 +263,24 @@ def build_legal_ot_summary(days: List[Dict], base_summary: Dict) -> Dict:
         'overtime_total': overtime_total,
         'friday_work_hours': friday_work_hours,
         'friday_work_days': friday_work_days,
+        'holiday_work_hours': holiday_work_hours,
+        'holiday_work_days': holiday_work_days,
+        'overtime_holiday_total': overtime_holiday_total,
+        'total_morning': total_morning,
+        'total_evening': total_evening,
+        'total_night': total_night,
+        'morning_percent': morning_percent,
+        'evening_percent': evening_percent,
+        'night_percent': night_percent,
         'total_work_days': total_work_days,
+        'present_days': present_days,
+        'leave_days': leave_days,
+        'absent_days': absent_days,
+        'rest_days': rest_days,
+        'holiday_days': holiday_days,
+        'mission_days': mission_days,
+        'status_days_total': status_days_total,
+        'month_days': len(days),
         'hourly_leave_minutes': hourly_leave_minutes,
         'hourly_leave_hours': _minutes_to_hours(hourly_leave_minutes),
         'hourly_mission_minutes': hourly_mission_minutes,
@@ -214,6 +290,7 @@ def build_legal_ot_summary(days: List[Dict], base_summary: Dict) -> Dict:
         'total_surplus': overtime_total,
         'overtime_coefficient': OVERTIME_COEFFICIENT,
         'friday_work_coefficient': FRIDAY_WORK_COEFFICIENT,
+        'holiday_work_coefficient': HOLIDAY_WORK_COEFFICIENT,
     })
     return summary
 

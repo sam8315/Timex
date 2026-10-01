@@ -136,15 +136,28 @@ class LegalOvertimeExcelExporter(DetailedExcelExporterV2):
         entry('روزهای موظفی', summary['duty_days'])
         entry('ساعات موظفی', self._fmt_hours(summary['duty_hours']))
 
-        section('اضافه‌کار (کارکرد − جمعه − Σ موظفی؛ ضریب ۱٫۴)')
+        section('اضافه‌کار (کارکرد − جمعه − تعطیل‌کاری − Σ موظفی)')
         entry('اضافه‌کار هفتگی', self._fmt_hours(summary['weekly_overtime']))
         entry('جمع اضافه‌کار', self._fmt_hours(summary['overtime_total']))
-        entry('ضریب اضافه‌کار', summary.get('overtime_coefficient', 1.4))
 
-        section('جمعه‌کاری (از مبنای هفتگی کسر می‌شود؛ ضریب ۱٫۹۶)')
+        section('تعطیل‌کاری (از مبنای هفتگی کسر)')
+        entry('ساعت تعطیل‌کاری', self._fmt_hours(summary.get('holiday_work_hours') or 0))
+        entry('تعداد روز تعطیل‌کاری', summary.get('holiday_work_days', 0))
+
+        section('مجموع اضافه‌کار و تعطیل‌کاری')
+        entry('مجموع', self._fmt_hours(summary.get('overtime_holiday_total') or 0))
+
+        section('جمعه‌کاری (از مبنای هفتگی کسر)')
         entry('ساعت جمعه‌کاری', self._fmt_hours(summary['friday_work_hours']))
         entry('تعداد روز جمعه‌کاری', summary['friday_work_days'])
-        entry('ضریب جمعه‌کاری', summary.get('friday_work_coefficient', 1.96))
+
+        section('تفکیک صبح / عصر / شب')
+        entry('ساعات صبح', self._fmt_hours(summary.get('total_morning') or 0))
+        entry('درصد صبح', f"{summary.get('morning_percent', 0)}٪")
+        entry('ساعات عصر', self._fmt_hours(summary.get('total_evening') or 0))
+        entry('درصد عصر', f"{summary.get('evening_percent', 0)}٪")
+        entry('ساعات شب', self._fmt_hours(summary.get('total_night') or 0))
+        entry('درصد شب', f"{summary.get('night_percent', 0)}٪")
 
         section('وضعیت روزها و مرخصی/مأموریت')
         entry('حضور', summary.get('present_days', 0))
@@ -152,7 +165,7 @@ class LegalOvertimeExcelExporter(DetailedExcelExporterV2):
         entry('مرخصی ساعتی', self._fmt_hours(summary.get('hourly_leave_hours') or 0))
         entry('مأموریت روزانه', summary.get('mission_days', 0))
         entry('مأموریت ساعتی', self._fmt_hours(summary.get('hourly_mission_hours') or 0))
-        entry('غیبت', summary.get('absent_days', 0))
+        entry('عدم حضور', summary.get('absent_days', 0))
         entry('استراحت', summary.get('rest_days', 0))
         entry('تعطیل', summary.get('holiday_days', 0))
         entry('کسر کار ماهانه', self._fmt_hours(summary.get('monthly_deficit') or 0))

@@ -145,64 +145,99 @@ class LegalOvertimePDFExporter(DetailedPDFExporterV2):
         pdf.ln(1)
 
         box_h = 14
-        gap = 2
+        gap = 1.5
         usable = page_width
-        box_w = (usable - 3 * gap) / 4
         y0 = pdf.get_y()
-        boxes = [
-            (
-                'کل کارکرد',
+        # دو ردیف سه‌ستونه تا برچسب‌های بلند جا شوند
+        box_rows = [
+            [
                 (
-                    f"{self._fmt_hours(summary.get('total_work_hours') or 0)}\n"
-                    f"{summary.get('total_work_days', 0)} روز"
+                    'کل کارکرد',
+                    (
+                        f"{self._fmt_hours(summary.get('total_work_hours') or 0)}\n"
+                        f"{summary.get('total_work_days', 0)} روز"
+                    ),
                 ),
-            ),
-            (
-                'موظفی',
-                f"{summary.get('duty_days', 0)} روز / "
-                f"{self._fmt_hours(summary.get('duty_hours') or 0)}",
-            ),
-            (
-                'اضافه‌کار',
                 (
-                    f"{self._fmt_hours(summary.get('overtime_total') or 0)}\n"
-                    f"ضریب {summary.get('overtime_coefficient', 1.4)}"
+                    'موظفی',
+                    f"{summary.get('duty_days', 0)} روز / "
+                    f"{self._fmt_hours(summary.get('duty_hours') or 0)}",
                 ),
-            ),
-            (
-                'جمعه‌کاری',
                 (
-                    f"{self._fmt_hours(summary.get('friday_work_hours') or 0)}\n"
-                    f"{summary.get('friday_work_days', 0)} روز · "
-                    f"ضریب {summary.get('friday_work_coefficient', 1.96)}"
+                    'اضافه‌کار',
+                    self._fmt_hours(summary.get('overtime_total') or 0),
                 ),
-            ),
+            ],
+            [
+                (
+                    'تعطیل‌کاری',
+                    (
+                        f"{self._fmt_hours(summary.get('holiday_work_hours') or 0)}\n"
+                        f"{summary.get('holiday_work_days', 0)} روز"
+                    ),
+                ),
+                (
+                    'مجموع اضافه‌کار و تعطیل‌کاری',
+                    self._fmt_hours(summary.get('overtime_holiday_total') or 0),
+                ),
+                (
+                    'جمعه‌کاری',
+                    (
+                        f"{self._fmt_hours(summary.get('friday_work_hours') or 0)}\n"
+                        f"{summary.get('friday_work_days', 0)} روز"
+                    ),
+                ),
+            ],
+            [
+                (
+                    'صبح',
+                    (
+                        f"{self._fmt_hours(summary.get('total_morning') or 0)}\n"
+                        f"{summary.get('morning_percent', 0)}٪"
+                    ),
+                ),
+                (
+                    'عصر',
+                    (
+                        f"{self._fmt_hours(summary.get('total_evening') or 0)}\n"
+                        f"{summary.get('evening_percent', 0)}٪"
+                    ),
+                ),
+                (
+                    'شب',
+                    (
+                        f"{self._fmt_hours(summary.get('total_night') or 0)}\n"
+                        f"{summary.get('night_percent', 0)}٪"
+                    ),
+                ),
+            ],
         ]
 
-        x = pdf.l_margin
-        for title, value in boxes:
-            pdf.set_xy(x, y0)
-            pdf.set_draw_color(100, 116, 139)
-            pdf.set_fill_color(241, 245, 249)
-            pdf.rect(x, y0, box_w, box_h, style='DF')
-            pdf.set_xy(x, y0 + 1.5)
-            pdf.set_font(font_name, 'B', 8)
-            pdf.cell(box_w, 4, self._fix_rtl(title), align='C')
-            pdf.set_xy(x, y0 + 6)
-            pdf.set_font(font_name, 'B', 9)
-            # چندخطی ساده
-            for i, line in enumerate(str(value).split('\n')[:2]):
-                pdf.set_xy(x, y0 + 6 + i * 3.5)
-                text = line if all(ord(c) < 128 or c in ':/ ' for c in line) else self._fix_rtl(line)
-                # برای اعداد/ساعت LTR؛ برای متن فارسی RTL
-                if any('\u0600' <= c <= '\u06FF' for c in line):
-                    text = self._fix_rtl(line)
-                else:
-                    text = line
-                pdf.cell(box_w, 3.5, text, align='C')
-            x += box_w + gap
+        for row_boxes in box_rows:
+            n = len(row_boxes)
+            box_w = (usable - (n - 1) * gap) / n
+            x = pdf.l_margin
+            for title, value in row_boxes:
+                pdf.set_xy(x, y0)
+                pdf.set_draw_color(100, 116, 139)
+                pdf.set_fill_color(241, 245, 249)
+                pdf.rect(x, y0, box_w, box_h, style='DF')
+                pdf.set_xy(x, y0 + 1.5)
+                pdf.set_font(font_name, 'B', 7)
+                pdf.cell(box_w, 4, self._fix_rtl(title), align='C')
+                pdf.set_xy(x, y0 + 6)
+                pdf.set_font(font_name, 'B', 9)
+                for i, line in enumerate(str(value).split('\n')[:2]):
+                    pdf.set_xy(x, y0 + 6 + i * 3.5)
+                    if any('\u0600' <= c <= '\u06FF' for c in line):
+                        text = self._fix_rtl(line)
+                    else:
+                        text = line
+                    pdf.cell(box_w, 3.5, text, align='C')
+                x += box_w + gap
+            y0 += box_h + gap
 
-        pdf.set_y(y0 + box_h + 2)
+        pdf.set_y(y0 + 1)
         pdf.set_font(font_name, '', 7.5)
         meta = (
             f"حضور {summary.get('present_days', 0)} | "
@@ -210,9 +245,10 @@ class LegalOvertimePDFExporter(DetailedPDFExporterV2):
             f"مرخصی‌ساعتی {self._fmt_hours(summary.get('hourly_leave_hours') or 0)} | "
             f"مأموریت {summary.get('mission_days', 0)} | "
             f"مأموریت‌ساعتی {self._fmt_hours(summary.get('hourly_mission_hours') or 0)} | "
-            f"غیبت {summary.get('absent_days', 0)} | "
+            f"عدم‌حضور {summary.get('absent_days', 0)} | "
             f"استراحت {summary.get('rest_days', 0)} | "
             f"تعطیل {summary.get('holiday_days', 0)} | "
+            f"تعطیل‌کاری {self._fmt_hours(summary.get('holiday_work_hours') or 0)} | "
             f"کسرکار {self._fmt_hours(summary.get('monthly_deficit') or 0)}"
         )
         pdf.cell(

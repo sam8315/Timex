@@ -104,57 +104,71 @@
         font-weight: 600;
     }
 
-    /* 🎨 خلاصه ماهانه */
+    /* خلاصه ماهانه — روشن و چاپ‌پذیر (همان نما در صفحه و چاپ) */
     .summary-box {
-        background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
-        color: white;
-        border-radius: 16px;
-        padding: 24px;
+        background: #f8fafc;
+        color: #0f172a;
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        padding: 10px 12px;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
     }
     .summary-box .summary-title {
-        font-size: 1.25rem;
+        font-size: 1rem;
         font-weight: 700;
-        margin-bottom: 16px;
-        border-bottom: 1px solid rgba(255,255,255,0.2);
-        padding-bottom: 8px;
+        margin-bottom: 8px;
+        border-bottom: 1px solid #cbd5e1;
+        padding-bottom: 6px;
+        color: #0f172a;
     }
     .summary-box .summary-item {
         display: flex;
         justify-content: space-between;
         padding: 4px 0;
-        font-size: 1rem;
+        font-size: 0.95rem;
     }
     .pay-summary-grid {
         display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 12px;
+        grid-template-columns: repeat(6, 1fr);
+        gap: 6px;
+        margin-top: 6px;
+    }
+    .shift-summary-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 6px;
         margin-top: 8px;
     }
     .pay-summary-card {
-        background: rgba(255,255,255,0.1);
-        border: 1px solid rgba(255,255,255,0.25);
-        border-radius: 12px;
-        padding: 16px 12px;
+        background: #fff;
+        border: 1px solid #94a3b8;
+        border-radius: 6px;
+        padding: 8px 6px;
         text-align: center;
-        min-height: 110px;
+        min-height: 0;
+        color: #0f172a;
     }
     .pay-summary-card .label {
-        font-size: 1.05rem;
+        font-size: 0.78rem;
         font-weight: 700;
-        margin-bottom: 8px;
+        margin-bottom: 4px;
         display: block;
+        line-height: 1.2;
+        color: #334155;
     }
     .pay-summary-card .main-value {
-        font-size: 1.45rem;
+        font-size: 1.15rem;
         font-weight: 800;
         direction: ltr;
         unicode-bidi: embed;
         display: block;
-        margin-bottom: 6px;
+        margin-bottom: 2px;
+        color: #0f172a;
     }
     .pay-summary-card .sub-value {
-        font-size: 0.95rem;
-        opacity: 0.9;
+        font-size: 0.75rem;
+        color: #475569;
         direction: rtl;
         unicode-bidi: isolate;
         display: block;
@@ -163,6 +177,9 @@
         direction: ltr;
         unicode-bidi: isolate;
         display: inline-block;
+    }
+    @media (max-width: 1200px) {
+        .pay-summary-grid { grid-template-columns: repeat(3, 1fr); }
     }
     @media (max-width: 992px) {
         .pay-summary-grid { grid-template-columns: repeat(2, 1fr); }
@@ -178,34 +195,36 @@
         display: inline-block;
     }
     .summary-box .summary-section {
-        margin-top: 10px;
-        padding-top: 10px;
-        border-top: 1px dashed rgba(255,255,255,0.2);
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px dashed #94a3b8;
     }
     .meta-chip-grid {
         display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 8px;
+        grid-template-columns: repeat(9, 1fr);
+        gap: 4px;
     }
     .meta-chip {
-        background: rgba(255,255,255,0.08);
-        border: 1px solid rgba(255,255,255,0.18);
-        border-radius: 8px;
-        padding: 8px 10px;
+        background: #fff;
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        padding: 6px 4px;
         text-align: center;
+        color: #0f172a;
     }
     .meta-chip .chip-label {
         display: block;
-        font-size: 0.78rem;
-        opacity: 0.85;
+        font-size: 0.68rem;
+        color: #64748b;
         margin-bottom: 2px;
     }
     .meta-chip .chip-value {
         display: block;
-        font-size: 1.05rem;
+        font-size: 0.9rem;
         font-weight: 700;
         direction: rtl;
         unicode-bidi: isolate;
+        color: #0f172a;
     }
     .meta-chip .chip-value .num {
         direction: ltr;
@@ -213,7 +232,7 @@
         display: inline-block;
     }
     @media (max-width: 992px) {
-        .meta-chip-grid { grid-template-columns: repeat(2, 1fr); }
+        .meta-chip-grid { grid-template-columns: repeat(3, 1fr); }
     }
 
     /* 🎨 جستجوگر کاربر */
@@ -346,132 +365,138 @@
             font-size: 7.5pt !important;
         }
 
-        /* جدول گزارش — فشرده برای جا شدن در یک صفحه */
+        /* جدول — همان ظاهر صفحه، فقط کمی فشرده‌تر برای A4 */
         .table-responsive {
             overflow: visible !important;
         }
         .full-report-table {
             font-size: 8pt !important;
             width: 100% !important;
-            table-layout: auto;
             border-collapse: collapse !important;
             white-space: normal;
         }
         .full-report-table th,
         .full-report-table td {
             border: 0.4pt solid #64748b !important;
-            padding: 0.9mm 0.6mm !important;
+            padding: 0.8mm 0.5mm !important;
             line-height: 1.15;
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
         }
         .full-report-table th {
-            background: #e2e8f0 !important;
-            color: #000 !important;
+            background: #1e293b !important;
+            color: #fff !important;
             font-weight: 700 !important;
-            font-size: 7.8pt !important;
+            font-size: 7.5pt !important;
         }
         .full-report-table th.group-header {
-            background: #cbd5e1 !important;
+            background: #0f172a !important;
         }
-
-        /* رنگ ردیف‌ها بر اساس وضعیت روز حفظ می‌شود */
         .full-report-table tr.row-holiday { background: #fef3c7 !important; }
         .full-report-table tr.row-friday { background: #f1f5f9 !important; }
         .full-report-table tr.row-leave { background: #dbeafe !important; }
         .full-report-table tr.row-absent { background: #fee2e2 !important; }
-
-        .full-report-table thead {
-            display: table-header-group;
-        }
+        .full-report-table thead { display: table-header-group; }
         .full-report-table tr {
             break-inside: avoid;
             page-break-inside: avoid;
         }
 
-        /* رنگ مقادیر ساعت */
         .time-enter { color: #059669 !important; }
         .time-exit { color: #dc2626 !important; }
         .time-surplus { color: #059669 !important; }
         .time-deficit { color: #dc2626 !important; }
-        .time-empty { color: #94a3b8 !important; }
 
-        /* Badgeها بدون رنگ پس‌زمینهٔ تیره */
+        /* badgeها همان رنگ صفحه */
         .status-pill {
-            border: 0.4pt solid #94a3b8;
-            background: #fff !important;
-            color: #000 !important;
-            font-size: 5.5pt !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+            font-size: 6.5pt !important;
             padding: 0 3px !important;
         }
 
-        /* خلاصه ماهانه — درشت و پرکنندهٔ پایین A4 */
+        /* خلاصه — همان استایل صفحه (متن تیره روی پس‌زمینه روشن) */
         .summary-box {
             border-radius: 0 !important;
-            padding: 10px 12px !important;
-            margin-top: 6px !important;
+            padding: 6px 8px !important;
+            margin-top: 4px !important;
             break-inside: avoid;
             page-break-inside: avoid;
+            background: #f8fafc !important;
+            color: #0f172a !important;
+            border: 1px solid #94a3b8 !important;
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
-            min-height: 42mm;
         }
         .summary-box .summary-title {
-            font-size: 12pt !important;
-            margin-bottom: 8px !important;
-            padding-bottom: 4px !important;
+            font-size: 9pt !important;
+            color: #0f172a !important;
+            margin-bottom: 4px !important;
+            padding-bottom: 3px !important;
+            border-bottom-color: #94a3b8 !important;
         }
         .pay-summary-grid {
-            grid-template-columns: repeat(4, 1fr) !important;
-            gap: 8px !important;
-        }
-        .pay-summary-card {
-            min-height: 28mm !important;
-            padding: 8px 6px !important;
-            border-radius: 4px !important;
-        }
-        .pay-summary-card .label {
-            font-size: 10pt !important;
-        }
-        .pay-summary-card .main-value {
-            font-size: 13pt !important;
-        }
-        .pay-summary-card .sub-value {
-            font-size: 9pt !important;
-        }
-        .meta-chip-grid {
-            grid-template-columns: repeat(5, 1fr) !important;
+            grid-template-columns: repeat(6, 1fr) !important;
             gap: 4px !important;
         }
-        .meta-chip {
-            padding: 4px !important;
+        .shift-summary-grid {
+            grid-template-columns: repeat(3, 1fr) !important;
+            gap: 4px !important;
+            margin-top: 4px !important;
         }
-        .meta-chip .chip-label { font-size: 7pt !important; }
-        .meta-chip .chip-value { font-size: 8.5pt !important; }
-        .status-pill {
+        .pay-summary-card {
+            background: #fff !important;
+            border: 1px solid #64748b !important;
+            color: #0f172a !important;
+            padding: 4px 3px !important;
+            border-radius: 3px !important;
+        }
+        .pay-summary-card .label {
             font-size: 7pt !important;
+            color: #334155 !important;
+            margin-bottom: 2px !important;
         }
+        .pay-summary-card .main-value {
+            font-size: 10pt !important;
+            color: #0f172a !important;
+            margin-bottom: 1px !important;
+        }
+        .pay-summary-card .sub-value {
+            font-size: 7pt !important;
+            color: #475569 !important;
+        }
+        .meta-chip-grid {
+            grid-template-columns: repeat(9, 1fr) !important;
+            gap: 3px !important;
+        }
+        .meta-chip {
+            background: #fff !important;
+            border: 1px solid #94a3b8 !important;
+            color: #0f172a !important;
+            padding: 3px 2px !important;
+        }
+        .meta-chip .chip-label { font-size: 6pt !important; color: #64748b !important; }
+        .meta-chip .chip-value { font-size: 7.5pt !important; color: #0f172a !important; }
+
         .week-block-cell {
             background: #f8fafc !important;
             min-width: 22mm !important;
             max-width: 28mm !important;
             padding: 1mm !important;
         }
-        .week-block { font-size: 6pt !important; gap: 1px !important; }
-        .week-block .wb-label { font-size: 5.5pt !important; }
-        .week-block .wb-value { font-size: 6.5pt !important; }
-        .week-block .wb-formula { font-size: 5pt !important; }
+        .week-block { font-size: 6.5pt !important; gap: 1px !important; }
+        .week-block .wb-label { font-size: 6pt !important; }
+        .week-block .wb-value { font-size: 7pt !important; }
+        .week-block .wb-formula { font-size: 5.5pt !important; }
 
-        /* کل گزارش یک صفحه — جلوگیری از شکستن بین جدول و خلاصه */
         .print-one-page {
-            page-break-inside: avoid;
-            break-inside: avoid;
-            min-height: 270mm;
-            display: flex;
-            flex-direction: column;
+            display: block;
         }
-        .print-one-page .summary-box {
-            margin-top: auto !important;
+        .print-one-page .card.mb-4 {
+            margin-bottom: 4px !important;
+        }
+        .print-one-page .card-header {
+            display: none !important;
         }
     }
 </style>
@@ -631,7 +656,7 @@
                             {% elif day.person_status == 'L' %}
                             <span class="badge bg-info status-pill">مرخصی</span>
                             {% elif day.person_status == 'A' %}
-                            <span class="badge bg-danger status-pill">غایب</span>
+                            <span class="badge bg-danger status-pill">عدم حضور</span>
                             {% elif day.person_status == 'R' %}
                             <span class="badge bg-secondary status-pill">استراحت</span>
                             {% elif day.person_status == 'H' %}
@@ -722,12 +747,37 @@
         <div class="pay-summary-card">
             <span class="label">اضافه‌کار</span>
             <span class="main-value">{{ report.summary.overtime_total | hhmm }}</span>
-            <span class="sub-value">ضریب <span class="num">{{ report.summary.overtime_coefficient }}</span></span>
+        </div>
+        <div class="pay-summary-card">
+            <span class="label">تعطیل‌کاری</span>
+            <span class="main-value">{{ report.summary.holiday_work_hours | hhmm }}</span>
+            <span class="sub-value"><span class="num">{{ report.summary.holiday_work_days }}</span> روز</span>
+        </div>
+        <div class="pay-summary-card">
+            <span class="label">مجموع اضافه‌کار+تعطیل‌کاری</span>
+            <span class="main-value">{{ report.summary.overtime_holiday_total | hhmm }}</span>
         </div>
         <div class="pay-summary-card">
             <span class="label">جمعه‌کاری</span>
             <span class="main-value">{{ report.summary.friday_work_hours | hhmm }}</span>
-            <span class="sub-value"><span class="num">{{ report.summary.friday_work_days }}</span> روز · ضریب <span class="num">{{ report.summary.friday_work_coefficient }}</span></span>
+            <span class="sub-value"><span class="num">{{ report.summary.friday_work_days }}</span> روز</span>
+        </div>
+    </div>
+    <div class="shift-summary-grid">
+        <div class="pay-summary-card">
+            <span class="label">صبح</span>
+            <span class="main-value">{{ report.summary.total_morning | hhmm }}</span>
+            <span class="sub-value"><span class="num">{{ report.summary.morning_percent }}</span>٪</span>
+        </div>
+        <div class="pay-summary-card">
+            <span class="label">عصر</span>
+            <span class="main-value">{{ report.summary.total_evening | hhmm }}</span>
+            <span class="sub-value"><span class="num">{{ report.summary.evening_percent }}</span>٪</span>
+        </div>
+        <div class="pay-summary-card">
+            <span class="label">شب</span>
+            <span class="main-value">{{ report.summary.total_night | hhmm }}</span>
+            <span class="sub-value"><span class="num">{{ report.summary.night_percent }}</span>٪</span>
         </div>
     </div>
     <div class="summary-section">
@@ -753,7 +803,7 @@
                 <span class="chip-value"><span class="num">{{ report.summary.hourly_mission_hours | hhmm }}</span></span>
             </div>
             <div class="meta-chip">
-                <span class="chip-label">غیبت</span>
+                <span class="chip-label">عدم حضور</span>
                 <span class="chip-value"><span class="num">{{ report.summary.absent_days }}</span> روز</span>
             </div>
             <div class="meta-chip">
