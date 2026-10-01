@@ -1,5 +1,14 @@
 """
-Phase 5.7: Tests for Attendance Policy Service
+Phase 5.7 / Phase 7: Tests for Attendance Policy Service
+
+Contract (current implementation — Phase 7 aligned):
+- AttendancePolicyDay.required_minutes is a derived @property (start/end),
+  not a writable column.
+- compute_late / compute_early_leave take datetime check-in/out + scheduled
+  time, return dicts (not tuples).
+- is_late / is_early_leave mean grace exceeded (violation), not mere delay.
+- compute_daily_balance(actual, required, late_info, early_info) =
+  actual - required; late/early are not subtracted again.
 
 Tests cover:
 - Policy resolution (priority, date filtering, override)
@@ -9,22 +18,56 @@ Tests cover:
 - Holiday and leave handling
 - Grace period logic
 """
-import pytest
 from datetime import date, time, datetime, timedelta
-from unittest.mock import MagicMock
 
 from web.services.attendance_policy_service import (
     resolve_policy,
-    resolve_policy_day,
     resolve_required_minutes,
     compute_late,
     compute_early_leave,
     compute_daily_balance,
-    calculate_daily_attendance,
     time_to_minutes,
     minutes_to_hours_hhmm,
     DEFAULT_REQUIRED_MINUTES,
 )
+
+# Fixed calendar day for combining time → datetime in pure unit tests
+_REF_DAY = date(2026, 6, 1)
+
+
+def _dt(t: time) -> datetime:
+    """Combine reference date with a wall-clock time."""
+    return datetime.combine(_REF_DAY, t)
+
+
+def _cleanup_policies(db, employment_codes=None, user_ids=None):
+    """Remove AttendancePolicy rows so DB tests do not leak across cases."""
+    from sqlalchemy import or_
+    from models.attendance import AttendancePolicy, AttendancePolicyDay
+
+    try:
+        db.rollback()
+    except Exception:
+        pass
+
+    clauses = []
+    if employment_codes:
+        clauses.append(AttendancePolicy.employment_type_code.in_(employment_codes))
+    if user_ids:
+        clauses.append(AttendancePolicy.user_id.in_(user_ids))
+    if not clauses:
+        return
+
+    pids = [row[0] for row in db.query(AttendancePolicy.id).filter(or_(*clauses)).all()]
+    if not pids:
+        return
+    db.query(AttendancePolicyDay).filter(
+        AttendancePolicyDay.policy_id.in_(pids)
+    ).delete(synchronize_session=False)
+    db.query(AttendancePolicy).filter(
+        AttendancePolicy.id.in_(pids)
+    ).delete(synchronize_session=False)
+    db.commit()
 
 
 class TestHelperFunctions:
@@ -65,7 +108,6 @@ class TestResolvePolicy:
         """Employee override should take priority over employment type policy."""
         from models.employee import Employee
         from models.attendance import AttendancePolicy, AttendancePolicyDay
-        from models.user import User
 
         # Create user
         user = make_user(
@@ -74,6 +116,7 @@ class TestResolvePolicy:
             create_employee=False,
         )
         user_id = user['user_id']
+        _cleanup_policies(db, employment_codes=['1'], user_ids=[user_id])
 
         # Create employee with department code '1'
         emp = Employee(user_id=user_id, department='1', first_name='Test', last_name='User')
@@ -96,14 +139,13 @@ class TestResolvePolicy:
         db.add(type_policy)
         db.flush()
 
-        # Add schedule for type policy (Mon 8:00-16:40)
+        # Add schedule for type policy (Mon 8:00-16:40 → 520 min derived)
         db.add(AttendancePolicyDay(
             policy_id=type_policy.id,
             weekday=0,
             is_working_day=True,
             start_time=time(8, 0),
             end_time=time(16, 40),
-            required_minutes=520
         ))
 
         # Create employee override policy
@@ -122,14 +164,13 @@ class TestResolvePolicy:
         db.add(override_policy)
         db.flush()
 
-        # Add schedule for override (Mon 9:00-17:00)
+        # Add schedule for override (Mon 9:00-17:00 → 480 min derived)
         db.add(AttendancePolicyDay(
             policy_id=override_policy.id,
             weekday=0,
             is_working_day=True,
             start_time=time(9, 0),
             end_time=time(17, 0),
-            required_minutes=480
         ))
         db.commit()
 
@@ -153,6 +194,7 @@ class TestResolvePolicy:
             create_employee=False,
         )
         user_id = user['user_id']
+        _cleanup_policies(db, employment_codes=['2'], user_ids=[user_id])
 
         emp = Employee(user_id=user_id, department='2', first_name='Test', last_name='User')
         db.add(emp)
@@ -180,7 +222,6 @@ class TestResolvePolicy:
             is_working_day=True,
             start_time=time(8, 0),
             end_time=time(16, 40),
-            required_minutes=520
         ))
         db.commit()
 
@@ -222,6 +263,7 @@ class TestResolvePolicy:
             create_employee=False,
         )
         user_id = user['user_id']
+        _cleanup_policies(db, employment_codes=['1'], user_ids=[user_id])
 
         emp = Employee(user_id=user_id, department='1', first_name='Test', last_name='User')
         db.add(emp)
@@ -250,7 +292,6 @@ class TestResolvePolicy:
             is_working_day=True,
             start_time=time(8, 0),
             end_time=time(16, 40),
-            required_minutes=520
         ))
         db.commit()
 
@@ -283,6 +324,7 @@ class TestResolveRequiredMinutes:
             create_employee=False,
         )
         user_id = user['user_id']
+        _cleanup_policies(db, employment_codes=['1'], user_ids=[user_id])
 
         emp = Employee(user_id=user_id, department='1', first_name='Test', last_name='User')
         db.add(emp)
@@ -303,14 +345,13 @@ class TestResolveRequiredMinutes:
         db.add(policy)
         db.flush()
 
-        # 7:20 = 440 minutes
+        # 7:20–14:40 → 440 minutes (derived property)
         db.add(AttendancePolicyDay(
             policy_id=policy.id,
             weekday=0,
             is_working_day=True,
             start_time=time(7, 20),
             end_time=time(14, 40),
-            required_minutes=440
         ))
         db.commit()
 
@@ -332,6 +373,7 @@ class TestResolveRequiredMinutes:
             create_employee=False,
         )
         user_id = user['user_id']
+        _cleanup_policies(db, employment_codes=['1'], user_ids=[user_id])
 
         emp = Employee(user_id=user_id, department='1', first_name='Test', last_name='User')
         db.add(emp)
@@ -359,7 +401,6 @@ class TestResolveRequiredMinutes:
             is_working_day=False,
             start_time=None,
             end_time=None,
-            required_minutes=0
         ))
         db.commit()
 
@@ -396,140 +437,146 @@ class TestResolveRequiredMinutes:
 
 
 class TestComputeLate:
-    """Tests for late calculation."""
+    """Tests for late calculation (current dict contract)."""
 
     def test_no_late_when_on_time(self):
         """No late when arriving before start."""
         result = compute_late(
+            actual_first_check_in=_dt(time(7, 50)),
+            scheduled_start=time(8, 0),
             late_enabled=True,
             late_allowed_minutes=10,
-            start_time=time(8, 0),
-            first_enter=time(7, 50),
-            late_reference_mode='FIXED_TIME'
+            reference_mode='FIXED_TIME',
         )
-        assert result == (False, 0, 10, 0)
+        assert result == {
+            'total_late_minutes': 0,
+            'late_violation_minutes': 0,
+            'is_late': False,
+        }
 
     def test_late_within_grace(self):
-        """Late within grace period should not be violation."""
+        """Delay within grace: total tracked, no violation, is_late=False."""
         result = compute_late(
+            actual_first_check_in=_dt(time(8, 5)),
+            scheduled_start=time(8, 0),
             late_enabled=True,
             late_allowed_minutes=10,
-            start_time=time(8, 0),
-            first_enter=time(8, 5),
-            late_reference_mode='FIXED_TIME'
+            reference_mode='FIXED_TIME',
         )
-        is_late, total_late, allowed, violation = result
-        assert is_late == True
-        assert total_late == 5
-        assert allowed == 10
-        assert violation == 0
+        assert result['total_late_minutes'] == 5
+        assert result['late_violation_minutes'] == 0
+        assert result['is_late'] is False
 
     def test_late_exceeds_grace(self):
-        """Late exceeding grace period should be violation."""
+        """Delay past grace: violation and is_late=True."""
         result = compute_late(
+            actual_first_check_in=_dt(time(8, 15)),
+            scheduled_start=time(8, 0),
             late_enabled=True,
             late_allowed_minutes=10,
-            start_time=time(8, 0),
-            first_enter=time(8, 15),
-            late_reference_mode='FIXED_TIME'
+            reference_mode='FIXED_TIME',
         )
-        is_late, total_late, allowed, violation = result
-        assert is_late == True
-        assert total_late == 15
-        assert allowed == 10
-        assert violation == 5
+        assert result['total_late_minutes'] == 15
+        assert result['late_violation_minutes'] == 5
+        assert result['is_late'] is True
 
     def test_late_disabled(self):
         """Late disabled should not track."""
         result = compute_late(
+            actual_first_check_in=_dt(time(8, 15)),
+            scheduled_start=time(8, 0),
             late_enabled=False,
             late_allowed_minutes=10,
-            start_time=time(8, 0),
-            first_enter=time(8, 15),
-            late_reference_mode='FIXED_TIME'
+            reference_mode='FIXED_TIME',
         )
-        is_late, total_late, allowed, violation = result
-        assert is_late == False
-        assert total_late == 0
+        assert result['is_late'] is False
+        assert result['total_late_minutes'] == 0
+        assert result['late_violation_minutes'] == 0
 
     def test_no_attendance(self):
         """No attendance should not be late."""
         result = compute_late(
+            actual_first_check_in=None,
+            scheduled_start=time(8, 0),
             late_enabled=True,
             late_allowed_minutes=10,
-            start_time=time(8, 0),
-            first_enter=None,
-            late_reference_mode='FIXED_TIME'
+            reference_mode='FIXED_TIME',
         )
-        assert result == (False, 0, 10, 0)
+        assert result == {
+            'total_late_minutes': 0,
+            'late_violation_minutes': 0,
+            'is_late': False,
+        }
 
 
 class TestComputeEarlyLeave:
-    """Tests for early leave calculation."""
+    """Tests for early leave calculation (current dict contract)."""
 
     def test_no_early_leave_when_staying(self):
         """No early leave when leaving after end time."""
         result = compute_early_leave(
+            actual_last_check_out=_dt(time(16, 45)),
+            scheduled_end=time(16, 40),
             early_leave_enabled=True,
             early_leave_allowed_minutes=10,
-            end_time=time(16, 40),
-            last_exit=time(16, 45),
-            early_reference_mode='FIXED_TIME'
+            reference_mode='FIXED_TIME',
         )
-        assert result == (False, 0, 10, 0)
+        assert result == {
+            'total_early_leave_minutes': 0,
+            'early_leave_violation_minutes': 0,
+            'is_early_leave': False,
+        }
 
     def test_early_leave_within_grace(self):
-        """Early leave within grace should not be violation."""
+        """Early within grace: total tracked, no violation, is_early_leave=False."""
         result = compute_early_leave(
+            actual_last_check_out=_dt(time(16, 35)),
+            scheduled_end=time(16, 40),
             early_leave_enabled=True,
             early_leave_allowed_minutes=10,
-            end_time=time(16, 40),
-            last_exit=time(16, 35),
-            early_reference_mode='FIXED_TIME'
+            reference_mode='FIXED_TIME',
         )
-        is_early, total_early, allowed, violation = result
-        assert is_early == True
-        assert total_early == 5
-        assert allowed == 10
-        assert violation == 0
+        assert result['total_early_leave_minutes'] == 5
+        assert result['early_leave_violation_minutes'] == 0
+        assert result['is_early_leave'] is False
 
     def test_early_leave_exceeds_grace(self):
-        """Early leave exceeding grace should be violation."""
+        """Early past grace: violation and is_early_leave=True."""
         result = compute_early_leave(
+            actual_last_check_out=_dt(time(16, 20)),
+            scheduled_end=time(16, 40),
             early_leave_enabled=True,
             early_leave_allowed_minutes=10,
-            end_time=time(16, 40),
-            last_exit=time(16, 20),
-            early_reference_mode='FIXED_TIME'
+            reference_mode='FIXED_TIME',
         )
-        is_early, total_early, allowed, violation = result
-        assert is_early == True
-        assert total_early == 20
-        assert allowed == 10
-        assert violation == 10
+        assert result['total_early_leave_minutes'] == 20
+        assert result['early_leave_violation_minutes'] == 10
+        assert result['is_early_leave'] is True
 
     def test_early_leave_disabled(self):
         """Early leave disabled should not track."""
         result = compute_early_leave(
+            actual_last_check_out=_dt(time(16, 20)),
+            scheduled_end=time(16, 40),
             early_leave_enabled=False,
             early_leave_allowed_minutes=10,
-            end_time=time(16, 40),
-            last_exit=time(16, 20),
-            early_reference_mode='FIXED_TIME'
+            reference_mode='FIXED_TIME',
         )
-        is_early, total_early, allowed, violation = result
-        assert is_early == False
-        assert total_early == 0
+        assert result['is_early_leave'] is False
+        assert result['total_early_leave_minutes'] == 0
+        assert result['early_leave_violation_minutes'] == 0
 
 
 class TestComputeDailyBalance:
-    """Tests for balance calculation."""
+    """Tests for balance = actual - required (late/early not double-counted)."""
 
     def test_exact_work(self):
         """Exact work should be balanced."""
         balance = compute_daily_balance(
             actual_minutes=440,
-            required_minutes=440
+            required_minutes=440,
+            late_info={},
+            early_info={},
         )
         assert balance == 0
 
@@ -537,7 +584,9 @@ class TestComputeDailyBalance:
         """More work than required = positive balance."""
         balance = compute_daily_balance(
             actual_minutes=480,
-            required_minutes=440
+            required_minutes=440,
+            late_info={},
+            early_info={},
         )
         assert balance == 40
 
@@ -545,7 +594,9 @@ class TestComputeDailyBalance:
         """Less work than required = negative balance."""
         balance = compute_daily_balance(
             actual_minutes=400,
-            required_minutes=440
+            required_minutes=440,
+            late_info={},
+            early_info={},
         )
         assert balance == -40
 
@@ -553,7 +604,9 @@ class TestComputeDailyBalance:
         """Zero actual on working day = full negative balance."""
         balance = compute_daily_balance(
             actual_minutes=0,
-            required_minutes=440
+            required_minutes=440,
+            late_info={},
+            early_info={},
         )
         assert balance == -440
 
@@ -561,9 +614,21 @@ class TestComputeDailyBalance:
         """Zero required (non-working day) = no balance."""
         balance = compute_daily_balance(
             actual_minutes=0,
-            required_minutes=0
+            required_minutes=0,
+            late_info={},
+            early_info={},
         )
         assert balance == 0
+
+    def test_late_early_do_not_affect_balance(self):
+        """Regression: late/early info must not change balance (no double count)."""
+        balance = compute_daily_balance(
+            actual_minutes=430,
+            required_minutes=440,
+            late_info={'total_late_minutes': 20, 'late_violation_minutes': 10, 'is_late': True},
+            early_info={'total_early_leave_minutes': 15, 'early_leave_violation_minutes': 5, 'is_early_leave': True},
+        )
+        assert balance == -10
 
 
 class TestMinutesToHoursHhmmFormat:
@@ -577,3 +642,94 @@ class TestMinutesToHoursHhmmFormat:
 
     def test_large_hours(self):
         assert minutes_to_hours_hhmm(600) == '10:00'
+
+
+class TestPhase7RegressionCases:
+    """Phase 7 regression cases A–E against the current Policy contract."""
+
+    def test_case_a_exact_required_no_late_early(self):
+        """required=8h, actual=8h → late=0, early=0, balance=0."""
+        late = compute_late(
+            actual_first_check_in=_dt(time(8, 0)),
+            scheduled_start=time(8, 0),
+            late_enabled=True,
+            late_allowed_minutes=0,
+            reference_mode='FIXED_TIME',
+        )
+        early = compute_early_leave(
+            actual_last_check_out=_dt(time(16, 0)),
+            scheduled_end=time(16, 0),
+            early_leave_enabled=True,
+            early_leave_allowed_minutes=0,
+            reference_mode='FIXED_TIME',
+        )
+        balance = compute_daily_balance(480, 480, late, early)
+        assert late['total_late_minutes'] == 0
+        assert early['total_early_leave_minutes'] == 0
+        assert balance == 0
+
+    def test_case_b_short_actual_balance_independent_of_late(self):
+        """required=8h, actual=7h50m → balance=-10; late is schedule-based separately."""
+        late = compute_late(
+            actual_first_check_in=_dt(time(8, 10)),
+            scheduled_start=time(8, 0),
+            late_enabled=True,
+            late_allowed_minutes=0,
+            reference_mode='FIXED_TIME',
+        )
+        balance = compute_daily_balance(470, 480, late, {})
+        assert late['total_late_minutes'] == 10
+        assert late['is_late'] is True
+        assert balance == -10
+
+    def test_case_c_overtime_balance(self):
+        """required=8h, actual=8h30m → balance=+30."""
+        balance = compute_daily_balance(510, 480, {}, {})
+        assert balance == 30
+
+    def test_case_d_fractional_seconds_truncate_to_int_minutes(self):
+        """Sub-minute diffs truncate via int(seconds/60); unit is whole minutes."""
+        # 90 seconds late → 1 minute (truncation, not round-half-up)
+        enter = datetime.combine(_REF_DAY, time(8, 0)) + timedelta(seconds=90)
+        result = compute_late(
+            actual_first_check_in=enter,
+            scheduled_start=time(8, 0),
+            late_enabled=True,
+            late_allowed_minutes=0,
+            reference_mode='FIXED_TIME',
+        )
+        assert result['total_late_minutes'] == 1
+
+        # 59 seconds late → 0 minutes
+        enter_59 = datetime.combine(_REF_DAY, time(8, 0)) + timedelta(seconds=59)
+        result_59 = compute_late(
+            actual_first_check_in=enter_59,
+            scheduled_start=time(8, 0),
+            late_enabled=True,
+            late_allowed_minutes=0,
+            reference_mode='FIXED_TIME',
+        )
+        assert result_59['total_late_minutes'] == 0
+
+    def test_case_e_boundary_zero_and_missing_schedule(self):
+        """Missing schedule / zero grace / exact boundary."""
+        no_schedule = compute_late(
+            actual_first_check_in=_dt(time(9, 0)),
+            scheduled_start=None,
+            late_enabled=True,
+            late_allowed_minutes=0,
+            reference_mode='FIXED_TIME',
+        )
+        assert no_schedule['total_late_minutes'] == 0
+
+        # Exactly at grace boundary: 10 late, grace 10 → not a violation
+        at_grace = compute_late(
+            actual_first_check_in=_dt(time(8, 10)),
+            scheduled_start=time(8, 0),
+            late_enabled=True,
+            late_allowed_minutes=10,
+            reference_mode='FIXED_TIME',
+        )
+        assert at_grace['total_late_minutes'] == 10
+        assert at_grace['late_violation_minutes'] == 0
+        assert at_grace['is_late'] is False
