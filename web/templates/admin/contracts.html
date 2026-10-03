@@ -50,9 +50,14 @@
         background: #f8f9fa;
         border-bottom: 1px solid #dee2e6;
     }
-    #userSearchInput.user-selected {
+    .user-search-input.user-selected {
         border-color: #198754;
         background-color: #f0fff4;
+    }
+    .filter-user-search {
+        min-width: 240px;
+        max-width: 320px;
+        flex: 1 1 240px;
     }
 </style>
 {% endblock %}
@@ -94,7 +99,7 @@
                     <div class="input-group">
                         <span class="input-group-text"><i class="bi bi-search"></i></span>
                         <input type="text"
-                               class="form-control"
+                               class="form-control user-search-input"
                                id="userSearchInput"
                                placeholder="جستجو: نام یا کد پرسنلی..."
                                autocomplete="off"
@@ -305,9 +310,24 @@
 <!-- فیلترها -->
 <div class="card mb-4">
     <div class="card-body py-2">
-        <form method="get" action="/admin/contracts" class="d-flex flex-wrap align-items-center gap-2">
-            <input type="text" name="search" class="form-control form-control-sm" style="width: 200px;"
-                   value="{{ search }}" placeholder="🔍 جستجو: نام یا کد پرسنلی">
+        <form method="get" action="/admin/contracts" class="d-flex flex-wrap align-items-center gap-2" id="contractsFilterForm">
+            <div class="user-search-wrapper position-relative filter-user-search">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input type="text"
+                           class="form-control user-search-input"
+                           id="filterUserSearchInput"
+                           placeholder="جستجو: نام یا کد پرسنلی..."
+                           autocomplete="off"
+                           value="">
+                    <button type="button" class="btn btn-outline-secondary" id="filterClearUserBtn"
+                            style="display:none;" title="پاک کردن">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </div>
+                <input type="hidden" name="search" id="filterSearchValue" value="{{ search }}">
+                <div class="user-search-results" id="filterUserSearchResults"></div>
+            </div>
             <select name="type_filter" class="form-select form-select-sm" style="width: auto;">
                 <option value="">همه انواع</option>
                 {% for code, config in contract_types.items() %}
@@ -604,15 +624,8 @@
 {% block extra_js %}
 <script>
 const employeesData = {{ employees | tojson }};
-let highlightedIndex = -1;
-let filteredEmployees = [];
 
-const searchInput = document.getElementById('userSearchInput');
-const searchResults = document.getElementById('userSearchResults');
-const contractUserId = document.getElementById('contractUserId');
-const clearUserBtn = document.getElementById('clearUserBtn');
-
-function searchEmployees(query) {
+function filterEmployeesList(query) {
     if (!query.trim()) {
         return employeesData.slice(0, 50);
     }
@@ -625,85 +638,123 @@ function searchEmployees(query) {
     }).slice(0, 50);
 }
 
-function renderResults(employees) {
-    filteredEmployees = employees;
-    highlightedIndex = -1;
-    if (employees.length === 0) {
-        searchResults.innerHTML = `
-            <div class="user-search-no-result">
-                <i class="bi bi-search"></i> کاربری یافت نشد
-            </div>
-        `;
-        searchResults.classList.add('show');
-        return;
-    }
-    let html = `<div class="user-search-count">${employees.length} کاربر یافت شد</div>`;
-    employees.forEach((emp, index) => {
-        html += `
-            <div class="user-search-item" data-index="${index}" data-user-id="${emp.user_id}">
-                <div>
-                    <div class="user-name">${emp.full_name}</div>
-                    <div class="user-id">${emp.user_id}</div>
+function findEmployeeBySearch(term) {
+    if (!term) return null;
+    const q = String(term).trim().toLowerCase();
+    return employeesData.find(emp => (emp.user_id || '').toLowerCase() === q)
+        || employeesData.find(emp => (emp.full_name || '').toLowerCase() === q)
+        || employeesData.find(emp => (emp.full_name || '').toLowerCase().includes(q))
+        || null;
+}
+
+function initEmployeeSearch(opts) {
+    const {
+        inputEl,
+        resultsEl,
+        hiddenEl,
+        clearBtnEl,
+        requireSelection = false,
+        onSelect = null,
+        allowFreeTextSubmit = false,
+        formEl = null,
+    } = opts;
+
+    if (!inputEl || !resultsEl || !hiddenEl) return null;
+
+    let highlightedIndex = -1;
+    let filteredEmployees = [];
+
+    function renderResults(employees) {
+        filteredEmployees = employees;
+        highlightedIndex = -1;
+        if (employees.length === 0) {
+            resultsEl.innerHTML = `
+                <div class="user-search-no-result">
+                    <i class="bi bi-search"></i> کاربری یافت نشد
                 </div>
-                <span class="user-dept">${emp.department}</span>
-            </div>
-        `;
-    });
-    searchResults.innerHTML = html;
-    searchResults.classList.add('show');
-    searchResults.querySelectorAll('.user-search-item').forEach(item => {
-        item.addEventListener('click', function() {
-            selectEmployee(filteredEmployees[parseInt(this.dataset.index)]);
+            `;
+            resultsEl.classList.add('show');
+            return;
+        }
+        let html = `<div class="user-search-count">${employees.length} کاربر یافت شد</div>`;
+        employees.forEach((emp, index) => {
+            html += `
+                <div class="user-search-item" data-index="${index}" data-user-id="${emp.user_id}">
+                    <div>
+                        <div class="user-name">${emp.full_name}</div>
+                        <div class="user-id">${emp.user_id}</div>
+                    </div>
+                    <span class="user-dept">${emp.department}</span>
+                </div>
+            `;
         });
-        item.addEventListener('mouseenter', function() {
-            highlightItem(parseInt(this.dataset.index));
+        resultsEl.innerHTML = html;
+        resultsEl.classList.add('show');
+        resultsEl.querySelectorAll('.user-search-item').forEach(item => {
+            item.addEventListener('click', function() {
+                selectEmployee(filteredEmployees[parseInt(this.dataset.index)]);
+            });
+            item.addEventListener('mouseenter', function() {
+                highlightItem(parseInt(this.dataset.index));
+            });
         });
-    });
-}
-
-function highlightItem(index) {
-    const items = searchResults.querySelectorAll('.user-search-item');
-    items.forEach(item => item.classList.remove('highlighted'));
-    if (index >= 0 && index < items.length) {
-        items[index].classList.add('highlighted');
-        items[index].scrollIntoView({ block: 'nearest' });
-        highlightedIndex = index;
     }
-}
 
-function selectEmployee(emp) {
-    contractUserId.value = emp.user_id;
-    searchInput.value = `${emp.full_name} (${emp.user_id})`;
-    searchInput.classList.add('user-selected');
-    clearUserBtn.style.display = 'block';
-    searchResults.classList.remove('show');
-    searchInput.blur();
-}
-
-function clearSelection() {
-    contractUserId.value = '';
-    searchInput.value = '';
-    searchInput.classList.remove('user-selected');
-    clearUserBtn.style.display = 'none';
-    searchInput.focus();
-}
-
-if (searchInput) {
-    searchInput.addEventListener('input', function() {
-        if (contractUserId.value) {
-            contractUserId.value = '';
-            searchInput.classList.remove('user-selected');
+    function highlightItem(index) {
+        const items = resultsEl.querySelectorAll('.user-search-item');
+        items.forEach(item => item.classList.remove('highlighted'));
+        if (index >= 0 && index < items.length) {
+            items[index].classList.add('highlighted');
+            items[index].scrollIntoView({ block: 'nearest' });
+            highlightedIndex = index;
         }
-        renderResults(searchEmployees(this.value));
-        clearUserBtn.style.display = this.value ? 'block' : 'none';
+    }
+
+    function selectEmployee(emp) {
+        hiddenEl.value = emp.user_id;
+        inputEl.value = `${emp.full_name} (${emp.user_id})`;
+        inputEl.classList.add('user-selected');
+        if (clearBtnEl) clearBtnEl.style.display = 'block';
+        resultsEl.classList.remove('show');
+        inputEl.blur();
+        if (onSelect) onSelect(emp);
+    }
+
+    function clearSelection() {
+        hiddenEl.value = '';
+        inputEl.value = '';
+        inputEl.classList.remove('user-selected');
+        if (clearBtnEl) clearBtnEl.style.display = 'none';
+        inputEl.focus();
+    }
+
+    function restoreFromHidden() {
+        const term = (hiddenEl.value || '').trim();
+        if (!term) return;
+        const emp = findEmployeeBySearch(term);
+        if (emp) {
+            selectEmployee(emp);
+        } else {
+            inputEl.value = term;
+            if (clearBtnEl) clearBtnEl.style.display = 'block';
+        }
+    }
+
+    inputEl.addEventListener('input', function() {
+        if (hiddenEl.value) {
+            hiddenEl.value = '';
+            inputEl.classList.remove('user-selected');
+        }
+        renderResults(filterEmployeesList(this.value));
+        if (clearBtnEl) clearBtnEl.style.display = this.value ? 'block' : 'none';
     });
-    searchInput.addEventListener('focus', function() {
-        if (!contractUserId.value) {
-            renderResults(searchEmployees(this.value));
+    inputEl.addEventListener('focus', function() {
+        if (!hiddenEl.value) {
+            renderResults(filterEmployeesList(this.value));
         }
     });
-    searchInput.addEventListener('keydown', function(e) {
-        const items = searchResults.querySelectorAll('.user-search-item');
+    inputEl.addEventListener('keydown', function(e) {
+        const items = resultsEl.querySelectorAll('.user-search-item');
         if (e.key === 'ArrowDown') {
             e.preventDefault();
             if (highlightedIndex < items.length - 1) highlightItem(highlightedIndex + 1);
@@ -711,35 +762,64 @@ if (searchInput) {
             e.preventDefault();
             if (highlightedIndex > 0) highlightItem(highlightedIndex - 1);
         } else if (e.key === 'Enter') {
-            e.preventDefault();
-            if (highlightedIndex >= 0 && filteredEmployees[highlightedIndex]) {
-                selectEmployee(filteredEmployees[highlightedIndex]);
-            } else if (filteredEmployees.length > 0) {
-                selectEmployee(filteredEmployees[0]);
+            if (resultsEl.classList.contains('show') && filteredEmployees.length > 0) {
+                e.preventDefault();
+                if (highlightedIndex >= 0 && filteredEmployees[highlightedIndex]) {
+                    selectEmployee(filteredEmployees[highlightedIndex]);
+                } else {
+                    selectEmployee(filteredEmployees[0]);
+                }
             }
         } else if (e.key === 'Escape') {
-            searchResults.classList.remove('show');
+            resultsEl.classList.remove('show');
         }
     });
-    clearUserBtn.addEventListener('click', clearSelection);
+    if (clearBtnEl) clearBtnEl.addEventListener('click', clearSelection);
+
     document.addEventListener('click', function(e) {
-        if (!e.target.closest('.user-search-wrapper')) {
-            searchResults.classList.remove('show');
+        const wrapper = inputEl.closest('.user-search-wrapper');
+        if (wrapper && !wrapper.contains(e.target)) {
+            resultsEl.classList.remove('show');
         }
     });
+
+    if (formEl) {
+        formEl.addEventListener('submit', function(e) {
+            if (requireSelection && !hiddenEl.value) {
+                e.preventDefault();
+                inputEl.focus();
+                renderResults(filterEmployeesList(inputEl.value));
+                alert('لطفاً یک کارمند را از لیست انتخاب کنید');
+                return;
+            }
+            if (allowFreeTextSubmit && !hiddenEl.value && inputEl.value.trim()) {
+                hiddenEl.value = inputEl.value.trim();
+            }
+        });
+    }
+
+    restoreFromHidden();
+    return { selectEmployee, clearSelection, restoreFromHidden };
 }
 
-const addContractForm = document.getElementById('addContractForm');
-if (addContractForm) {
-    addContractForm.addEventListener('submit', function(e) {
-        if (!contractUserId.value) {
-            e.preventDefault();
-            searchInput.focus();
-            renderResults(searchEmployees(searchInput.value));
-            alert('لطفاً یک کارمند را از لیست انتخاب کنید');
-        }
-    });
-}
+const contractUserId = document.getElementById('contractUserId');
+initEmployeeSearch({
+    inputEl: document.getElementById('userSearchInput'),
+    resultsEl: document.getElementById('userSearchResults'),
+    hiddenEl: contractUserId,
+    clearBtnEl: document.getElementById('clearUserBtn'),
+    requireSelection: true,
+    formEl: document.getElementById('addContractForm'),
+});
+
+initEmployeeSearch({
+    inputEl: document.getElementById('filterUserSearchInput'),
+    resultsEl: document.getElementById('filterUserSearchResults'),
+    hiddenEl: document.getElementById('filterSearchValue'),
+    clearBtnEl: document.getElementById('filterClearUserBtn'),
+    allowFreeTextSubmit: true,
+    formEl: document.getElementById('contractsFilterForm'),
+});
 
 const editableTypes = ['6', '7'];
 const deductionTypes = ['2'];
