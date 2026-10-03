@@ -117,13 +117,14 @@ async def contracts_page(
     type_filter: Optional[str] = Query(None),
     status_filter: Optional[str] = Query(None),
     expiry_filter: Optional[str] = Query(None),
+    file_filter: Optional[str] = Query(None),
     show_all: Optional[str] = Query(None),
     user: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
     """لیست عضویت‌ها / قراردادها"""
     enforce_permission(db, user, 'view_contracts')
-    has_filter = any([search, type_filter, status_filter, expiry_filter, show_all])
+    has_filter = any([search, type_filter, status_filter, expiry_filter, file_filter, show_all])
     contracts_data = []
 
     if has_filter:
@@ -150,6 +151,14 @@ async def contracts_page(
                     Contract.end_date.isnot(None),
                     Contract.end_date >= today_g,
                     Contract.end_date <= threshold,
+                )
+            )
+
+        if file_filter == 'missing':
+            query = query.filter(
+                or_(
+                    Contract.file_path.is_(None),
+                    Contract.file_path == '',
                 )
             )
 
@@ -221,6 +230,7 @@ async def contracts_page(
         "type_filter": type_filter or "",
         "status_filter": status_filter or "",
         "expiry_filter": expiry_filter or "",
+        "file_filter": file_filter or "",
         "employees": employees_list,
         "contract_types": CONTRACT_TYPES,
         "is_admin": True,

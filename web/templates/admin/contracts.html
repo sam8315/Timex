@@ -343,6 +343,10 @@
                 <option value="">همه تاریخ‌ها</option>
                 <option value="soon" {% if expiry_filter == 'soon' %}selected{% endif %}>نزدیک به انقضا (۳۰ روز)</option>
             </select>
+            <select name="file_filter" class="form-select form-select-sm" style="width: auto;">
+                <option value="">همه اسناد</option>
+                <option value="missing" {% if file_filter == 'missing' %}selected{% endif %}>بدون سند</option>
+            </select>
             <button type="submit" class="btn btn-primary btn-sm">
                 <i class="bi bi-search"></i> اعمال
             </button>
