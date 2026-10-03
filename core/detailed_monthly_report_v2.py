@@ -34,7 +34,11 @@ from web.services.attendance_policy_service import (
     compute_effective_required_minutes_for_day,
     compute_late_early_for_day,
 )
-from web.services.hourly_leave_service import get_approved_hl_minutes, format_hl_display
+from web.services.hourly_leave_service import (
+    get_approved_hl_minutes,
+    get_approved_hl_intervals,
+    format_hl_display,
+)
 from web.services.hourly_mission_service import (
     get_approved_hourly_mission_minutes,
     get_approved_hourly_missions_for_display,
@@ -54,6 +58,25 @@ def _minutes_to_hours(minutes: int) -> float:
 
 # موظفی پیش‌فرض وقتی Policy نباشد: ۷:۲۰ = ۴۴۰ دقیقه (نه ۷.۳۳ شناور)
 _DEFAULT_DUTY_MINUTES = 440
+
+# نام فارسی نوع عضویت (فیلد Employee.department)
+EMPLOYMENT_TYPE_LABELS = {
+    '1': 'رسمی',
+    '2': 'وظیفه',
+    '3': 'خریدخدمت',
+    '4': 'قراردادی',
+    '5': 'پزشکی',
+    '6': 'سایر / متفرقه',
+    '7': 'قرارداد با بیمه‌ها',
+}
+
+
+def employment_type_label(code) -> str:
+    """کد عضویت → نام فارسی؛ اگر ناشناخته باشد همان کد برمی‌گردد."""
+    if code is None or code == '':
+        return '-'
+    key = str(code)
+    return EMPLOYMENT_TYPE_LABELS.get(key, key)
 
 
 class DetailedMonthlyReportGeneratorV2:
@@ -160,6 +183,11 @@ class DetailedMonthlyReportGeneratorV2:
             db=self.db, employee=employee,
             start_date=g_start, end_date=g_end
         )
+        # بازه‌های HL برای کسر همپوشانی از تأخیر/تعجیل
+        hl_intervals_by_date = get_approved_hl_intervals(
+            db=self.db, employee=employee,
+            start_date=g_start, end_date=g_end
+        )
 
         # Phase 6A: Approved HM missions for display only (no duty change here)
         hm_by_date = get_approved_hourly_missions_for_display(
@@ -242,13 +270,15 @@ class DetailedMonthlyReportGeneratorV2:
             )
             daily_required_hours = _minutes_to_hours(int(required_minutes))
 
-            # تأخیر / تعجیل از سیاست (Grace کامل؛ در مرخصی/استراحت صفر)
+            # تأخیر / تعجیل از سیاست (Grace کامل؛ در مرخصی/استراحت صفر؛
+            # همپوشانی HL از پنجرهٔ تأخیر/تعجیل کم می‌شود)
             late_early = compute_late_early_for_day(
                 resolved=resolved,
                 target_date=current,
                 first_enter=day_data.get('first_enter'),
                 last_exit=day_data.get('last_exit'),
                 skip=person_status['code'] in ('L', 'R'),
+                hl_intervals=hl_intervals_by_date.get(current),
             )
 
             # محاسبه اضافی/کسری بر اساس موظفی روز + تخلف تأخیر/تعجیل
@@ -320,7 +350,8 @@ class DetailedMonthlyReportGeneratorV2:
             'employee': {
                 'user_id': employee.user_id,
                 'full_name': employee.full_name,
-                'department': employee.department
+                'department': employee.department,
+                'department_name': employment_type_label(employee.department),
             },
             'year': year,
             'month': month,
@@ -336,11 +367,18 @@ class DetailedMonthlyReportGeneratorV2:
         attendances_by_day: Dict,
         is_day_off: bool
     ) -> Dict:
-        """تعیین وضعیت فرد در یک روز"""
+        """تعیین وضعیت فرد در یک روز
+
+        مرخصی روی جمعه / تعطیل رسمی / روز غیرکاری Policy به‌عنوان «تعطیل»
+        ثبت می‌شود (نه مرخصی) تا در کارت خلاصه فقط روزهای کاری مرخصی شمرده شوند.
+        هم‌تراز با ویو حضور که روی جمعه/تعطیل badge مرخصی نمی‌گذارد.
+        """
         if current in statuses_by_date:
             status_code = statuses_by_date[current]
             # ✅ بررسی انواع مرخصی (همه leave-type های canonical: AL/SL/RL/UL/CW/TL)
             if status_code in ['AL', 'SL', 'RL', 'UL', 'CW', 'TL', 'L']:
+                if is_day_off:
+                    return {'code': 'H', 'name': 'تعطیل'}
                 return {'code': 'L', 'name': 'مرخصی'}
             # ✅ مأموریت روزانه (DailyStatus 'M') — موظفی روز صفر است
             elif status_code == 'M':

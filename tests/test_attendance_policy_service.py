@@ -768,7 +768,15 @@ class TestPhase7RegressionCases:
 class TestComputeLateEarlyForDay:
     """Tests for the shared late/early helper used by reports and views."""
 
-    def _resolved(self, late_allowed=10, early_allowed=10, late_on=True, early_on=True):
+    def _resolved(
+        self,
+        late_allowed=10,
+        early_allowed=10,
+        late_on=True,
+        early_on=True,
+        start=time(8, 0),
+        end=time(16, 40),
+    ):
         from types import SimpleNamespace
 
         policy = SimpleNamespace(
@@ -779,13 +787,15 @@ class TestComputeLateEarlyForDay:
             early_leave_allowed_minutes=early_allowed,
             early_leave_reference_mode='FIXED_TIME',
         )
+        start_m = start.hour * 60 + start.minute
+        end_m = end.hour * 60 + end.minute
         days = {
             _REF_DAY.weekday(): PolicyDayInfo(
                 weekday=_REF_DAY.weekday(),
                 is_working_day=True,
-                start_time=time(8, 0),
-                end_time=time(16, 40),
-                required_minutes=520,
+                start_time=start,
+                end_time=end,
+                required_minutes=max(0, end_m - start_m),
             )
         }
         return ResolvedPolicy(
@@ -855,6 +865,60 @@ class TestComputeLateEarlyForDay:
         assert result['late_minutes'] == 0
         assert result['late_violation_minutes'] == 0
         assert result['is_late'] is False
+        assert result['early_leave_minutes'] == 0
+        assert result['early_leave_violation_minutes'] == 0
+        assert result['is_early_leave'] is False
+
+    def test_hl_covers_late_window_mehdi_scenario(self):
+        """ورود ۷:۲۰ + HL تأییدشده ۷:۰۰–۷:۲۰ → تأخیر صفر (حتی با grace=0)."""
+        result = compute_late_early_for_day(
+            resolved=self._resolved(
+                late_allowed=0,
+                early_allowed=0,
+                start=time(7, 0),
+                end=time(14, 0),
+            ),
+            target_date=_REF_DAY,
+            first_enter=_dt(time(7, 20)),
+            last_exit=_dt(time(14, 0)),
+            hl_intervals=[(time(7, 0), time(7, 20))],
+        )
+        assert result['late_minutes'] == 0
+        assert result['late_violation_minutes'] == 0
+        assert result['is_late'] is False
+
+    def test_hl_partial_cover_leaves_uncovered_late(self):
+        """ورود ۷:۳۰ + HL ۷:۰۰–۷:۲۰ → ۱۰ دقیقه باقیمانده؛ با grace ۱۵ → صفر."""
+        result = compute_late_early_for_day(
+            resolved=self._resolved(
+                late_allowed=15,
+                early_allowed=0,
+                start=time(7, 0),
+                end=time(14, 0),
+            ),
+            target_date=_REF_DAY,
+            first_enter=_dt(time(7, 30)),
+            last_exit=_dt(time(14, 0)),
+            hl_intervals=[(time(7, 0), time(7, 20))],
+        )
+        assert result['late_minutes'] == 10
+        assert result['late_violation_minutes'] == 0
+        assert result['is_late'] is False
+
+    def test_hl_covers_early_leave_window(self):
+        """خروج ۱۳:۴۰ + HL ۱۳:۴۰–۱۴:۰۰ → تعجیل صفر."""
+        result = compute_late_early_for_day(
+            resolved=self._resolved(
+                late_allowed=0,
+                early_allowed=0,
+                start=time(7, 0),
+                end=time(14, 0),
+            ),
+            target_date=_REF_DAY,
+            first_enter=_dt(time(7, 0)),
+            last_exit=_dt(time(13, 40)),
+            hl_intervals=[(time(13, 40), time(14, 0))],
+        )
         assert result['early_leave_minutes'] == 0
         assert result['early_leave_violation_minutes'] == 0
         assert result['is_early_leave'] is False

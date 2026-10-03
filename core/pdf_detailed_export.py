@@ -149,7 +149,8 @@ class PdfReportExporter:
 
         pdf.set_font(font_name, '', 11)
         pdf.cell(0, 8, self._fix_rtl(
-            f"کد پرسنلی: {emp['user_id']} | دپارتمان: {emp['department'] or '-'}"
+            f"کد پرسنلی: {emp['user_id']} | عضویت: "
+            f"{emp.get('department_name') or emp.get('department') or '-'}"
         ), ln=True, align='C')
 
         pdf.cell(0, 8, self._fix_rtl(

@@ -162,7 +162,8 @@ class DetailedPDFExporterV2:
         pdf.cell(
             0, 4,
             self._fix_rtl(
-                f"کد: {emp['user_id']} | دپارتمان: {emp.get('department') or '-'} | "
+                f"کد: {emp['user_id']} | عضویت: "
+                f"{emp.get('department_name') or emp.get('department') or '-'} | "
                 f"{report['month_name']} {report['year']}"
             ),
             new_x='LMARGIN', new_y='NEXT', align='C',

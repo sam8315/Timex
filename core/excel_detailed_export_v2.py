@@ -254,7 +254,7 @@ class DetailedExcelExporterV2:
         ws.append([])
 
         headers = [
-            'ردیف', 'کد', 'نام کامل', 'دپارتمان',
+            'ردیف', 'کد', 'نام کامل', 'عضویت',
             'روز موظفی', 'ساعت موظفی', 'حضور', 'مرخصی', 'غیبت',
             'کارکرد', 'اضافی', 'کسری'
         ]
@@ -275,7 +275,7 @@ class DetailedExcelExporterV2:
                 i,
                 emp['user_id'],
                 emp['full_name'],
-                emp['department'],
+                emp.get('department_name') or emp.get('department') or '-',
                 summary['duty_days'],
                 self._fmt_hours(summary['duty_hours']),
                 summary['present_days'],

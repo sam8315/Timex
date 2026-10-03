@@ -47,6 +47,7 @@ from core.attendance_calculator import compute_day_attendance
 from web.services.hourly_leave_service import (
     get_approved_hl_minutes,
     get_approved_hl_minutes_on_date,
+    get_approved_hl_intervals,
     format_hl_display,
 )
 from web.services.hourly_mission_service import (
@@ -1290,6 +1291,10 @@ async def admin_user_attendance(
         db=db, employee=target_employee,
         start_date=month_start_g, end_date=month_end_g
     )
+    hl_intervals_by_date = get_approved_hl_intervals(
+        db=db, employee=target_employee,
+        start_date=month_start_g, end_date=month_end_g
+    )
 
     # Phase 5: Fetch approved hourly mission minutes by date
     hourly_mission_minutes_by_date = get_approved_hourly_mission_minutes(
@@ -1382,6 +1387,7 @@ async def admin_user_attendance(
                 status_info['main_status'] == STATUS_LEAVE
                 or current in rest_dates
             ),
+            hl_intervals=hl_intervals_by_date.get(current),
         )
 
         days_list.append({

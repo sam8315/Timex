@@ -594,7 +594,7 @@
         <h5 class="fw-bold mb-1">گزارش اضافه‌کار قانونی - {{ report.employee.full_name }}</h5>
         <div class="text-muted small">
             کد: <strong>{{ report.employee.user_id }}</strong>
-            | دپارتمان: <strong>{{ report.employee.department }}</strong>
+            | عضویت: <strong>{{ report.employee.department_name or report.employee.department }}</strong>
             | ماه: <strong>{{ report.month_name }} {{ report.year }}</strong>
         </div>
     </div>

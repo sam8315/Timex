@@ -177,6 +177,37 @@ def get_approved_hl_minutes(
     return result
 
 
+def get_approved_hl_intervals(
+    db: Session,
+    employee: Employee,
+    start_date: date,
+    end_date: date,
+) -> Dict[date, List[Tuple[time, time]]]:
+    """
+    بازه‌های زمانی مرخصی ساعتی تاییدشده برای هر تاریخ در بازه.
+
+    Returns: dict[date] → [(start_time, end_time), ...]
+    برای کسر همپوشانی از پنجرهٔ تأخیر/تعجیل استفاده می‌شود.
+    """
+    requests = db.query(LeaveRequest).filter(
+        and_(
+            LeaveRequest.user_id == employee.user_id,
+            LeaveRequest.leave_type == 'HL',
+            LeaveRequest.status == 'A',
+            LeaveRequest.from_date >= start_date,
+            LeaveRequest.from_date <= end_date,
+        )
+    ).all()
+
+    result: Dict[date, List[Tuple[time, time]]] = {}
+    for req in requests:
+        if req.start_time and req.end_time and req.start_time < req.end_time:
+            result.setdefault(req.from_date, []).append(
+                (req.start_time, req.end_time)
+            )
+    return result
+
+
 def get_monthly_exempt_usage(
     db: Session,
     user_id: str,

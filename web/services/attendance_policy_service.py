@@ -536,6 +536,38 @@ def _zero_late_early_result(
     }
 
 
+def _interval_overlap_minutes(
+    window_start: time,
+    window_end: time,
+    intervals: Optional[List[Tuple[time, time]]],
+) -> int:
+    """مجموع دقایق همپوشانی بازه‌های HL با یک پنجرهٔ زمانی."""
+    if not intervals or not window_start or not window_end:
+        return 0
+    w0 = time_to_minutes(window_start)
+    w1 = time_to_minutes(window_end)
+    if w1 <= w0:
+        return 0
+    covered = 0
+    for start_t, end_t in intervals:
+        if not start_t or not end_t:
+            continue
+        a0 = time_to_minutes(start_t)
+        a1 = time_to_minutes(end_t)
+        if a1 <= a0:
+            continue
+        covered += max(0, min(w1, a1) - max(w0, a0))
+    return covered
+
+
+def _apply_grace_charge(total_minutes: int, allowed_minutes: int) -> Tuple[int, bool]:
+    """Grace کامل: اگر total > grace → chargeable=total، وگرنه ۰."""
+    total_minutes = max(0, int(total_minutes or 0))
+    allowed_minutes = max(0, int(allowed_minutes or 0))
+    is_violation = total_minutes > allowed_minutes
+    return (total_minutes if is_violation else 0), is_violation
+
+
 def compute_late_early_for_day(
     resolved: Optional[ResolvedPolicy],
     target_date: date,
@@ -543,11 +575,15 @@ def compute_late_early_for_day(
     last_exit: Optional[datetime],
     *,
     skip: bool = False,
+    hl_intervals: Optional[List[Tuple[time, time]]] = None,
 ) -> Dict:
     """
     محاسبه تأخیر و تعجیل یک روز از سیاست حل‌شده + اولین ورود / آخرین خروج.
 
     skip=True (مثلاً مرخصی/استراحت): هیچ تأخیر/تعجیلی محاسبه نمی‌شود.
+    hl_intervals: بازه‌های HL تأییدشدهٔ همان روز — همپوشانی با پنجرهٔ
+    تأخیر [start, enter] و تعجیل [exit, end] از دقایق خام کم می‌شود،
+    سپس Grace کامل روی مقدار باقیمانده اعمال می‌گردد.
 
     خروجی یک dict پایدار برای گزارش‌ها و ویوهای حضور:
         late_enabled, late_allowed_minutes, late_minutes,
@@ -595,17 +631,52 @@ def compute_late_early_for_day(
         reference_mode=early_ref,
     )
 
+    # کسر پوشش HL از پنجرهٔ تأخیر / تعجیل، سپس اعمال مجدد Grace
+    late_minutes = late_info['total_late_minutes']
+    if (
+        late_minutes > 0
+        and scheduled_start
+        and first_enter
+        and hl_intervals
+    ):
+        covered = _interval_overlap_minutes(
+            scheduled_start, first_enter.time(), hl_intervals
+        )
+        late_minutes = max(0, late_minutes - covered)
+        late_violation, is_late = _apply_grace_charge(late_minutes, late_allowed)
+    else:
+        late_violation = late_info['late_violation_minutes']
+        is_late = late_info['is_late']
+
+    early_minutes = early_info['total_early_leave_minutes']
+    if (
+        early_minutes > 0
+        and scheduled_end
+        and last_exit
+        and hl_intervals
+    ):
+        covered = _interval_overlap_minutes(
+            last_exit.time(), scheduled_end, hl_intervals
+        )
+        early_minutes = max(0, early_minutes - covered)
+        early_violation, is_early = _apply_grace_charge(
+            early_minutes, early_allowed
+        )
+    else:
+        early_violation = early_info['early_leave_violation_minutes']
+        is_early = early_info['is_early_leave']
+
     return {
         'late_enabled': late_enabled,
         'late_allowed_minutes': late_allowed,
-        'late_minutes': late_info['total_late_minutes'],
-        'late_violation_minutes': late_info['late_violation_minutes'],
-        'is_late': late_info['is_late'],
+        'late_minutes': late_minutes,
+        'late_violation_minutes': late_violation,
+        'is_late': is_late,
         'early_leave_enabled': early_enabled,
         'early_leave_allowed_minutes': early_allowed,
-        'early_leave_minutes': early_info['total_early_leave_minutes'],
-        'early_leave_violation_minutes': early_info['early_leave_violation_minutes'],
-        'is_early_leave': early_info['is_early_leave'],
+        'early_leave_minutes': early_minutes,
+        'early_leave_violation_minutes': early_violation,
+        'is_early_leave': is_early,
     }
 
 
@@ -724,13 +795,30 @@ def calculate_daily_attendance(
     work_hours, first_enter, last_exit = calculate_work_hours(day_records, is_night_shift)
     actual_minutes = int(work_hours * 60)
 
-    # ۸–۹. Late / Early (Grace کامل؛ در مرخصی/استراحت صفر)
+    # بازه‌های HL تأییدشدهٔ همان روز (بدون import از hourly_leave_service
+    # تا وابستگی دایره‌ای ایجاد نشود)
+    hl_rows = db.query(LeaveRequest).filter(
+        and_(
+            LeaveRequest.user_id == employee.user_id,
+            LeaveRequest.leave_type == 'HL',
+            LeaveRequest.status == 'A',
+            LeaveRequest.from_date == target_date,
+        )
+    ).all()
+    day_hl_intervals = [
+        (r.start_time, r.end_time)
+        for r in hl_rows
+        if r.start_time and r.end_time and r.start_time < r.end_time
+    ]
+
+    # ۸–۹. Late / Early (Grace کامل؛ در مرخصی/استراحت صفر؛ پوشش HL)
     late_early = compute_late_early_for_day(
         resolved=resolved,
         target_date=target_date,
         first_enter=first_enter,
         last_exit=last_exit,
         skip=bool(is_leave or is_rest),
+        hl_intervals=day_hl_intervals or None,
     )
     late_enabled = late_early['late_enabled']
     late_allowed = late_early['late_allowed_minutes']

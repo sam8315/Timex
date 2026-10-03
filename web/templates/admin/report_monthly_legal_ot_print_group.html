@@ -431,7 +431,7 @@
         <h5>{{ report.employee.full_name }}</h5>
         <div class="meta">
             کد: {{ report.employee.user_id }}
-            | دپارتمان: {{ report.employee.department or '-' }}
+            | عضویت: {{ report.employee.department_name or report.employee.department or '-' }}
             | {{ report.month_name }} {{ report.year }}
         </div>
     </div>

@@ -21,7 +21,11 @@ from web.services.attendance_policy_service import (
     resolve_policy,
     compute_late_early_for_day,
 )
-from web.services.hourly_leave_service import get_approved_hl_minutes, format_hl_display
+from web.services.hourly_leave_service import (
+    get_approved_hl_minutes,
+    get_approved_hl_intervals,
+    format_hl_display,
+)
 from web.services.hourly_mission_service import (
     get_approved_hourly_mission_minutes,
     get_approved_hourly_missions_for_display,
@@ -190,6 +194,10 @@ async def attendance_page(
         db=db, employee=emp,
         start_date=month_start_g, end_date=month_end_g
     )
+    hl_intervals_by_date = get_approved_hl_intervals(
+        db=db, employee=emp,
+        start_date=month_start_g, end_date=month_end_g
+    )
 
     # Phase 5: Fetch approved hourly mission minutes by date
     hourly_mission_minutes_by_date = get_approved_hourly_mission_minutes(
@@ -278,6 +286,7 @@ async def attendance_page(
                 status_info['main_status'] == STATUS_LEAVE
                 or current in rest_dates
             ),
+            hl_intervals=hl_intervals_by_date.get(current),
         )
 
         days_list.append({
