@@ -15,3 +15,6 @@ log/
 scripts/
 # Uploaded files
 web/static/uploads/
+web/private_uploads/**
+!web/private_uploads/**/
+!web/private_uploads/**/.gitkeep

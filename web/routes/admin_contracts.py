@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_
 import jdatetime
 import json
-import time
 from typing import Optional
 
 from web.dependencies import get_db, require_admin
@@ -44,56 +43,14 @@ from web.services.permanent_leave_history_service import (
     parse_used_by_year_from_form,
     preview_history_summary,
 )
+from web.services.contract_file_storage import (
+    delete_contract_file as _delete_contract_file,
+    resolve_contract_file_disk,
+    save_contract_file as _save_contract_file,
+)
 
 router = APIRouter(tags=["Admin Contracts"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
-
-UPLOAD_DIR = Path(__file__).parent.parent / "static" / "uploads" / "contracts"
-ALLOWED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.pdf'}
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
-
-
-def _static_to_disk(static_path: str) -> Path:
-    rel = static_path.replace("/static/", "").replace("\\", "/").lstrip("/")
-    return Path(__file__).parent.parent / "static" / rel
-
-
-def _delete_contract_file(static_path: Optional[str]) -> None:
-    if not static_path:
-        return
-    try:
-        path = _static_to_disk(static_path)
-        if path.is_file():
-            path.unlink()
-    except OSError:
-        pass
-
-
-async def _save_contract_file(
-    upload: UploadFile,
-    *,
-    user_id: str,
-    contract_id: int,
-) -> str:
-    """ذخیره فایل قرارداد و برگرداندن مسیر استاتیک."""
-    if not upload.filename:
-        raise ValueError("نام فایل نامعتبر است")
-    ext = Path(upload.filename).suffix.lower()
-    if ext not in ALLOWED_EXTENSIONS:
-        raise ValueError("نوع فایل مجاز نیست (فقط PDF/JPG/PNG)")
-    content = await upload.read()
-    if len(content) > MAX_FILE_SIZE:
-        raise ValueError("حجم فایل بیش از ۱۰ مگابایت است")
-    if not content:
-        raise ValueError("فایل خالی است")
-
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    safe_uid = "".join(c if c.isalnum() or c in "-_" else "_" for c in user_id)
-    filename = f"{safe_uid}_{contract_id}_{int(time.time())}{ext}"
-    disk_path = UPLOAD_DIR / filename
-    with open(disk_path, "wb") as f:
-        f.write(content)
-    return f"/static/uploads/contracts/{filename}"
 
 
 def build_redirect_url(referer: str, key: str, value: str) -> str:
@@ -687,7 +644,13 @@ async def view_contract_file(
             url="/admin/contracts?error=فایل قرارداد یافت نشد",
             status_code=302,
         )
-    disk = _static_to_disk(contract.file_path)
+    try:
+        disk = resolve_contract_file_disk(contract.file_path)
+    except ValueError:
+        return RedirectResponse(
+            url="/admin/contracts?error=فایل قرارداد یافت نشد",
+            status_code=302,
+        )
     if not disk.is_file():
         return RedirectResponse(
             url="/admin/contracts?error=فایل قرارداد روی دیسک موجود نیست",

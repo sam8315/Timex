@@ -390,7 +390,7 @@
 
             {% if active_contract.has_file %}
             <div class="col-12">
-                <a href="{{ active_contract.file_path }}" target="_blank"
+                <a href="{{ active_contract.file_url }}" target="_blank"
                    class="btn btn-sm btn-light bg-opacity-25 text-white border-0">
                     <i class="bi bi-download"></i> دانلود فایل قرارداد
                 </a>
@@ -501,7 +501,7 @@
 
                         {% if c.has_file %}
                         <div class="col-12">
-                            <a href="{{ c.file_path }}" target="_blank" class="btn btn-sm btn-outline-primary">
+                            <a href="{{ c.file_url }}" target="_blank" class="btn btn-sm btn-outline-primary">
                                 <i class="bi bi-download"></i> فایل قرارداد
                             </a>
                         </div>

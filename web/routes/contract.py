@@ -1,7 +1,7 @@
 """صفحه قراردادها"""
 from datetime import date
 from fastapi import APIRouter, Request, Depends
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
 from sqlalchemy.orm import Session
@@ -10,6 +10,7 @@ import jdatetime
 from web.dependencies import get_db, check_password_change
 from models.user import User
 from models.contract import Contract
+from web.services.contract_file_storage import resolve_contract_file_disk
 
 router = APIRouter(tags=["Contract"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
@@ -103,7 +104,7 @@ async def contract_page(
             # متا
             'description': c.description or '-',
             'has_file': c.file_path is not None,
-            'file_path': c.file_path,
+            'file_url': f"/contract/{c.id}/file" if c.file_path else None,
         }
 
         contracts.append(contract_data)
@@ -128,3 +129,36 @@ async def contract_page(
         "stats": stats,
         "is_admin": user.is_admin,
     })
+
+
+@router.get("/contract/{contract_id}/file")
+async def view_own_contract_file(
+    contract_id: int,
+    user: User = Depends(check_password_change),
+    db: Session = Depends(get_db),
+):
+    """دانلود فایل قرارداد فقط برای مالک قرارداد."""
+    contract = db.query(Contract).filter(
+        Contract.id == contract_id,
+        Contract.user_id == user.user_id,
+    ).first()
+    if not contract or not contract.file_path:
+        return RedirectResponse(url="/contract?error=فایل قرارداد یافت نشد", status_code=302)
+
+    try:
+        disk = resolve_contract_file_disk(contract.file_path)
+    except ValueError:
+        return RedirectResponse(url="/contract?error=فایل قرارداد یافت نشد", status_code=302)
+
+    if not disk.is_file():
+        return RedirectResponse(
+            url="/contract?error=فایل قرارداد روی دیسک موجود نیست",
+            status_code=302,
+        )
+
+    return FileResponse(
+        path=str(disk),
+        filename=disk.name,
+        media_type=None,
+        content_disposition_type="inline",
+    )
