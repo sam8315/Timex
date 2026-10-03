@@ -1,9 +1,12 @@
 """
 مدیریت ساخت و مقداردهی اولیه جداول دیتابیس
 """
+import logging
 from sqlalchemy import inspect, text, types as sa_types
 from database.engine import engine
 from models import Base
+
+logger = logging.getLogger(__name__)
 
 
 def _column_ddl(column) -> str:
@@ -55,7 +58,12 @@ def migrate_missing_columns() -> None:
                 with engine.connect() as conn:
                     conn.execute(text(f'ALTER TABLE "{table_name}" ADD COLUMN "{column.name}" {ddl}'))
                     conn.commit()
-                print(f"  + column {table_name}.{column.name} added")
+                logger.info(
+                    "Column added table=%s column=%s",
+                    table_name,
+                    column.name,
+                    extra={"event": "database.ready"},
+                )
 
 
 def migrate_time_columns() -> None:
@@ -87,7 +95,11 @@ def migrate_time_columns() -> None:
                 f'ELSE CAST("{column_name}" AS TIME) END'
             ))
             conn.commit()
-        print(f"  ~ column leave_requests.{column_name} converted to TIME")
+        logger.info(
+            "Column converted to TIME table=leave_requests column=%s",
+            column_name,
+            extra={"event": "database.ready"},
+        )
 
 
 def migrate_employee_address_city_id(bind_engine=None) -> None:
@@ -112,7 +124,10 @@ def migrate_employee_address_city_id(bind_engine=None) -> None:
         if "city_id" not in columns:
             conn.execute(text('ALTER TABLE "employee_addresses" ADD COLUMN "city_id" INTEGER NULL'))
             conn.commit()
-            print("  + column employee_addresses.city_id added")
+            logger.info(
+                "Column added table=employee_addresses column=city_id",
+                extra={"event": "database.ready"},
+            )
 
         index_names = {idx["name"] for idx in inspector.get_indexes("employee_addresses")}
         if "ix_employee_addresses_city_id" not in index_names:
@@ -121,7 +136,10 @@ def migrate_employee_address_city_id(bind_engine=None) -> None:
                 'ON "employee_addresses" ("city_id")'
             ))
             conn.commit()
-            print("  + index ix_employee_addresses_city_id added")
+            logger.info(
+                "Index added name=ix_employee_addresses_city_id",
+                extra={"event": "database.ready"},
+            )
 
         has_fk = any(
             fk.get("referred_table") == "cities"
@@ -136,7 +154,10 @@ def migrate_employee_address_city_id(bind_engine=None) -> None:
                 'FOREIGN KEY ("city_id") REFERENCES "cities" ("id") ON DELETE RESTRICT'
             ))
             conn.commit()
-            print("  + fk employee_addresses.city_id -> cities.id added")
+            logger.info(
+                "Foreign key added employee_addresses.city_id -> cities.id",
+                extra={"event": "database.ready"},
+            )
 
 
 def migrate_employee_address_coords_pair(bind_engine=None) -> None:
@@ -183,7 +204,10 @@ def migrate_employee_address_coords_pair(bind_engine=None) -> None:
                 '(latitude IS NOT NULL AND longitude IS NOT NULL))'
             ))
             conn.commit()
-            print("  + check ck_employee_address_coords_pair added")
+            logger.info(
+                "Check constraint added name=ck_employee_address_coords_pair",
+                extra={"event": "database.ready"},
+            )
 
 
 def migrate_employee_address_nan_check(bind_engine=None) -> None:
@@ -228,7 +252,11 @@ def migrate_employee_address_nan_check(bind_engine=None) -> None:
                     f"CHECK ({column} IS NULL OR {column} <> 'NaN'::numeric)"
                 ))
                 conn.commit()
-                print(f"  + check {constraint_name} added")
+                logger.info(
+                    "Check constraint added name=%s",
+                    constraint_name,
+                    extra={"event": "database.ready"},
+                )
 
 
 def migrate_employee_address_range_check(bind_engine=None) -> None:
@@ -280,7 +308,11 @@ def migrate_employee_address_range_check(bind_engine=None) -> None:
                     f'({column} >= {low} AND {column} <= {high}))'
                 ))
                 conn.commit()
-                print(f"  + check {constraint_name} added")
+                logger.info(
+                    "Check constraint added name=%s",
+                    constraint_name,
+                    extra={"event": "database.ready"},
+                )
 
 
 def migrate_employee_address_history(bind_engine=None) -> None:
@@ -310,7 +342,11 @@ def migrate_employee_address_history(bind_engine=None) -> None:
                     f'DROP CONSTRAINT "{name}"'
                 ))
         conn.commit()
-        print(f"  - fk dropped from employee_address_history.user_id: {stale}")
+        logger.info(
+            "Foreign keys dropped from employee_address_history.user_id count=%s",
+            len(stale),
+            extra={"event": "database.ready"},
+        )
 
 
 def migrate_data_fixes(bind_engine=None) -> None:
@@ -330,7 +366,11 @@ def migrate_data_fixes(bind_engine=None) -> None:
         ))
         conn.commit()
         if result.rowcount:
-            print(f"  + trimmed status_code on {result.rowcount} daily_statuses row(s)")
+            logger.info(
+                "Trimmed status_code on daily_statuses rows=%s",
+                result.rowcount,
+                extra={"event": "database.ready"},
+            )
 
 
 def seed_travel_leave_policy_rules() -> None:
@@ -441,7 +481,10 @@ def seed_travel_leave_policy_rules() -> None:
                         },
                     )
 
-        print("  + contract-scoped travel_leave policies/rules/quotas seeded")
+        logger.info(
+            "Travel leave policies/rules/quotas seeded",
+            extra={"event": "database.ready"},
+        )
 
 
 # Canonical active Iranian bank reference set (Phase 12).
@@ -522,7 +565,11 @@ def seed_banks(bind_engine=None) -> None:
                     ),
                     {"code": code},
                 )
-        print(f"  + Iranian banks synchronized ({len(CANONICAL_BANKS)} active)")
+        logger.info(
+            "Iranian banks synchronized active_count=%s",
+            len(CANONICAL_BANKS),
+            extra={"event": "database.ready"},
+        )
 
 
 def migrate_employee_position_id(bind_engine=None) -> None:
@@ -547,7 +594,10 @@ def migrate_employee_position_id(bind_engine=None) -> None:
         if "position_id" not in columns:
             conn.execute(text('ALTER TABLE "employee" ADD COLUMN "position_id" INTEGER NULL'))
             conn.commit()
-            print("  + column employee.position_id added")
+            logger.info(
+                "Column added table=employee column=position_id",
+                extra={"event": "database.ready"},
+            )
 
         # Refresh inspector state after possible ADD COLUMN
         inspector = inspect(target)
@@ -557,7 +607,10 @@ def migrate_employee_position_id(bind_engine=None) -> None:
                 'CREATE INDEX "ix_employee_position_id" ON "employee" ("position_id")'
             ))
             conn.commit()
-            print("  + index ix_employee_position_id added")
+            logger.info(
+                "Index added name=ix_employee_position_id",
+                extra={"event": "database.ready"},
+            )
 
         has_fk = any(
             fk.get("referred_table") == "positions"
@@ -573,7 +626,10 @@ def migrate_employee_position_id(bind_engine=None) -> None:
                 'ON DELETE SET NULL'
             ))
             conn.commit()
-            print("  + fk employee.position_id -> positions.id added")
+            logger.info(
+                "Foreign key added employee.position_id -> positions.id",
+                extra={"event": "database.ready"},
+            )
 
         columns = {row["name"] for row in inspector.get_columns("employee")}
         # Re-read after possible adds
@@ -587,10 +643,17 @@ def migrate_employee_position_id(bind_engine=None) -> None:
                     idx_name = idx["name"]
                     conn.execute(text(f'DROP INDEX IF EXISTS "{idx_name}"'))
                     conn.commit()
-                    print(f"  - index {idx_name} dropped")
+                    logger.info(
+                        "Index dropped name=%s",
+                        idx_name,
+                        extra={"event": "database.ready"},
+                    )
             conn.execute(text('ALTER TABLE "employee" DROP COLUMN "position"'))
             conn.commit()
-            print("  - column employee.position dropped (no data migrated)")
+            logger.info(
+                "Column dropped table=employee column=position (no data migrated)",
+                extra={"event": "database.ready"},
+            )
 
 
 def migrate_city_region_code(bind_engine=None) -> None:
@@ -607,7 +670,10 @@ def migrate_city_region_code(bind_engine=None) -> None:
                 "ADD COLUMN \"region_code\" VARCHAR(20) NOT NULL DEFAULT 'NORMAL'"
             ))
             conn.commit()
-            print("  + column cities.region_code added")
+            logger.info(
+                "Column added table=cities column=region_code",
+                extra={"event": "database.ready"},
+            )
         else:
             conn.execute(text(
                 "UPDATE cities SET region_code = 'NORMAL' "
@@ -636,9 +702,15 @@ def create_tables() -> None:
         migrate_data_fixes()
         seed_travel_leave_policy_rules()
         seed_banks()
-        print("✅ جداول دیتابیس با موفقیت ساخته/بررسی شدند")
-    except Exception as e:
-        print(f"❌ خطا در ساخت جداول: {e}")
+        logger.info(
+            "Database tables created/verified successfully",
+            extra={"event": "database.ready"},
+        )
+    except Exception:
+        logger.exception(
+            "Failed to create/verify database tables",
+            extra={"event": "database.operation_failed"},
+        )
         raise
 
 
@@ -648,13 +720,25 @@ def check_tables() -> None:
     tables = inspector.get_table_names()
 
     if not tables:
-        print("⚠️  هیچ جدولی در دیتابیس وجود ندارد")
+        logger.warning(
+            "No tables found in database",
+            extra={"event": "database.ready"},
+        )
         return
 
-    print(f"\n📊 جداول دیتابیس موجود ({len(tables)} جدول):")
+    logger.info(
+        "Database tables present count=%s",
+        len(tables),
+        extra={"event": "database.ready"},
+    )
     for table in tables:
         columns = inspector.get_columns(table)
-        print(f"  • {table} ({len(columns)} ستون)")
+        logger.info(
+            "Table present name=%s columns=%s",
+            table,
+            len(columns),
+            extra={"event": "database.ready"},
+        )
 
 
 def drop_all_tables() -> None:
@@ -663,14 +747,23 @@ def drop_all_tables() -> None:
     """
     try:
         Base.metadata.drop_all(bind=engine)
-        print("⚠️  تمام جداول حذف شدند")
-    except Exception as e:
-        print(f"❌ خطا در حذف جداول: {e}")
+        logger.warning(
+            "All database tables dropped",
+            extra={"event": "database.ready"},
+        )
+    except Exception:
+        logger.exception(
+            "Failed to drop database tables",
+            extra={"event": "database.operation_failed"},
+        )
         raise
 
 
 if __name__ == "__main__":
     # اجرای مستقیم برای تست
-    print("🔧 در حال ساخت جداول...")
+    logger.info(
+        "Building database tables",
+        extra={"event": "database.ready"},
+    )
     create_tables()
     check_tables()
