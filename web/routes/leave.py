@@ -35,6 +35,7 @@ from web.services.travel_leave_service import (
 )
 from models.city import City
 from models.travel_leave_policy_rules import TravelLeavePolicyRule
+from web.services.leave_service import get_user_al_year_snapshot
 
 router = APIRouter(tags=["Leave"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
@@ -92,6 +93,7 @@ async def leave_page(request: Request, user: User = Depends(get_current_user), d
     today_j = jdatetime.date.today()
     current_year = today_j.year
     balances = get_user_leave_balance(db, user.user_id, current_year)
+    al_snapshot = get_user_al_year_snapshot(db, user.user_id, current_year)
 
     available_leave_types = {}
     for code, name in LEAVE_TYPES.items():
@@ -190,6 +192,10 @@ async def leave_page(request: Request, user: User = Depends(get_current_user), d
         "sl_balance": balances.get('SL', 0),
         "rl_balance": balances.get('RL', 0),
         "cw_balance": balances.get('CW', 0),
+        "al_entitlement": al_snapshot['entitlement'],
+        "al_used": al_snapshot['used'],
+        "al_remaining": al_snapshot['remaining'],
+        "cw_days": al_snapshot['cw_days'],
         "recent_requests": recent_requests,
         "pending_count": pending_count,
         "approved_count": approved_count,

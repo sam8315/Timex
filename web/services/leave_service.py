@@ -473,6 +473,55 @@ def get_available_leave(db: Session, user_id: str, year: int, leave_type: str = 
     return result
 
 
+def get_user_al_year_snapshot(db: Session, user_id: str, year: int) -> dict:
+    """
+    خلاصه استحقاق / استفاده / مانده مرخصی استحقاقی برای یک سال شمسی.
+
+    - entitlement: خالص شارژ AL (CHARGE − DEDUCT)
+    - used: مجموع TX_USE برای AL و CW
+    - remaining / cw_days: از get_available_leave
+    """
+    charge_txs = db.query(LeaveTransaction).filter(
+        and_(
+            LeaveTransaction.user_id == user_id,
+            LeaveTransaction.year == year,
+            LeaveTransaction.leave_type == 'AL',
+            LeaveTransaction.transaction_type.in_([TX_CHARGE, TX_DEDUCT]),
+        )
+    ).all()
+
+    entitlement = 0
+    for tx in charge_txs:
+        sign = 1 if tx.transaction_type == TX_CHARGE else -1
+        entitlement += sign * int(tx.amount or 0)
+    entitlement = max(0, entitlement)
+
+    use_txs = db.query(LeaveTransaction).filter(
+        and_(
+            LeaveTransaction.user_id == user_id,
+            LeaveTransaction.year == year,
+            LeaveTransaction.leave_type.in_(['AL', 'CW']),
+            LeaveTransaction.transaction_type == TX_USE,
+        )
+    ).all()
+    used = sum(int(tx.amount or 0) for tx in use_txs)
+
+    available = get_available_leave(db, user_id, year, leave_type='AL')
+    remaining = float(available.get('total') or 0)
+    breakdown = available.get('breakdown') or {}
+    cw_days = float(breakdown.get('CW') or 0)
+    al_days = float(breakdown.get('AL') or 0)
+
+    return {
+        'entitlement': entitlement,
+        'used': used,
+        'remaining': remaining,
+        'al_days': al_days,
+        'cw_days': cw_days,
+        'breakdown': breakdown,
+    }
+
+
 def consume_leave(
     db: Session,
     user_id: str,
