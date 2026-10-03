@@ -17,6 +17,20 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 
+def _mask_phone(phone: str) -> str:
+    """Mask phone for logs (never log full number)."""
+    if not phone:
+        return "***"
+    digits = "".join(ch for ch in str(phone) if ch.isdigit())
+    if len(digits) < 6:
+        return "***"
+    return f"{digits[:4]}***{digits[-2:]}"
+
+
+def _mask_phones(phones: List[str]) -> str:
+    return ",".join(_mask_phone(p) for p in phones)
+
+
 class SmsService:
     """سرویس ارسال پیامک"""
 
@@ -38,10 +52,16 @@ class SmsService:
     def _is_config_valid(self) -> bool:
         """بررسی پیکربندی"""
         if not self.enabled:
-            logger.info("ℹ️ سرویس پیامک غیرفعال است")
+            logger.info(
+                "SMS service disabled",
+                extra={"event": "sms.send_failed"},
+            )
             return False
         if not self.api_url or not self.api_key:
-            logger.warning("⚠️ تنظیمات SMS ناقص است (SMS_API_URL یا SMS_API_KEY)")
+            logger.warning(
+                "SMS configuration incomplete",
+                extra={"event": "sms.send_failed"},
+            )
             return False
         return True
 
@@ -52,6 +72,8 @@ class SmsService:
 
         if not phones:
             return {"success": False, "message": "شماره‌ای برای ارسال وجود ندارد"}
+
+        masked = _mask_phones(phones)
 
         try:
             headers = {
@@ -72,23 +94,46 @@ class SmsService:
             )
 
             if response.status_code == 200:
-                logger.info(f"✅ پیامک ارسال شد به {phones}")
+                logger.info(
+                    "SMS sent phones=%s status_code=%s",
+                    masked,
+                    response.status_code,
+                    extra={"event": "sms.send_completed"},
+                )
                 return {"success": True, "response": response.json()}
             else:
-                logger.error(f"❌ خطای API: {response.status_code} - {response.text}")
+                logger.error(
+                    "SMS API error phones=%s status_code=%s",
+                    masked,
+                    response.status_code,
+                    extra={"event": "sms.send_failed"},
+                )
                 return {
                     "success": False,
                     "message": f"خطای سرور SMS: {response.status_code}"
                 }
 
         except requests.exceptions.Timeout:
-            logger.error("⏱️ Timeout در ارسال پیامک")
+            logger.error(
+                "SMS timeout phones=%s error_type=Timeout",
+                masked,
+                extra={"event": "sms.send_failed"},
+            )
             return {"success": False, "message": "Timeout در ارتباط با سرور پیامک"}
         except requests.exceptions.ConnectionError:
-            logger.error("🔌 خطای اتصال به سرور پیامک")
+            logger.error(
+                "SMS connection error phones=%s error_type=ConnectionError",
+                masked,
+                extra={"event": "sms.send_failed"},
+            )
             return {"success": False, "message": "عدم اتصال به سرور پیامک"}
         except Exception as e:
-            logger.error(f"❌ خطای غیرمنتظره: {e}")
+            logger.exception(
+                "SMS unexpected error phones=%s error_type=%s",
+                masked,
+                type(e).__name__,
+                extra={"event": "sms.send_failed"},
+            )
             return {"success": False, "message": str(e)}
 
     def send_leave_approval_sms(
