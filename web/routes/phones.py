@@ -1,15 +1,19 @@
 """
 مدیریت شماره‌های تلفن کاربر
 """
+import logging
+import re
+
 from fastapi import APIRouter, Request, Depends, Form
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
-import re
 
 from web.dependencies import get_db, get_current_user, require_admin
 from models.user import User
 from models.employee_phone import EmployeePhone
 from web.permissions import enforce_permission
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Phones"])
 
@@ -392,8 +396,12 @@ async def send_phone_otp(
         sms_result = sms.send_sms([phone], message)
 
         if not sms_result.get('success'):
-            # اگر ارسال پیامک ناموفق بود، کد را در کنسول نمایش بده (برای تست)
-            print(f"⚠️ ارسال پیامک ناموفق بود. کد تأیید {user.user_id}: {otp_code}")
+            # Never log OTP / verification codes.
+            logger.warning(
+                "OTP SMS send failed user_id=%s",
+                user.user_id,
+                extra={"event": "sms.otp_failed", "user_id": user.user_id},
+            )
             return {
                 "success": False,
                 "message": "خطا در ارسال پیامک. لطفاً دوباره تلاش کنید."

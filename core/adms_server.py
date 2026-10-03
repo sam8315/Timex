@@ -10,11 +10,6 @@ from sqlalchemy import and_
 from database.engine import SessionLocal
 from models.attendance import Attendance
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="ADMS Server", version="1.0.0")
@@ -42,7 +37,10 @@ async def handshake(request: Request):
     sn = request.query_params.get('SN', 'unknown')
     options = request.query_params.get('options', 'all')
 
-    logger.info(f"Handshake from device: {sn}")
+    logger.debug(
+        "Handshake from device",
+        extra={"event": "device.handshake", "device_id": sn},
+    )
 
     connected_devices[sn] = {
         'last_seen': datetime.now(),
@@ -63,21 +61,35 @@ async def receive_data(request: Request):
     table = request.query_params.get('table', '').upper()
     stamp = request.query_params.get('Stamp', '')
 
-    logger.info(f"Received data from device {sn} - Table: {table}, Stamp: {stamp}")
-
     body = await request.body()
     body_text = body.decode('utf-8', errors='ignore').strip()
+    payload_size = len(body)
+
+    logger.debug(
+        "Device data request table=%s stamp=%s payload_size=%s",
+        table,
+        stamp,
+        payload_size,
+        extra={"event": "device.request", "device_id": sn},
+    )
 
     if 'ATTLOG' in table or 'CHECKLOG' in table or 'ATTLOG' in body_text or 'CHECKLOG' in body_text:
         await process_attendance_data(sn, body_text)
     elif 'USERINFO' in table or 'USERINFO' in body_text:
         await process_user_data(sn, body_text)
     elif 'OPERLOG' in table or 'OPLOG' in table or 'OPERLOG' in body_text or 'OPLOG' in body_text:
-        logger.info(f"Received OPERLOG from device {sn} (Device operation log - ignored for now)")
+        logger.debug(
+            "Received OPERLOG (ignored)",
+            extra={"event": "device.request", "device_id": sn},
+        )
     else:
         if body_text:
-            logger.warning(f"Unknown data type from {sn} - Table: {table}")
-            logger.debug(f"Body: {body_text[:200]}")
+            logger.warning(
+                "Unknown data type table=%s payload_size=%s",
+                table,
+                payload_size,
+                extra={"event": "device.request", "device_id": sn},
+            )
 
     return PlainTextResponse("OK")
 
@@ -85,7 +97,10 @@ async def receive_data(request: Request):
 async def process_attendance_data(sn: str, data: str):
     """Process attendance records"""
     if not data.strip():
-        logger.info(f"Empty attendance data from device {sn} (Heartbeat or Sync)")
+        logger.debug(
+            "Empty attendance data (heartbeat or sync)",
+            extra={"event": "device.request", "device_id": sn},
+        )
         return
 
     lines = data.strip().split('\n')
@@ -113,7 +128,10 @@ async def process_attendance_data(sn: str, data: str):
                 try:
                     timestamp = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M')
                 except ValueError:
-                    logger.warning(f"Invalid timestamp format: {timestamp_str}")
+                    logger.warning(
+                        "Invalid timestamp format",
+                        extra={"event": "device.request", "device_id": sn},
+                    )
                     continue
 
             existing = db.query(Attendance).filter(
@@ -136,40 +154,65 @@ async def process_attendance_data(sn: str, data: str):
 
         if records_added > 0:
             db.commit()
-            logger.info(f"Saved {records_added} new attendance records from device {sn}")
+            logger.info(
+                "Saved %s new attendance records",
+                records_added,
+                extra={"event": "sync.completed", "device_id": sn},
+            )
         else:
-            logger.info(f"No new attendance records from device {sn} (all duplicates)")
+            logger.debug(
+                "No new attendance records (all duplicates)",
+                extra={"event": "sync.completed", "device_id": sn},
+            )
 
-    except Exception as e:
+    except Exception:
         db.rollback()
-        logger.error(f"Error processing attendance: {e}")
+        logger.exception(
+            "Error processing attendance",
+            extra={"event": "sync.failed", "device_id": sn},
+        )
     finally:
         db.close()
 
 
 async def process_user_data(sn: str, data: str):
     """Process user data"""
-    logger.info(f"Received user data from {sn} (ignored for now)")
+    logger.info(
+        "Received user data (ignored for now) payload_size=%s",
+        len(data.encode('utf-8', errors='ignore')),
+        extra={"event": "device.request", "device_id": sn},
+    )
 
 
 @app.get("/iclock/devicemd")
 async def get_device_info(request: Request):
     sn = request.query_params.get('SN', 'unknown')
-    logger.info(f"Device info request from {sn}")
+    logger.debug(
+        "Device info request",
+        extra={"event": "device.request", "device_id": sn},
+    )
     return PlainTextResponse("OK")
 
 
 @app.post("/iclock/devicemd")
 async def send_command(request: Request):
     sn = request.query_params.get('SN', 'unknown')
-    await request.body()
-    logger.info(f"Send command to device {sn}")
+    body = await request.body()
+    logger.debug(
+        "Send command to device payload_size=%s",
+        len(body),
+        extra={"event": "device.request", "device_id": sn},
+    )
     return PlainTextResponse("OK")
 
 
 @app.get("/iclock/getrequest")
 async def get_request(request: Request):
     sn = request.query_params.get('SN', 'unknown')
+    logger.debug(
+        "getrequest poll",
+        extra={"event": "device.request", "device_id": sn},
+    )
     return PlainTextResponse("")
 
 
@@ -192,17 +235,34 @@ async def status():
 def run_server(host: str = "0.0.0.0", port: int = 8081):
     import uvicorn
 
-    print("\n" + "=" * 70)
-    print("  ADMS API SERVER STARTING")
-    print("=" * 70)
-    print(f"  Address : http://{host}:{port}")
-    print(f"  Endpoint: http://{host}:{port}/iclock/cdata")
-    print(f"  Status  : http://{host}:{port}/status")
-    print("=" * 70)
-    print("\n  Device Settings:")
-    print(f"     ADMS: ON")
-    print(f"     Server Address: {host}")
-    print(f"     Server Port: {port}")
-    print("=" * 70 + "\n")
+    logger.info(
+        "ADMS API server starting address=%s:%s endpoint=/iclock/cdata status=/status",
+        host,
+        port,
+        extra={"event": "service.starting"},
+    )
 
-    uvicorn.run(app, host=host, port=port, log_level="info")
+    try:
+        # log_config=None keeps Timex shared logging (same pattern as run_web.py).
+        uvicorn.run(app, host=host, port=port, log_level="info", log_config=None)
+    except OSError:
+        logger.critical(
+            "ADMS server failed to bind %s:%s",
+            host,
+            port,
+            exc_info=True,
+            extra={"event": "service.stopping"},
+        )
+        raise
+    except Exception:
+        logger.critical(
+            "ADMS server crashed",
+            exc_info=True,
+            extra={"event": "service.stopping"},
+        )
+        raise
+    finally:
+        logger.info(
+            "ADMS API server stopped",
+            extra={"event": "service.stopping"},
+        )

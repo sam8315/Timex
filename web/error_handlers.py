@@ -11,6 +11,7 @@
 
 هیچ اطلاعات حساسی (مسیر، نقش، دسترسی، توکن، traceback) به کاربر نمایش داده نمی‌شود.
 """
+import logging
 from pathlib import Path
 
 from fastapi import Request
@@ -18,6 +19,8 @@ from fastapi.responses import JSONResponse, Response
 from fastapi.templating import Jinja2Templates
 from fastapi.utils import is_body_allowed_for_status_code
 from starlette.exceptions import HTTPException as StarletteHTTPException
+
+logger = logging.getLogger(__name__)
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
@@ -62,22 +65,50 @@ def _resolve_current_user(request: Request):
         finally:
             db.close()
     except Exception:
+        logger.exception(
+            "Failed to resolve current user for error page",
+            extra={"event": "http.error"},
+        )
         return None, False, False
 
 
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     """هندلر سراسری HTTPException."""
-    if exc.status_code == 403 and _wants_html(request):
-        user, is_admin, is_super_admin = _resolve_current_user(request)
-        return TEMPLATES.TemplateResponse(
-            request,
-            "403.html",
-            {
-                "user": user,
-                "is_admin": is_admin,
-                "is_super_admin": is_super_admin,
-            },
-            status_code=403,
+    path = request.url.path
+    status_code = exc.status_code
+
+    if status_code == 403:
+        logger.warning(
+            "Forbidden path=%s",
+            path,
+            extra={"event": "http.forbidden"},
+        )
+        if _wants_html(request):
+            user, is_admin, is_super_admin = _resolve_current_user(request)
+            return TEMPLATES.TemplateResponse(
+                request,
+                "403.html",
+                {
+                    "user": user,
+                    "is_admin": is_admin,
+                    "is_super_admin": is_super_admin,
+                },
+                status_code=403,
+            )
+
+    elif status_code >= 500:
+        logger.error(
+            "HTTP error status=%s path=%s",
+            status_code,
+            path,
+            extra={"event": "http.error"},
+        )
+    else:
+        logger.debug(
+            "HTTP exception status=%s path=%s",
+            status_code,
+            path,
+            extra={"event": "http.error"},
         )
 
     # سایر موارد: رفتار پیش‌فرض FastAPI (مطابق fastapi.exception_handlers.http_exception_handler)

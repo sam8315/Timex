@@ -1,6 +1,7 @@
 """
 عملیات دیتابیس ربات بله
 """
+import logging
 from datetime import date, timedelta
 from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
@@ -10,6 +11,8 @@ from models.employee import Employee
 from models.attendance import Attendance
 from models.employee_phone import EmployeePhone
 from models.bale_user import BaleUser
+
+logger = logging.getLogger(__name__)
 
 
 def normalize_phone(phone: str) -> str:
@@ -156,9 +159,13 @@ def set_national_code(db: Session, user_id: str, national_code: str) -> bool:
         employee.national_code = national_code
         db.commit()
         return True
-    except Exception as e:
+    except Exception:
         db.rollback()
-        print(f"خطا در ذخیره کد ملی: {e}")
+        logger.exception(
+            "Failed to save national code user_id=%s",
+            user_id,
+            extra={"event": "database.operation_failed", "user_id": user_id},
+        )
         return False
 
 
@@ -180,7 +187,11 @@ def reset_password_to_national_code(db: Session, user_id: str) -> bool:
         user.must_change_password = True
         db.commit()
         return True
-    except Exception as e:
+    except Exception:
         db.rollback()
-        print(f"خطا در ریست رمز: {e}")
+        logger.exception(
+            "Failed to reset password user_id=%s",
+            user_id,
+            extra={"event": "database.operation_failed", "user_id": user_id},
+        )
         return False

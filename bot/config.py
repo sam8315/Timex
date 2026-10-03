@@ -21,8 +21,23 @@ if not BOT_TOKEN:
         "   لطفاً BALE_BOT_TOKEN را در فایل .env تنظیم کنید."
     )
 
-# آدرس API بله
-BALE_API_BASE = f"https://tapi.bale.ai/bot{BOT_TOKEN}"
+# Host without token — safe to mention in diagnostics.
+BALE_API_HOST = "https://tapi.bale.ai"
+
+
+def build_api_url(method: str) -> str:
+    """
+    Build a Bale method URL.
+
+    WARNING: The returned value contains BOT_TOKEN.
+    Never log this URL or pass it into log messages.
+    """
+    return f"{BALE_API_HOST}/bot{BOT_TOKEN}/{method}"
+
+
+# Backward-compatible base (contains token). Prefer build_api_url() for new code.
+# Do not log BALE_API_BASE.
+BALE_API_BASE = f"{BALE_API_HOST}/bot{BOT_TOKEN}"
 
 # Session دیتابیس
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

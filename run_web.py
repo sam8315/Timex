@@ -4,18 +4,16 @@ import uvicorn
 from dotenv import load_dotenv
 import sys
 import io, os
+import logging
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import OperationalError
 
-load_dotenv()
-import logging
+from core.logging_config import configure_logging
 
-# فعال‌سازی لاگ برای دیباگ
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 # تنظیم کدگذاری خروجی به UTF-8
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
@@ -38,7 +36,11 @@ def create_database_if_missing() -> None:
     try:
         with maintenance_engine.connect() as connection:
             connection.execute(text(f'CREATE DATABASE "{DB_NAME}"'))
-            print(f"✅ دیتابیس «{DB_NAME}» ساخته شد.")
+            logger.info(
+                "Database created name=%s",
+                DB_NAME,
+                extra={"event": "database.ready"},
+            )
     finally:
         maintenance_engine.dispose()
 
@@ -56,7 +58,10 @@ def ensure_database_tables() -> None:
     from database.engine import engine
     from database.init_db import create_tables, check_tables
 
-    print("🗄️  در حال ساخت/به‌روزرسانی جداول دیتابیس...")
+    logger.info(
+        "Ensuring database tables",
+        extra={"event": "service.starting"},
+    )
     try:
         create_tables()
         check_tables()
@@ -64,13 +69,19 @@ def ensure_database_tables() -> None:
         # PostgreSQL error 3D000 means the configured database does not exist.
         if getattr(error.orig, "pgcode", None) != "3D000":
             raise
-        print("⚠️  دیتابیس وجود ندارد؛ در حال ایجاد...")
+        logger.warning(
+            "Database does not exist; creating",
+            extra={"event": "service.starting"},
+        )
         create_database_if_missing()
         engine.dispose()
         create_tables()
         check_tables()
 
-    print("✅ جداول دیتابیس آماده است (ساخته یا به‌روز شد).")
+    logger.info(
+        "Database tables ready",
+        extra={"event": "database.ready"},
+    )
 
 
 def ensure_test_access() -> None:
@@ -110,26 +121,62 @@ def ensure_test_access() -> None:
 
         if created:
             db.commit()
-            print("Test administrator access was created.")
+            logger.info(
+                "Test administrator access was created",
+                extra={"event": "service.starting"},
+            )
     except Exception:
         db.rollback()
+        logger.exception(
+            "Failed to ensure test access",
+            extra={"event": "service.starting"},
+        )
         raise
     finally:
         db.close()
 
 
 if __name__ == "__main__":
+    configure_logging("web")
+
     host = os.getenv("WEB_HOST", "0.0.0.0")
     port = int(os.getenv("WEB_PORT", "8082"))
 
-    ensure_database_tables()
-    ensure_test_access()
-
-    print(f"🚀 سرور وب در http://{host}:{port} اجرا می‌شود...")
-
-    uvicorn.run(
-        "web.app:app",
-        host=host,
-        port=port,
-        reload=False
+    logger.info(
+        "Web process starting host=%s port=%s",
+        host,
+        port,
+        extra={"event": "service.starting"},
     )
+
+    try:
+        ensure_database_tables()
+        ensure_test_access()
+
+        logger.info(
+            "Web server starting at http://%s:%s",
+            host,
+            port,
+            extra={"event": "service.started"},
+        )
+
+        # log_config=None keeps Timex shared logging (web.app.log / web.access.log).
+        uvicorn.run(
+            "web.app:app",
+            host=host,
+            port=port,
+            reload=False,
+            log_config=None,
+        )
+    except KeyboardInterrupt:
+        logger.info(
+            "Web process stopping",
+            extra={"event": "service.stopping"},
+        )
+    except Exception:
+        logger.critical(
+            "Web process failed",
+            exc_info=True,
+            extra={"event": "service.stopping"},
+        )
+        raise

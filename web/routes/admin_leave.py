@@ -1,6 +1,7 @@
 """
 پنل مدیریت مانده و تراکنش‌های مرخصی
 """
+import logging
 from fastapi import APIRouter, Request, Depends, Form, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -1952,19 +1953,46 @@ def _get_user_phones(db: Session, user_id: str) -> List[str]:
     return result
 
 
+def _mask_phone(phone: str) -> str:
+    """Mask phone for logs (never log full number)."""
+    if not phone:
+        return "***"
+    digits = "".join(ch for ch in phone if ch.isdigit())
+    if len(digits) < 6:
+        return "***"
+    return f"{digits[:4]}***{digits[-2:]}"
+
+
 def _send_sms_async(phones: List[str], message: str, user_id: str):
     """ارسال پیامک در thread جداگانه (بدون کند کردن redirect)"""
+    logger = logging.getLogger(__name__)
 
     def send_task():
+        masked = ",".join(_mask_phone(p) for p in phones)
         try:
             sms = SmsService()
             result = sms.send_sms(phones, message)
             if result.get('success'):
-                print(f"✅ پیامک مرخصی به {user_id} ارسال شد: {phones}")
+                logger.info(
+                    "Leave SMS sent user_id=%s phones=%s",
+                    user_id,
+                    masked,
+                    extra={"event": "sms.send_completed", "user_id": user_id},
+                )
             else:
-                print(f"⚠️ پیامک به {user_id} ارسال نشد: {result.get('message')}")
-        except Exception as e:
-            print(f"❌ خطای ارسال پیامک به {user_id}: {e}")
+                logger.warning(
+                    "Leave SMS failed user_id=%s phones=%s",
+                    user_id,
+                    masked,
+                    extra={"event": "sms.send_failed", "user_id": user_id},
+                )
+        except Exception:
+            logger.exception(
+                "Leave SMS unexpected error user_id=%s phones=%s",
+                user_id,
+                masked,
+                extra={"event": "sms.send_failed", "user_id": user_id},
+            )
 
     # اجرای async در thread جداگانه
     thread = threading.Thread(target=send_task, daemon=True)

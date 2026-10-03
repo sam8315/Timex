@@ -1,7 +1,11 @@
 from zk import ZK
 from typing import List, Dict, Optional
 from datetime import datetime
+import logging
+import time
 import jdatetime
+
+logger = logging.getLogger(__name__)
 
 
 class DeviceManager:
@@ -21,7 +25,11 @@ class DeviceManager:
             self.conn = self.zk.connect()
             return True
         except Exception as e:
-            print(f"❌ خطا در اتصال: {e}")
+            logger.warning(
+                "Device connection failed: %s",
+                type(e).__name__,
+                extra={"event": "device.offline", "device_id": self.ip},
+            )
             return False
 
     def disconnect(self):
@@ -30,13 +38,16 @@ class DeviceManager:
             try:
                 self.conn.disconnect()
                 self.conn = None
-            except:
+            except Exception:
                 pass
 
     def _ensure_connected(self) -> bool:
         """اطمینان از برقراری اتصال"""
         if not self.conn:
-            print("❌ ابتدا باید به دستگاه متصل شوید")
+            logger.warning(
+                "Device is not connected",
+                extra={"event": "device.offline", "device_id": self.ip},
+            )
             return False
         return True
 
@@ -91,8 +102,11 @@ class DeviceManager:
                 }
                 for u in users
             ]
-        except Exception as e:
-            print(f"❌ خطا در دریافت کاربران: {e}")
+        except Exception:
+            logger.exception(
+                "Failed to fetch users from device",
+                extra={"event": "sync.failed", "device_id": self.ip},
+            )
             return []
 
     def find_user(self, user_id: int) -> Optional[Dict]:
@@ -158,7 +172,11 @@ class DeviceManager:
 
         try:
             attendance = self.conn.get_attendance()
-            print(attendance)
+            logger.debug(
+                "Attendance records received count=%s",
+                len(attendance),
+                extra={"event": "attendance.received", "device_id": self.ip},
+            )
             return [
                 {
                     'user_id': a.user_id,
@@ -168,8 +186,11 @@ class DeviceManager:
                 }
                 for a in attendance
             ]
-        except Exception as e:
-            print(f"❌ خطا در دریافت رکوردها: {e}")
+        except Exception:
+            logger.exception(
+                "Failed to fetch attendance records",
+                extra={"event": "sync.failed", "device_id": self.ip},
+            )
             return []
 
     def get_attendance_by_date(self, date_str: str) -> List[Dict]:
@@ -181,8 +202,11 @@ class DeviceManager:
                 r for r in records
                 if r['timestamp'].date() == jdate
             ]
-        except Exception as e:
-            print(f"❌ خطا در فیلتر تاریخ: {e}")
+        except Exception:
+            logger.exception(
+                "Failed to filter attendance by date",
+                extra={"event": "sync.failed", "device_id": self.ip},
+            )
             return []
 
     def clear_attendance(self) -> bool:
@@ -193,8 +217,11 @@ class DeviceManager:
         try:
             self.conn.clear_attendance()
             return True
-        except Exception as e:
-            print(f"❌ خطا در پاک کردن رکوردها: {e}")
+        except Exception:
+            logger.exception(
+                "Failed to clear attendance on device",
+                extra={"event": "sync.failed", "device_id": self.ip},
+            )
             return False
 
     def sync_attendance_to_db(self, dry_run_first: bool = True) -> Dict:
@@ -206,7 +233,11 @@ class DeviceManager:
         from sqlalchemy.dialects.postgresql import insert
         from sqlalchemy.exc import SQLAlchemyError
 
-        print(f"\n🕐 Synchronization started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        started = time.perf_counter()
+        logger.info(
+            "Attendance synchronization started",
+            extra={"event": "sync.started", "device_id": self.ip},
+        )
         stats = {
             'total_fetched': 0,
             'new_records': 0,
@@ -218,25 +249,64 @@ class DeviceManager:
             'time_gap': None
         }
 
-        # Step 1: Connect to the device
-        print("\n" + "=" * 70)
-        print("  🔌 Step 1: Connecting to device")
-        print("=" * 70)
+        def _duration_ms() -> int:
+            return int((time.perf_counter() - started) * 1000)
 
-        was_connected = self._ensure_connected()
+        def _log_sync_completed(message: str, level: int = logging.INFO) -> None:
+            logger.log(
+                level,
+                "%s fetched=%s inserted=%s duplicates=%s errors=%s",
+                message,
+                stats['total_fetched'],
+                stats['inserted'],
+                stats['skipped_duplicates'],
+                stats['errors'],
+                extra={
+                    "event": "sync.completed",
+                    "device_id": self.ip,
+                    "duration_ms": _duration_ms(),
+                },
+            )
+
+        # Step 1: Connect to the device
+        logger.debug(
+            "Sync step 1: connecting to device",
+            extra={"event": "sync.started", "device_id": self.ip},
+        )
+
+        was_connected = self.conn is not None
         if not was_connected:
-            print("  ⚠️  Device was not connected. Connecting...")
+            logger.info(
+                "Device was not connected; attempting connect",
+                extra={"event": "sync.started", "device_id": self.ip},
+            )
             if not self.connect():
+                stats['duration_ms'] = _duration_ms()
+                logger.error(
+                    "Could not establish connection to device",
+                    extra={
+                        "event": "sync.failed",
+                        "device_id": self.ip,
+                        "duration_ms": stats['duration_ms'],
+                    },
+                )
                 return {'error': '❌ Could not establish connection to device'}
-            print("  ✅ Device successfully connected")
+            logger.info(
+                "Device successfully connected",
+                extra={"event": "device.reconnected", "device_id": self.ip},
+            )
         else:
-            print("  ✅ Device was already connected")
+            logger.debug(
+                "Device was already connected",
+                extra={"event": "sync.started", "device_id": self.ip},
+            )
 
         try:
             # Step 2: Get the latest record from the database
-            print("\n" + "=" * 70)
-            print("  📊 Step 2: Checking latest record in database")
-            print("=" * 70)
+            logger.debug(
+                "Sync step 2: checking latest record in database",
+                extra={"event": "sync.started", "device_id": self.ip},
+            )
 
             db = SessionLocal()
             try:
@@ -249,32 +319,49 @@ class DeviceManager:
 
                 if last_record:
                     stats['last_db_record'] = last_record.timestamp
-                    print(f"  📅 Latest record in database: {last_record.timestamp}")
-                    print(f"  👤 User: {last_record.user_id}")
-                    print(f"  🔄 Type: {'Check-in' if last_record.punch == 0 else 'Check-out'}")
+                    logger.debug(
+                        "Latest DB record timestamp=%s user_id=%s",
+                        last_record.timestamp,
+                        last_record.user_id,
+                        extra={
+                            "event": "sync.started",
+                            "device_id": self.ip,
+                            "user_id": last_record.user_id,
+                        },
+                    )
                 else:
                     stats['last_db_record'] = None
-                    print("  ⚠️  Database is empty")
+                    logger.debug(
+                        "Database has no prior device/API attendance records",
+                        extra={"event": "sync.started", "device_id": self.ip},
+                    )
             finally:
                 db.close()
 
             # Step 3: Get records from the device
-            print("\n" + "=" * 70)
-            print("  📖 Step 3: Reading attendance records from device")
-            print("=" * 70)
+            logger.debug(
+                "Sync step 3: reading attendance records from device",
+                extra={"event": "sync.started", "device_id": self.ip},
+            )
 
             device_attendance = self.conn.get_attendance()
             stats['total_fetched'] = len(device_attendance)
-            print(f"  ✅ Found {len(device_attendance)} records on device")
+            logger.info(
+                "Found %s records on device",
+                len(device_attendance),
+                extra={"event": "attendance.received", "device_id": self.ip},
+            )
 
             if stats['total_fetched'] == 0:
-                print("  ⚠️  No records found on device")
+                stats['duration_ms'] = _duration_ms()
+                _log_sync_completed("No records found on device")
                 return stats
 
             # Step 4: Find the first unsynchronized record
-            print("\n" + "=" * 70)
-            print("  🔍 Step 4: Checking unsynchronized records")
-            print("=" * 70)
+            logger.debug(
+                "Sync step 4: checking unsynchronized records",
+                extra={"event": "sync.started", "device_id": self.ip},
+            )
 
             # Sort device records by time
             device_attendance_sorted = sorted(device_attendance, key=lambda x: x.timestamp)
@@ -310,47 +397,70 @@ class DeviceManager:
                     time_gap = record_time - last_db_timestamp
                     stats['time_gap'] = time_gap
 
-                    print(f"  📅 First unsynchronized record: {first_new_record.timestamp}")
-                    print(f"  👤 User: {first_new_record.user_id}")
-                    print(f"  🔄 Type: {'Check-in' if first_new_record.punch == 0 else 'Check-out'}")
-                    print(f"  📊 Number of new records: {stats['new_records']}")
-                    print(f"  ⏱️  Time difference: {time_gap}")
+                    logger.debug(
+                        "First unsynchronized record timestamp=%s user_id=%s new_records=%s time_gap=%s",
+                        first_new_record.timestamp,
+                        first_new_record.user_id,
+                        stats['new_records'],
+                        time_gap,
+                        extra={
+                            "event": "sync.started",
+                            "device_id": self.ip,
+                            "user_id": first_new_record.user_id,
+                        },
+                    )
                 else:
-                    print("  ✅ All records are synchronized")
+                    stats['duration_ms'] = _duration_ms()
+                    _log_sync_completed("All records are synchronized", level=logging.DEBUG)
                     return stats
             else:
                 # Database is empty, all records are new
                 stats['first_device_record'] = device_attendance_sorted[0].timestamp
                 stats['new_records'] = len(device_attendance_sorted)
-                print(f"  📅 First record: {stats['first_device_record']}")
-                print(f"  📊 Number of new records: {stats['new_records']}")
+                logger.debug(
+                    "Database empty; treating all device records as new count=%s",
+                    stats['new_records'],
+                    extra={"event": "sync.started", "device_id": self.ip},
+                )
 
             # Step 5: DRY RUN
             if dry_run_first:
-                print("\n" + "=" * 70)
-                print("  🔍 Step 5: DRY RUN (no changes)")
-                print("=" * 70)
+                logger.info(
+                    "Dry-run sync (no changes)",
+                    extra={"event": "sync.started", "device_id": self.ip},
+                )
 
                 dry_stats = self._dry_run_sync(device_attendance_sorted, stats['last_db_record'])
 
-                print(f"\n  📊 DRY RUN Results:")
-                print(f"     • New records to insert    : {dry_stats['would_insert']}")
-                print(f"     • Duplicate records in DB   : {dry_stats['would_skip_duplicate']}")
-                print(f"     • Old records (before latest): {dry_stats['would_skip_old']}")
-                print(f"     • Total skipped             : {dry_stats['total_skipped']}")
+                logger.info(
+                    "Dry-run results would_insert=%s would_skip_duplicate=%s would_skip_old=%s total_skipped=%s",
+                    dry_stats['would_insert'],
+                    dry_stats['would_skip_duplicate'],
+                    dry_stats['would_skip_old'],
+                    dry_stats['total_skipped'],
+                    extra={"event": "sync.started", "device_id": self.ip},
+                )
 
-                # Ask for confirmation
-                print("\n" + "-" * 70)
+                # Ask for confirmation (interactive CLI path; keep input())
                 confirm = input("  Do you want to proceed with actual synchronization? (yes/no): ").strip()
 
                 if confirm.lower() not in ['yes', 'y']:
-                    print("  ❌ Operation cancelled")
+                    stats['duration_ms'] = _duration_ms()
+                    logger.info(
+                        "Sync operation cancelled by operator",
+                        extra={
+                            "event": "sync.completed",
+                            "device_id": self.ip,
+                            "duration_ms": stats['duration_ms'],
+                        },
+                    )
                     return stats
 
             # Step 6: Actual execution
-            print("\n" + "=" * 70)
-            print("  💾 Step 6: Saving to database")
-            print("=" * 70)
+            logger.debug(
+                "Sync step 6: saving to database",
+                extra={"event": "sync.started", "device_id": self.ip},
+            )
 
             db = SessionLocal()
             batch_size = 200
@@ -392,51 +502,75 @@ class DeviceManager:
                     # Batch commit
                     if i % batch_size == 0 or i == len(device_attendance_sorted):
                         db.commit()
-                        print(f"  ✅ Batch saved: {i}/{len(device_attendance_sorted)}")
+                        logger.debug(
+                            "Batch saved %s/%s",
+                            i,
+                            len(device_attendance_sorted),
+                            extra={"event": "sync.started", "device_id": self.ip},
+                        )
 
                 except SQLAlchemyError as e:
                     db.rollback()
-                    print(f"  ⚠️  Error on record {i} (User: {record.user_id}): {type(e).__name__}")
+                    logger.warning(
+                        "Error on record index=%s user_id=%s error=%s",
+                        i,
+                        record.user_id,
+                        type(e).__name__,
+                        extra={
+                            "event": "sync.failed",
+                            "device_id": self.ip,
+                            "user_id": str(record.user_id),
+                        },
+                    )
                     stats['errors'] += 1
 
             db.close()
-            print("\n  ✅ Attendance synchronization completed")
+            logger.debug(
+                "Attendance synchronization write phase completed",
+                extra={"event": "sync.completed", "device_id": self.ip},
+            )
 
-        except Exception as e:
-            print(f"\n  ❌ General error during attendance synchronization: {e}")
+        except Exception:
+            logger.exception(
+                "General error during attendance synchronization",
+                extra={"event": "sync.failed", "device_id": self.ip},
+            )
             stats['errors'] += 1
 
         finally:
             # Step 7: Disconnect
-            print("\n" + "=" * 70)
-            print("  🔌 Step 7: Disconnecting from device")
-            print("=" * 70)
+            logger.debug(
+                "Sync step 7: disconnecting from device",
+                extra={"event": "sync.completed", "device_id": self.ip},
+            )
 
             if self.conn and hasattr(self.conn, 'disconnect'):
                 try:
                     self.disconnect()
-                    print("  ✅ Disconnected from device")
+                    logger.debug(
+                        "Disconnected from device",
+                        extra={"event": "sync.completed", "device_id": self.ip},
+                    )
                 except Exception as e:
-                    print(f"  ⚠️  Error during disconnection: {e}")
+                    logger.warning(
+                        "Error during disconnection: %s",
+                        type(e).__name__,
+                        extra={"event": "sync.failed", "device_id": self.ip},
+                    )
 
-        # Display final statistics
-        print("\n" + "=" * 70)
-        print("  📊 Final Attendance Synchronization Statistics")
-        print("=" * 70)
-        print(f"  • Total records read    : {stats['total_fetched']}")
-        print(f"  • New records           : {stats['new_records']}")
-        print(f"  • Records inserted      : {stats['inserted']}")
-        print(f"  • Duplicates skipped    : {stats['skipped_duplicates']}")
-        print(f"  • Errors                : {stats['errors']}")
-
-        if stats['last_db_record']:
-            print(f"\n  📅 Previous latest record : {stats['last_db_record']}")
-        if stats['first_device_record']:
-            print(f"  📅 First new record       : {stats['first_device_record']}")
-        if stats['time_gap']:
-            print(f"  ⏱️  Time difference        : {stats['time_gap']}")
-
-        print("=" * 70)
+        stats['duration_ms'] = _duration_ms()
+        _log_sync_completed("Attendance synchronization finished")
+        logger.debug(
+            "Sync detail last_db=%s first_new=%s time_gap=%s",
+            stats['last_db_record'],
+            stats['first_device_record'],
+            stats['time_gap'],
+            extra={
+                "event": "sync.completed",
+                "device_id": self.ip,
+                "duration_ms": stats['duration_ms'],
+            },
+        )
 
         return stats
 
@@ -504,8 +638,11 @@ class DeviceManager:
         try:
             self.conn.set_time(datetime.now())
             return True
-        except Exception as e:
-            print(f"❌ خطا در همگام‌سازی زمان: {e}")
+        except Exception:
+            logger.exception(
+                "Failed to sync device time",
+                extra={"event": "sync.failed", "device_id": self.ip},
+            )
             return False
 
     def enable_device(self) -> bool:
@@ -516,8 +653,11 @@ class DeviceManager:
         try:
             self.conn.enable_device()
             return True
-        except Exception as e:
-            print(f"❌ خطا: {e}")
+        except Exception:
+            logger.exception(
+                "Failed to enable device",
+                extra={"event": "sync.failed", "device_id": self.ip},
+            )
             return False
 
     def disable_device(self, timeout: int = 10) -> bool:
@@ -528,8 +668,11 @@ class DeviceManager:
         try:
             self.conn.disable_device(timeout=timeout)
             return True
-        except Exception as e:
-            print(f"❌ خطا: {e}")
+        except Exception:
+            logger.exception(
+                "Failed to disable device",
+                extra={"event": "sync.failed", "device_id": self.ip},
+            )
             return False
 
     def restart(self) -> bool:
@@ -540,8 +683,11 @@ class DeviceManager:
         try:
             self.conn.restart()
             return True
-        except Exception as e:
-            print(f"❌ خطا: {e}")
+        except Exception:
+            logger.exception(
+                "Failed to restart device",
+                extra={"event": "sync.failed", "device_id": self.ip},
+            )
             return False
 
     def sync_users_to_db(self) -> Dict:
@@ -562,14 +708,26 @@ class DeviceManager:
             'errors': 0
         }
 
+        started = time.perf_counter()
+        logger.info(
+            "User synchronization started",
+            extra={"event": "sync.started", "device_id": self.ip},
+        )
+
         try:
-            print("\n📖 در حال خواندن کاربران از دستگاه...")
             device_users = self.conn.get_users()
             stats['total_users'] = len(device_users)
-            print(f"✅ تعداد {len(device_users)} کاربر در دستگاه یافت شد")
+            logger.info(
+                "Fetched %s users from device",
+                len(device_users),
+                extra={"event": "sync.started", "device_id": self.ip},
+            )
 
             db = SessionLocal()
-            print("\n💾 در حال ذخیره در دیتابیس...")
+            logger.debug(
+                "Saving users to database",
+                extra={"event": "sync.started", "device_id": self.ip},
+            )
 
             for i, device_user in enumerate(device_users, 1):
                 try:
@@ -597,28 +755,52 @@ class DeviceManager:
 
                     if i % 50 == 0 or i == len(device_users):
                         db.commit()
-                        print(f"  ✅ دسته‌ای ذخیره شد: {i}/{len(device_users)}")
+                        logger.debug(
+                            "User batch saved %s/%s",
+                            i,
+                            len(device_users),
+                            extra={"event": "sync.started", "device_id": self.ip},
+                        )
 
                 except SQLAlchemyError as e:
                     db.rollback()
-                    print(f"  ⚠️  خطا در کاربر user_id={device_user.user_id} ({device_user.name}): {type(e).__name__}")
+                    logger.warning(
+                        "Error syncing user_id=%s error=%s",
+                        device_user.user_id,
+                        type(e).__name__,
+                        extra={
+                            "event": "sync.failed",
+                            "device_id": self.ip,
+                            "user_id": str(device_user.user_id),
+                        },
+                    )
                     stats['errors'] += 1
 
             db.close()
-            print("\n✅ همگام‌سازی کاربران به پایان رسید")
+            logger.debug(
+                "User synchronization write phase completed",
+                extra={"event": "sync.completed", "device_id": self.ip},
+            )
 
-        except Exception as e:
-            print(f"\n❌ خطای کلی در همگام‌سازی: {e}")
+        except Exception:
+            logger.exception(
+                "General error during user synchronization",
+                extra={"event": "sync.failed", "device_id": self.ip},
+            )
             stats['errors'] += 1
 
-        # نمایش آمار
-        print("\n" + "-" * 60)
-        print("  📊 آمار نهایی همگام‌سازی کاربران:")
-        print("-" * 60)
-        print(f"  • کل کاربران دستگاه   : {stats['total_users']}")
-        print(f"  • کاربران جدید ساخته  : {stats['new_users']}")
-        print(f"  • کاربران به‌روزرسانی  : {stats['updated_users']}")
-        print(f"  • خطاها               : {stats['errors']}")
-        print("-" * 60)
+        duration_ms = int((time.perf_counter() - started) * 1000)
+        logger.info(
+            "User sync finished total=%s new=%s updated=%s errors=%s",
+            stats['total_users'],
+            stats['new_users'],
+            stats['updated_users'],
+            stats['errors'],
+            extra={
+                "event": "sync.completed",
+                "device_id": self.ip,
+                "duration_ms": duration_ms,
+            },
+        )
 
         return stats
