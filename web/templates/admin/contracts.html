@@ -1,4 +1,61 @@
 {% extends "base.html" %}
+{% block extra_css %}
+<style>
+    .user-search-results {
+        position: absolute;
+        top: 100%;
+        right: 0;
+        left: 0;
+        background: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        max-height: 300px;
+        overflow-y: auto;
+        z-index: 1050;
+        display: none;
+        margin-top: 4px;
+    }
+    .user-search-results.show { display: block; }
+    .user-search-item {
+        padding: 10px 15px;
+        cursor: pointer;
+        border-bottom: 1px solid #f0f0f0;
+        transition: background 0.15s ease;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .user-search-item:last-child { border-bottom: none; }
+    .user-search-item:hover,
+    .user-search-item.highlighted { background: #e9ecef; }
+    .user-search-item .user-name { font-weight: 500; color: #212529; }
+    .user-search-item .user-id { font-size: 0.8rem; color: #6c757d; }
+    .user-search-item .user-dept {
+        font-size: 0.75rem;
+        background: #e9ecef;
+        padding: 2px 8px;
+        border-radius: 10px;
+        color: #495057;
+    }
+    .user-search-no-result {
+        padding: 15px;
+        text-align: center;
+        color: #6c757d;
+    }
+    .user-search-count {
+        padding: 6px 15px;
+        font-size: 0.75rem;
+        color: #6c757d;
+        background: #f8f9fa;
+        border-bottom: 1px solid #dee2e6;
+    }
+    #userSearchInput.user-selected {
+        border-color: #198754;
+        background-color: #f0fff4;
+    }
+</style>
+{% endblock %}
 {% block title %}مدیریت عضویت | پنل مدیریت{% endblock %}
 {% block content %}
 
@@ -23,17 +80,33 @@
     </a>
 </div>
 
-<!-- فرم ثبت عضویت جدید -->
+<!-- فرم ثبت قرارداد/عضویت جدید -->
 <div class="card mb-4">
     <div class="card-header bg-white">
-        <h6><i class="bi bi-plus-circle"></i> ثبت عضویت جدید</h6>
+        <h6><i class="bi bi-plus-circle"></i> ثبت قرارداد/عضویت جدید</h6>
     </div>
     <div class="card-body">
         <form method="post" action="/admin/contracts/add" class="row g-3 align-items-end"
-              enctype="multipart/form-data">
-            <div class="col-md-2">
+              enctype="multipart/form-data" id="addContractForm">
+            <div class="col-md-3">
                 <label class="form-label">👤 کد پرسنلی <span class="text-danger">*</span></label>
-                <input type="text" name="user_id" class="form-control" placeholder="NN-1234" required>
+                <div class="user-search-wrapper position-relative">
+                    <div class="input-group">
+                        <span class="input-group-text"><i class="bi bi-search"></i></span>
+                        <input type="text"
+                               class="form-control"
+                               id="userSearchInput"
+                               placeholder="جستجو: نام یا کد پرسنلی..."
+                               autocomplete="off"
+                               required>
+                        <button type="button" class="btn btn-outline-secondary" id="clearUserBtn"
+                                style="display:none;" title="پاک کردن">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </div>
+                    <input type="hidden" name="user_id" id="contractUserId" required>
+                    <div class="user-search-results" id="userSearchResults"></div>
+                </div>
             </div>
             <div class="col-md-2">
                 <label class="form-label">📋 نوع عضویت <span class="text-danger">*</span></label>
@@ -245,6 +318,10 @@
                 <option value="">همه وضعیت‌ها</option>
                 <option value="active" {% if status_filter == 'active' %}selected{% endif %}>فعال</option>
                 <option value="inactive" {% if status_filter == 'inactive' %}selected{% endif %}>غیرفعال</option>
+            </select>
+            <select name="expiry_filter" class="form-select form-select-sm" style="width: auto;">
+                <option value="">همه تاریخ‌ها</option>
+                <option value="soon" {% if expiry_filter == 'soon' %}selected{% endif %}>نزدیک به انقضا (۳۰ روز)</option>
             </select>
             <button type="submit" class="btn btn-primary btn-sm">
                 <i class="bi bi-search"></i> اعمال
@@ -526,6 +603,144 @@
 
 {% block extra_js %}
 <script>
+const employeesData = {{ employees | tojson }};
+let highlightedIndex = -1;
+let filteredEmployees = [];
+
+const searchInput = document.getElementById('userSearchInput');
+const searchResults = document.getElementById('userSearchResults');
+const contractUserId = document.getElementById('contractUserId');
+const clearUserBtn = document.getElementById('clearUserBtn');
+
+function searchEmployees(query) {
+    if (!query.trim()) {
+        return employeesData.slice(0, 50);
+    }
+    const q = query.trim().toLowerCase();
+    return employeesData.filter(emp => {
+        const fullName = (emp.full_name || '').toLowerCase();
+        const userId = (emp.user_id || '').toLowerCase();
+        const dept = (emp.department || '').toLowerCase();
+        return fullName.includes(q) || userId.includes(q) || dept.includes(q);
+    }).slice(0, 50);
+}
+
+function renderResults(employees) {
+    filteredEmployees = employees;
+    highlightedIndex = -1;
+    if (employees.length === 0) {
+        searchResults.innerHTML = `
+            <div class="user-search-no-result">
+                <i class="bi bi-search"></i> کاربری یافت نشد
+            </div>
+        `;
+        searchResults.classList.add('show');
+        return;
+    }
+    let html = `<div class="user-search-count">${employees.length} کاربر یافت شد</div>`;
+    employees.forEach((emp, index) => {
+        html += `
+            <div class="user-search-item" data-index="${index}" data-user-id="${emp.user_id}">
+                <div>
+                    <div class="user-name">${emp.full_name}</div>
+                    <div class="user-id">${emp.user_id}</div>
+                </div>
+                <span class="user-dept">${emp.department}</span>
+            </div>
+        `;
+    });
+    searchResults.innerHTML = html;
+    searchResults.classList.add('show');
+    searchResults.querySelectorAll('.user-search-item').forEach(item => {
+        item.addEventListener('click', function() {
+            selectEmployee(filteredEmployees[parseInt(this.dataset.index)]);
+        });
+        item.addEventListener('mouseenter', function() {
+            highlightItem(parseInt(this.dataset.index));
+        });
+    });
+}
+
+function highlightItem(index) {
+    const items = searchResults.querySelectorAll('.user-search-item');
+    items.forEach(item => item.classList.remove('highlighted'));
+    if (index >= 0 && index < items.length) {
+        items[index].classList.add('highlighted');
+        items[index].scrollIntoView({ block: 'nearest' });
+        highlightedIndex = index;
+    }
+}
+
+function selectEmployee(emp) {
+    contractUserId.value = emp.user_id;
+    searchInput.value = `${emp.full_name} (${emp.user_id})`;
+    searchInput.classList.add('user-selected');
+    clearUserBtn.style.display = 'block';
+    searchResults.classList.remove('show');
+    searchInput.blur();
+}
+
+function clearSelection() {
+    contractUserId.value = '';
+    searchInput.value = '';
+    searchInput.classList.remove('user-selected');
+    clearUserBtn.style.display = 'none';
+    searchInput.focus();
+}
+
+if (searchInput) {
+    searchInput.addEventListener('input', function() {
+        if (contractUserId.value) {
+            contractUserId.value = '';
+            searchInput.classList.remove('user-selected');
+        }
+        renderResults(searchEmployees(this.value));
+        clearUserBtn.style.display = this.value ? 'block' : 'none';
+    });
+    searchInput.addEventListener('focus', function() {
+        if (!contractUserId.value) {
+            renderResults(searchEmployees(this.value));
+        }
+    });
+    searchInput.addEventListener('keydown', function(e) {
+        const items = searchResults.querySelectorAll('.user-search-item');
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            if (highlightedIndex < items.length - 1) highlightItem(highlightedIndex + 1);
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (highlightedIndex > 0) highlightItem(highlightedIndex - 1);
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            if (highlightedIndex >= 0 && filteredEmployees[highlightedIndex]) {
+                selectEmployee(filteredEmployees[highlightedIndex]);
+            } else if (filteredEmployees.length > 0) {
+                selectEmployee(filteredEmployees[0]);
+            }
+        } else if (e.key === 'Escape') {
+            searchResults.classList.remove('show');
+        }
+    });
+    clearUserBtn.addEventListener('click', clearSelection);
+    document.addEventListener('click', function(e) {
+        if (!e.target.closest('.user-search-wrapper')) {
+            searchResults.classList.remove('show');
+        }
+    });
+}
+
+const addContractForm = document.getElementById('addContractForm');
+if (addContractForm) {
+    addContractForm.addEventListener('submit', function(e) {
+        if (!contractUserId.value) {
+            e.preventDefault();
+            searchInput.focus();
+            renderResults(searchEmployees(searchInput.value));
+            alert('لطفاً یک کارمند را از لیست انتخاب کنید');
+        }
+    });
+}
+
 const editableTypes = ['6', '7'];
 const deductionTypes = ['2'];
 const PERMANENT_CODE = '1';
@@ -687,9 +902,10 @@ document.addEventListener('DOMContentLoaded', function() {
     const openBtn = document.getElementById('openHistoryModalBtn');
     if (openBtn) {
         openBtn.addEventListener('click', function() {
-            const mainForm = document.querySelector('form[action="/admin/contracts/add"]');
-            document.getElementById('hist_user_id').value =
-                mainForm.querySelector('input[name="user_id"]').value;
+            const mainForm = document.getElementById('addContractForm');
+            const selectedUid = (contractUserId && contractUserId.value) ||
+                (mainForm.querySelector('input[name="user_id"]') || {}).value || '';
+            document.getElementById('hist_user_id').value = selectedUid;
             document.getElementById('hist_start').value =
                 mainForm.querySelector('input[name="start_date_str"]').value;
             document.getElementById('hist_end').value =

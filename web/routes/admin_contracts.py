@@ -1,13 +1,13 @@
 """
 پنل مدیریت عضویت / قراردادها
 """
-from datetime import date
+from datetime import date, timedelta
 from fastapi import APIRouter, Request, Depends, Form, Query, File, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
+from sqlalchemy import or_, and_
 import jdatetime
 import json
 import time
@@ -159,13 +159,14 @@ async def contracts_page(
     search: Optional[str] = Query(None),
     type_filter: Optional[str] = Query(None),
     status_filter: Optional[str] = Query(None),
+    expiry_filter: Optional[str] = Query(None),
     show_all: Optional[str] = Query(None),
     user: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
     """لیست عضویت‌ها / قراردادها"""
     enforce_permission(db, user, 'view_contracts')
-    has_filter = any([search, type_filter, status_filter, show_all])
+    has_filter = any([search, type_filter, status_filter, expiry_filter, show_all])
     contracts_data = []
 
     if has_filter:
@@ -183,6 +184,17 @@ async def contracts_page(
 
         if type_filter:
             query = query.filter(Contract.contract_type_code == type_filter)
+
+        if expiry_filter == 'soon':
+            today_g = date.today()
+            threshold = today_g + timedelta(days=30)
+            query = query.filter(
+                and_(
+                    Contract.end_date.isnot(None),
+                    Contract.end_date >= today_g,
+                    Contract.end_date <= threshold,
+                )
+            )
 
         contracts = query.order_by(Contract.start_date.desc()).all()
 
@@ -230,6 +242,18 @@ async def contracts_page(
             emp = db.query(Employee).filter(Employee.user_id == timeline_user_id).first()
             timeline_name = emp.full_name if emp else timeline_user_id
 
+    employees_for_search = db.query(Employee).filter(
+        Employee.is_active == True
+    ).order_by(Employee.first_name, Employee.last_name).all()
+    employees_list = [
+        {
+            'user_id': emp.user_id,
+            'full_name': emp.full_name,
+            'department': emp.department or '-',
+        }
+        for emp in employees_for_search
+    ]
+
     return templates.TemplateResponse(request, "admin/contracts.html", {
         "user": user,
         "contracts": contracts_data,
@@ -239,6 +263,8 @@ async def contracts_page(
         "search": search or "",
         "type_filter": type_filter or "",
         "status_filter": status_filter or "",
+        "expiry_filter": expiry_filter or "",
+        "employees": employees_list,
         "contract_types": CONTRACT_TYPES,
         "is_admin": True,
         "membership_timeline": membership_timeline,
