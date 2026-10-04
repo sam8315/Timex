@@ -385,11 +385,16 @@ async def education_delete(
         if edu.verified:
             raise ValueError("مدارک تایید شده قابل حذف نیستند")
 
-        if edu.certificate_path:
-            delete_media_file(edu.certificate_path)
-
+        old_path = edu.certificate_path
         db.delete(edu)
-        db.commit()
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+
+        if old_path:
+            delete_media_file(old_path)
 
         # به‌روزرسانی بالاترین مدرک
         update_highest_degree(db, user.user_id)
@@ -506,11 +511,16 @@ async def admin_reject_education(
         if not edu:
             raise ValueError("مدرک یافت نشد")
 
-        if edu.certificate_path:
-            delete_media_file(edu.certificate_path)
-
+        old_path = edu.certificate_path
         db.delete(edu)
-        db.commit()
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+
+        if old_path:
+            delete_media_file(old_path)
 
         return RedirectResponse(url="/admin/education?success=مدرک رد و حذف شد", status_code=302)
     except Exception as e:
@@ -667,12 +677,16 @@ async def admin_education_delete(
             raise ValueError("مدرک یافت نشد")
 
         user_id = edu.user_id
-
-        if edu.certificate_path:
-            delete_media_file(edu.certificate_path)
-
+        old_path = edu.certificate_path
         db.delete(edu)
-        db.commit()
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+
+        if old_path:
+            delete_media_file(old_path)
 
         # 🆕 به‌روزرسانی بالاترین مدرک
         update_highest_degree(db, user_id)

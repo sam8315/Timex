@@ -492,6 +492,17 @@ def test_legacy_static_upload_dirs_are_not_public(client):
             resp = client.get(f"/static/{relative}", follow_redirects=False)
             assert resp.status_code == 404, relative
 
+        # Case-insensitive guard: mixed-case URL segments must also 404.
+        for mixed_url, disk_relative in (
+            ("/static/uploads/CONTRACTS/legacy-secret.pdf", "uploads/contracts/legacy-secret.pdf"),
+            ("/static/uploads/Certificates/legacy-secret.pdf", "uploads/certificates/legacy-secret.pdf"),
+            ("/static/uploads/AvAtArS/legacy-secret.jpg", "uploads/avatars/legacy-secret.jpg"),
+        ):
+            disk = BASE_PATH / "static" / disk_relative
+            assert disk.is_file(), disk_relative
+            resp = client.get(mixed_url, follow_redirects=False)
+            assert resp.status_code == 404, mixed_url
+
         placeholder = BASE_PATH / "static" / "uploads" / "avatars" / "image.png"
         created_placeholder = False
         if not placeholder.exists():
@@ -501,6 +512,12 @@ def test_legacy_static_upload_dirs_are_not_public(client):
             created.append(placeholder)
         ok = client.get("/static/uploads/avatars/image.png", follow_redirects=False)
         assert ok.status_code == 200
+        # Only the exact placeholder file is public — not other avatar files.
+        other = BASE_PATH / "static" / "uploads" / "avatars" / "Image.PNG"
+        if not other.exists():
+            other.write_bytes(b"\x89PNG\r\n\x1a\nnot-placeholder")
+            created.append(other)
+        assert client.get("/static/uploads/avatars/Image.PNG", follow_redirects=False).status_code == 404
         if created_placeholder:
             placeholder.unlink(missing_ok=True)
     finally:
@@ -548,6 +565,64 @@ def test_secure_routes_still_work_after_static_block(client, activation_env, mak
     ).status_code == 404
 
 
+def test_unified_key_destination_exists_is_already_migrated(activation_env, make_user):
+    user = make_user(role="user", balance_al=None, contract_type_code="4")
+    db = activation_env["db"]
+    contract = (
+        db.query(Contract)
+        .filter(Contract.user_id == user["user_id"])
+        .order_by(Contract.id.desc())
+        .first()
+    )
+    filename = ("a" * 32) + ".pdf"
+    key = f"/private/contracts/{filename}"
+    dest = activation_env["storage_root"] / "contracts" / filename
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(b"%PDF-unified-dest")
+    contract.file_path = key
+    db.commit()
+
+    report = activation_env["service"].preflight()
+    item = next(i for i in report.items if i.record_id == contract.id)
+    assert item.status == MigrationStatus.ALREADY_MIGRATED
+    assert item.needs_db_update is False
+
+
+def test_unified_key_missing_despite_legacy_fallback(activation_env, make_user, monkeypatch):
+    """Legacy static file must NOT make Activation treat a private key as migrated."""
+    import web.services.file_storage as fs_mod
+
+    user = make_user(role="user", balance_al=None, contract_type_code="4")
+    db = activation_env["db"]
+    contract = (
+        db.query(Contract)
+        .filter(Contract.user_id == user["user_id"])
+        .order_by(Contract.id.desc())
+        .first()
+    )
+    filename = ("e" * 32) + ".pdf"
+    key = f"/private/contracts/{filename}"
+    contract.file_path = key
+    db.commit()
+
+    # Place file only under legacy static root (resolve would find it).
+    legacy_root = activation_env["tmp"] / "legacy_static"
+    legacy_contracts = legacy_root / "uploads" / "contracts"
+    legacy_contracts.mkdir(parents=True)
+    (legacy_contracts / filename).write_bytes(b"%PDF-legacy-only")
+    monkeypatch.setattr(fs_mod, "LEGACY_STATIC_ROOT", legacy_root)
+
+    storage = activation_env["storage"]
+    resolved = storage.resolve(key)
+    assert resolved.is_file(), "resolve() should still fall back to legacy for serving"
+    assert not (activation_env["storage_root"] / "contracts" / filename).is_file()
+
+    report = activation_env["service"].preflight()
+    item = next(i for i in report.items if i.record_id == contract.id)
+    assert item.status == MigrationStatus.MISSING
+    assert "unified key missing" in item.message
+
+
 def test_cross_category_private_key_rejected(activation_env, make_user):
     user = make_user(role="user", balance_al=None, contract_type_code="4")
     db = activation_env["db"]
@@ -571,6 +646,24 @@ def test_cross_category_private_key_rejected(activation_env, make_user):
     assert "cross-category" in item.error
 
 
+def test_invalid_private_key_path_traversal_rejected(activation_env, make_user):
+    user = make_user(role="user", balance_al=None, contract_type_code="4")
+    db = activation_env["db"]
+    contract = (
+        db.query(Contract)
+        .filter(Contract.user_id == user["user_id"])
+        .order_by(Contract.id.desc())
+        .first()
+    )
+    contract.file_path = "/private/contracts/../../etc/passwd"
+    db.commit()
+
+    report = activation_env["service"].preflight()
+    item = next(i for i in report.items if i.record_id == contract.id)
+    assert item.status == MigrationStatus.ERROR
+    assert "invalid" in item.error.lower() or "traversal" in item.error.lower()
+
+
 def test_unified_key_without_file_is_missing(activation_env, make_user):
     user = make_user(role="user", balance_al=None, contract_type_code="4")
     db = activation_env["db"]
@@ -587,7 +680,7 @@ def test_unified_key_without_file_is_missing(activation_env, make_user):
     report = activation_env["service"].preflight()
     item = next(i for i in report.items if i.record_id == contract.id)
     assert item.status == MigrationStatus.MISSING
-    assert "no resolvable file" in item.message
+    assert "unified key missing" in item.message
 
 
 def test_education_update_keeps_old_on_save_failure(activation_env, make_user, monkeypatch):
@@ -744,3 +837,120 @@ def test_avatar_delete_does_not_unlink_before_commit(activation_env, make_user, 
     db.expire_all()
     emp = db.query(Employee).filter(Employee.user_id == user["user_id"]).first()
     assert emp.photo_path == old_path
+
+
+def test_education_delete_does_not_unlink_before_commit(activation_env, make_user, monkeypatch):
+    import asyncio
+
+    from starlette.requests import Request
+
+    from models.user import User
+    from web.routes import education as education_routes
+    from web.services.storage_activation import delete_media_file
+
+    user = make_user(role="user")
+    db = activation_env["db"]
+    storage = activation_env["storage"]
+    old_key = storage.save("education", b"%PDF-edu-del", original_filename="del.pdf")
+    edu = Education(
+        user_id=user["user_id"],
+        education_group="TECH",
+        degree_level="BACHELOR",
+        major="Z",
+        graduation_date=__import__("datetime").date(2015, 1, 1),
+        certificate_path=old_key,
+        certificate_type="pdf",
+        verified=False,
+    )
+    db.add(edu)
+    db.commit()
+    db.refresh(edu)
+    edu_id = edu.id
+    user_row = db.query(User).filter(User.user_id == user["user_id"]).first()
+
+    delete_calls = []
+
+    def tracking_delete(key, **kwargs):
+        delete_calls.append(key)
+        return delete_media_file(key, **kwargs)
+
+    monkeypatch.setattr(education_routes, "delete_media_file", tracking_delete)
+
+    def boom():
+        raise RuntimeError("commit failed")
+
+    monkeypatch.setattr(db, "commit", boom)
+
+    request = Request({"type": "http", "method": "POST", "path": "/", "headers": []})
+    resp = asyncio.run(
+        education_routes.education_delete(request, edu_id, user=user_row, db=db)
+    )
+    assert resp.status_code == 302
+    assert "error" in (resp.headers.get("location") or "")
+
+    assert delete_calls == [], "physical file must not be deleted before successful commit"
+    assert storage.resolve(old_key).is_file()
+    db.expire_all()
+    still = db.query(Education).filter(Education.id == edu_id).first()
+    assert still is not None
+    assert still.certificate_path == old_key
+
+
+def test_admin_education_delete_does_not_unlink_before_commit(
+    activation_env, make_user, monkeypatch
+):
+    import asyncio
+
+    from starlette.requests import Request
+
+    from models.user import User
+    from web.routes import education as education_routes
+    from web.services.storage_activation import delete_media_file
+
+    admin = make_user(role="super_admin")
+    user = make_user(role="user")
+    db = activation_env["db"]
+    storage = activation_env["storage"]
+    old_key = storage.save("education", b"%PDF-admin-del", original_filename="adel.pdf")
+    edu = Education(
+        user_id=user["user_id"],
+        education_group="TECH",
+        degree_level="MASTER",
+        major="W",
+        graduation_date=__import__("datetime").date(2014, 1, 1),
+        certificate_path=old_key,
+        certificate_type="pdf",
+        verified=True,
+    )
+    db.add(edu)
+    db.commit()
+    db.refresh(edu)
+    edu_id = edu.id
+    admin_row = db.query(User).filter(User.user_id == admin["user_id"]).first()
+
+    delete_calls = []
+
+    def tracking_delete(key, **kwargs):
+        delete_calls.append(key)
+        return delete_media_file(key, **kwargs)
+
+    monkeypatch.setattr(education_routes, "delete_media_file", tracking_delete)
+
+    def boom():
+        raise RuntimeError("commit failed")
+
+    monkeypatch.setattr(db, "commit", boom)
+
+    request = Request({"type": "http", "method": "POST", "path": "/", "headers": []})
+    resp = asyncio.run(
+        education_routes.admin_education_delete(request, edu_id, user=admin_row, db=db)
+    )
+    assert resp.status_code == 302
+    assert "error" in (resp.headers.get("location") or "")
+
+    assert delete_calls == [], "physical file must not be deleted before successful commit"
+    assert storage.resolve(old_key).is_file()
+    db.expire_all()
+    still = db.query(Education).filter(Education.id == edu_id).first()
+    assert still is not None
+    assert still.certificate_path == old_key

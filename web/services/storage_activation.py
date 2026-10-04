@@ -305,41 +305,7 @@ class StorageActivationService:
             return item
 
         if is_unified_storage_key(key):
-            key_category = category_for_legacy_key(key)
-            if key_category != item.category:
-                item.status = MigrationStatus.ERROR
-                item.error = (
-                    f"cross-category private key: expected {item.category}, got {key_category}"
-                )
-                item.message = item.error
-                item.needs_db_update = False
-                return item
-            cfg = CATEGORY_CONFIGS.get(item.category)
-            if cfg is None or not key.startswith(cfg.key_prefix):
-                item.status = MigrationStatus.ERROR
-                item.error = "invalid unified storage key for record category"
-                item.message = item.error
-                item.needs_db_update = False
-                return item
-            try:
-                # Validate key shape via FileStorage (rejects traversal / bad names).
-                item.destination_path = self.storage.resolve(key)
-            except Exception as exc:  # noqa: BLE001
-                item.status = MigrationStatus.ERROR
-                item.error = f"invalid unified storage key: {exc}"
-                item.message = item.error
-                item.needs_db_update = False
-                return item
-            item.destination_key = key
-            if not item.destination_path.is_file():
-                item.status = MigrationStatus.MISSING
-                item.message = "unified key has no resolvable file on disk"
-                item.needs_db_update = False
-                return item
-            item.status = MigrationStatus.ALREADY_MIGRATED
-            item.message = "already unified storage key; left unchanged"
-            item.needs_db_update = False
-            return item
+            return self._preflight_unified_key(item, key)
 
         category = category_for_legacy_key(key)
         if category is None or category not in MIGRATABLE_CATEGORIES:
@@ -405,6 +371,62 @@ class StorageActivationService:
         item.status = MigrationStatus.PENDING
         item.message = "ready to copy and update DB"
         item.needs_db_update = True
+        return item
+
+    def _preflight_unified_key(self, item: ActivationItem, key: str) -> ActivationItem:
+        """Validate an already-private DB key without legacy filesystem fallbacks."""
+        from web.services.file_storage import FileStorageError
+
+        key_category = category_for_legacy_key(key)
+        if key_category != item.category:
+            item.status = MigrationStatus.ERROR
+            item.error = (
+                f"cross-category private key: expected {item.category}, got {key_category}"
+            )
+            item.message = item.error
+            item.needs_db_update = False
+            return item
+
+        cfg = CATEGORY_CONFIGS.get(item.category)
+        if cfg is None or not key.startswith(cfg.key_prefix):
+            item.status = MigrationStatus.ERROR
+            item.error = "invalid unified storage key for record category"
+            item.message = item.error
+            item.needs_db_update = False
+            return item
+
+        try:
+            # Validate key shape / traversal via FileStorage parsers only.
+            # Do NOT use FileStorage.resolve() — it falls back to legacy static paths.
+            normalized = self.storage._normalize_key(key)  # noqa: SLF001
+            parsed_category, filename = self.storage._parse_private_key(normalized)  # noqa: SLF001
+            if parsed_category != item.category:
+                raise FileStorageError(
+                    "invalid_key",
+                    f"parsed category {parsed_category} != {item.category}",
+                )
+            dest = self.storage._safe_join(  # noqa: SLF001
+                self.storage.root / item.category,
+                filename,
+            )
+        except FileStorageError as exc:
+            item.status = MigrationStatus.ERROR
+            item.error = f"invalid unified storage key: {exc}"
+            item.message = item.error
+            item.needs_db_update = False
+            return item
+
+        item.destination_key = key
+        item.destination_path = dest
+        if not dest.is_file():
+            item.status = MigrationStatus.MISSING
+            item.message = "unified key missing under storage root"
+            item.needs_db_update = False
+            return item
+
+        item.status = MigrationStatus.ALREADY_MIGRATED
+        item.message = "already unified storage key; left unchanged"
+        item.needs_db_update = False
         return item
 
     def _apply_db_update(self, item: ActivationItem) -> None:

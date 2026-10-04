@@ -33,10 +33,16 @@ class GuardedStaticFiles(StaticFiles):
 
     async def get_response(self, path: str, scope):
         normalized = (path or "").replace("\\", "/").lstrip("/")
-        if normalized in self._ALLOWED_PLACEHOLDERS:
+        normalized_lower = normalized.lower()
+        # Placeholder exception: path matches case-insensitively, but filename
+        # must be exactly image.png (not Image.PNG / IMAGE.PNG).
+        if (
+            normalized_lower in self._ALLOWED_PLACEHOLDERS
+            and normalized.rsplit("/", 1)[-1] == "image.png"
+        ):
             return await super().get_response(path, scope)
         for prefix in self._BLOCKED_PREFIXES:
-            if normalized.startswith(prefix):
+            if normalized_lower.startswith(prefix):
                 return PlainTextResponse("Not Found", status_code=404)
         return await super().get_response(path, scope)
 
