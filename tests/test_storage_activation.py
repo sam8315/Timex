@@ -1,0 +1,956 @@
+"""DB-backed Unified Storage activation — migration + secure serving."""
+from io import BytesIO
+from pathlib import Path
+
+import pytest
+
+from models.contract import Contract
+from models.education import Education
+from models.employee import Employee
+from web.services.file_storage import FileStorage
+from web.services.storage_activation import (
+    ActivationReport,
+    StorageActivationService,
+    is_legacy_key,
+    is_unified_storage_key,
+)
+from web.services.storage_migration import (
+    LegacySourceRoot,
+    MigrationStatus,
+    StorageMigrationService,
+    build_destination_key,
+)
+from .conftest import login_as
+
+
+@pytest.fixture
+def activation_env(tmp_path, monkeypatch, db):
+    contracts_static = tmp_path / "static" / "uploads" / "contracts"
+    contracts_private = tmp_path / "private_uploads" / "contracts"
+    education_dir = tmp_path / "static" / "uploads" / "certificates"
+    avatars_dir = tmp_path / "static" / "uploads" / "avatars"
+    for d in (contracts_static, contracts_private, education_dir, avatars_dir):
+        d.mkdir(parents=True)
+
+    storage_root = tmp_path / "unified_storage"
+    monkeypatch.setenv("TIMEX_STORAGE_ROOT", str(storage_root))
+    storage = FileStorage(root=storage_root)
+    roots = [
+        LegacySourceRoot("contracts", contracts_private, "/private/contracts/"),
+        LegacySourceRoot("contracts", contracts_static, "/static/uploads/contracts/"),
+        LegacySourceRoot("education", education_dir, "/static/uploads/certificates/"),
+        LegacySourceRoot("avatars", avatars_dir, "/static/uploads/avatars/"),
+    ]
+    migration = StorageMigrationService(storage=storage, legacy_roots=roots)
+    service = StorageActivationService(db, storage=storage, migration=migration)
+    return {
+        "tmp": tmp_path,
+        "storage": storage,
+        "storage_root": storage_root,
+        "service": service,
+        "contracts_static": contracts_static,
+        "education_dir": education_dir,
+        "avatars_dir": avatars_dir,
+        "db": db,
+    }
+
+
+def _seed_legacy_files(env, user_id: str):
+    c_name = f"{user_id}-contract.pdf"
+    e_name = f"{user_id}-degree.pdf"
+    a_name = f"{user_id}-face.jpg"
+    (env["contracts_static"] / c_name).write_bytes(b"%PDF-contract-legacy")
+    (env["education_dir"] / e_name).write_bytes(b"%PDF-education-legacy")
+    (env["avatars_dir"] / a_name).write_bytes(b"jpeg-avatar-legacy")
+    return {
+        "contract": f"/static/uploads/contracts/{c_name}",
+        "education": f"/static/uploads/certificates/{e_name}",
+        "avatar": f"/static/uploads/avatars/{a_name}",
+    }
+
+
+def test_db_reference_category_mapping():
+    assert is_legacy_key("/static/uploads/contracts/a.pdf")
+    assert is_legacy_key("/static/uploads/certificates/a.pdf")
+    assert is_legacy_key("/static/uploads/avatars/a.jpg")
+    assert is_legacy_key("bare.pdf")
+    assert not is_legacy_key(None)
+    assert not is_legacy_key("")
+    assert not is_legacy_key("/private/contracts/abc.pdf")
+    assert is_unified_storage_key("/private/education/abc.pdf")
+
+
+def test_null_path_skipped(activation_env, make_user):
+    user = make_user(role="user")
+    db = activation_env["db"]
+    # contract without file_path exists from make_user — should not appear as migratable
+    report = activation_env["service"].preflight()
+    for item in report.items:
+        if item.user_id == user["user_id"] and item.record_type == "contract":
+            assert item.legacy_key  # only non-empty collected
+            assert item.status != MigrationStatus.SKIPPED or item.message
+
+
+def test_legacy_contract_education_avatar_migration(activation_env, make_user):
+    user = make_user(role="user", balance_al=None, contract_type_code="4")
+    db = activation_env["db"]
+    paths = _seed_legacy_files(activation_env, user["user_id"])
+
+    contract = (
+        db.query(Contract)
+        .filter(Contract.user_id == user["user_id"])
+        .order_by(Contract.id.desc())
+        .first()
+    )
+    contract.file_path = paths["contract"]
+    edu = Education(
+        user_id=user["user_id"],
+        education_group="TECH",
+        degree_level="BACHELOR",
+        major="CS",
+        graduation_date=__import__("datetime").date(2020, 1, 1),
+        certificate_path=paths["education"],
+        certificate_type="pdf",
+    )
+    db.add(edu)
+    emp = db.query(Employee).filter(Employee.user_id == user["user_id"]).first()
+    emp.photo_path = paths["avatar"]
+    db.commit()
+
+    dry = activation_env["service"].execute(dry_run=True)
+    assert dry.dry_run is True
+    assert "contracts" in dry.format_summary()
+    assert dry.count_status(MigrationStatus.PENDING) >= 3
+    assert dry.count_db_updated() == 0
+
+    # sources still present after dry-run
+    assert (activation_env["contracts_static"] / Path(paths["contract"]).name).is_file()
+
+    report = activation_env["service"].execute(dry_run=False)
+    assert not report.aborted
+    assert report.count_db_updated() >= 3
+
+    db.expire_all()
+    contract = db.query(Contract).filter(Contract.id == contract.id).first()
+    edu = db.query(Education).filter(Education.id == edu.id).first()
+    emp = db.query(Employee).filter(Employee.user_id == user["user_id"]).first()
+
+    assert contract.file_path.startswith("/private/contracts/")
+    assert edu.certificate_path.startswith("/private/education/")
+    assert emp.photo_path.startswith("/private/avatars/")
+
+    # deterministic keys
+    assert contract.file_path == build_destination_key("contracts", paths["contract"])
+    assert edu.certificate_path == build_destination_key("education", paths["education"])
+    assert emp.photo_path == build_destination_key("avatars", paths["avatar"])
+
+    # source retained
+    assert (activation_env["contracts_static"] / Path(paths["contract"]).name).is_file()
+    assert (activation_env["education_dir"] / Path(paths["education"]).name).is_file()
+    assert (activation_env["avatars_dir"] / Path(paths["avatar"]).name).is_file()
+
+    # destinations exist with matching content
+    assert activation_env["storage"].resolve(contract.file_path).read_bytes() == b"%PDF-contract-legacy"
+    assert activation_env["storage"].resolve(edu.certificate_path).read_bytes() == b"%PDF-education-legacy"
+    assert activation_env["storage"].resolve(emp.photo_path).read_bytes() == b"jpeg-avatar-legacy"
+
+
+def test_already_unified_path_skipped(activation_env, make_user):
+    user = make_user(role="user", balance_al=None, contract_type_code="4")
+    db = activation_env["db"]
+    contract = (
+        db.query(Contract)
+        .filter(Contract.user_id == user["user_id"])
+        .order_by(Contract.id.desc())
+        .first()
+    )
+    key = "/private/contracts/" + ("a" * 32) + ".pdf"
+    dest = activation_env["storage"].resolve(key)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(b"%PDF-already")
+    contract.file_path = key
+    db.commit()
+
+    report = activation_env["service"].execute(dry_run=False)
+    item = next(i for i in report.items if i.record_type == "contract" and i.record_id == contract.id)
+    assert item.status == MigrationStatus.ALREADY_MIGRATED
+    assert item.needs_db_update is False
+    assert item.db_updated is False
+    db.expire_all()
+    assert db.query(Contract).filter(Contract.id == contract.id).first().file_path == key
+
+
+def test_missing_source(activation_env, make_user):
+    user = make_user(role="user", balance_al=None, contract_type_code="4")
+    db = activation_env["db"]
+    contract = (
+        db.query(Contract)
+        .filter(Contract.user_id == user["user_id"])
+        .order_by(Contract.id.desc())
+        .first()
+    )
+    contract.file_path = "/static/uploads/contracts/missing.pdf"
+    db.commit()
+    report = activation_env["service"].preflight()
+    item = next(i for i in report.items if i.record_id == contract.id)
+    assert item.status == MigrationStatus.MISSING
+
+
+def test_invalid_extension(activation_env, make_user):
+    user = make_user(role="user", balance_al=None, contract_type_code="4")
+    db = activation_env["db"]
+    junk = activation_env["contracts_static"] / "notes.exe"
+    junk.write_bytes(b"MZ")
+    contract = (
+        db.query(Contract)
+        .filter(Contract.user_id == user["user_id"])
+        .order_by(Contract.id.desc())
+        .first()
+    )
+    contract.file_path = "/static/uploads/contracts/notes.exe"
+    db.commit()
+    report = activation_env["service"].preflight()
+    item = next(i for i in report.items if i.record_id == contract.id)
+    assert item.status == MigrationStatus.SKIPPED
+    assert "extension" in item.message
+
+
+def test_destination_conflict_aborts_db(activation_env, make_user):
+    user = make_user(role="user", balance_al=None, contract_type_code="4")
+    db = activation_env["db"]
+    paths = _seed_legacy_files(activation_env, user["user_id"])
+    contract = (
+        db.query(Contract)
+        .filter(Contract.user_id == user["user_id"])
+        .order_by(Contract.id.desc())
+        .first()
+    )
+    contract.file_path = paths["contract"]
+    db.commit()
+
+    dest_key = build_destination_key("contracts", paths["contract"])
+    dest = activation_env["storage"].resolve(dest_key)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(b"%PDF-OTHER")
+
+    report = activation_env["service"].execute(dry_run=False)
+    assert report.aborted
+    assert report.count_db_updated() == 0
+    db.expire_all()
+    assert db.query(Contract).filter(Contract.id == contract.id).first().file_path == paths["contract"]
+
+
+def test_identical_destination_updates_db_only(activation_env, make_user):
+    user = make_user(role="user", balance_al=None, contract_type_code="4")
+    db = activation_env["db"]
+    paths = _seed_legacy_files(activation_env, user["user_id"])
+    contract = (
+        db.query(Contract)
+        .filter(Contract.user_id == user["user_id"])
+        .order_by(Contract.id.desc())
+        .first()
+    )
+    contract.file_path = paths["contract"]
+    db.commit()
+
+    dest_key = build_destination_key("contracts", paths["contract"])
+    dest = activation_env["storage"].resolve(dest_key)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(b"%PDF-contract-legacy")
+
+    report = activation_env["service"].execute(dry_run=False)
+    assert not report.aborted
+    item = next(i for i in report.items if i.record_id == contract.id)
+    assert item.status == MigrationStatus.ALREADY_MIGRATED
+    assert item.db_updated is True
+    db.expire_all()
+    assert db.query(Contract).filter(Contract.id == contract.id).first().file_path == dest_key
+    # source retained
+    assert (activation_env["contracts_static"] / Path(paths["contract"]).name).is_file()
+
+
+def test_db_rollback_on_failure(activation_env, make_user, monkeypatch):
+    user = make_user(role="user", balance_al=None, contract_type_code="4")
+    db = activation_env["db"]
+    paths = _seed_legacy_files(activation_env, user["user_id"])
+    contract = (
+        db.query(Contract)
+        .filter(Contract.user_id == user["user_id"])
+        .order_by(Contract.id.desc())
+        .first()
+    )
+    contract.file_path = paths["contract"]
+    db.commit()
+    original = paths["contract"]
+
+    svc = activation_env["service"]
+
+    def boom(item):
+        raise RuntimeError("forced db failure")
+
+    monkeypatch.setattr(svc, "_apply_db_update", boom)
+    report = svc.execute(dry_run=False)
+    assert report.aborted
+    assert "rolled back" in report.abort_reason.lower() or "DB" in report.abort_reason
+    db.expire_all()
+    assert db.query(Contract).filter(Contract.id == contract.id).first().file_path == original
+    # destination retained for retry
+    dest_key = build_destination_key("contracts", original)
+    assert activation_env["storage"].resolve(dest_key).is_file()
+    assert (activation_env["contracts_static"] / Path(original).name).is_file()
+
+
+def test_idempotent_second_run(activation_env, make_user):
+    user = make_user(role="user", balance_al=None, contract_type_code="4")
+    db = activation_env["db"]
+    paths = _seed_legacy_files(activation_env, user["user_id"])
+    contract = (
+        db.query(Contract)
+        .filter(Contract.user_id == user["user_id"])
+        .order_by(Contract.id.desc())
+        .first()
+    )
+    contract.file_path = paths["contract"]
+    db.commit()
+
+    first = activation_env["service"].execute(dry_run=False)
+    assert first.count_db_updated() >= 1
+    db.expire_all()
+    new_key = db.query(Contract).filter(Contract.id == contract.id).first().file_path
+
+    second = activation_env["service"].execute(dry_run=False)
+    item = next(i for i in second.items if i.record_id == contract.id)
+    assert item.status == MigrationStatus.ALREADY_MIGRATED
+    assert item.db_updated is False
+    stored = list(activation_env["storage_root"].rglob("*.pdf"))
+    # only one destination for this contract key
+    assert sum(1 for p in stored if p.name == Path(new_key).name) == 1
+
+
+def test_education_secure_download_and_access(client, activation_env, make_user):
+    owner = make_user(role="user")
+    other = make_user(role="user")
+    db = activation_env["db"]
+    paths = _seed_legacy_files(activation_env, owner["user_id"])
+    edu = Education(
+        user_id=owner["user_id"],
+        education_group="TECH",
+        degree_level="BACHELOR",
+        major="IT",
+        graduation_date=__import__("datetime").date(2019, 5, 1),
+        certificate_path=paths["education"],
+        certificate_type="pdf",
+    )
+    db.add(edu)
+    db.commit()
+
+    report = activation_env["service"].execute(dry_run=False)
+    assert not report.aborted
+    db.expire_all()
+    edu = db.query(Education).filter(Education.id == edu.id).first()
+    assert edu.certificate_path.startswith("/private/education/")
+
+    login_as(client, owner["national_code"])
+    ok = client.get(f"/education/{edu.id}/file", follow_redirects=False)
+    assert ok.status_code == 200
+    assert ok.content.startswith(b"%PDF-education")
+
+    login_as(client, other["national_code"])
+    denied = client.get(f"/education/{edu.id}/file", follow_redirects=False)
+    assert denied.status_code == 302
+    assert "error=" in denied.headers["location"]
+
+    anon = client.get(f"/education/{edu.id}/file", follow_redirects=False)
+    # session cleared? login_as for other still logged in — use fresh client cookie clear
+    client.cookies.clear()
+    anon = client.get(f"/education/{edu.id}/file", follow_redirects=False)
+    assert anon.status_code in (302, 307)
+    assert "/login" in anon.headers.get("location", "")
+
+    # no direct static access to migrated private key filename
+    leaked = client.get(
+        f"/static/uploads/certificates/{Path(edu.certificate_path).name}",
+        follow_redirects=False,
+    )
+    assert leaked.status_code == 404
+
+
+def test_avatar_secure_serving(client, activation_env, make_user):
+    user = make_user(role="user")
+    admin = make_user(role="admin")
+    db = activation_env["db"]
+    paths = _seed_legacy_files(activation_env, user["user_id"])
+    emp = db.query(Employee).filter(Employee.user_id == user["user_id"]).first()
+    emp.photo_path = paths["avatar"]
+    db.commit()
+
+    activation_env["service"].execute(dry_run=False)
+    db.expire_all()
+    emp = db.query(Employee).filter(Employee.user_id == user["user_id"]).first()
+    assert emp.photo_path.startswith("/private/avatars/")
+
+    login_as(client, user["national_code"])
+    resp = client.get("/profile/avatar", follow_redirects=False)
+    assert resp.status_code == 200
+    assert resp.content == b"jpeg-avatar-legacy"
+
+    login_as(client, admin["national_code"])
+    admin_resp = client.get(
+        f"/admin/profile/{user['user_id']}/avatar",
+        follow_redirects=False,
+    )
+    assert admin_resp.status_code == 200
+    assert admin_resp.content == b"jpeg-avatar-legacy"
+
+    leaked = client.get(
+        f"/static/uploads/avatars/{Path(emp.photo_path).name}",
+        follow_redirects=False,
+    )
+    assert leaked.status_code == 404
+
+
+def test_existing_unified_contract_still_works(client, activation_env, make_user):
+    admin = make_user(role="super_admin")
+    user = make_user(role="user", balance_al=None, contract_type_code="4")
+    db = activation_env["db"]
+    contract = (
+        db.query(Contract)
+        .filter(Contract.user_id == user["user_id"])
+        .order_by(Contract.id.desc())
+        .first()
+    )
+    key = "/private/contracts/" + ("b" * 32) + ".pdf"
+    dest = activation_env["storage"].resolve(key)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(b"%PDF-unified-existing")
+    contract.file_path = key
+    db.commit()
+
+    # activation leaves it alone
+    report = activation_env["service"].execute(dry_run=False)
+    item = next(i for i in report.items if i.record_id == contract.id)
+    assert item.status == MigrationStatus.ALREADY_MIGRATED
+
+    login_as(client, admin["national_code"])
+    view = client.get(f"/admin/contracts/{contract.id}/file", follow_redirects=False)
+    assert view.status_code == 200
+    assert view.content.startswith(b"%PDF-unified")
+
+
+def test_preflight_error_blocks_all_db_updates(activation_env, make_user):
+    u1 = make_user(role="user", balance_al=None, contract_type_code="4")
+    u2 = make_user(role="user", balance_al=None, contract_type_code="4")
+    db = activation_env["db"]
+    paths1 = _seed_legacy_files(activation_env, u1["user_id"])
+    c1 = (
+        db.query(Contract)
+        .filter(Contract.user_id == u1["user_id"])
+        .order_by(Contract.id.desc())
+        .first()
+    )
+    c2 = (
+        db.query(Contract)
+        .filter(Contract.user_id == u2["user_id"])
+        .order_by(Contract.id.desc())
+        .first()
+    )
+    c1.file_path = paths1["contract"]
+    # conflict for c2
+    bad = "/static/uploads/contracts/conflict.pdf"
+    (activation_env["contracts_static"] / "conflict.pdf").write_bytes(b"%PDF-A")
+    dest = activation_env["storage"].resolve(build_destination_key("contracts", bad))
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(b"%PDF-B")
+    c2.file_path = bad
+    db.commit()
+
+    report = activation_env["service"].execute(dry_run=False)
+    assert report.aborted
+    assert report.count_db_updated() == 0
+    db.expire_all()
+    assert db.query(Contract).filter(Contract.id == c1.id).first().file_path == paths1["contract"]
+
+
+# ---------------------------------------------------------------------------
+# Hardening: public static block, atomic replace, unified-key validation
+# ---------------------------------------------------------------------------
+
+def test_legacy_static_upload_dirs_are_not_public(client):
+    from web.app import BASE_PATH
+
+    created = []
+    try:
+        for relative, payload in (
+            ("uploads/contracts/legacy-secret.pdf", b"%PDF-secret-contract"),
+            ("uploads/certificates/legacy-secret.pdf", b"%PDF-secret-edu"),
+            ("uploads/avatars/legacy-secret.jpg", b"jpeg-secret-avatar"),
+        ):
+            path = BASE_PATH / "static" / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(payload)
+            created.append(path)
+            resp = client.get(f"/static/{relative}", follow_redirects=False)
+            assert resp.status_code == 404, relative
+
+        # Case-insensitive guard: mixed-case URL segments must also 404.
+        for mixed_url, disk_relative in (
+            ("/static/uploads/CONTRACTS/legacy-secret.pdf", "uploads/contracts/legacy-secret.pdf"),
+            ("/static/uploads/Certificates/legacy-secret.pdf", "uploads/certificates/legacy-secret.pdf"),
+            ("/static/uploads/AvAtArS/legacy-secret.jpg", "uploads/avatars/legacy-secret.jpg"),
+        ):
+            disk = BASE_PATH / "static" / disk_relative
+            assert disk.is_file(), disk_relative
+            resp = client.get(mixed_url, follow_redirects=False)
+            assert resp.status_code == 404, mixed_url
+
+        placeholder = BASE_PATH / "static" / "uploads" / "avatars" / "image.png"
+        created_placeholder = False
+        if not placeholder.exists():
+            placeholder.parent.mkdir(parents=True, exist_ok=True)
+            placeholder.write_bytes(b"\x89PNG\r\n\x1a\nplaceholder")
+            created_placeholder = True
+            created.append(placeholder)
+        ok = client.get("/static/uploads/avatars/image.png", follow_redirects=False)
+        assert ok.status_code == 200
+        # Only the exact placeholder file is public — not other avatar files.
+        other = BASE_PATH / "static" / "uploads" / "avatars" / "Image.PNG"
+        if not other.exists():
+            other.write_bytes(b"\x89PNG\r\n\x1a\nnot-placeholder")
+            created.append(other)
+        assert client.get("/static/uploads/avatars/Image.PNG", follow_redirects=False).status_code == 404
+        if created_placeholder:
+            placeholder.unlink(missing_ok=True)
+    finally:
+        for path in created:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
+def test_secure_routes_still_work_after_static_block(client, activation_env, make_user):
+    user = make_user(role="user")
+    db = activation_env["db"]
+    paths = _seed_legacy_files(activation_env, user["user_id"])
+    edu = Education(
+        user_id=user["user_id"],
+        education_group="TECH",
+        degree_level="BACHELOR",
+        major="Net",
+        graduation_date=__import__("datetime").date(2018, 1, 1),
+        certificate_path=paths["education"],
+        certificate_type="pdf",
+    )
+    db.add(edu)
+    emp = db.query(Employee).filter(Employee.user_id == user["user_id"]).first()
+    emp.photo_path = paths["avatar"]
+    db.commit()
+    activation_env["service"].execute(dry_run=False)
+    db.expire_all()
+    edu = db.query(Education).filter(Education.id == edu.id).first()
+
+    login_as(client, user["national_code"])
+    assert client.get(f"/education/{edu.id}/file", follow_redirects=False).status_code == 200
+    assert client.get("/profile/avatar", follow_redirects=False).status_code == 200
+
+    # migrated private filenames must not be reachable via /static
+    assert client.get(
+        f"/static/uploads/certificates/{Path(edu.certificate_path).name}",
+        follow_redirects=False,
+    ).status_code == 404
+    emp = db.query(Employee).filter(Employee.user_id == user["user_id"]).first()
+    assert client.get(
+        f"/static/uploads/avatars/{Path(emp.photo_path).name}",
+        follow_redirects=False,
+    ).status_code == 404
+
+
+def test_unified_key_destination_exists_is_already_migrated(activation_env, make_user):
+    user = make_user(role="user", balance_al=None, contract_type_code="4")
+    db = activation_env["db"]
+    contract = (
+        db.query(Contract)
+        .filter(Contract.user_id == user["user_id"])
+        .order_by(Contract.id.desc())
+        .first()
+    )
+    filename = ("a" * 32) + ".pdf"
+    key = f"/private/contracts/{filename}"
+    dest = activation_env["storage_root"] / "contracts" / filename
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(b"%PDF-unified-dest")
+    contract.file_path = key
+    db.commit()
+
+    report = activation_env["service"].preflight()
+    item = next(i for i in report.items if i.record_id == contract.id)
+    assert item.status == MigrationStatus.ALREADY_MIGRATED
+    assert item.needs_db_update is False
+
+
+def test_unified_key_missing_despite_legacy_fallback(activation_env, make_user, monkeypatch):
+    """Legacy static file must NOT make Activation treat a private key as migrated."""
+    import web.services.file_storage as fs_mod
+
+    user = make_user(role="user", balance_al=None, contract_type_code="4")
+    db = activation_env["db"]
+    contract = (
+        db.query(Contract)
+        .filter(Contract.user_id == user["user_id"])
+        .order_by(Contract.id.desc())
+        .first()
+    )
+    filename = ("e" * 32) + ".pdf"
+    key = f"/private/contracts/{filename}"
+    contract.file_path = key
+    db.commit()
+
+    # Place file only under legacy static root (resolve would find it).
+    legacy_root = activation_env["tmp"] / "legacy_static"
+    legacy_contracts = legacy_root / "uploads" / "contracts"
+    legacy_contracts.mkdir(parents=True)
+    (legacy_contracts / filename).write_bytes(b"%PDF-legacy-only")
+    monkeypatch.setattr(fs_mod, "LEGACY_STATIC_ROOT", legacy_root)
+
+    storage = activation_env["storage"]
+    resolved = storage.resolve(key)
+    assert resolved.is_file(), "resolve() should still fall back to legacy for serving"
+    assert not (activation_env["storage_root"] / "contracts" / filename).is_file()
+
+    report = activation_env["service"].preflight()
+    item = next(i for i in report.items if i.record_id == contract.id)
+    assert item.status == MigrationStatus.MISSING
+    assert "unified key missing" in item.message
+
+
+def test_cross_category_private_key_rejected(activation_env, make_user):
+    user = make_user(role="user", balance_al=None, contract_type_code="4")
+    db = activation_env["db"]
+    contract = (
+        db.query(Contract)
+        .filter(Contract.user_id == user["user_id"])
+        .order_by(Contract.id.desc())
+        .first()
+    )
+    # education private key on a contract record
+    fake = "/private/education/" + ("c" * 32) + ".pdf"
+    dest = activation_env["storage"].resolve(fake)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(b"%PDF-cross")
+    contract.file_path = fake
+    db.commit()
+
+    report = activation_env["service"].preflight()
+    item = next(i for i in report.items if i.record_id == contract.id)
+    assert item.status == MigrationStatus.ERROR
+    assert "cross-category" in item.error
+
+
+def test_invalid_private_key_path_traversal_rejected(activation_env, make_user):
+    user = make_user(role="user", balance_al=None, contract_type_code="4")
+    db = activation_env["db"]
+    contract = (
+        db.query(Contract)
+        .filter(Contract.user_id == user["user_id"])
+        .order_by(Contract.id.desc())
+        .first()
+    )
+    contract.file_path = "/private/contracts/../../etc/passwd"
+    db.commit()
+
+    report = activation_env["service"].preflight()
+    item = next(i for i in report.items if i.record_id == contract.id)
+    assert item.status == MigrationStatus.ERROR
+    assert "invalid" in item.error.lower() or "traversal" in item.error.lower()
+
+
+def test_unified_key_without_file_is_missing(activation_env, make_user):
+    user = make_user(role="user", balance_al=None, contract_type_code="4")
+    db = activation_env["db"]
+    contract = (
+        db.query(Contract)
+        .filter(Contract.user_id == user["user_id"])
+        .order_by(Contract.id.desc())
+        .first()
+    )
+    key = "/private/contracts/" + ("d" * 32) + ".pdf"
+    contract.file_path = key
+    db.commit()
+
+    report = activation_env["service"].preflight()
+    item = next(i for i in report.items if i.record_id == contract.id)
+    assert item.status == MigrationStatus.MISSING
+    assert "unified key missing" in item.message
+
+
+def test_education_update_keeps_old_on_save_failure(activation_env, make_user, monkeypatch):
+    from web.routes import education as education_routes
+
+    user = make_user(role="user")
+    db = activation_env["db"]
+    storage = activation_env["storage"]
+    old_key = storage.save("education", b"%PDF-old", original_filename="old.pdf")
+    edu = Education(
+        user_id=user["user_id"],
+        education_group="TECH",
+        degree_level="BACHELOR",
+        major="X",
+        graduation_date=__import__("datetime").date(2017, 1, 1),
+        certificate_path=old_key,
+        certificate_type="pdf",
+    )
+    db.add(edu)
+    db.commit()
+    db.refresh(edu)
+
+    def boom(*args, **kwargs):
+        raise ValueError("نوع فایل مجاز نیست (فقط JPG/PNG/PDF)")
+
+    monkeypatch.setattr(education_routes, "_store_certificate", boom)
+    with pytest.raises(ValueError):
+        education_routes._apply_certificate_bytes(edu, b"%PDF-new", "new.exe")
+
+    db.refresh(edu)
+    assert edu.certificate_path == old_key
+    assert storage.resolve(old_key).is_file()
+
+
+def test_education_update_keeps_old_and_cleans_new_on_db_failure(
+    activation_env, make_user, monkeypatch
+):
+    from web.routes import education as education_routes
+
+    user = make_user(role="user")
+    db = activation_env["db"]
+    storage = activation_env["storage"]
+    old_key = storage.save("education", b"%PDF-old2", original_filename="old2.pdf")
+    edu = Education(
+        user_id=user["user_id"],
+        education_group="TECH",
+        degree_level="MASTER",
+        major="Y",
+        graduation_date=__import__("datetime").date(2016, 1, 1),
+        certificate_path=old_key,
+        certificate_type="pdf",
+    )
+    db.add(edu)
+    db.commit()
+    db.refresh(edu)
+
+    old_path, new_key = education_routes._apply_certificate_bytes(
+        edu, b"%PDF-new2", "new2.pdf"
+    )
+    assert old_path == old_key
+    assert storage.resolve(new_key).is_file()
+
+    def boom():
+        raise RuntimeError("db commit failed")
+
+    monkeypatch.setattr(db, "commit", boom)
+    with pytest.raises(RuntimeError):
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            from web.services.storage_activation import delete_media_file
+
+            delete_media_file(new_key)
+            raise
+
+    # restore session state like the route would
+    db.rollback()
+    db.expire_all()
+    edu = db.query(Education).filter(Education.id == edu.id).first()
+    assert edu.certificate_path == old_key
+    assert storage.resolve(old_key).is_file()
+    assert not storage.resolve(new_key).is_file()
+
+
+def test_avatar_upload_keeps_old_on_db_failure(activation_env, make_user, monkeypatch):
+    from web.services.storage_activation import delete_media_file, save_media_bytes
+
+    user = make_user(role="user")
+    db = activation_env["db"]
+    storage = activation_env["storage"]
+    emp = db.query(Employee).filter(Employee.user_id == user["user_id"]).first()
+    old_key = storage.save("avatars", b"jpeg-old", original_filename="old.jpg")
+    emp.photo_path = old_key
+    db.commit()
+
+    new_key = save_media_bytes("avatars", b"jpeg-new", original_filename="new.jpg")
+    emp.photo_path = new_key
+
+    def boom():
+        raise RuntimeError("commit failed")
+
+    monkeypatch.setattr(db, "commit", boom)
+    with pytest.raises(RuntimeError):
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            delete_media_file(new_key)
+            raise
+
+    db.expire_all()
+    emp = db.query(Employee).filter(Employee.user_id == user["user_id"]).first()
+    # after rollback photo_path should still be old
+    assert emp.photo_path == old_key
+    assert storage.resolve(old_key).is_file()
+    assert not storage.resolve(new_key).is_file()
+
+
+def test_avatar_delete_does_not_unlink_before_commit(activation_env, make_user, monkeypatch):
+    from web.services.storage_activation import delete_media_file
+
+    user = make_user(role="user")
+    db = activation_env["db"]
+    storage = activation_env["storage"]
+    emp = db.query(Employee).filter(Employee.user_id == user["user_id"]).first()
+    old_key = storage.save("avatars", b"jpeg-del", original_filename="del.jpg")
+    emp.photo_path = old_key
+    db.commit()
+
+    old_path = emp.photo_path
+    emp.photo_path = None
+
+    deleted_before_commit = {"called": False}
+
+    def tracking_delete(key, **kwargs):
+        deleted_before_commit["called"] = True
+        return delete_media_file(key, **kwargs)
+
+    def boom():
+        raise RuntimeError("commit failed")
+
+    monkeypatch.setattr(db, "commit", boom)
+    with pytest.raises(RuntimeError):
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            # route must NOT have deleted yet
+            assert deleted_before_commit["called"] is False
+            raise
+
+    assert storage.resolve(old_path).is_file()
+    db.expire_all()
+    emp = db.query(Employee).filter(Employee.user_id == user["user_id"]).first()
+    assert emp.photo_path == old_path
+
+
+def test_education_delete_does_not_unlink_before_commit(activation_env, make_user, monkeypatch):
+    import asyncio
+
+    from starlette.requests import Request
+
+    from models.user import User
+    from web.routes import education as education_routes
+    from web.services.storage_activation import delete_media_file
+
+    user = make_user(role="user")
+    db = activation_env["db"]
+    storage = activation_env["storage"]
+    old_key = storage.save("education", b"%PDF-edu-del", original_filename="del.pdf")
+    edu = Education(
+        user_id=user["user_id"],
+        education_group="TECH",
+        degree_level="BACHELOR",
+        major="Z",
+        graduation_date=__import__("datetime").date(2015, 1, 1),
+        certificate_path=old_key,
+        certificate_type="pdf",
+        verified=False,
+    )
+    db.add(edu)
+    db.commit()
+    db.refresh(edu)
+    edu_id = edu.id
+    user_row = db.query(User).filter(User.user_id == user["user_id"]).first()
+
+    delete_calls = []
+
+    def tracking_delete(key, **kwargs):
+        delete_calls.append(key)
+        return delete_media_file(key, **kwargs)
+
+    monkeypatch.setattr(education_routes, "delete_media_file", tracking_delete)
+
+    def boom():
+        raise RuntimeError("commit failed")
+
+    monkeypatch.setattr(db, "commit", boom)
+
+    request = Request({"type": "http", "method": "POST", "path": "/", "headers": []})
+    resp = asyncio.run(
+        education_routes.education_delete(request, edu_id, user=user_row, db=db)
+    )
+    assert resp.status_code == 302
+    assert "error" in (resp.headers.get("location") or "")
+
+    assert delete_calls == [], "physical file must not be deleted before successful commit"
+    assert storage.resolve(old_key).is_file()
+    db.expire_all()
+    still = db.query(Education).filter(Education.id == edu_id).first()
+    assert still is not None
+    assert still.certificate_path == old_key
+
+
+def test_admin_education_delete_does_not_unlink_before_commit(
+    activation_env, make_user, monkeypatch
+):
+    import asyncio
+
+    from starlette.requests import Request
+
+    from models.user import User
+    from web.routes import education as education_routes
+    from web.services.storage_activation import delete_media_file
+
+    admin = make_user(role="super_admin")
+    user = make_user(role="user")
+    db = activation_env["db"]
+    storage = activation_env["storage"]
+    old_key = storage.save("education", b"%PDF-admin-del", original_filename="adel.pdf")
+    edu = Education(
+        user_id=user["user_id"],
+        education_group="TECH",
+        degree_level="MASTER",
+        major="W",
+        graduation_date=__import__("datetime").date(2014, 1, 1),
+        certificate_path=old_key,
+        certificate_type="pdf",
+        verified=True,
+    )
+    db.add(edu)
+    db.commit()
+    db.refresh(edu)
+    edu_id = edu.id
+    admin_row = db.query(User).filter(User.user_id == admin["user_id"]).first()
+
+    delete_calls = []
+
+    def tracking_delete(key, **kwargs):
+        delete_calls.append(key)
+        return delete_media_file(key, **kwargs)
+
+    monkeypatch.setattr(education_routes, "delete_media_file", tracking_delete)
+
+    def boom():
+        raise RuntimeError("commit failed")
+
+    monkeypatch.setattr(db, "commit", boom)
+
+    request = Request({"type": "http", "method": "POST", "path": "/", "headers": []})
+    resp = asyncio.run(
+        education_routes.admin_education_delete(request, edu_id, user=admin_row, db=db)
+    )
+    assert resp.status_code == 302
+    assert "error" in (resp.headers.get("location") or "")
+
+    assert delete_calls == [], "physical file must not be deleted before successful commit"
+    assert storage.resolve(old_key).is_file()
+    db.expire_all()
+    still = db.query(Education).filter(Education.id == edu_id).first()
+    assert still is not None
+    assert still.certificate_path == old_key

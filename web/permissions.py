@@ -41,6 +41,9 @@ ALL_PERMISSIONS = {
     'manage_positions':     {'label': 'مدیریت سمت‌ها',              'admin': True,  'super_admin': True},
     'manage_service_locations': {'label': 'مدیریت محل خدمت',       'admin': True,  'super_admin': True},
     'view_system_monitoring': {'label': 'مشاهده پایش سرویس‌ها',   'admin': True,  'super_admin': True},
+    'view_employee_documents': {'label': 'مشاهده مدارک پرسنلی',    'admin': True,  'super_admin': True},
+    'manage_employee_documents': {'label': 'مدیریت مدارک پرسنلی', 'admin': True,  'super_admin': True},
+    'verify_employee_documents': {'label': 'تأیید/رد مدارک پرسنلی', 'admin': True,  'super_admin': True},
 }
 
 # ترکیب‌هایی که از UI قابل غیرفعال‌کردن نیستند (جلوگیری از قفل‌شدن مدیریت)

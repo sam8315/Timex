@@ -35,7 +35,7 @@
                 <div class="d-flex align-items-end">
                     <!-- 🆕 آواتار با عکس یا حروف اول -->
                     {% if photo_path %}
-                    <img src="{{ photo_path }}?v={{ employee.updated_at.timestamp() | int if employee else 0 }}"
+                    <img src="/profile/avatar?v={{ employee.updated_at.timestamp() | int if employee else 0 }}"
                          class="rounded-circle border border-4 border-white shadow"
                          style="width: 20%; height: 20%; object-fit: cover;margin-top: -50px; object-position: center; display: block;"
                          alt="{{ employee.full_name if employee else user.name }}">

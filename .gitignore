@@ -18,3 +18,7 @@ web/static/uploads/
 web/private_uploads/**
 !web/private_uploads/**/
 !web/private_uploads/**/.gitkeep
+# Unified private file storage (TIMEX_STORAGE_ROOT default)
+storage/**
+!storage/**/
+!storage/**/.gitkeep

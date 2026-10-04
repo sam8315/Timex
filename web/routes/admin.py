@@ -1,7 +1,7 @@
 """پنل مدیریت"""
 import logging
 from fastapi import APIRouter, Request, Depends
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
 logger = logging.getLogger(__name__)
 from fastapi.templating import Jinja2Templates
@@ -20,9 +20,14 @@ import threading
 from typing import Optional
 from fastapi import Query
 from fastapi import UploadFile, File
-from pathlib import Path
 import os
 from web.routes.attendance import calculate_work_hours, STATUS_NIGHT_SHIFT
+from web.services.file_storage import FileStorageError
+from web.services.storage_activation import (
+    delete_media_file,
+    resolve_media_disk,
+    save_media_bytes,
+)
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from sqlalchemy import and_, or_, func, nulls_last
 from datetime import timedelta  # اگر نیست
@@ -2005,6 +2010,38 @@ async def admin_view_profile(
         acc.card_masked = _mask_tail(acc.card_number)
         acc.sheba_masked = _mask_tail(acc.sheba)
 
+    # پرونده پرسنلی / مدارک
+    from models.employee_document import DOCUMENT_STATUSES, DOCUMENT_TYPES
+    from web.services.employee_document_service import list_documents as list_employee_documents
+
+    can_view_employee_documents = has_permission(db, user, "view_employee_documents")
+    can_manage_employee_documents = has_permission(db, user, "manage_employee_documents")
+    can_verify_employee_documents = has_permission(db, user, "verify_employee_documents")
+    employee_documents_error = None
+    target_employee_documents = []
+    if can_view_employee_documents or can_manage_employee_documents:
+        try:
+            target_employee_documents = list_employee_documents(db, target_user_id)
+            for doc in target_employee_documents:
+                try:
+                    doc.issue_date_j = (
+                        jdatetime.date.fromgregorian(date=doc.issue_date).strftime("%Y/%m/%d")
+                        if doc.issue_date else ""
+                    )
+                except Exception:
+                    doc.issue_date_j = ""
+                try:
+                    doc.expiry_date_j = (
+                        jdatetime.date.fromgregorian(date=doc.expiry_date).strftime("%Y/%m/%d")
+                        if doc.expiry_date else ""
+                    )
+                except Exception:
+                    doc.expiry_date_j = ""
+        except Exception as e:
+            logger.exception("Failed to load employee documents for %s", target_user_id)
+            target_employee_documents = []
+            employee_documents_error = f"خطا در بارگذاری مدارک: {e}"
+
     from web.services.leave_entitlement_service import (
         get_membership_timeline,
         sync_employee_department_from_active_contract,
@@ -2105,6 +2142,13 @@ async def admin_view_profile(
         "banks": banks,
         "active_bank_ids": active_bank_ids,
         "bank_accounts_error": bank_accounts_error,
+        "target_employee_documents": target_employee_documents,
+        "employee_documents_error": employee_documents_error,
+        "document_types": DOCUMENT_TYPES,
+        "document_statuses": DOCUMENT_STATUSES,
+        "can_view_employee_documents": can_view_employee_documents,
+        "can_manage_employee_documents": can_manage_employee_documents,
+        "can_verify_employee_documents": can_verify_employee_documents,
         "membership_timeline": membership_timeline,
         "service_region_code": service_region_code,
         "service_region_name": service_region_name,
@@ -2333,10 +2377,32 @@ async def admin_toggle_web(
     return RedirectResponse(url=f"/admin/profile/{target_user_id}?web_toggled=1", status_code=302)
 
 
-# 🆕 تنظیمات آپلود عکس
-UPLOAD_DIR = Path(__file__).parent.parent / "static" / "uploads" / "avatars"
-ALLOWED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp'}
-MAX_FILE_SIZE = 2 * 1024 * 1024  # 2 مگابایت
+ALLOWED_AVATAR_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp'}
+MAX_AVATAR_FILE_SIZE = 2 * 1024 * 1024  # 2 مگابایت
+
+
+@router.get("/admin/profile/{target_user_id}/avatar")
+async def admin_profile_avatar(
+    target_user_id: str,
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """سرو امن عکس پروفایل کاربر هدف برای ادمین."""
+    enforce_permission(db, user, "view_user_attendance")
+    employee = db.query(Employee).filter(Employee.user_id == target_user_id).first()
+    if not employee or not employee.photo_path:
+        return RedirectResponse(url="/static/uploads/avatars/image.png", status_code=302)
+    try:
+        disk = resolve_media_disk(employee.photo_path)
+    except Exception:
+        return RedirectResponse(url="/static/uploads/avatars/image.png", status_code=302)
+    if not disk.is_file():
+        return RedirectResponse(url="/static/uploads/avatars/image.png", status_code=302)
+    return FileResponse(
+        path=str(disk),
+        filename=disk.name,
+        content_disposition_type="inline",
+    )
 
 
 @router.post("/admin/profile/{target_user_id}/upload-photo")
@@ -2346,59 +2412,60 @@ async def admin_upload_photo(
     user: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
-    """آپلود عکس پروفایل کاربر (توسط مدیر)"""
+    """آپلود عکس پروفایل کاربر (توسط مدیر) — Unified Storage"""
     enforce_permission(db, user, 'upload_photo')
-    # اعتبارسنجی نوع فایل
-    ext = Path(file.filename).suffix.lower()
-    if ext not in ALLOWED_EXTENSIONS:
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in ALLOWED_AVATAR_EXTENSIONS:
         return RedirectResponse(
             url=f"/admin/profile/{target_user_id}?error=نوع فایل مجاز نیست (فقط JPG/PNG/WEBP)",
             status_code=302
         )
 
-    # بررسی اندازه فایل
     content = await file.read()
-    if len(content) > MAX_FILE_SIZE:
+    if len(content) > MAX_AVATAR_FILE_SIZE:
         return RedirectResponse(
             url=f"/admin/profile/{target_user_id}?error=حجم فایل بیش از 2 مگابایت است",
             status_code=302
         )
 
-    # بررسی وجود کارمند
     employee = db.query(Employee).filter(Employee.user_id == target_user_id).first()
     if not employee:
         return RedirectResponse(url="/admin/users", status_code=302)
 
+    old_path = employee.photo_path
+    new_key = None
     try:
-        # ساخت پوشه اگر وجود ندارد
-        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-
-        # حذف عکس قبلی
-        if employee.photo_path:
-            old_file = Path(__file__).parent.parent / "static" / employee.photo_path.replace("/static/", "").replace("\\", "/")
-            if old_file.exists():
-                old_file.unlink()
-
-        # ذخیره فایل جدید با نام user_id
-        filename = f"{target_user_id}_{int(time.time())}{ext}"
-        file_path = UPLOAD_DIR / filename
-
-        with open(file_path, 'wb') as f:
-            f.write(content)
-
-        # آپدیت دیتابیس
-        employee.photo_path = f"/static/uploads/avatars/{filename}"
+        new_key = save_media_bytes(
+            "avatars",
+            content,
+            original_filename=file.filename or f"avatar{ext}",
+        )
+        employee.photo_path = new_key
         db.commit()
-
+    except FileStorageError as e:
+        db.rollback()
+        if new_key:
+            delete_media_file(new_key)
         return RedirectResponse(
-            url=f"/admin/profile/{target_user_id}?photo_uploaded=1",
+            url=f"/admin/profile/{target_user_id}?error=خطا در آپلود: {e}",
             status_code=302
         )
     except Exception as e:
+        db.rollback()
+        if new_key:
+            delete_media_file(new_key)
         return RedirectResponse(
             url=f"/admin/profile/{target_user_id}?error=خطا در آپلود: {str(e)}",
             status_code=302
         )
+
+    if old_path and old_path != new_key:
+        delete_media_file(old_path)
+
+    return RedirectResponse(
+        url=f"/admin/profile/{target_user_id}?photo_uploaded=1",
+        status_code=302
+    )
 
 
 @router.post("/admin/profile/{target_user_id}/delete-photo")
@@ -2407,23 +2474,24 @@ async def admin_delete_photo(
     user: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
-    """حذف عکس پروفایل کاربر"""
+    """حذف عکس پروفایل کاربر — ابتدا DB، سپس فایل فیزیکی."""
     enforce_permission(db, user, 'upload_photo')
     employee = db.query(Employee).filter(Employee.user_id == target_user_id).first()
     if not employee:
         return RedirectResponse(url="/admin/users", status_code=302)
 
     if employee.photo_path:
-        # حذف فایل
-        file_path = Path(__file__).parent.parent / "static" / employee.photo_path.replace("/static/", "").replace("\\", "/")
-        if file_path.exists():
-            try:
-                file_path.unlink()
-            except Exception:
-                pass
-
+        old_path = employee.photo_path
         employee.photo_path = None
-        db.commit()
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            return RedirectResponse(
+                url=f"/admin/profile/{target_user_id}?error=خطا در حذف عکس",
+                status_code=302,
+            )
+        delete_media_file(old_path)
 
     return RedirectResponse(
         url=f"/admin/profile/{target_user_id}?photo_deleted=1",

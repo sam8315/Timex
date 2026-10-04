@@ -55,7 +55,7 @@
                         <td class="text-center">{{ edu.graduation_date_j }}</td>
                         <td class="text-center">
                             {% if edu.certificate_path %}
-                            <a href="{{ edu.certificate_path }}" target="_blank" class="btn btn-outline-primary btn-sm">
+                            <a href="/education/{{ edu.id }}/file" target="_blank" class="btn btn-outline-primary btn-sm">
                                 {% if edu.certificate_type == 'pdf' %}
                                 <i class="bi bi-file-pdf"></i> PDF
                                 {% else %}
