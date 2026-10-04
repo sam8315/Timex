@@ -34,6 +34,10 @@ def activation_env(tmp_path, monkeypatch, db):
 
     storage_root = tmp_path / "unified_storage"
     monkeypatch.setenv("TIMEX_STORAGE_ROOT", str(storage_root))
+    # Point FileStorage legacy private root at the temp private_uploads tree.
+    import web.services.file_storage as fs_mod
+
+    monkeypatch.setattr(fs_mod, "LEGACY_PRIVATE_UPLOADS", tmp_path / "private_uploads")
     storage = FileStorage(root=storage_root)
     roots = [
         LegacySourceRoot("contracts", contracts_private, "/private/contracts/"),
@@ -49,6 +53,7 @@ def activation_env(tmp_path, monkeypatch, db):
         "storage_root": storage_root,
         "service": service,
         "contracts_static": contracts_static,
+        "contracts_private": contracts_private,
         "education_dir": education_dir,
         "avatars_dir": avatars_dir,
         "db": db,
@@ -621,6 +626,123 @@ def test_unified_key_missing_despite_legacy_fallback(activation_env, make_user, 
     item = next(i for i in report.items if i.record_id == contract.id)
     assert item.status == MigrationStatus.MISSING
     assert "unified key missing" in item.message
+
+
+def test_unified_contract_key_with_legacy_private_file_is_pending(activation_env, make_user):
+    user = make_user(role="user", balance_al=None, contract_type_code="4")
+    db = activation_env["db"]
+    contract = (
+        db.query(Contract)
+        .filter(Contract.user_id == user["user_id"])
+        .order_by(Contract.id.desc())
+        .first()
+    )
+    filename = ("p" * 32) + ".pdf"
+    key = f"/private/contracts/{filename}"
+    (activation_env["contracts_private"] / filename).write_bytes(b"%PDF-legacy-private")
+    contract.file_path = key
+    db.commit()
+
+    assert not (activation_env["storage_root"] / "contracts" / filename).is_file()
+
+    report = activation_env["service"].preflight()
+    item = next(i for i in report.items if i.record_id == contract.id)
+    assert item.status == MigrationStatus.PENDING
+    assert item.needs_db_update is False
+    assert item.destination_key == key
+    assert item.source_path == activation_env["contracts_private"] / filename
+
+
+def test_unified_contract_key_with_legacy_private_file_copies_without_db_update(
+    activation_env, make_user
+):
+    user = make_user(role="user", balance_al=None, contract_type_code="4")
+    db = activation_env["db"]
+    contract = (
+        db.query(Contract)
+        .filter(Contract.user_id == user["user_id"])
+        .order_by(Contract.id.desc())
+        .first()
+    )
+    filename = ("q" * 32) + ".pdf"
+    key = f"/private/contracts/{filename}"
+    source = activation_env["contracts_private"] / filename
+    payload = b"%PDF-copy-only-alias"
+    source.write_bytes(payload)
+    contract.file_path = key
+    db.commit()
+
+    report = activation_env["service"].execute(dry_run=False)
+    item = next(i for i in report.items if i.record_id == contract.id)
+    assert item.status == MigrationStatus.COPIED
+    assert item.needs_db_update is False
+    assert item.db_updated is False
+    assert item.destination_key == key
+
+    dest = activation_env["storage_root"] / "contracts" / filename
+    assert dest.is_file()
+    assert dest.read_bytes() == payload
+    assert source.is_file(), "legacy private source must be retained"
+    assert source.read_bytes() == payload
+
+    db.expire_all()
+    row = db.query(Contract).filter(Contract.id == contract.id).first()
+    assert row.file_path == key
+
+
+def test_unified_contract_key_does_not_use_legacy_static_contract_file(
+    activation_env, make_user
+):
+    user = make_user(role="user", balance_al=None, contract_type_code="4")
+    db = activation_env["db"]
+    contract = (
+        db.query(Contract)
+        .filter(Contract.user_id == user["user_id"])
+        .order_by(Contract.id.desc())
+        .first()
+    )
+    filename = ("r" * 32) + ".pdf"
+    key = f"/private/contracts/{filename}"
+    (activation_env["contracts_static"] / filename).write_bytes(b"%PDF-static-only")
+    contract.file_path = key
+    db.commit()
+
+    report = activation_env["service"].preflight()
+    item = next(i for i in report.items if i.record_id == contract.id)
+    assert item.status == MigrationStatus.MISSING
+    assert item.needs_db_update is False
+
+
+def test_unified_contract_alias_destination_conflict(activation_env, make_user):
+    user = make_user(role="user", balance_al=None, contract_type_code="4")
+    db = activation_env["db"]
+    contract = (
+        db.query(Contract)
+        .filter(Contract.user_id == user["user_id"])
+        .order_by(Contract.id.desc())
+        .first()
+    )
+    filename = ("s" * 32) + ".pdf"
+    key = f"/private/contracts/{filename}"
+    (activation_env["contracts_private"] / filename).write_bytes(b"%PDF-legacy-private")
+    dest = activation_env["storage_root"] / "contracts" / filename
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(b"%PDF-OTHER-DEST")
+    contract.file_path = key
+    db.commit()
+
+    report = activation_env["service"].execute(dry_run=False)
+    item = next(i for i in report.items if i.record_id == contract.id)
+    assert item.status == MigrationStatus.ERROR
+    assert "different content" in item.error
+    assert report.aborted is True
+    assert report.count_db_updated() == 0
+
+    db.expire_all()
+    row = db.query(Contract).filter(Contract.id == contract.id).first()
+    assert row.file_path == key
+    assert dest.read_bytes() == b"%PDF-OTHER-DEST"
+    assert (activation_env["contracts_private"] / filename).is_file()
 
 
 def test_cross_category_private_key_rejected(activation_env, make_user):
