@@ -261,10 +261,7 @@ def _get_contract_limit_days(contracts: list, year_start_g, year_end_g, db=None)
     Returns: (total_worked_days, base_limit, last_contract_type)
     base_limit=None یعنی بدون سقف سیاستی.
     """
-    from web.services.leave_entitlement_service import (
-        CARRY_FORWARD_FALLBACK,
-        resolve_max_carry_forward,
-    )
+    from web.services.leave_entitlement_service import resolve_max_carry_forward
 
     total_worked_days = 0
     base_limit = 0
@@ -280,7 +277,8 @@ def _get_contract_limit_days(contracts: list, year_start_g, year_end_g, db=None)
             else:
                 type_limit = policy_cap
         else:
-            type_limit = CARRY_FORWARD_FALLBACK.get(contract.contract_type_code, 0)
+            # بدون DB: fallback سراسری 0 (نه per-code hardcode)
+            type_limit = 0
 
         if type_limit is None:
             last_contract_type = contract.contract_type_code

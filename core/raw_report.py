@@ -8,8 +8,11 @@ from sqlalchemy.orm import Session, selectinload
 
 from models.attendance import Attendance
 from models.daily_status import DailyStatus
-from web.services.membership_service import SEED_MEMBERSHIPS
 from models.employee import Employee
+from web.services.membership_service import (
+    employment_type_options,
+    get_membership_type,
+)
 from models.holiday import Holiday
 from models.hourly_mission import HourlyMission
 from models.leave_request import LeaveRequest
@@ -57,16 +60,15 @@ PERSON_STATUS_NAMES = {
     'H': 'تعطیل',
 }
 
+# Fallback فقط وقتی DB در دسترس نیست؛ runtime از employment_type_options(db)
 EMPLOYMENT_TYPE_OPTIONS = [
     ('all', 'همه'),
-    ('1', 'رسمی'),
-    ('2', 'وظیفه'),
-    ('3', 'خریدخدمت'),
-    ('4', 'قراردادی'),
-    ('5', 'پزشکی'),
-    ('6', 'سایر / متفرقه'),
-    ('7', 'قرارداد با بیمه‌ها'),
 ]
+
+
+def get_employment_type_options(db: Session):
+    """لیست نوع عضویت برای فیلتر گزارش — از membership_types."""
+    return employment_type_options(db, active_only=False)
 
 STATUS_FILTER_OPTIONS = [
     ('all', 'همه'),
@@ -235,10 +237,12 @@ class RawReportService:
             return national
         return next((holiday for holiday in holidays if holiday.group_id == department), None)
 
-    @staticmethod
-    def _membership_name(department: Optional[str]) -> str:
-        names = {code: name for code, name, *_ in SEED_MEMBERSHIPS}
-        return names.get(department or '', department or '-')
+    def _membership_name(self, department: Optional[str]) -> str:
+        code = department or ''
+        if not code:
+            return '-'
+        mt = get_membership_type(self.db, code)
+        return mt.name if mt else code
 
     @staticmethod
     def _holiday_dates_for_department(

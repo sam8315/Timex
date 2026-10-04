@@ -5,31 +5,47 @@ from __future__ import annotations
 
 import re
 from datetime import date
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from models.contract import Contract
+from models.employee import Employee
+from models.membership_rule_change import MembershipRuleChangeRequest
 from models.membership_type import MembershipType
 from models.membership_type_rule import MembershipTypeRule
 from models.policy import Policy, PolicyValue
 from models.region import Region
 from models.reserved_membership_code import ReservedMembershipCode
+from models.service_adjustment import ServiceAdjustment
 from models.travel_leave_policy import TravelLeavePolicy
 
 CODE_RE = re.compile(r"^[1-9][0-9]{0,5}$")
 
-SEED_MEMBERSHIPS: Tuple[Tuple[str, str, int, bool, int], ...] = (
-    # code, name, annual_leave_base, supports_service_deduction, sort_order
-    ("1", "رسمی", 30, False, 1),
-    ("2", "وظیفه", 30, True, 2),
-    ("3", "خریدخدمت", 30, False, 3),
-    ("4", "قراردادی", 30, False, 4),
-    ("5", "پزشکی", 0, False, 5),
-    ("6", "سایر / متفرقه", 0, False, 6),
-    ("7", "قرارداد با بیمه‌ها", 0, False, 7),
+# Seed snapshot: code, name, annual, deduction, extra, seniority, sort_order
+# فقط برای seed/reconcile — نه برای runtime name lookup در UI/reports.
+SEED_MEMBERSHIPS: Tuple[Tuple[str, str, int, bool, bool, bool, int], ...] = (
+    ("1", "رسمی", 30, False, False, True, 1),
+    ("2", "وظیفه", 30, True, True, False, 2),
+    ("3", "خریدخدمت", 30, False, False, False, 3),
+    ("4", "قراردادی", 30, False, False, False, 4),
+    ("5", "پزشکی", 0, False, False, False, 5),
+    ("6", "سایر / متفرقه", 0, False, False, False, 6),
+    ("7", "قرارداد با بیمه‌ها", 0, False, False, False, 7),
 )
+
+SEED_CODE_FLAGS = {
+    code: {
+        "name": name,
+        "annual_leave_base": annual,
+        "supports_service_deduction": deduction,
+        "supports_extra_service": extra,
+        "supports_positive_seniority": seniority,
+        "sort_order": sort_order,
+    }
+    for code, name, annual, deduction, extra, seniority, sort_order in SEED_MEMBERSHIPS
+}
 
 
 class MembershipError(ValueError):
@@ -63,7 +79,7 @@ def get_membership_type(db: Session, code: str) -> Optional[MembershipType]:
 
 
 def membership_types_as_dict(db: Session, *, active_only: bool = True) -> Dict[str, dict]:
-    """جایگزین CONTRACT_TYPES برای UI/validation."""
+    """جایگزین CONTRACT_TYPES برای UI/validation (از DB)."""
     result: Dict[str, dict] = {}
     for row in list_membership_types(db, active_only=active_only):
         rule = get_effective_rule(db, row.code)
@@ -86,22 +102,61 @@ def membership_types_as_dict(db: Session, *, active_only: bool = True) -> Dict[s
     return result
 
 
+def employment_type_options(db: Session, *, active_only: bool = False) -> List[Tuple[str, str]]:
+    """گزینه‌های فیلتر گزارش/UI: all + membership_types از DB."""
+    opts: List[Tuple[str, str]] = [("all", "همه")]
+    for row in list_membership_types(db, active_only=active_only):
+        opts.append((row.code, row.name))
+    return opts
+
+
 def get_effective_rule(
     db: Session,
     membership_type_code: str,
     on_date: Optional[date] = None,
 ) -> Optional[MembershipTypeRule]:
+    """
+    Rule مؤثر فقط بر اساس تاریخ: آخرین effective_from <= on_date.
+    status مانع resolve نیست (برای lifecycle/UI به‌روز می‌شود).
+    """
     on_date = on_date or date.today()
     return (
         db.query(MembershipTypeRule)
         .filter(
             MembershipTypeRule.membership_type_code == membership_type_code,
             MembershipTypeRule.effective_from <= on_date,
-            MembershipTypeRule.status.in_(("active", "superseded")),
         )
         .order_by(MembershipTypeRule.effective_from.desc())
         .first()
     )
+
+
+def refresh_rule_lifecycle_statuses(
+    db: Session,
+    membership_type_code: str,
+    *,
+    as_of: Optional[date] = None,
+) -> None:
+    """به‌روزرسانی status برای UI؛ resolve از status استفاده نمی‌کند."""
+    today = as_of or date.today()
+    rules = (
+        db.query(MembershipTypeRule)
+        .filter(MembershipTypeRule.membership_type_code == membership_type_code)
+        .order_by(MembershipTypeRule.effective_from.asc())
+        .all()
+    )
+    effective = None
+    for rule in rules:
+        if rule.effective_from > today:
+            rule.status = "scheduled"
+        elif effective is None or rule.effective_from >= effective.effective_from:
+            if effective is not None and effective.effective_from < rule.effective_from:
+                effective.status = "superseded"
+            rule.status = "active"
+            effective = rule
+        else:
+            rule.status = "superseded"
+    db.flush()
 
 
 def resolve_annual_leave_base(
@@ -183,6 +238,7 @@ def resolve_annual_leave_base_with_region(
 
 
 def count_business_dependencies(db: Session, code: str) -> dict:
+    """Business History — مانع hard delete؛ technical children cascade مانع نیستند."""
     contracts = (
         db.query(func.count(Contract.id))
         .filter(Contract.contract_type_code == code)
@@ -195,7 +251,32 @@ def count_business_dependencies(db: Session, code: str) -> dict:
         .scalar()
         or 0
     )
-    return {"contracts": int(contracts), "travel_leave_policies": int(travel)}
+    rule_requests = (
+        db.query(func.count(MembershipRuleChangeRequest.id))
+        .filter(MembershipRuleChangeRequest.membership_type_code == code)
+        .scalar()
+        or 0
+    )
+    service_adj = (
+        db.query(func.count(ServiceAdjustment.id))
+        .join(Contract, ServiceAdjustment.contract_id == Contract.id)
+        .filter(Contract.contract_type_code == code)
+        .scalar()
+        or 0
+    )
+    employees = (
+        db.query(func.count(Employee.user_id))
+        .filter(Employee.department == code)
+        .scalar()
+        or 0
+    )
+    return {
+        "contracts": int(contracts),
+        "travel_leave_policies": int(travel),
+        "membership_rule_change_requests": int(rule_requests),
+        "service_adjustments": int(service_adj),
+        "employees": int(employees),
+    }
 
 
 def has_business_history(db: Session, code: str) -> bool:
@@ -240,7 +321,7 @@ def create_membership_type(
     db.add(row)
     db.flush()
 
-    # Rule نسخه اول — هرگز از عضویت دیگر ارث نمی‌برد
+    # Rule نسخه اول — هرگز از عضویت دیگر ارث نمی‌برد؛ flags همه false، annual=0
     effective = migration_date or date.today()
     db.add(
         MembershipTypeRule(
@@ -288,27 +369,8 @@ def create_rule_snapshot(
 
     today = date.today()
     prev = get_effective_rule(db, membership_type_code, on_date=effective_from)
-    # overlap: if another rule has effective_from > prev and < new? uniqueness handles exact;
-    # also block if a future rule exists between dates incorrectly — uniqueness on date is enough.
 
     status = "scheduled" if effective_from > today else "active"
-    if status == "active" and prev and prev.effective_from < effective_from:
-        prev.status = "superseded"
-
-    # If inserting a past/current rule that is now the latest active, supersede older actives
-    if status == "active":
-        actives = (
-            db.query(MembershipTypeRule)
-            .filter(
-                MembershipTypeRule.membership_type_code == membership_type_code,
-                MembershipTypeRule.status == "active",
-                MembershipTypeRule.effective_from < effective_from,
-            )
-            .all()
-        )
-        for a in actives:
-            a.status = "superseded"
-
     rule = MembershipTypeRule(
         membership_type_code=membership_type_code,
         effective_from=effective_from,
@@ -322,6 +384,7 @@ def create_rule_snapshot(
     )
     db.add(rule)
     db.flush()
+    refresh_rule_lifecycle_statuses(db, membership_type_code)
 
     if has_business_history(db, membership_type_code):
         mt.code_locked = True
@@ -342,7 +405,8 @@ def update_scheduled_rule(
     if not rule:
         raise MembershipError("Rule یافت نشد")
     today = date.today()
-    if rule.status != "scheduled" or rule.effective_from <= today:
+    # Past/current immutable؛ فقط آینده قابل ویرایش
+    if rule.effective_from <= today:
         raise MembershipError("فقط Rule آینده (scheduled) قابل ویرایش است")
 
     if effective_from is not None:
@@ -365,6 +429,7 @@ def update_scheduled_rule(
     rule.supports_service_deduction = bool(supports_service_deduction)
     rule.supports_extra_service = bool(supports_extra_service)
     rule.supports_positive_seniority = bool(supports_positive_seniority)
+    rule.status = "scheduled"
     db.flush()
     return rule
 
@@ -374,10 +439,12 @@ def delete_scheduled_rule(db: Session, rule_id: int) -> None:
     if not rule:
         raise MembershipError("Rule یافت نشد")
     today = date.today()
-    if rule.status != "scheduled" or rule.effective_from <= today:
+    if rule.effective_from <= today:
         raise MembershipError("فقط Rule آینده (scheduled) قابل حذف است")
+    code = rule.membership_type_code
     db.delete(rule)
     db.flush()
+    refresh_rule_lifecycle_statuses(db, code)
 
 
 def deactivate_membership(db: Session, code: str) -> MembershipType:
@@ -392,6 +459,7 @@ def deactivate_membership(db: Session, code: str) -> MembershipType:
 
 
 def activate_membership(db: Session, code: str) -> MembershipType:
+    """Reactivate مجاز حتی پس از inactive."""
     mt = get_membership_type(db, code)
     if not mt:
         raise MembershipError("نوع عضویت یافت نشد")
@@ -413,9 +481,12 @@ def delete_membership(
     if any(deps.values()):
         raise MembershipError(
             "این نوع عضویت سابقه کسب‌وکاری دارد و فقط قابل غیرفعال‌سازی است "
-            f"(قرارداد={deps['contracts']}, سیاست توراهی={deps['travel_leave_policies']})"
+            f"(قرارداد={deps['contracts']}, سیاست توراهی={deps['travel_leave_policies']}, "
+            f"درخواست Rule={deps['membership_rule_change_requests']}, "
+            f"تعدیل خدمت={deps['service_adjustments']}, "
+            f"کارمند={deps['employees']})"
         )
-    # Hard delete rules cascade; reserve code
+    # Hard delete: rules cascade as technical children؛ reserve code
     db.delete(mt)
     db.flush()
     if not db.query(ReservedMembershipCode).filter(
@@ -438,7 +509,7 @@ def seed_default_memberships(db: Session, *, migration_date: Optional[date] = No
     """
     today = migration_date or date.today()
     created = 0
-    for code, name, annual, supports_deduction, sort_order in SEED_MEMBERSHIPS:
+    for code, name, annual, deduction, extra, seniority, sort_order in SEED_MEMBERSHIPS:
         if get_membership_type(db, code):
             continue
         min_start = (
@@ -462,9 +533,9 @@ def seed_default_memberships(db: Session, *, migration_date: Optional[date] = No
                 membership_type_code=code,
                 effective_from=effective,
                 annual_leave_base=annual,
-                supports_service_deduction=supports_deduction,
-                supports_extra_service=False,
-                supports_positive_seniority=False,
+                supports_service_deduction=deduction,
+                supports_extra_service=extra,
+                supports_positive_seniority=seniority,
                 status="active",
                 created_by="system_seed",
             )
@@ -472,6 +543,50 @@ def seed_default_memberships(db: Session, *, migration_date: Optional[date] = No
         created += 1
     db.flush()
     return created
+
+
+def reconcile_seed_membership_rules(db: Session) -> int:
+    """
+    هم‌ترازی flags (+ annual_leave_base seed) روی اولین Rule کدهای 1–7.
+    هیچ UPDATE روی contracts / leave_balances / leave_transactions نمی‌زند.
+    """
+    updated = 0
+    for code, flags in SEED_CODE_FLAGS.items():
+        mt = get_membership_type(db, code)
+        if not mt:
+            continue
+        if mt.name != flags["name"]:
+            mt.name = flags["name"]
+        if mt.sort_order != flags["sort_order"]:
+            mt.sort_order = flags["sort_order"]
+        first_rule = (
+            db.query(MembershipTypeRule)
+            .filter(MembershipTypeRule.membership_type_code == code)
+            .order_by(
+                MembershipTypeRule.effective_from.asc(),
+                MembershipTypeRule.id.asc(),
+            )
+            .first()
+        )
+        if not first_rule:
+            continue
+        changed = False
+        if first_rule.annual_leave_base != flags["annual_leave_base"]:
+            first_rule.annual_leave_base = flags["annual_leave_base"]
+            changed = True
+        if first_rule.supports_service_deduction != flags["supports_service_deduction"]:
+            first_rule.supports_service_deduction = flags["supports_service_deduction"]
+            changed = True
+        if first_rule.supports_extra_service != flags["supports_extra_service"]:
+            first_rule.supports_extra_service = flags["supports_extra_service"]
+            changed = True
+        if first_rule.supports_positive_seniority != flags["supports_positive_seniority"]:
+            first_rule.supports_positive_seniority = flags["supports_positive_seniority"]
+            changed = True
+        if changed:
+            updated += 1
+    db.flush()
+    return updated
 
 
 def lock_codes_with_history(db: Session) -> int:

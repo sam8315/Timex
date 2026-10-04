@@ -93,6 +93,7 @@ def resolve_policy(db: Session, user_id: str, effective_date: date) -> Tuple[Opt
         return None, None, None
 
     department_membership_code = resolve_department_membership_code(employee)
+    # (B) intentional: department shortcut for memberships 1/2 — not catalog-driven yet
     if department_membership_code in {"1", "2"}:
         policy = db.query(TravelLeavePolicy).filter(
             TravelLeavePolicy.contract_type_code == department_membership_code
@@ -111,6 +112,7 @@ def resolve_policy(db: Session, user_id: str, effective_date: date) -> Tuple[Opt
 
 def resolve_membership_code(employee: Optional[Employee], contract: Optional[Contract]) -> Optional[str]:
     department_membership_code = resolve_department_membership_code(employee)
+    # (B) intentional: department shortcut for memberships 1/2 — not catalog-driven yet
     if department_membership_code in {"1", "2"}:
         return department_membership_code
     return contract.contract_type_code if contract else None

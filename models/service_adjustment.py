@@ -36,7 +36,7 @@ class ServiceAdjustment(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     employee_id: Mapped[str] = mapped_column(
         String(50),
-        ForeignKey("users.user_id", ondelete="CASCADE"),
+        ForeignKey("users.user_id", ondelete="RESTRICT"),
         nullable=False,
         index=True,
     )

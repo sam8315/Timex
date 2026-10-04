@@ -28,6 +28,7 @@ TX_CASH_OUT = 'CASH_OUT'
 TX_CF_OUT = 'CF_OUT'
 TX_CF_IN = 'CF_IN'
 
+# business semantic — نه catalog UI (عمداً (B)؛ موتور تناسب/رسمی/وظیفه هنوز DB-flag کامل نیست)
 # عضویت‌هایی که تناسب مدت قرارداد دارند
 MEMBERSHIP_PRORATE_BY_CONTRACT = frozenset({'3', '4', '6', '7'})
 # رسمی: پایان قرارداد در تناسب دخالت ندارد

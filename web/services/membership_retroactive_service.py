@@ -1,11 +1,14 @@
 """
 Workflow Rule گذشته‌نگر: preview → confirm → recalculate transactional + audit.
+
+Preview محاسبهٔ تأثیر را بدون mutate کردن contracts/leave انجام می‌دهد.
+به‌روزرسانی contract.annual_leave_days فقط داخل confirm تأییدشده + audit است.
 """
 from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Optional
 
 from sqlalchemy.orm import Session
 
@@ -16,12 +19,13 @@ from models.membership_rule_change import (
     MembershipRuleChangeRequest,
 )
 from models.membership_type_rule import MembershipTypeRule
-from web.services.leave_entitlement_service import (
-    calculate_entitlement_by_year,
-    resolve_annual_leave_days,
-)
+from web.services.leave_entitlement_service import calculate_entitlement_by_year
 from web.services.leave_service import update_leave_for_contract
-from web.services.membership_service import MembershipError, get_effective_rule
+from web.services.membership_service import (
+    MembershipError,
+    get_effective_rule,
+    resolve_annual_leave_base_with_region,
+)
 
 
 SAMPLE_LIMIT = 10
@@ -48,47 +52,42 @@ def build_impact_preview(
             .first()
         )
         region = employee.region_code if employee else None
-        # Old: resolve as-of day before new rule (or current rule ignoring this rule)
+
+        # Old: rule effective just before this rule's effective_from
         old_rule = (
             db.query(MembershipTypeRule)
             .filter(
                 MembershipTypeRule.membership_type_code == membership_type_code,
                 MembershipTypeRule.id != rule.id,
                 MembershipTypeRule.effective_from <= rule.effective_from,
-                MembershipTypeRule.status.in_(("active", "superseded")),
             )
             .order_by(MembershipTypeRule.effective_from.desc())
             .first()
         )
-        old_annual = (
-            int(old_rule.annual_leave_base)
-            if old_rule
-            else resolve_annual_leave_days(
-                db, membership_type_code, region_code=region
+        if old_rule:
+            old_annual = resolve_annual_leave_base_with_region(
+                db,
+                membership_type_code,
+                region_code=region,
+                on_date=old_rule.effective_from,
             )
-        )
-        # New path with this rule's base + region policy
-        from web.services.membership_service import (
-            resolve_annual_leave_base_with_region,
-        )
-        # Temporarily compute as if rule is effective
-        new_base = int(rule.annual_leave_base)
-        # region layer still applies via resolve helper only if rule is current —
-        # for preview use new_base then apply region flag manually via resolve with override
-        new_annual = resolve_annual_leave_days(
-            db, membership_type_code, region_code=region
-        )
-        # If the new rule is not yet the effective one for today, force comparison
-        # using new_base when region does not apply / no region.
+        else:
+            old_annual = int(contract.annual_leave_days or 0)
+
+        # New: resolve as-of this rule's effective date (date-based, status-agnostic)
         effective = get_effective_rule(
             db, membership_type_code, on_date=rule.effective_from
         )
         if effective and effective.id == rule.id:
             new_annual = resolve_annual_leave_base_with_region(
-                db, membership_type_code, region_code=region, on_date=rule.effective_from
+                db,
+                membership_type_code,
+                region_code=region,
+                on_date=rule.effective_from,
             )
         else:
-            new_annual = new_base
+            # Rule not yet visible for that date (shouldn't happen after flush)
+            new_annual = int(rule.annual_leave_base)
 
         old_ent = calculate_entitlement_by_year(
             db, contract, employee=employee, annual_override=old_annual
@@ -124,6 +123,7 @@ def create_preview_request(
     rule_id: int,
     created_by: str,
 ) -> MembershipRuleChangeRequest:
+    """ثبت درخواست preview؛ contracts/leave را mutate نمی‌کند."""
     rule = db.query(MembershipTypeRule).filter(MembershipTypeRule.id == rule_id).first()
     if not rule:
         raise MembershipError("Rule یافت نشد")
@@ -149,7 +149,9 @@ def confirm_and_recalculate(
 ) -> MembershipRuleChangeRequest:
     """
     تأیید صریح + recalculate تراکنشی.
-    TX_USE حذف/جعل نمی‌شود؛ فقط delta از update_leave_for_contract.
+    leave updates با commit=False؛ یک commit نهایی توسط caller.
+    failure → full rollback.
+    به‌روزرسانی contract.annual_leave_days فقط اینجا (+ audit).
     """
     req = (
         db.query(MembershipRuleChangeRequest)
@@ -171,9 +173,6 @@ def confirm_and_recalculate(
     if not rule:
         raise MembershipError("Rule یافت نشد")
 
-    preview = json.loads(req.preview_json or "{}")
-    samples = preview.get("samples") or []
-    # Recalculate all affected contracts of this membership
     contracts = (
         db.query(Contract)
         .filter(Contract.contract_type_code == req.membership_type_code)
@@ -200,8 +199,11 @@ def confirm_and_recalculate(
             old_end = contract.end_date
             old_deduction = contract.service_deduction_days
             old_type = contract.contract_type_code
-            new_annual = resolve_annual_leave_days(
-                db, contract.contract_type_code, region_code=region
+            new_annual = resolve_annual_leave_base_with_region(
+                db,
+                contract.contract_type_code,
+                region_code=region,
+                on_date=rule.effective_from,
             )
             if old_annual == new_annual:
                 continue
@@ -211,6 +213,7 @@ def confirm_and_recalculate(
                     db, contract, employee=employee, annual_override=old_annual
                 ),
             }
+            # تنها مسیر مجاز برای silent-free annual update
             contract.annual_leave_days = new_annual
             update_leave_for_contract(
                 db,
@@ -246,7 +249,4 @@ def confirm_and_recalculate(
         db.rollback()
         raise
 
-    # keep sample count for UI even if all contracts unchanged after live resolve
-    if not samples:
-        pass
     return req

@@ -27,17 +27,6 @@ logger = logging.getLogger(__name__)
 
 DEPT_DEFAULT_ANNUAL = 30
 
-# Carry-forward fallbacks previously embedded in CONTRACT_TYPES
-CARRY_FORWARD_FALLBACK = {
-    '1': 0,
-    '2': 35,
-    '3': 9,
-    '4': 9,
-    '5': 0,
-    '6': 0,
-    '7': 0,
-}
-
 
 def get_jalali_year_days(year: int) -> int:
     try:
@@ -159,12 +148,8 @@ def resolve_max_carry_forward(db: Session, membership_code: str) -> Optional[int
         if global_pv is not None and global_pv.parameter_value is not None:
             return _parse_buyback_cap(global_pv.parameter_value)
 
-    # پیش‌فرض ثابت (جایگزین CONTRACT_TYPES.carry_forward_max)
-    raw = CARRY_FORWARD_FALLBACK.get(policy_code, 0)
-    try:
-        return max(0, int(raw))
-    except (TypeError, ValueError):
-        return 0
+    # بدون رکورد سیاست: سقف سراسری نامشخص → 0 (بدون fallback per-code)
+    return 0
 
 
 def _region_applies_for_membership(db: Session, policy_id: int, membership_code: str) -> bool:
@@ -343,34 +328,22 @@ def _has_membership_rule(db: Session, membership_code: str) -> bool:
         return False
 
 
-def resolve_annual_leave_days(
+def resolve_annual_leave_days_legacy(
     db: Session,
     membership_code: str,
     region_code: Optional[str] = None,
 ) -> int:
     """
-    استحقاق سالانه:
-    Membership annual_leave_base → region_applies → regional override → fallback base.
-
-    اگر هنوز Rule عضویت seed نشده باشد، مسیر legacy annual_leave_dept_* استفاده می‌شود
-    (فقط برای سازگاری موقت قبل از seed).
+    مسیر Legacy مستقل برای dual-run:
+    فقط PolicyValue annual_leave_dept_* + region_applies_dept_* + region override.
+    هرگز membership_type_rules / resolve_annual_leave_base_with_region را صدا نمی‌زند.
     """
     policy_code = resolve_membership_code_for_policy(membership_code)
-
-    if _has_membership_rule(db, policy_code):
-        from web.services.membership_service import (
-            resolve_annual_leave_base_with_region,
-        )
-        return resolve_annual_leave_base_with_region(
-            db, policy_code, region_code=region_code
-        )
-
     policy = _get_leave_policy(db)
     if not policy:
-        return DEPT_DEFAULT_ANNUAL
+        return 0 if policy_code in ('5', '6', '7') else DEPT_DEFAULT_ANNUAL
 
     annual_pv = _get_policy_param(db, policy.id, f'annual_leave_dept_{policy_code}')
-    # برای 5/6/7 بدون رکورد سیاست، پیش‌فرض 0 (نه 30)
     default_annual = 0 if policy_code in ('5', '6', '7') else DEPT_DEFAULT_ANNUAL
     annual = _parse_int(
         annual_pv.parameter_value if annual_pv else None,
@@ -397,8 +370,35 @@ def resolve_annual_leave_days(
             if scoped:
                 region_days = _parse_int(scoped.parameter_value, region_days)
             annual = region_days
+        return max(0, annual)
 
     return max(0, annual)
+
+
+def resolve_annual_leave_days(
+    db: Session,
+    membership_code: str,
+    region_code: Optional[str] = None,
+) -> int:
+    """
+    استحقاق سالانه (مسیر New پس از seed):
+    Membership annual_leave_base → region_applies → regional override → fallback base.
+
+    اگر هنوز Rule عضویت seed نشده باشد، مسیر legacy annual_leave_dept_* استفاده می‌شود.
+    """
+    policy_code = resolve_membership_code_for_policy(membership_code)
+
+    if _has_membership_rule(db, policy_code):
+        from web.services.membership_service import (
+            resolve_annual_leave_base_with_region,
+        )
+        return resolve_annual_leave_base_with_region(
+            db, policy_code, region_code=region_code
+        )
+
+    return resolve_annual_leave_days_legacy(
+        db, policy_code, region_code=region_code
+    )
 
 
 def resolve_annual_for_employee_contract(

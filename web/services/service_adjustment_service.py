@@ -18,6 +18,33 @@ class ServiceAdjustmentError(MembershipError):
     pass
 
 
+def resolve_contract_for_effective_date(
+    db: Session,
+    employee_id: str,
+    effective_date: date,
+) -> Contract:
+    """
+    قراردادی که در effective_date پوشش دارد.
+    tie-break: start_date desc, id desc.
+    بدون پوشش → خطا (نه fallback آخرین قرارداد).
+    """
+    candidates = (
+        db.query(Contract)
+        .filter(
+            Contract.user_id == employee_id,
+            Contract.start_date <= effective_date,
+        )
+        .order_by(Contract.start_date.desc(), Contract.id.desc())
+        .all()
+    )
+    for contract in candidates:
+        if contract.end_date is None or contract.end_date >= effective_date:
+            return contract
+    raise ServiceAdjustmentError(
+        "هیچ قراردادی در تاریخ مؤثر تعدیل یافت نشد"
+    )
+
+
 def _gate_for_type(
     db: Session,
     *,
@@ -25,10 +52,12 @@ def _gate_for_type(
     contract_id: Optional[int],
     adjustment_type: str,
     effective_date: date,
-) -> None:
+) -> Optional[int]:
+    """Gate با Rule مؤثر همان تاریخ. برمی‌گرداند contract_id حل‌شده."""
     if adjustment_type not in ADJUSTMENT_TYPES:
         raise ServiceAdjustmentError("نوع تعدیل نامعتبر است")
 
+    resolved_contract_id = contract_id
     membership_code = None
     if contract_id is not None:
         contract = db.query(Contract).filter(Contract.id == contract_id).first()
@@ -36,17 +65,20 @@ def _gate_for_type(
             raise ServiceAdjustmentError("قرارداد یافت نشد")
         if contract.user_id != employee_id:
             raise ServiceAdjustmentError("قرارداد متعلق به این کارمند نیست")
+        # قرارداد انتخاب‌شده باید تاریخ را پوشش دهد
+        if contract.start_date > effective_date or (
+            contract.end_date is not None and contract.end_date < effective_date
+        ):
+            raise ServiceAdjustmentError(
+                "قرارداد انتخاب‌شده تاریخ مؤثر را پوشش نمی‌دهد"
+            )
         membership_code = contract.contract_type_code
     else:
-        # آخرین قرارداد فعال/اخیر
-        contract = (
-            db.query(Contract)
-            .filter(Contract.user_id == employee_id)
-            .order_by(Contract.start_date.desc())
-            .first()
+        contract = resolve_contract_for_effective_date(
+            db, employee_id, effective_date
         )
-        if contract:
-            membership_code = contract.contract_type_code
+        resolved_contract_id = contract.id
+        membership_code = contract.contract_type_code
 
     if not membership_code:
         raise ServiceAdjustmentError("عضویت مؤثر برای بررسی مجوز یافت نشد")
@@ -64,6 +96,7 @@ def _gate_for_type(
         raise ServiceAdjustmentError(
             "این نوع تعدیل برای عضویت مؤثر مجاز نیست"
         )
+    return resolved_contract_id
 
 
 def create_adjustment(
@@ -81,7 +114,7 @@ def create_adjustment(
     contract_id: Optional[int] = None,
     created_by: Optional[str] = None,
 ) -> ServiceAdjustment:
-    _gate_for_type(
+    resolved_contract_id = _gate_for_type(
         db,
         employee_id=employee_id,
         contract_id=contract_id,
@@ -96,7 +129,7 @@ def create_adjustment(
 
     row = ServiceAdjustment(
         employee_id=employee_id,
-        contract_id=contract_id,
+        contract_id=resolved_contract_id,
         adjustment_type=adjustment_type,
         years=years,
         months=months,
@@ -138,7 +171,7 @@ def correct_adjustment(
         raise ServiceAdjustmentError("فقط رکورد فعال قابل اصلاح است")
 
     eff = effective_date or original.effective_date
-    _gate_for_type(
+    resolved_contract_id = _gate_for_type(
         db,
         employee_id=original.employee_id,
         contract_id=original.contract_id,
@@ -152,7 +185,7 @@ def correct_adjustment(
 
     correction = ServiceAdjustment(
         employee_id=original.employee_id,
-        contract_id=original.contract_id,
+        contract_id=resolved_contract_id,
         adjustment_type=original.adjustment_type,
         years=years,
         months=months,

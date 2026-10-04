@@ -2,8 +2,8 @@
 Dual-run validation for membership cutover.
 
 Compares entitlement resolve results between:
-- current/legacy policy path
-- membership-rule path (when tables + rules exist)
+- independent Legacy policy path (annual_leave_dept_*)
+- New membership-rule path (resolve_annual_leave_base_with_region)
 
 Fail-closed: returns diffs; never auto-fixes or remaps codes.
 """
@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from models.contract import Contract
 from web.services.leave_entitlement_service import (
     calculate_entitlement_by_year,
-    resolve_annual_leave_days,
+    resolve_annual_leave_days_legacy,
 )
 
 
@@ -38,23 +38,36 @@ class EntitlementDiff:
         return asdict(self)
 
 
+def _new_annual_resolver():
+    from web.services.membership_service import (
+        resolve_annual_leave_base_with_region,
+    )
+    return resolve_annual_leave_base_with_region
+
+
 def snapshot_resolve_matrix(
     db: Session,
     membership_codes: Optional[List[str]] = None,
     region_codes: Optional[List[str]] = None,
 ) -> List[dict]:
-    """Baseline snapshot of resolve_annual_leave_days for codes × regions."""
+    """Baseline snapshot of Legacy vs New annual resolve for codes × regions."""
     codes = membership_codes or [str(i) for i in range(1, 8)]
     regions = region_codes or [None, "NORMAL", "GRADE_2", "GRADE_3", "GRADE_4"]
+    new_fn = _new_annual_resolver()
     rows: List[dict] = []
     for code in codes:
         for region in regions:
-            annual = resolve_annual_leave_days(db, code, region_code=region)
+            legacy = resolve_annual_leave_days_legacy(
+                db, code, region_code=region
+            )
+            new_annual = int(new_fn(db, code, region_code=region))
             rows.append(
                 {
                     "membership_code": code,
                     "region_code": region,
-                    "annual_leave_days": annual,
+                    "legacy_annual_leave_days": legacy,
+                    "new_annual_leave_days": new_annual,
+                    "annual_leave_days": new_annual,
                 }
             )
     return rows
@@ -70,18 +83,15 @@ def compare_annual_paths(
 ) -> Optional[EntitlementDiff]:
     """
     Compare two annual resolvers for one membership/region.
-    Defaults: legacy = current resolve_annual_leave_days;
-    new = membership_service.resolve_annual_leave_base_with_region when available.
+    Defaults: legacy = resolve_annual_leave_days_legacy;
+    new = membership_service.resolve_annual_leave_base_with_region.
     """
-    legacy = legacy_fn or resolve_annual_leave_days
+    legacy = legacy_fn or resolve_annual_leave_days_legacy
     old_annual = int(legacy(db, membership_code, region_code=region_code))
 
     if new_fn is None:
         try:
-            from web.services.membership_service import (
-                resolve_annual_leave_base_with_region,
-            )
-            new_fn = resolve_annual_leave_base_with_region
+            new_fn = _new_annual_resolver()
         except Exception:
             return None
 
@@ -110,8 +120,9 @@ def compare_contract_entitlement(
     *,
     region_code: Optional[str] = None,
     new_annual_fn=None,
+    legacy_annual_fn=None,
 ) -> Optional[EntitlementDiff]:
-    """Compare calculate_entitlement_by_year using old vs new annual bases."""
+    """Compare calculate_entitlement_by_year using Legacy vs New annual bases."""
     from models.employee import Employee
 
     employee = db.query(Employee).filter(Employee.user_id == contract.user_id).first()
@@ -119,8 +130,9 @@ def compare_contract_entitlement(
     if effective_region is None and employee is not None:
         effective_region = employee.region_code
 
-    old_annual = resolve_annual_leave_days(
-        db, contract.contract_type_code, region_code=effective_region
+    legacy = legacy_annual_fn or resolve_annual_leave_days_legacy
+    old_annual = int(
+        legacy(db, contract.contract_type_code, region_code=effective_region)
     )
     old_ent = calculate_entitlement_by_year(
         db, contract, employee=employee, annual_override=old_annual
@@ -128,10 +140,7 @@ def compare_contract_entitlement(
 
     if new_annual_fn is None:
         try:
-            from web.services.membership_service import (
-                resolve_annual_leave_base_with_region,
-            )
-            new_annual_fn = resolve_annual_leave_base_with_region
+            new_annual_fn = _new_annual_resolver()
         except Exception:
             return None
 
@@ -169,10 +178,12 @@ def validate_cutover_for_all_contracts(
     *,
     as_of: Optional[date] = None,
     new_annual_fn=None,
+    legacy_annual_fn=None,
 ) -> List[EntitlementDiff]:
     """
     Fail-closed dual-run over all contracts that cover as_of (default: today).
     Returns list of diffs; empty list means safe to cut over.
+    Never mutates DB.
     """
     on_date = as_of or date.today()
     contracts = db.query(Contract).order_by(Contract.id.asc()).all()
@@ -182,11 +193,13 @@ def validate_cutover_for_all_contracts(
             contract.end_date is None or contract.end_date >= on_date
             or contract.is_active
         )
-        # Also validate historical contracts that still have type codes
         if not covers and contract.start_date > on_date:
             continue
         diff = compare_contract_entitlement(
-            db, contract, new_annual_fn=new_annual_fn
+            db,
+            contract,
+            new_annual_fn=new_annual_fn,
+            legacy_annual_fn=legacy_annual_fn,
         )
         if diff is not None:
             diffs.append(diff)

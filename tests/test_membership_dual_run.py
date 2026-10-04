@@ -1,20 +1,24 @@
-"""Phase 0/3: dual-run and membership seed/resolve tests."""
-from datetime import date, timedelta
+"""Phase A/B/D: dual-run, non-destructive align, seed reconcile tests."""
+from datetime import date
 
 from models.contract import Contract
 from models.membership_type import MembershipType
 from models.membership_type_rule import MembershipTypeRule
 from web.services.leave_entitlement_service import (
     resolve_annual_leave_days,
+    resolve_annual_leave_days_legacy,
     resolve_membership_code_for_policy,
 )
 from web.services.membership_cutover_validation import (
+    compare_annual_paths,
     find_orphan_membership_codes,
     snapshot_resolve_matrix,
     validate_cutover_for_all_contracts,
 )
 from web.services.membership_service import (
     create_membership_type,
+    get_effective_rule,
+    reconcile_seed_membership_rules,
     resolve_annual_leave_base,
     resolve_annual_leave_base_with_region,
     seed_default_memberships,
@@ -47,6 +51,37 @@ class TestMembershipSeed:
         assert resolve_annual_leave_base(db, "5") == 0
         assert resolve_annual_leave_base(db, "6") == 0
         assert resolve_annual_leave_base(db, "7") == 0
+
+    def test_reconcile_seed_flags(self, db):
+        # Drift first rule of code 1, then reconcile
+        rule = (
+            db.query(MembershipTypeRule)
+            .filter(MembershipTypeRule.membership_type_code == "1")
+            .order_by(MembershipTypeRule.effective_from.asc())
+            .first()
+        )
+        assert rule is not None
+        rule.supports_positive_seniority = False
+        rule.supports_extra_service = True
+        db.commit()
+        n = reconcile_seed_membership_rules(db)
+        db.commit()
+        assert n >= 1
+        db.refresh(rule)
+        assert rule.supports_positive_seniority is True
+        assert rule.supports_extra_service is False
+        assert rule.supports_service_deduction is False
+        assert rule.annual_leave_base == 30
+
+        rule2 = (
+            db.query(MembershipTypeRule)
+            .filter(MembershipTypeRule.membership_type_code == "2")
+            .order_by(MembershipTypeRule.effective_from.asc())
+            .first()
+        )
+        assert rule2.supports_service_deduction is True
+        assert rule2.supports_extra_service is True
+        assert rule2.supports_positive_seniority is False
 
 
 class TestNoRemap67:
@@ -91,11 +126,141 @@ class TestNoRemap67:
         assert resolve_annual_leave_days(db, "7", region_code="NORMAL") == 0
 
 
+class TestAlignNonDestructive:
+    def test_existing_annual_leave_dept_6_preserved(self, db):
+        from database.init_db import align_leave_policy_membership_67
+        from models.policy import Policy, PolicyValue
+
+        policy = db.query(Policy).filter(Policy.category == "leave").first()
+        if not policy:
+            policy = Policy(category="leave", name="leave", is_active=True)
+            db.add(policy)
+            db.flush()
+        key = "annual_leave_dept_6"
+        pv = (
+            db.query(PolicyValue)
+            .filter(
+                PolicyValue.policy_id == policy.id,
+                PolicyValue.parameter_key == key,
+                PolicyValue.region_code.is_(None),
+            )
+            .first()
+        )
+        if pv:
+            pv.parameter_value = "5"
+        else:
+            db.add(
+                PolicyValue(
+                    policy_id=policy.id,
+                    parameter_key=key,
+                    parameter_value="5",
+                    is_editable=True,
+                )
+            )
+        db.commit()
+
+        align_leave_policy_membership_67(bind_engine=db.get_bind())
+        db.expire_all()
+        pv2 = (
+            db.query(PolicyValue)
+            .filter(
+                PolicyValue.policy_id == policy.id,
+                PolicyValue.parameter_key == key,
+                PolicyValue.region_code.is_(None),
+            )
+            .one()
+        )
+        assert pv2.parameter_value == "5"
+
+
 class TestDualRun:
     def test_snapshot_matrix(self, db):
         rows = snapshot_resolve_matrix(db, membership_codes=["1", "4", "6"])
         assert len(rows) >= 3
         assert all("annual_leave_days" in r for r in rows)
+        assert all("legacy_annual_leave_days" in r for r in rows)
+
+    def test_legacy_independent_of_new_mock(self, db):
+        """Legacy must stay policy-based even if New resolver is mocked."""
+        from models.policy import Policy, PolicyValue
+
+        policy = db.query(Policy).filter(Policy.category == "leave").first()
+        if not policy:
+            policy = Policy(category="leave", name="leave", is_active=True)
+            db.add(policy)
+            db.flush()
+        for key, val in (
+            ("annual_leave_dept_4", "30"),
+            ("region_applies_dept_4", "false"),
+        ):
+            pv = (
+                db.query(PolicyValue)
+                .filter(
+                    PolicyValue.policy_id == policy.id,
+                    PolicyValue.parameter_key == key,
+                    PolicyValue.region_code.is_(None),
+                )
+                .first()
+            )
+            if pv:
+                pv.parameter_value = val
+            else:
+                db.add(
+                    PolicyValue(
+                        policy_id=policy.id,
+                        parameter_key=key,
+                        parameter_value=val,
+                    )
+                )
+        db.commit()
+
+        legacy = resolve_annual_leave_days_legacy(db, "4", region_code="NORMAL")
+        assert legacy == 30
+
+        def fake_new(db, code, region_code=None, on_date=None):
+            return 999
+
+        diff = compare_annual_paths(
+            db, "4", "NORMAL", new_fn=fake_new
+        )
+        assert diff is not None
+        assert diff.old_annual == 30
+        assert diff.new_annual == 999
+
+    def test_mismatch_detected_when_new_differs(self, db, make_user):
+        user = make_user(department="4", balance_al=None, contract_type_code="4")
+        from models.policy import Policy, PolicyValue
+
+        policy = db.query(Policy).filter(Policy.category == "leave").first()
+        if policy:
+            key = "region_applies_dept_4"
+            pv = (
+                db.query(PolicyValue)
+                .filter(
+                    PolicyValue.policy_id == policy.id,
+                    PolicyValue.parameter_key == key,
+                )
+                .first()
+            )
+            if pv:
+                pv.parameter_value = "false"
+            else:
+                db.add(
+                    PolicyValue(
+                        policy_id=policy.id,
+                        parameter_key=key,
+                        parameter_value="false",
+                    )
+                )
+            db.commit()
+
+        def fake_new(db, code, region_code=None, on_date=None):
+            return 1
+
+        diffs = validate_cutover_for_all_contracts(db, new_annual_fn=fake_new)
+        mine = [d for d in diffs if d.user_id == user["user_id"]]
+        assert mine
+        assert mine[0].new_annual == 1
 
     def test_new_path_matches_resolve_when_region_off(self, db):
         from models.policy import Policy, PolicyValue
@@ -140,7 +305,6 @@ class TestDualRun:
 
     def test_cutover_validation_empty_when_aligned(self, db, make_user):
         user = make_user(department="4", balance_al=None, contract_type_code="4")
-        # ensure region off for clean compare
         from models.policy import Policy, PolicyValue
 
         policy = db.query(Policy).filter(Policy.category == "leave").first()
@@ -165,10 +329,28 @@ class TestDualRun:
                             parameter_value="false",
                         )
                     )
+            # Ensure legacy annual matches seed base
+            key = "annual_leave_dept_4"
+            pv = (
+                db.query(PolicyValue)
+                .filter(
+                    PolicyValue.policy_id == policy.id,
+                    PolicyValue.parameter_key == key,
+                )
+                .first()
+            )
+            if pv:
+                pv.parameter_value = "30"
+            else:
+                db.add(
+                    PolicyValue(
+                        policy_id=policy.id,
+                        parameter_key=key,
+                        parameter_value="30",
+                    )
+                )
             db.commit()
         diffs = validate_cutover_for_all_contracts(db)
-        # may include other contracts from prior tests in same session DB —
-        # filter to our user
         mine = [d for d in diffs if d.user_id == user["user_id"]]
         assert mine == []
 
@@ -200,3 +382,48 @@ class TestNewMembershipDefaults:
         assert rule.supports_service_deduction is False
         assert rule.supports_extra_service is False
         assert rule.supports_positive_seniority is False
+
+
+class TestEffectiveRuleByDate:
+    def test_future_rule_effective_on_its_date(self, db):
+        from datetime import timedelta
+
+        from models.reserved_membership_code import ReservedMembershipCode
+        from web.services.membership_service import create_rule_snapshot
+
+        code = "92"
+        db.query(MembershipTypeRule).filter(
+            MembershipTypeRule.membership_type_code == code
+        ).delete()
+        db.query(MembershipType).filter(MembershipType.code == code).delete()
+        db.query(ReservedMembershipCode).filter(
+            ReservedMembershipCode.code == code
+        ).delete()
+        db.commit()
+
+        create_membership_type(db, code=code, name="تاریخ", created_by="t")
+        db.commit()
+        # first rule annual=0
+        future = date.today() + timedelta(days=30)
+        create_rule_snapshot(
+            db,
+            membership_type_code=code,
+            effective_from=future,
+            annual_leave_base=22,
+            supports_service_deduction=False,
+            supports_extra_service=False,
+            supports_positive_seniority=False,
+            created_by="t",
+        )
+        db.commit()
+
+        today_rule = get_effective_rule(db, code, on_date=date.today())
+        assert today_rule is not None
+        assert today_rule.annual_leave_base == 0
+
+        future_rule = get_effective_rule(db, code, on_date=future)
+        assert future_rule is not None
+        assert future_rule.annual_leave_base == 22
+
+        # status scheduled must not block resolve on that date
+        assert future_rule.status in ("scheduled", "active")
