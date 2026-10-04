@@ -64,7 +64,7 @@ async def save_contract_file(
         )
     except FileStorageError as exc:
         if exc.code == "invalid_extension":
-            raise ValueError("نوع فایل مجاز نیست (فقط PDF/JPG/PNG)") from exc
+            raise ValueError("نوع فایل مجاز نیست (فقط PDF/JPG/JPEG/PNG)") from exc
         if exc.code == "file_too_large":
             raise ValueError("حجم فایل بیش از ۱۰ مگابایت است") from exc
         if exc.code == "empty_file":

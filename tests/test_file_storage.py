@@ -78,6 +78,27 @@ def test_path_traversal_rejected(storage: FileStorage):
     with pytest.raises(FileStorageError):
         storage.resolve("/static/uploads/../../../etc/passwd")
 
+    with pytest.raises(FileStorageError):
+        storage.resolve("/static/uploads/contracts/../../avatars/x.png")
+
+
+def test_legacy_static_rejects_arbitrary_static_paths(storage: FileStorage):
+    """resolve/delete must not touch arbitrary files under /static."""
+    decoy = LEGACY_STATIC_ROOT / "js" / "_timex_storage_decoy.js"
+    decoy.parent.mkdir(parents=True, exist_ok=True)
+    decoy.write_text("// decoy", encoding="utf-8")
+    key = "/static/js/_timex_storage_decoy.js"
+    try:
+        with pytest.raises(FileStorageError) as exc:
+            storage.resolve(key)
+        assert exc.value.code == "invalid_key"
+        assert storage.exists(key) is False
+        storage.delete(key)
+        assert decoy.is_file()
+    finally:
+        if decoy.exists():
+            decoy.unlink()
+
 
 def test_uuid_filename_is_secure(storage: FileStorage):
     key = storage.save("contracts", b"ok", original_filename="My Contract (1).PDF")

@@ -23,6 +23,13 @@ PROJECT_ROOT = WEB_ROOT.parent
 LEGACY_PRIVATE_UPLOADS = WEB_ROOT / "private_uploads"
 LEGACY_STATIC_ROOT = WEB_ROOT / "static"
 
+# Only these historic upload dirs may be resolved/deleted via /static/... keys.
+LEGACY_STATIC_UPLOAD_PREFIXES: dict[str, Path] = {
+    "/static/uploads/contracts/": LEGACY_STATIC_ROOT / "uploads" / "contracts",
+    "/static/uploads/certificates/": LEGACY_STATIC_ROOT / "uploads" / "certificates",
+    "/static/uploads/avatars/": LEGACY_STATIC_ROOT / "uploads" / "avatars",
+}
+
 CATEGORIES = (
     "contracts",
     "employee-documents",
@@ -206,10 +213,18 @@ class FileStorage:
         return "contracts", filename
 
     def _resolve_legacy_static(self, normalized: str) -> Path:
-        rel = normalized[len("/static/") :].lstrip("/")
-        if not rel:
-            raise FileStorageError("invalid_key", "empty static path")
-        return self._safe_join(LEGACY_STATIC_ROOT, rel)
+        for prefix, base_dir in LEGACY_STATIC_UPLOAD_PREFIXES.items():
+            if not normalized.startswith(prefix):
+                continue
+            rest = normalized[len(prefix) :]
+            if not rest or "/" in rest or "\\" in rest or rest in {".", ".."}:
+                raise FileStorageError("path_traversal", "invalid legacy static path")
+            self._assert_safe_filename(rest)
+            return self._safe_join(base_dir, rest)
+        raise FileStorageError(
+            "invalid_key",
+            "legacy static path must be under known upload directories",
+        )
 
     def _legacy_candidates(self, category: str, filename: str) -> list[Path]:
         candidates: list[Path] = []
