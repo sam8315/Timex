@@ -83,7 +83,20 @@ def _seed_legacy(env, user_id: str) -> dict[str, str]:
     }
 
 
-def _write_backup_manifest(tmp_path: Path, *, bad_db=False, bad_legacy=False, bad_sha=False) -> Path:
+def _write_backup_manifest(
+    env,
+    *,
+    bad_db=False,
+    bad_legacy=False,
+    bad_sha=False,
+    omit_target=False,
+    target_overrides=None,
+    created_at="2020-01-01T00:00:00+00:00",
+    omit_size=False,
+    wrong_size=False,
+    omit_sha=False,
+) -> Path:
+    tmp_path = env["tmp"]
     db_backup = tmp_path / "db.dump"
     legacy_backup = tmp_path / "legacy.zip"
     db_backup.write_bytes(b"FAKE-DB-BACKUP" if not bad_db else b"")
@@ -96,20 +109,44 @@ def _write_backup_manifest(tmp_path: Path, *, bad_db=False, bad_legacy=False, ba
     )
     if bad_sha:
         db_sha = "a" * 64
-    manifest = {
-        "created_at": "2026-10-04T10:00:00+00:00",
-        "operator": "tester",
-        "database_backup": {
-            "path": str(db_backup),
-            "size_bytes": db_backup.stat().st_size,
-            "sha256": db_sha,
-        },
-        "legacy_backup": {
-            "path": str(legacy_backup),
-            "size_bytes": legacy_backup.stat().st_size,
-            "sha256": legacy_sha,
-        },
+
+    target = mig.build_target_identity(
+        db=env["db"], storage_root=env["storage_root"]
+    )
+    target_payload = {
+        "database": target.database,
+        "storage_root": target.storage_root,
+        "environment": target.environment,
+        "target_id": target.target_id,
     }
+    if target_overrides:
+        target_payload.update(target_overrides)
+
+    db_entry = {
+        "path": str(db_backup),
+        "sha256": db_sha,
+    }
+    legacy_entry = {
+        "path": str(legacy_backup),
+        "sha256": legacy_sha,
+    }
+    if not omit_size:
+        db_entry["size_bytes"] = (
+            db_backup.stat().st_size + 1 if wrong_size else db_backup.stat().st_size
+        )
+        legacy_entry["size_bytes"] = legacy_backup.stat().st_size
+    if omit_sha:
+        db_entry.pop("sha256", None)
+        legacy_entry.pop("sha256", None)
+
+    manifest = {
+        "created_at": created_at,
+        "operator": "tester",
+        "database_backup": db_entry,
+        "legacy_backup": legacy_entry,
+    }
+    if not omit_target:
+        manifest["target"] = target_payload
     path = tmp_path / "storage_migration_backup.json"
     path.write_text(json.dumps(manifest), encoding="utf-8")
     return path
@@ -181,12 +218,26 @@ def test_missing_db_backup_rejects(mig_env, make_user):
     _attach_legacy_paths(mig_env, make_user)
     legacy = mig_env["tmp"] / "legacy.zip"
     legacy.write_bytes(b"legacy")
+    target = mig.build_target_identity(
+        db=mig_env["db"], storage_root=mig_env["storage_root"]
+    )
     manifest = {
-        "created_at": "t",
+        "created_at": "2020-01-01T00:00:00+00:00",
         "operator": "op",
-        "database_backup": {"path": str(mig_env["tmp"] / "no-db.dump"), "sha256": "ab"},
+        "target": {
+            "database": target.database,
+            "storage_root": target.storage_root,
+            "environment": target.environment,
+            "target_id": target.target_id,
+        },
+        "database_backup": {
+            "path": str(mig_env["tmp"] / "no-db.dump"),
+            "size_bytes": 1,
+            "sha256": "ab",
+        },
         "legacy_backup": {
             "path": str(legacy),
+            "size_bytes": legacy.stat().st_size,
             "sha256": hashlib.sha256(b"legacy").hexdigest(),
         },
     }
@@ -201,14 +252,28 @@ def test_missing_legacy_backup_rejects(mig_env, make_user):
     _attach_legacy_paths(mig_env, make_user)
     db_backup = mig_env["tmp"] / "db.dump"
     db_backup.write_bytes(b"db")
+    target = mig.build_target_identity(
+        db=mig_env["db"], storage_root=mig_env["storage_root"]
+    )
     manifest = {
-        "created_at": "t",
+        "created_at": "2020-01-01T00:00:00+00:00",
         "operator": "op",
+        "target": {
+            "database": target.database,
+            "storage_root": target.storage_root,
+            "environment": target.environment,
+            "target_id": target.target_id,
+        },
         "database_backup": {
             "path": str(db_backup),
+            "size_bytes": db_backup.stat().st_size,
             "sha256": hashlib.sha256(b"db").hexdigest(),
         },
-        "legacy_backup": {"path": str(mig_env["tmp"] / "no-legacy.zip")},
+        "legacy_backup": {
+            "path": str(mig_env["tmp"] / "no-legacy.zip"),
+            "size_bytes": 1,
+            "sha256": "cd",
+        },
     }
     path = mig_env["tmp"] / "manifest.json"
     path.write_text(json.dumps(manifest), encoding="utf-8")
@@ -219,7 +284,7 @@ def test_missing_legacy_backup_rejects(mig_env, make_user):
 
 def test_bad_checksum_rejects(mig_env, make_user):
     _attach_legacy_paths(mig_env, make_user)
-    manifest = _write_backup_manifest(mig_env["tmp"], bad_sha=True)
+    manifest = _write_backup_manifest(mig_env, bad_sha=True)
     gates = _eval(mig_env, backup_manifest=manifest)
     assert gates.allowed is False
     assert any("sha256" in b.lower() for b in gates.blockers)
@@ -239,7 +304,8 @@ def test_storage_inside_source_tree_rejects(mig_env, make_user, monkeypatch):
         )
         # Point migration storage to inside root for consistency.
         mig_env["migration"].storage = storage
-        manifest = _write_backup_manifest(mig_env["tmp"])
+        inside_env = {**mig_env, "storage_root": inside, "storage": storage}
+        manifest = _write_backup_manifest(inside_env)
         gates = mig.evaluate_execute_gates(
             db=mig_env["db"],
             storage=storage,
@@ -267,7 +333,7 @@ def test_missing_candidate_rejects(mig_env, make_user):
     )
     contract.file_path = "/static/uploads/contracts/missing.pdf"
     db.commit()
-    manifest = _write_backup_manifest(mig_env["tmp"])
+    manifest = _write_backup_manifest(mig_env)
     gates = _eval(mig_env, backup_manifest=manifest)
     assert gates.allowed is False
     assert any("missing" in b.lower() for b in gates.blockers)
@@ -279,7 +345,7 @@ def test_conflict_rejects(mig_env, make_user):
     dest = mig_env["storage"].resolve(dest_key)
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_bytes(b"%PDF-OTHER")
-    manifest = _write_backup_manifest(mig_env["tmp"])
+    manifest = _write_backup_manifest(mig_env)
     gates = _eval(mig_env, backup_manifest=manifest)
     assert gates.allowed is False
     assert any("conflict" in b.lower() for b in gates.blockers)
@@ -296,7 +362,7 @@ def test_invalid_reference_rejects(mig_env, make_user):
     )
     contract.file_path = "/private/education/" + ("c" * 32) + ".pdf"
     db.commit()
-    manifest = _write_backup_manifest(mig_env["tmp"])
+    manifest = _write_backup_manifest(mig_env)
     gates = _eval(mig_env, backup_manifest=manifest)
     assert gates.allowed is False
     assert any("invalid" in b.lower() for b in gates.blockers)
@@ -304,7 +370,7 @@ def test_invalid_reference_rejects(mig_env, make_user):
 
 def test_insufficient_disk_space_rejects(mig_env, make_user, monkeypatch):
     _attach_legacy_paths(mig_env, make_user)
-    manifest = _write_backup_manifest(mig_env["tmp"])
+    manifest = _write_backup_manifest(mig_env)
 
     class _Usage:
         total = 100
@@ -319,7 +385,7 @@ def test_insufficient_disk_space_rejects(mig_env, make_user, monkeypatch):
 
 def test_missing_confirm_production_rejects(mig_env, make_user):
     _attach_legacy_paths(mig_env, make_user)
-    manifest = _write_backup_manifest(mig_env["tmp"])
+    manifest = _write_backup_manifest(mig_env)
     gates = _eval(mig_env, backup_manifest=manifest, confirm_production=False)
     assert gates.allowed is False
     assert any("confirm-production" in b for b in gates.blockers)
@@ -327,7 +393,7 @@ def test_missing_confirm_production_rejects(mig_env, make_user):
 
 def test_successful_gate_evaluation_allows_execute(mig_env, make_user):
     _attach_legacy_paths(mig_env, make_user)
-    manifest = _write_backup_manifest(mig_env["tmp"])
+    manifest = _write_backup_manifest(mig_env)
     gates = _eval(mig_env, backup_manifest=manifest, confirm_production=True)
     assert gates.allowed is True
     assert gates.blockers == []
@@ -355,7 +421,7 @@ def test_preflight_failure_zero_migration_changes(mig_env, make_user):
         for p in mig_env["storage_root"].rglob("*")
         if p.is_file()
     }
-    manifest = _write_backup_manifest(mig_env["tmp"])
+    manifest = _write_backup_manifest(mig_env)
     journal, activation = mig.run_controlled_execute(
         db=mig_env["db"],
         storage=mig_env["storage"],
@@ -404,7 +470,7 @@ def test_backup_failure_zero_migration_changes(mig_env, make_user):
 def test_copy_failure_db_unchanged(mig_env, make_user, monkeypatch):
     user, paths, contract, _edu = _attach_legacy_paths(mig_env, make_user)
     before = contract.file_path
-    manifest = _write_backup_manifest(mig_env["tmp"])
+    manifest = _write_backup_manifest(mig_env)
 
     def boom(item):
         raise RuntimeError("copy failed")
@@ -434,7 +500,7 @@ def test_sha_mismatch_db_unchanged(mig_env, make_user, monkeypatch):
 
     user, paths, contract, _edu = _attach_legacy_paths(mig_env, make_user)
     before = contract.file_path
-    manifest = _write_backup_manifest(mig_env["tmp"])
+    manifest = _write_backup_manifest(mig_env)
 
     real_fp = act_mod._file_fingerprint
     real_execute = mig_env["service"].execute
@@ -478,7 +544,7 @@ def test_sha_mismatch_db_unchanged(mig_env, make_user, monkeypatch):
 def test_db_failure_rollback_sources_retained(mig_env, make_user, monkeypatch):
     user, paths, contract, _edu = _attach_legacy_paths(mig_env, make_user)
     before = contract.file_path
-    manifest = _write_backup_manifest(mig_env["tmp"])
+    manifest = _write_backup_manifest(mig_env)
 
     real_commit = mig_env["db"].commit
     state = {"armed": False}
@@ -529,7 +595,7 @@ def test_db_failure_rollback_sources_retained(mig_env, make_user, monkeypatch):
 
 def test_successful_migration_updates_db_and_retains_sources(mig_env, make_user):
     user, paths, contract, edu = _attach_legacy_paths(mig_env, make_user)
-    manifest = _write_backup_manifest(mig_env["tmp"])
+    manifest = _write_backup_manifest(mig_env)
     journal, activation = mig.run_controlled_execute(
         db=mig_env["db"],
         storage=mig_env["storage"],
@@ -541,9 +607,14 @@ def test_successful_migration_updates_db_and_retains_sources(mig_env, make_user)
     )
     assert journal.executed is True
     assert journal.aborted is False
+    assert journal.phase == "completed"
     assert journal.db_updated >= 3
     assert journal.sources_deleted is False
     assert Path(journal.journal_path).is_file()
+    payload = json.loads(Path(journal.journal_path).read_text(encoding="utf-8"))
+    assert payload["phase"] == "completed"
+    assert payload["sources_deleted"] is False
+    assert payload["target_id"]
 
     mig_env["db"].expire_all()
     c = mig_env["db"].query(Contract).filter(Contract.id == contract.id).first()
@@ -560,7 +631,7 @@ def test_successful_migration_updates_db_and_retains_sources(mig_env, make_user)
 
 def test_second_execution_idempotent(mig_env, make_user):
     _attach_legacy_paths(mig_env, make_user)
-    manifest = _write_backup_manifest(mig_env["tmp"])
+    manifest = _write_backup_manifest(mig_env)
     first, _ = mig.run_controlled_execute(
         db=mig_env["db"],
         storage=mig_env["storage"],
@@ -606,18 +677,20 @@ def test_journal_written_on_gate_failure(mig_env, make_user):
     )
     assert journal.aborted is True
     assert journal.executed is False
+    assert journal.phase == "blocked"
     path = Path(journal.journal_path)
     assert path.is_file()
     payload = json.loads(path.read_text(encoding="utf-8"))
     assert payload["sources_deleted"] is False
     assert payload["gates"]["allowed"] is False
+    assert payload["phase"] == "blocked"
 
 
 def test_cli_execute_without_confirm_does_not_migrate(mig_env, make_user):
     """Missing --confirm-production must not execute migration."""
     user, paths, contract, _edu = _attach_legacy_paths(mig_env, make_user)
     before = contract.file_path
-    manifest = _write_backup_manifest(mig_env["tmp"])
+    manifest = _write_backup_manifest(mig_env)
     journal, activation = mig.run_controlled_execute(
         db=mig_env["db"],
         storage=mig_env["storage"],
@@ -636,3 +709,249 @@ def test_cli_execute_without_confirm_does_not_migrate(mig_env, make_user):
         == before
     )
     assert (mig_env["contracts_static"] / Path(paths["contract"]).name).is_file()
+
+
+# ---------------------------------------------------------------------------
+# Target-bound manifest + strict backup metadata
+# ---------------------------------------------------------------------------
+
+def test_target_id_missing_rejects(mig_env, make_user):
+    _attach_legacy_paths(mig_env, make_user)
+    manifest = _write_backup_manifest(mig_env, omit_target=True)
+    gates = _eval(mig_env, backup_manifest=manifest)
+    assert gates.allowed is False
+    assert any("target" in b.lower() for b in gates.blockers)
+
+
+def test_target_id_mismatch_rejects(mig_env, make_user):
+    _attach_legacy_paths(mig_env, make_user)
+    manifest = _write_backup_manifest(
+        mig_env, target_overrides={"target_id": "deadbeefdeadbeef"}
+    )
+    gates = _eval(mig_env, backup_manifest=manifest)
+    assert gates.allowed is False
+    assert any("target_id mismatch" in b for b in gates.blockers)
+
+
+def test_storage_root_mismatch_rejects(mig_env, make_user):
+    _attach_legacy_paths(mig_env, make_user)
+    manifest = _write_backup_manifest(
+        mig_env, target_overrides={"storage_root": str(mig_env["tmp"] / "other-root")}
+    )
+    gates = _eval(mig_env, backup_manifest=manifest)
+    assert gates.allowed is False
+    assert any("storage_root mismatch" in b for b in gates.blockers)
+
+
+def test_database_identity_mismatch_rejects(mig_env, make_user):
+    _attach_legacy_paths(mig_env, make_user)
+    manifest = _write_backup_manifest(
+        mig_env, target_overrides={"database": "other@host:5432/other_db"}
+    )
+    gates = _eval(mig_env, backup_manifest=manifest)
+    assert gates.allowed is False
+    assert any("database mismatch" in b for b in gates.blockers)
+
+
+def test_invalid_created_at_rejects(mig_env, make_user):
+    _attach_legacy_paths(mig_env, make_user)
+    manifest = _write_backup_manifest(mig_env, created_at="not-a-date")
+    gates = _eval(mig_env, backup_manifest=manifest)
+    assert gates.allowed is False
+    assert any("created_at" in b.lower() for b in gates.blockers)
+
+
+def test_future_created_at_rejects(mig_env, make_user):
+    _attach_legacy_paths(mig_env, make_user)
+    manifest = _write_backup_manifest(
+        mig_env, created_at="2099-01-01T00:00:00+00:00"
+    )
+    gates = _eval(mig_env, backup_manifest=manifest)
+    assert gates.allowed is False
+    assert any("future" in b.lower() for b in gates.blockers)
+
+
+def test_missing_size_bytes_rejects(mig_env, make_user):
+    _attach_legacy_paths(mig_env, make_user)
+    manifest = _write_backup_manifest(mig_env, omit_size=True)
+    gates = _eval(mig_env, backup_manifest=manifest)
+    assert gates.allowed is False
+    assert any("size_bytes is required" in b for b in gates.blockers)
+
+
+def test_wrong_size_bytes_rejects(mig_env, make_user):
+    _attach_legacy_paths(mig_env, make_user)
+    manifest = _write_backup_manifest(mig_env, wrong_size=True)
+    gates = _eval(mig_env, backup_manifest=manifest)
+    assert gates.allowed is False
+    assert any("size_bytes mismatch" in b for b in gates.blockers)
+
+
+def test_missing_sha256_rejects(mig_env, make_user):
+    _attach_legacy_paths(mig_env, make_user)
+    manifest = _write_backup_manifest(mig_env, omit_sha=True)
+    gates = _eval(mig_env, backup_manifest=manifest)
+    assert gates.allowed is False
+    assert any("sha256 is required" in b for b in gates.blockers)
+
+
+def test_wrong_sha256_rejects(mig_env, make_user):
+    _attach_legacy_paths(mig_env, make_user)
+    manifest = _write_backup_manifest(mig_env, bad_sha=True)
+    gates = _eval(mig_env, backup_manifest=manifest)
+    assert gates.allowed is False
+    assert any("sha256 mismatch" in b.lower() for b in gates.blockers)
+
+
+# ---------------------------------------------------------------------------
+# Journal durability / atomicity / phases
+# ---------------------------------------------------------------------------
+
+def test_initial_journal_exists_before_execute(mig_env, make_user, monkeypatch):
+    _attach_legacy_paths(mig_env, make_user)
+    manifest = _write_backup_manifest(mig_env)
+    journal_path = mig_env["journal_dir"] / "pre_mutate.json"
+    seen = {"phase": None, "exists_before_mutate": False}
+
+    real_execute = mig_env["service"].execute
+
+    def wrapped(*, dry_run=True):
+        if dry_run:
+            return real_execute(dry_run=True)
+        assert journal_path.is_file(), "initial journal must exist before mutation"
+        payload = json.loads(journal_path.read_text(encoding="utf-8"))
+        seen["exists_before_mutate"] = True
+        seen["phase"] = payload["phase"]
+        assert payload["executed"] is False
+        assert payload["sources_deleted"] is False
+        assert payload["target_id"]
+        assert payload["backup_manifest"]["path"]
+        raise RuntimeError("simulated crash before mutation completes")
+
+    monkeypatch.setattr(mig_env["service"], "execute", wrapped)
+    journal, activation = mig.run_controlled_execute(
+        db=mig_env["db"],
+        storage=mig_env["storage"],
+        activation=mig_env["service"],
+        backup_manifest=manifest,
+        confirm_production=True,
+        legacy_roots=mig_env["legacy_specs"],
+        journal_path=journal_path,
+    )
+    assert seen["exists_before_mutate"] is True
+    assert seen["phase"] == "executing"
+    assert activation is None
+    assert journal.phase == "aborted"
+    assert journal.executed is True
+    assert journal.aborted is True
+    assert journal.sources_deleted is False
+    final = json.loads(journal_path.read_text(encoding="utf-8"))
+    assert final["phase"] == "aborted"
+    assert final["sources_deleted"] is False
+    assert "unhandled execute exception" in final["abort_reason"]
+
+
+def test_atomic_journal_write(tmp_path):
+    journal = mig.ExecutionJournal(
+        started_at="2020-01-01T00:00:00+00:00",
+        phase="started",
+        target_id="abc",
+        sources_deleted=False,
+    )
+    path = tmp_path / "atomic.json"
+    replaces = []
+    real_replace = mig.os.replace
+
+    def tracking_replace(src, dst):
+        replaces.append((src, dst))
+        return real_replace(src, dst)
+
+    mig.os.replace = tracking_replace
+    try:
+        mig.write_journal(journal, path)
+    finally:
+        mig.os.replace = real_replace
+
+    assert path.is_file()
+    assert replaces, "atomic replace must be used"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["phase"] == "started"
+    assert payload["journal_path"] == str(path.resolve())
+    assert list(tmp_path.glob(".*.tmp")) == []
+
+
+def test_blocked_execution_journal_phase(mig_env, make_user):
+    _attach_legacy_paths(mig_env, make_user)
+    journal, _ = mig.run_controlled_execute(
+        db=mig_env["db"],
+        storage=mig_env["storage"],
+        activation=mig_env["service"],
+        backup_manifest=mig_env["tmp"] / "missing.json",
+        confirm_production=True,
+        legacy_roots=mig_env["legacy_specs"],
+        journal_dir=mig_env["journal_dir"],
+    )
+    assert journal.phase == "blocked"
+    assert journal.executed is False
+    assert journal.sources_deleted is False
+
+
+def test_copy_failure_updates_journal(mig_env, make_user, monkeypatch):
+    _attach_legacy_paths(mig_env, make_user)
+    manifest = _write_backup_manifest(mig_env)
+
+    def boom(item):
+        raise RuntimeError("copy failed")
+
+    monkeypatch.setattr(mig_env["migration"], "_copy_item", boom)
+    journal, _ = mig.run_controlled_execute(
+        db=mig_env["db"],
+        storage=mig_env["storage"],
+        activation=mig_env["service"],
+        backup_manifest=manifest,
+        confirm_production=True,
+        legacy_roots=mig_env["legacy_specs"],
+        journal_dir=mig_env["journal_dir"],
+    )
+    assert journal.executed is True
+    assert journal.phase == "aborted"
+    assert journal.sources_deleted is False
+    payload = json.loads(Path(journal.journal_path).read_text(encoding="utf-8"))
+    assert payload["phase"] == "aborted"
+    assert payload["sources_deleted"] is False
+
+
+def test_db_failure_updates_journal(mig_env, make_user, monkeypatch):
+    _attach_legacy_paths(mig_env, make_user)
+    manifest = _write_backup_manifest(mig_env)
+    real_commit = mig_env["db"].commit
+    state = {"armed": False}
+
+    def flaky_commit():
+        if state["armed"]:
+            raise RuntimeError("db commit failed")
+        return real_commit()
+
+    real_execute = mig_env["service"].execute
+
+    def wrapped(*, dry_run=True):
+        if dry_run:
+            return real_execute(dry_run=True)
+        state["armed"] = True
+        monkeypatch.setattr(mig_env["db"], "commit", flaky_commit)
+        return real_execute(dry_run=False)
+
+    monkeypatch.setattr(mig_env["service"], "execute", wrapped)
+    journal, _ = mig.run_controlled_execute(
+        db=mig_env["db"],
+        storage=mig_env["storage"],
+        activation=mig_env["service"],
+        backup_manifest=manifest,
+        confirm_production=True,
+        legacy_roots=mig_env["legacy_specs"],
+        journal_dir=mig_env["journal_dir"],
+    )
+    assert journal.executed is True
+    assert journal.phase == "aborted"
+    assert journal.db_updated == 0
+    assert journal.sources_deleted is False

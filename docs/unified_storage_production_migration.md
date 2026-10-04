@@ -85,6 +85,12 @@ Backup
 {
   "created_at": "2026-10-04T10:00:00+00:00",
   "operator": "ops-user",
+  "target": {
+    "database": "timex_user@localhost:5432/timex_db",
+    "storage_root": "D:/data/timex-storage",
+    "environment": "production",
+    "target_id": "<sha256-prefix from build_target_identity>"
+  },
   "database_backup": {
     "path": "D:/backups/timex_db_pre_storage.dump",
     "size_bytes": 123456789,
@@ -98,8 +104,14 @@ Backup
 }
 ```
 
-The migration tool **does not create** these backups. It only verifies the registered
-manifest paths exist, are non-empty, and match SHA-256 when provided.
+The migration tool **does not create** these backups. For execute it verifies:
+
+- manifest `target.target_id` / `storage_root` / `database` (and `environment` if set)
+  match the live target from `build_target_identity()`
+- `created_at` is a valid ISO datetime not in the future (backup before migration)
+- each backup artifact: exists, non-empty, `size_bytes` matches, `sha256` present and matches
+
+Legacy manifests without `target` / `size_bytes` / `sha256` are **rejected**.
 
 ---
 
@@ -130,8 +142,9 @@ Execute is allowed only when all gates pass:
 
 | Gate | Requirement |
 |------|-------------|
-| DB backup | Manifest path exists, non-empty, checksum OK if provided |
-| Legacy backup | Manifest path exists, non-empty, checksum OK if provided |
+| Target binding | Manifest `target_id` + storage root + database match live target |
+| DB backup | Exists, non-empty, `size_bytes` match, `sha256` match |
+| Legacy backup | Exists, non-empty, `size_bytes` match, `sha256` match |
 | Storage root | Exists, directory, accessible, writable, **outside source tree** |
 | Conflicts | 0 |
 | Invalid refs | 0 |
@@ -172,13 +185,22 @@ Activation order (unchanged):
 preflight all → copy → SHA-256 verify → DB transaction
 ```
 
-Sources are retained. An audit journal is written, e.g.:
+Sources are retained. An audit journal is written atomically, e.g.:
 
 ```text
 backups/storage_migration_YYYYMMDD_HHMMSS.json
 ```
 
-Journals are written even when gates block execute or activation aborts.
+Journal phases:
+
+```text
+started → blocked
+started → executing → completed
+started → executing → aborted
+```
+
+An initial durable journal (`phase=started`, `executed=false`) is written **before**
+any copy/DB mutation. Journals are also written on gate block and activation failure.
 
 ---
 

@@ -32,6 +32,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
+from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
@@ -64,6 +65,8 @@ class BackupArtifactReport:
     exists: bool
     size_bytes: int
     non_empty: bool
+    size_bytes_expected: Optional[int]
+    size_ok: Optional[bool]
     sha256_expected: Optional[str]
     sha256_actual: Optional[str]
     checksum_ok: Optional[bool]
@@ -77,6 +80,8 @@ class BackupManifestReport:
     valid_json: bool
     operator: str = ""
     created_at: str = ""
+    created_at_parsed: Optional[str] = None
+    target: dict[str, Any] = field(default_factory=dict)
     database_backup: Optional[BackupArtifactReport] = None
     legacy_backup: Optional[BackupArtifactReport] = None
     errors: list[str] = field(default_factory=list)
@@ -127,10 +132,14 @@ class ExecutionJournal:
     started_at: str
     finished_at: str = ""
     mode: str = "execute"
+    phase: str = "started"  # started | executing | completed | blocked | aborted
     target: dict[str, Any] = field(default_factory=dict)
+    target_id: str = ""
     backup_manifest: dict[str, Any] = field(default_factory=dict)
     dry_run_result: dict[str, Any] = field(default_factory=dict)
     candidate_counts: dict[str, Any] = field(default_factory=dict)
+    ready_bytes: int = 0
+    free_bytes: Optional[int] = None
     gates: dict[str, Any] = field(default_factory=dict)
     copied: int = 0
     already_migrated: int = 0
@@ -219,23 +228,48 @@ def build_target_identity(
     )
 
 
+def _empty_artifact(label: str, errors: list[str], *, expected_sha: Optional[str] = None) -> BackupArtifactReport:
+    return BackupArtifactReport(
+        path="",
+        exists=False,
+        size_bytes=0,
+        non_empty=False,
+        size_bytes_expected=None,
+        size_ok=None,
+        sha256_expected=expected_sha,
+        sha256_actual=None,
+        checksum_ok=None,
+        errors=errors,
+    )
+
+
 def verify_backup_artifact(spec: Any, *, label: str) -> BackupArtifactReport:
+    """Verify a backup artifact for production execute.
+
+    Requires exists, non-empty, size_bytes match, and sha256 match.
+    """
     errors: list[str] = []
     if not isinstance(spec, dict):
-        return BackupArtifactReport(
-            path="",
-            exists=False,
-            size_bytes=0,
-            non_empty=False,
-            sha256_expected=None,
-            sha256_actual=None,
-            checksum_ok=None,
-            errors=[f"{label}: missing or invalid object"],
-        )
+        return _empty_artifact(label, [f"{label}: missing or invalid object"])
 
     raw_path = str(spec.get("path") or "").strip()
     expected_raw = spec.get("sha256")
     expected = str(expected_raw).strip().lower() if expected_raw else None
+    size_raw = spec.get("size_bytes")
+    size_expected: Optional[int]
+    if size_raw is None or size_raw == "":
+        size_expected = None
+        errors.append(f"{label}: size_bytes is required")
+    else:
+        try:
+            size_expected = int(size_raw)
+        except (TypeError, ValueError):
+            size_expected = None
+            errors.append(f"{label}: size_bytes must be an integer")
+
+    if not expected:
+        errors.append(f"{label}: sha256 is required")
+
     if not raw_path:
         errors.append(f"{label}: path is required")
         return BackupArtifactReport(
@@ -243,13 +277,14 @@ def verify_backup_artifact(spec: Any, *, label: str) -> BackupArtifactReport:
             exists=False,
             size_bytes=0,
             non_empty=False,
+            size_bytes_expected=size_expected,
+            size_ok=None,
             sha256_expected=expected,
             sha256_actual=None,
             checksum_ok=None,
             errors=errors,
         )
 
-    path = Path(raw_path)
     # Reject path traversal tricks in the declared path string itself.
     if ".." in Path(raw_path).parts:
         errors.append(f"{label}: path traversal rejected")
@@ -258,12 +293,15 @@ def verify_backup_artifact(spec: Any, *, label: str) -> BackupArtifactReport:
             exists=False,
             size_bytes=0,
             non_empty=False,
+            size_bytes_expected=size_expected,
+            size_ok=None,
             sha256_expected=expected,
             sha256_actual=None,
             checksum_ok=None,
             errors=errors,
         )
 
+    path = Path(raw_path)
     if not path.exists():
         errors.append(f"{label}: file not found: {path}")
         return BackupArtifactReport(
@@ -271,6 +309,8 @@ def verify_backup_artifact(spec: Any, *, label: str) -> BackupArtifactReport:
             exists=False,
             size_bytes=0,
             non_empty=False,
+            size_bytes_expected=size_expected,
+            size_ok=None,
             sha256_expected=expected,
             sha256_actual=None,
             checksum_ok=None,
@@ -284,6 +324,8 @@ def verify_backup_artifact(spec: Any, *, label: str) -> BackupArtifactReport:
             exists=True,
             size_bytes=0,
             non_empty=False,
+            size_bytes_expected=size_expected,
+            size_ok=None,
             sha256_expected=expected,
             sha256_actual=None,
             checksum_ok=None,
@@ -294,6 +336,14 @@ def verify_backup_artifact(spec: Any, *, label: str) -> BackupArtifactReport:
     non_empty = size > 0
     if not non_empty:
         errors.append(f"{label}: backup file is empty: {path}")
+
+    size_ok: Optional[bool] = None
+    if size_expected is not None:
+        size_ok = size == size_expected
+        if not size_ok:
+            errors.append(
+                f"{label}: size_bytes mismatch (expected {size_expected}, got {size})"
+            )
 
     actual: Optional[str] = None
     checksum_ok: Optional[bool] = None
@@ -310,6 +360,8 @@ def verify_backup_artifact(spec: Any, *, label: str) -> BackupArtifactReport:
         exists=True,
         size_bytes=size,
         non_empty=non_empty,
+        size_bytes_expected=size_expected,
+        size_ok=size_ok,
         sha256_expected=expected,
         sha256_actual=actual,
         checksum_ok=checksum_ok,
@@ -317,7 +369,77 @@ def verify_backup_artifact(spec: Any, *, label: str) -> BackupArtifactReport:
     )
 
 
-def verify_backup_manifest(manifest_path: Path) -> BackupManifestReport:
+def parse_manifest_created_at(value: str) -> datetime:
+    """Parse ISO-8601 created_at; raise ValueError if invalid."""
+    text = (value or "").strip()
+    if not text:
+        raise ValueError("created_at is empty")
+    normalized = text.replace("Z", "+00:00")
+    dt = datetime.fromisoformat(normalized)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def validate_manifest_target(
+    manifest_target: Any, current: TargetIdentity
+) -> list[str]:
+    """Hard-bind backup manifest to the live execute target."""
+    errors: list[str] = []
+    if not isinstance(manifest_target, dict) or not manifest_target:
+        return [
+            "manifest.target is required "
+            "(legacy manifests without target are rejected)"
+        ]
+
+    tid = str(manifest_target.get("target_id") or "").strip()
+    if not tid:
+        errors.append("manifest.target.target_id is required")
+    elif tid != current.target_id:
+        errors.append(
+            f"manifest.target.target_id mismatch: "
+            f"manifest={tid} current={current.target_id}"
+        )
+
+    m_root = str(manifest_target.get("storage_root") or "").strip()
+    if not m_root:
+        errors.append("manifest.target.storage_root is required")
+    else:
+        try:
+            if Path(m_root).resolve() != Path(current.storage_root).resolve():
+                errors.append(
+                    f"manifest.target.storage_root mismatch: "
+                    f"manifest={m_root} current={current.storage_root}"
+                )
+        except OSError as exc:
+            errors.append(f"manifest.target.storage_root invalid: {exc}")
+
+    m_db = str(manifest_target.get("database") or "").strip()
+    if not m_db:
+        errors.append("manifest.target.database is required")
+    elif m_db != current.database:
+        errors.append(
+            f"manifest.target.database mismatch: "
+            f"manifest={m_db} current={current.database}"
+        )
+
+    m_env = str(manifest_target.get("environment") or "").strip()
+    if m_env and m_env != current.environment:
+        errors.append(
+            f"manifest.target.environment mismatch: "
+            f"manifest={m_env} current={current.environment}"
+        )
+
+    return errors
+
+
+def verify_backup_manifest(
+    manifest_path: Path,
+    *,
+    current_target: Optional[TargetIdentity] = None,
+    now: Optional[datetime] = None,
+) -> BackupManifestReport:
+    """Validate backup manifest for production execute (strict; no legacy accept)."""
     report = BackupManifestReport(
         path=str(manifest_path),
         exists=manifest_path.is_file(),
@@ -340,10 +462,39 @@ def verify_backup_manifest(manifest_path: Path) -> BackupManifestReport:
     report.valid_json = True
     report.created_at = str(payload.get("created_at") or "")
     report.operator = str(payload.get("operator") or "")
-    if not report.created_at:
-        report.errors.append("manifest.created_at is required")
     if not report.operator:
         report.errors.append("manifest.operator is required")
+
+    if not report.created_at:
+        report.errors.append("manifest.created_at is required")
+    else:
+        try:
+            created = parse_manifest_created_at(report.created_at)
+            report.created_at_parsed = created.isoformat()
+            reference = now or datetime.now(timezone.utc)
+            if created > reference:
+                report.errors.append(
+                    f"manifest.created_at is in the future: {report.created_at}"
+                )
+        except ValueError as exc:
+            report.errors.append(f"manifest.created_at is invalid ISO datetime: {exc}")
+
+    if current_target is not None:
+        report.target = (
+            dict(payload["target"]) if isinstance(payload.get("target"), dict) else {}
+        )
+        report.errors.extend(
+            validate_manifest_target(payload.get("target"), current_target)
+        )
+    else:
+        # Execute path always supplies current_target; missing target is still invalid.
+        if not isinstance(payload.get("target"), dict):
+            report.errors.append(
+                "manifest.target is required "
+                "(legacy manifests without target are rejected)"
+            )
+        else:
+            report.target = dict(payload["target"])
 
     report.database_backup = verify_backup_artifact(
         payload.get("database_backup"), label="database_backup"
@@ -504,7 +655,7 @@ def evaluate_execute_gates(
 
     if require_backup:
         manifest_path = Path(backup_manifest or DEFAULT_BACKUP_MANIFEST)
-        backup = verify_backup_manifest(manifest_path)
+        backup = verify_backup_manifest(manifest_path, current_target=target)
         result.backup = backup
         if not backup.ok:
             result.blockers.append("backup manifest validation failed")
@@ -530,17 +681,25 @@ def evaluate_execute_gates(
 
 
 def write_journal(journal: ExecutionJournal, path: Path) -> Path:
+    """Atomically persist journal JSON (temp file + replace)."""
+    path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(journal.to_dict(), ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
     journal.journal_path = str(path.resolve())
-    # Rewrite with journal_path filled.
-    path.write_text(
-        json.dumps(journal.to_dict(), ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    payload = json.dumps(journal.to_dict(), ensure_ascii=False, indent=2) + "\n"
+
+    tmp_path = path.parent / f".{path.name}.{os.getpid()}.{uuid4().hex}.tmp"
+    try:
+        with tmp_path.open("w", encoding="utf-8", newline="\n") as fh:
+            fh.write(payload)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(str(tmp_path), str(path))
+    except Exception:
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
     return path
 
 
@@ -549,61 +708,43 @@ def default_journal_path(journal_dir: Path) -> Path:
     return Path(journal_dir) / f"storage_migration_{stamp}.json"
 
 
-def run_controlled_execute(
+def _build_journal_from_gates(
     *,
-    db: Session,
-    storage: Optional[FileStorage] = None,
-    activation: Optional[StorageActivationService] = None,
-    backup_manifest: Optional[Path] = None,
-    confirm_production: bool = False,
-    allow_missing: int = 0,
-    legacy_roots: Optional[tuple[tuple[str, Path], ...]] = None,
-    journal_path: Optional[Path] = None,
-    journal_dir: Optional[Path] = None,
-) -> tuple[ExecutionJournal, Optional[ActivationReport]]:
-    """Run gated production execute. Returns journal always; activation report if executed."""
-    started = _utc_now()
-    store = storage or get_default_storage()
-    service = activation or StorageActivationService(db, storage=store)
-
-    gates = evaluate_execute_gates(
-        db=db,
-        storage=store,
-        activation=service,
-        backup_manifest=backup_manifest,
-        confirm_production=confirm_production,
-        allow_missing=allow_missing,
-        legacy_roots=legacy_roots,
-        require_backup=True,
-        require_confirm=True,
-    )
-
-    journal = ExecutionJournal(
+    started: str,
+    gates: GateEvaluation,
+    backup_manifest: Optional[Path],
+) -> ExecutionJournal:
+    return ExecutionJournal(
         started_at=started,
         mode="execute",
+        phase="started",
+        executed=False,
+        aborted=False,
         target=asdict(gates.target) if gates.target else {},
+        target_id=gates.target.target_id if gates.target else "",
         backup_manifest={
             "path": gates.backup.path if gates.backup else str(backup_manifest or ""),
             "ok": bool(gates.backup and gates.backup.ok),
             "errors": list(gates.backup.errors) if gates.backup else [],
             "operator": gates.backup.operator if gates.backup else "",
             "created_at": gates.backup.created_at if gates.backup else "",
+            "target": dict(gates.backup.target) if gates.backup else {},
         },
-        dry_run_result=(
-            {
-                "overall": gates.dry_run.overall if gates.dry_run else "UNKNOWN",
-                "db_changed": bool(gates.dry_run.db_changed) if gates.dry_run else True,
-                "filesystem_changed": (
-                    bool(gates.dry_run.filesystem_changed) if gates.dry_run else True
-                ),
-                "activation": (
-                    _activation_to_summary(gates.activation_dry_run)
-                    if gates.activation_dry_run
-                    else {}
-                ),
-            }
-        ),
+        dry_run_result={
+            "overall": gates.dry_run.overall if gates.dry_run else "UNKNOWN",
+            "db_changed": bool(gates.dry_run.db_changed) if gates.dry_run else True,
+            "filesystem_changed": (
+                bool(gates.dry_run.filesystem_changed) if gates.dry_run else True
+            ),
+            "activation": (
+                _activation_to_summary(gates.activation_dry_run)
+                if gates.activation_dry_run
+                else {}
+            ),
+        },
         candidate_counts=asdict(gates.candidates),
+        ready_bytes=gates.ready_bytes,
+        free_bytes=gates.free_bytes,
         gates={
             "allowed": gates.allowed,
             "blockers": list(gates.blockers),
@@ -617,20 +758,10 @@ def run_controlled_execute(
         sources_deleted=False,
     )
 
-    out_path = journal_path or default_journal_path(journal_dir or DEFAULT_JOURNAL_DIR)
 
-    if not gates.allowed:
-        journal.aborted = True
-        journal.abort_reason = "execute blocked by safety gates: " + "; ".join(
-            gates.blockers
-        )
-        journal.finished_at = _utc_now()
-        write_journal(journal, out_path)
-        return journal, None
-
-    # Controlled execute — only after all gates pass.
-    activation_report = service.execute(dry_run=False)
-    journal.executed = True
+def _apply_activation_results(
+    journal: ExecutionJournal, activation_report: ActivationReport
+) -> None:
     journal.copied = activation_report.count_status(MigrationStatus.COPIED)
     journal.already_migrated = activation_report.count_status(
         MigrationStatus.ALREADY_MIGRATED
@@ -648,7 +779,81 @@ def run_controlled_execute(
     journal.aborted = activation_report.aborted
     journal.abort_reason = activation_report.abort_reason
     journal.sources_deleted = False
+    journal.phase = "aborted" if activation_report.aborted else "completed"
     journal.finished_at = _utc_now()
+
+
+def run_controlled_execute(
+    *,
+    db: Session,
+    storage: Optional[FileStorage] = None,
+    activation: Optional[StorageActivationService] = None,
+    backup_manifest: Optional[Path] = None,
+    confirm_production: bool = False,
+    allow_missing: int = 0,
+    legacy_roots: Optional[tuple[tuple[str, Path], ...]] = None,
+    journal_path: Optional[Path] = None,
+    journal_dir: Optional[Path] = None,
+) -> tuple[ExecutionJournal, Optional[ActivationReport]]:
+    """Run gated production execute. Returns journal always; activation report if executed.
+
+    Crash-safety: an initial durable journal (``phase=started``) is written
+    **before** any ``execute(dry_run=False)`` filesystem/DB mutation.
+    """
+    started = _utc_now()
+    store = storage or get_default_storage()
+    service = activation or StorageActivationService(db, storage=store)
+
+    gates = evaluate_execute_gates(
+        db=db,
+        storage=store,
+        activation=service,
+        backup_manifest=backup_manifest,
+        confirm_production=confirm_production,
+        allow_missing=allow_missing,
+        legacy_roots=legacy_roots,
+        require_backup=True,
+        require_confirm=True,
+    )
+
+    journal = _build_journal_from_gates(
+        started=started, gates=gates, backup_manifest=backup_manifest
+    )
+    out_path = journal_path or default_journal_path(journal_dir or DEFAULT_JOURNAL_DIR)
+
+    # Durable initial journal BEFORE any mutation.
+    write_journal(journal, out_path)
+
+    if not gates.allowed:
+        journal.phase = "blocked"
+        journal.aborted = True
+        journal.executed = False
+        journal.abort_reason = "execute blocked by safety gates: " + "; ".join(
+            gates.blockers
+        )
+        journal.finished_at = _utc_now()
+        journal.sources_deleted = False
+        write_journal(journal, out_path)
+        return journal, None
+
+    # Transition to executing, then mutate via ActivationService only.
+    journal.phase = "executing"
+    write_journal(journal, out_path)
+
+    try:
+        activation_report = service.execute(dry_run=False)
+    except Exception as exc:  # noqa: BLE001
+        journal.executed = True
+        journal.aborted = True
+        journal.phase = "aborted"
+        journal.abort_reason = f"unhandled execute exception: {exc}"
+        journal.sources_deleted = False
+        journal.finished_at = _utc_now()
+        write_journal(journal, out_path)
+        return journal, None
+
+    journal.executed = True
+    _apply_activation_results(journal, activation_report)
     write_journal(journal, out_path)
     return journal, activation_report
 
@@ -713,6 +918,7 @@ def format_execution_report(
         "",
         f"Started: {journal.started_at}",
         f"Finished: {journal.finished_at}",
+        f"Phase: {journal.phase}",
         f"Executed: {'YES' if journal.executed else 'NO'}",
         f"Aborted: {'YES' if journal.aborted else 'NO'}",
     ]
