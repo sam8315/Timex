@@ -2005,6 +2005,38 @@ async def admin_view_profile(
         acc.card_masked = _mask_tail(acc.card_number)
         acc.sheba_masked = _mask_tail(acc.sheba)
 
+    # پرونده پرسنلی / مدارک
+    from models.employee_document import DOCUMENT_STATUSES, DOCUMENT_TYPES
+    from web.services.employee_document_service import list_documents as list_employee_documents
+
+    can_view_employee_documents = has_permission(db, user, "view_employee_documents")
+    can_manage_employee_documents = has_permission(db, user, "manage_employee_documents")
+    can_verify_employee_documents = has_permission(db, user, "verify_employee_documents")
+    employee_documents_error = None
+    target_employee_documents = []
+    if can_view_employee_documents or can_manage_employee_documents:
+        try:
+            target_employee_documents = list_employee_documents(db, target_user_id)
+            for doc in target_employee_documents:
+                try:
+                    doc.issue_date_j = (
+                        jdatetime.date.fromgregorian(date=doc.issue_date).strftime("%Y/%m/%d")
+                        if doc.issue_date else ""
+                    )
+                except Exception:
+                    doc.issue_date_j = ""
+                try:
+                    doc.expiry_date_j = (
+                        jdatetime.date.fromgregorian(date=doc.expiry_date).strftime("%Y/%m/%d")
+                        if doc.expiry_date else ""
+                    )
+                except Exception:
+                    doc.expiry_date_j = ""
+        except Exception as e:
+            logger.exception("Failed to load employee documents for %s", target_user_id)
+            target_employee_documents = []
+            employee_documents_error = f"خطا در بارگذاری مدارک: {e}"
+
     from web.services.leave_entitlement_service import (
         get_membership_timeline,
         sync_employee_department_from_active_contract,
@@ -2105,6 +2137,13 @@ async def admin_view_profile(
         "banks": banks,
         "active_bank_ids": active_bank_ids,
         "bank_accounts_error": bank_accounts_error,
+        "target_employee_documents": target_employee_documents,
+        "employee_documents_error": employee_documents_error,
+        "document_types": DOCUMENT_TYPES,
+        "document_statuses": DOCUMENT_STATUSES,
+        "can_view_employee_documents": can_view_employee_documents,
+        "can_manage_employee_documents": can_manage_employee_documents,
+        "can_verify_employee_documents": can_verify_employee_documents,
         "membership_timeline": membership_timeline,
         "service_region_code": service_region_code,
         "service_region_name": service_region_name,

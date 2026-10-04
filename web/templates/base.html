@@ -952,6 +952,9 @@
         <a href="/education" class="sidebar-link {% if request.url.path == '/education' %}active{% endif %}">
             <i class="bi bi-mortarboard"></i> تحصیلات
         </a>
+        <a href="/employee-documents" class="sidebar-link {% if request.url.path.startswith('/employee-documents') %}active{% endif %}">
+            <i class="bi bi-folder2-open"></i> مدارک پرسنلی
+        </a>
     </div>
 
     {% if is_admin %}

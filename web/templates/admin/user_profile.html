@@ -72,15 +72,15 @@
     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
 </div>
 {% endif %}
-{% if request.query_params.get('error') %}
-<div class="alert alert-danger alert-dismissible fade show">
-    <i class="bi bi-exclamation-triangle"></i> {{ request.query_params.get('error') }}
-    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-</div>
-{% endif %}
 {% if request.query_params.get('success') %}
 <div class="alert alert-success alert-dismissible fade show">
     <i class="bi bi-check-circle"></i> {{ request.query_params.get('success') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+{% if request.query_params.get('error') %}
+<div class="alert alert-danger alert-dismissible fade show">
+    <i class="bi bi-exclamation-triangle"></i> {{ request.query_params.get('error') }}
     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
 </div>
 {% endif %}
@@ -1036,6 +1036,198 @@
         {% endif %}
     </div>
 </div>
+
+    {% if can_view_employee_documents or can_manage_employee_documents %}
+    <!-- پرونده پرسنلی / مدارک -->
+    <div class="card mb-4">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+            <h6 class="mb-0"><i class="bi bi-folder2-open"></i> پرونده پرسنلی / مدارک</h6>
+            {% if can_manage_employee_documents %}
+            <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#adminAddDocumentModal">
+                <i class="bi bi-plus-circle"></i> افزودن مدرک
+            </button>
+            {% endif %}
+        </div>
+        <div class="card-body">
+            {% if employee_documents_error %}
+            <div class="alert alert-danger">
+                <i class="bi bi-exclamation-triangle"></i> {{ employee_documents_error }}
+            </div>
+            {% endif %}
+            {% if target_employee_documents %}
+            <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>نوع</th>
+                            <th>عنوان</th>
+                            <th class="text-center">صدور</th>
+                            <th class="text-center">انقضا</th>
+                            <th class="text-center">وضعیت</th>
+                            <th class="text-center">فایل</th>
+                            <th class="text-center">عملیات</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for doc in target_employee_documents %}
+                        <tr>
+                            <td>{{ doc.document_type_name }}</td>
+                            <td>
+                                {{ doc.title }}
+                                {% if doc.document_number %}
+                                <div class="small text-muted">شماره: {{ doc.document_number }}</div>
+                                {% endif %}
+                                {% if doc.rejection_reason %}
+                                <div class="small text-danger">علت رد: {{ doc.rejection_reason }}</div>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">{{ doc.issue_date_j or '—' }}</td>
+                            <td class="text-center">{{ doc.expiry_date_j or '—' }}</td>
+                            <td class="text-center">
+                                {% if doc.status == 'VERIFIED' %}
+                                <span class="badge bg-success">{{ doc.status_name }}</span>
+                                {% elif doc.status == 'REJECTED' %}
+                                <span class="badge bg-danger">{{ doc.status_name }}</span>
+                                {% else %}
+                                <span class="badge bg-warning text-dark">{{ doc.status_name }}</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <a href="/employee-documents/{{ doc.id }}/file" target="_blank"
+                                   class="btn btn-outline-primary btn-sm">
+                                    <i class="bi bi-eye"></i>
+                                </a>
+                            </td>
+                            <td class="text-center">
+                                <div class="btn-group btn-group-sm">
+                                    {% if can_verify_employee_documents and doc.status != 'VERIFIED' %}
+                                    <form method="post"
+                                          action="/admin/profile/{{ target_user.user_id }}/documents/{{ doc.id }}/verify"
+                                          class="d-inline">
+                                        <button type="submit" class="btn btn-outline-success" title="تأیید">
+                                            <i class="bi bi-check2"></i>
+                                        </button>
+                                    </form>
+                                    <button type="button" class="btn btn-outline-warning" title="رد"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#adminRejectDocumentModal-{{ doc.id }}">
+                                        <i class="bi bi-x-lg"></i>
+                                    </button>
+                                    {% endif %}
+                                    {% if can_manage_employee_documents %}
+                                    <form method="post"
+                                          action="/admin/profile/{{ target_user.user_id }}/documents/{{ doc.id }}/delete"
+                                          class="d-inline"
+                                          onsubmit="return confirm('این مدرک حذف شود؟');">
+                                        <button type="submit" class="btn btn-outline-danger" title="حذف">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </form>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-4">
+                <i class="bi bi-folder2 display-6 text-muted"></i>
+                <p class="text-muted mt-2 mb-0">مدرکی برای این کاربر ثبت نشده است</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if can_manage_employee_documents %}
+    <div class="modal fade" id="adminAddDocumentModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <form method="post" action="/admin/profile/{{ target_user.user_id }}/documents/add"
+                      enctype="multipart/form-data">
+                    <div class="modal-header">
+                        <h5 class="modal-title"><i class="bi bi-plus-circle"></i> افزودن مدرک</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">نوع مدرک <span class="text-danger">*</span></label>
+                                <select name="document_type" class="form-select" required>
+                                    <option value="">انتخاب کنید</option>
+                                    {% for code, name in document_types.items() %}
+                                    <option value="{{ code }}">{{ name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">عنوان <span class="text-danger">*</span></label>
+                                <input type="text" name="title" class="form-control" required maxlength="200">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">شماره مدرک</label>
+                                <input type="text" name="document_number" class="form-control" maxlength="100">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">تاریخ صدور</label>
+                                <input type="text" name="issue_date_str" class="form-control"
+                                       placeholder="1403/01/01" dir="ltr">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">تاریخ انقضا</label>
+                                <input type="text" name="expiry_date_str" class="form-control"
+                                       placeholder="1405/01/01" dir="ltr">
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">فایل <span class="text-danger">*</span></label>
+                                <input type="file" name="document_file" class="form-control" required
+                                       accept=".pdf,.jpg,.jpeg,.png,.webp">
+                                <div class="form-text">PDF / JPG / JPEG / PNG / WEBP — حداکثر ۱۰ مگابایت</div>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">یادداشت</label>
+                                <textarea name="notes" class="form-control" rows="2"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">انصراف</button>
+                        <button type="submit" class="btn btn-success">ثبت مدرک</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if can_verify_employee_documents and target_employee_documents %}
+    {% for doc in target_employee_documents %}
+    <div class="modal fade" id="adminRejectDocumentModal-{{ doc.id }}" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form method="post"
+                      action="/admin/profile/{{ target_user.user_id }}/documents/{{ doc.id }}/reject">
+                    <div class="modal-header">
+                        <h5 class="modal-title"><i class="bi bi-x-circle"></i> رد مدرک</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="mb-2">مدرک: <strong>{{ doc.title }}</strong></p>
+                        <label class="form-label">علت رد <span class="text-danger">*</span></label>
+                        <textarea name="rejection_reason" class="form-control" rows="3" required></textarea>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">انصراف</button>
+                        <button type="submit" class="btn btn-warning">ثبت رد</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+    {% endif %}
+    {% endif %}
 
     <!-- 🆕 مودال افزودن حساب بانکی (پنل ادمین) -->
     <div class="modal fade" id="adminAddBankAccountModal" tabindex="-1">

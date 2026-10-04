@@ -55,7 +55,7 @@ CATEGORY_CONFIGS: dict[str, CategoryConfig] = {
     ),
     "employee-documents": CategoryConfig(
         name="employee-documents",
-        allowed_extensions=frozenset({".jpg", ".jpeg", ".png", ".pdf"}),
+        allowed_extensions=frozenset({".jpg", ".jpeg", ".png", ".pdf", ".webp"}),
         max_file_size=10 * 1024 * 1024,
         key_prefix="/private/employee-documents/",
     ),
