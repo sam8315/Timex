@@ -40,9 +40,10 @@ python -m web.services.storage_production_migration --execute \
 Optional:
 
 ```text
---allow-missing N          # default 0 — reject any missing candidates
---journal-out PATH         # explicit journal JSON path
---json-out PATH            # summary JSON
+--allow-missing N                 # default 0 — reject any missing candidates
+--max-backup-age-hours HOURS      # default 24 — reject stale manifest created_at
+--journal-out PATH                # explicit journal JSON path
+--json-out PATH                   # summary JSON
 ```
 
 Exit codes:
@@ -108,8 +109,11 @@ The migration tool **does not create** these backups. For execute it verifies:
 
 - manifest `target.target_id` / `storage_root` / `database` (and `environment` if set)
   match the live target from `build_target_identity()`
-- `created_at` is a valid ISO datetime not in the future (backup before migration)
+- `created_at` is a valid ISO datetime, not in the future, and not older than
+  `--max-backup-age-hours` (default 24; boundary age is accepted)
 - each backup artifact: exists, non-empty, `size_bytes` matches, `sha256` present and matches
+- backup artifact paths are **not** inside `TIMEX_STORAGE_ROOT` (resolved-path containment;
+  sibling directories are allowed)
 
 Legacy manifests without `target` / `size_bytes` / `sha256` are **rejected**.
 

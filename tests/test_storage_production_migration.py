@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -91,14 +92,18 @@ def _write_backup_manifest(
     bad_sha=False,
     omit_target=False,
     target_overrides=None,
-    created_at="2020-01-01T00:00:00+00:00",
+    created_at=None,
     omit_size=False,
     wrong_size=False,
     omit_sha=False,
+    backup_dir=None,
 ) -> Path:
     tmp_path = env["tmp"]
-    db_backup = tmp_path / "db.dump"
-    legacy_backup = tmp_path / "legacy.zip"
+    # Default backups are siblings of storage_root (tmp/db.dump vs tmp/unified_storage).
+    out_dir = Path(backup_dir) if backup_dir is not None else tmp_path
+    out_dir.mkdir(parents=True, exist_ok=True)
+    db_backup = out_dir / "db.dump"
+    legacy_backup = out_dir / "legacy.zip"
     db_backup.write_bytes(b"FAKE-DB-BACKUP" if not bad_db else b"")
     legacy_backup.write_bytes(b"FAKE-LEGACY-BACKUP" if not bad_legacy else b"")
     db_sha = hashlib.sha256(db_backup.read_bytes()).hexdigest() if db_backup.stat().st_size else "0" * 64
@@ -109,6 +114,9 @@ def _write_backup_manifest(
     )
     if bad_sha:
         db_sha = "a" * 64
+
+    if created_at is None:
+        created_at = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
 
     target = mig.build_target_identity(
         db=env["db"], storage_root=env["storage_root"]
@@ -222,7 +230,7 @@ def test_missing_db_backup_rejects(mig_env, make_user):
         db=mig_env["db"], storage_root=mig_env["storage_root"]
     )
     manifest = {
-        "created_at": "2020-01-01T00:00:00+00:00",
+        "created_at": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
         "operator": "op",
         "target": {
             "database": target.database,
@@ -256,7 +264,7 @@ def test_missing_legacy_backup_rejects(mig_env, make_user):
         db=mig_env["db"], storage_root=mig_env["storage_root"]
     )
     manifest = {
-        "created_at": "2020-01-01T00:00:00+00:00",
+        "created_at": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
         "operator": "op",
         "target": {
             "database": target.database,
@@ -763,12 +771,96 @@ def test_invalid_created_at_rejects(mig_env, make_user):
 
 def test_future_created_at_rejects(mig_env, make_user):
     _attach_legacy_paths(mig_env, make_user)
+    now = datetime(2026, 10, 4, 12, 0, tzinfo=timezone.utc)
     manifest = _write_backup_manifest(
-        mig_env, created_at="2099-01-01T00:00:00+00:00"
+        mig_env, created_at="2026-10-04T13:00:00+00:00"
+    )
+    gates = _eval(mig_env, backup_manifest=manifest, now=now)
+    assert gates.allowed is False
+    assert any("future" in b.lower() for b in gates.blockers)
+
+
+def test_fresh_manifest_created_at_passes(mig_env, make_user):
+    _attach_legacy_paths(mig_env, make_user)
+    now = datetime(2026, 10, 4, 12, 0, tzinfo=timezone.utc)
+    manifest = _write_backup_manifest(
+        mig_env, created_at="2026-10-04T11:00:00+00:00"
+    )
+    gates = _eval(
+        mig_env,
+        backup_manifest=manifest,
+        now=now,
+        max_backup_age_hours=24,
+    )
+    assert gates.allowed is True
+
+
+def test_manifest_created_at_exact_boundary_passes(mig_env, make_user):
+    _attach_legacy_paths(mig_env, make_user)
+    now = datetime(2026, 10, 4, 12, 0, tzinfo=timezone.utc)
+    manifest = _write_backup_manifest(
+        mig_env, created_at="2026-10-03T12:00:00+00:00"
+    )
+    gates = _eval(
+        mig_env,
+        backup_manifest=manifest,
+        now=now,
+        max_backup_age_hours=24,
+    )
+    assert gates.allowed is True
+
+
+def test_stale_manifest_created_at_rejects(mig_env, make_user):
+    _attach_legacy_paths(mig_env, make_user)
+    now = datetime(2026, 10, 4, 12, 0, tzinfo=timezone.utc)
+    manifest = _write_backup_manifest(
+        mig_env, created_at="2026-10-03T11:59:59+00:00"
+    )
+    gates = _eval(
+        mig_env,
+        backup_manifest=manifest,
+        now=now,
+        max_backup_age_hours=24,
+    )
+    assert gates.allowed is False
+    assert any("too old" in b.lower() for b in gates.blockers)
+
+
+def test_negative_max_backup_age_hours_rejects(mig_env, make_user):
+    _attach_legacy_paths(mig_env, make_user)
+    manifest = _write_backup_manifest(mig_env)
+    gates = _eval(mig_env, backup_manifest=manifest, max_backup_age_hours=-1)
+    assert gates.allowed is False
+    assert any("max_backup_age_hours" in b for b in gates.blockers)
+
+
+def test_invalid_max_backup_age_hours_rejects(mig_env, make_user):
+    _attach_legacy_paths(mig_env, make_user)
+    manifest = _write_backup_manifest(mig_env)
+    gates = _eval(mig_env, backup_manifest=manifest, max_backup_age_hours="abc")
+    assert gates.allowed is False
+    assert any("max_backup_age_hours" in b for b in gates.blockers)
+
+
+def test_backup_path_inside_storage_root_rejects(mig_env, make_user):
+    _attach_legacy_paths(mig_env, make_user)
+    # Place artifacts under TIMEX_STORAGE_ROOT — must hard-block.
+    manifest = _write_backup_manifest(
+        mig_env, backup_dir=mig_env["storage_root"] / "nested-backups"
     )
     gates = _eval(mig_env, backup_manifest=manifest)
     assert gates.allowed is False
-    assert any("future" in b.lower() for b in gates.blockers)
+    assert any("inside storage root" in b.lower() for b in gates.blockers)
+
+
+def test_backup_path_sibling_of_storage_root_allowed(mig_env, make_user):
+    _attach_legacy_paths(mig_env, make_user)
+    # tmp/backups is a sibling of tmp/unified_storage.
+    sibling = mig_env["tmp"] / "backups"
+    manifest = _write_backup_manifest(mig_env, backup_dir=sibling)
+    gates = _eval(mig_env, backup_manifest=manifest)
+    assert gates.allowed is True
+    assert not any("inside storage root" in b.lower() for b in gates.blockers)
 
 
 def test_missing_size_bytes_rejects(mig_env, make_user):

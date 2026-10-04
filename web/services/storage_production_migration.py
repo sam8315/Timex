@@ -29,7 +29,7 @@ import json
 import os
 import sys
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 from uuid import uuid4
@@ -57,6 +57,7 @@ from web.services.storage_production_preflight import (
 
 DEFAULT_BACKUP_MANIFEST = Path("backups") / "storage_migration_backup.json"
 DEFAULT_JOURNAL_DIR = Path("backups")
+DEFAULT_MAX_BACKUP_AGE_HOURS = 24.0
 
 
 @dataclass
@@ -125,6 +126,7 @@ class GateEvaluation:
     headroom_bytes: Optional[int] = None
     confirm_production: bool = False
     allow_missing: int = 0
+    max_backup_age_hours: float = DEFAULT_MAX_BACKUP_AGE_HOURS
 
 
 @dataclass
@@ -243,10 +245,38 @@ def _empty_artifact(label: str, errors: list[str], *, expected_sha: Optional[str
     )
 
 
-def verify_backup_artifact(spec: Any, *, label: str) -> BackupArtifactReport:
+def path_is_within_root(path: Path, root: Path) -> bool:
+    """True when ``path`` resolves to ``root`` or a descendant (not a sibling)."""
+    try:
+        path.resolve().relative_to(root.resolve())
+        return True
+    except (ValueError, OSError):
+        return False
+
+
+def coerce_max_backup_age_hours(value: Any) -> tuple[Optional[float], Optional[str]]:
+    """Return ``(hours, error)``. Negative / non-numeric values are rejected."""
+    if value is None:
+        return DEFAULT_MAX_BACKUP_AGE_HOURS, None
+    try:
+        hours = float(value)
+    except (TypeError, ValueError):
+        return None, "max_backup_age_hours must be a non-negative number"
+    if hours != hours or hours < 0:  # NaN or negative
+        return None, "max_backup_age_hours must be a non-negative number"
+    return hours, None
+
+
+def verify_backup_artifact(
+    spec: Any,
+    *,
+    label: str,
+    storage_root: Optional[Path] = None,
+) -> BackupArtifactReport:
     """Verify a backup artifact for production execute.
 
-    Requires exists, non-empty, size_bytes match, and sha256 match.
+    Requires exists, non-empty, size_bytes match, sha256 match, and that the
+    artifact path is not inside ``storage_root``.
     """
     errors: list[str] = []
     if not isinstance(spec, dict):
@@ -302,6 +332,12 @@ def verify_backup_artifact(spec: Any, *, label: str) -> BackupArtifactReport:
         )
 
     path = Path(raw_path)
+    if storage_root is not None and path_is_within_root(path, storage_root):
+        errors.append(
+            f"{label}: backup path must not be inside storage root "
+            f"(path={path.resolve()} root={Path(storage_root).resolve()})"
+        )
+
     if not path.exists():
         errors.append(f"{label}: file not found: {path}")
         return BackupArtifactReport(
@@ -438,6 +474,8 @@ def verify_backup_manifest(
     *,
     current_target: Optional[TargetIdentity] = None,
     now: Optional[datetime] = None,
+    max_backup_age_hours: float = DEFAULT_MAX_BACKUP_AGE_HOURS,
+    storage_root: Optional[Path] = None,
 ) -> BackupManifestReport:
     """Validate backup manifest for production execute (strict; no legacy accept)."""
     report = BackupManifestReport(
@@ -476,6 +514,15 @@ def verify_backup_manifest(
                 report.errors.append(
                     f"manifest.created_at is in the future: {report.created_at}"
                 )
+            else:
+                age = reference - created
+                max_age = timedelta(hours=float(max_backup_age_hours))
+                # Boundary (== max_age) is allowed; only strictly older fails.
+                if age > max_age:
+                    report.errors.append(
+                        f"manifest.created_at is too old: age={age} "
+                        f"max_age={max_age} (max_backup_age_hours={max_backup_age_hours})"
+                    )
         except ValueError as exc:
             report.errors.append(f"manifest.created_at is invalid ISO datetime: {exc}")
 
@@ -496,11 +543,19 @@ def verify_backup_manifest(
         else:
             report.target = dict(payload["target"])
 
+    root = storage_root
+    if root is None and current_target is not None and current_target.storage_root:
+        root = Path(current_target.storage_root)
+
     report.database_backup = verify_backup_artifact(
-        payload.get("database_backup"), label="database_backup"
+        payload.get("database_backup"),
+        label="database_backup",
+        storage_root=root,
     )
     report.legacy_backup = verify_backup_artifact(
-        payload.get("legacy_backup"), label="legacy_backup"
+        payload.get("legacy_backup"),
+        label="legacy_backup",
+        storage_root=root,
     )
     return report
 
@@ -545,18 +600,26 @@ def evaluate_execute_gates(
     backup_manifest: Optional[Path] = None,
     confirm_production: bool = False,
     allow_missing: int = 0,
+    max_backup_age_hours: Any = DEFAULT_MAX_BACKUP_AGE_HOURS,
     legacy_roots: Optional[tuple[tuple[str, Path], ...]] = None,
     require_backup: bool = True,
     require_confirm: bool = True,
+    now: Optional[datetime] = None,
 ) -> GateEvaluation:
     """Evaluate hard Go/No-Go gates for a controlled production execute."""
     store = storage or get_default_storage()
     service = activation or StorageActivationService(db, storage=store)
+    age_hours, age_error = coerce_max_backup_age_hours(max_backup_age_hours)
     result = GateEvaluation(
         allowed=False,
         confirm_production=confirm_production,
         allow_missing=max(0, int(allow_missing)),
+        max_backup_age_hours=(
+            age_hours if age_hours is not None else DEFAULT_MAX_BACKUP_AGE_HOURS
+        ),
     )
+    if age_error:
+        result.blockers.append(age_error)
 
     # 1) Storage + DB preflight (read-only)
     preflight = run_production_preflight(
@@ -653,9 +716,15 @@ def evaluate_execute_gates(
             f"insufficient disk space: free={free_bytes} < ready_bytes={result.ready_bytes}"
         )
 
-    if require_backup:
+    if require_backup and age_error is None:
         manifest_path = Path(backup_manifest or DEFAULT_BACKUP_MANIFEST)
-        backup = verify_backup_manifest(manifest_path, current_target=target)
+        backup = verify_backup_manifest(
+            manifest_path,
+            current_target=target,
+            now=now,
+            max_backup_age_hours=age_hours if age_hours is not None else DEFAULT_MAX_BACKUP_AGE_HOURS,
+            storage_root=store.root,
+        )
         result.backup = backup
         if not backup.ok:
             result.blockers.append("backup manifest validation failed")
@@ -664,6 +733,9 @@ def evaluate_execute_gates(
                 result.blockers.extend(backup.database_backup.errors)
             if backup.legacy_backup:
                 result.blockers.extend(backup.legacy_backup.errors)
+    elif require_backup and age_error is not None:
+        # Still attempt structural manifest load for diagnostics, but age gate already blocks.
+        pass
 
     if require_confirm and not confirm_production:
         result.blockers.append("missing explicit --confirm-production")
@@ -754,6 +826,7 @@ def _build_journal_from_gates(
             "headroom_bytes": gates.headroom_bytes,
             "allow_missing": gates.allow_missing,
             "confirm_production": gates.confirm_production,
+            "max_backup_age_hours": gates.max_backup_age_hours,
         },
         sources_deleted=False,
     )
@@ -791,9 +864,11 @@ def run_controlled_execute(
     backup_manifest: Optional[Path] = None,
     confirm_production: bool = False,
     allow_missing: int = 0,
+    max_backup_age_hours: Any = DEFAULT_MAX_BACKUP_AGE_HOURS,
     legacy_roots: Optional[tuple[tuple[str, Path], ...]] = None,
     journal_path: Optional[Path] = None,
     journal_dir: Optional[Path] = None,
+    now: Optional[datetime] = None,
 ) -> tuple[ExecutionJournal, Optional[ActivationReport]]:
     """Run gated production execute. Returns journal always; activation report if executed.
 
@@ -811,9 +886,11 @@ def run_controlled_execute(
         backup_manifest=backup_manifest,
         confirm_production=confirm_production,
         allow_missing=allow_missing,
+        max_backup_age_hours=max_backup_age_hours,
         legacy_roots=legacy_roots,
         require_backup=True,
         require_confirm=True,
+        now=now,
     )
 
     journal = _build_journal_from_gates(
@@ -995,6 +1072,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Allow up to N missing candidates (default: 0 = reject any missing)",
     )
     parser.add_argument(
+        "--max-backup-age-hours",
+        type=float,
+        default=DEFAULT_MAX_BACKUP_AGE_HOURS,
+        metavar="HOURS",
+        help=(
+            "Maximum age of backup manifest created_at "
+            f"(default: {DEFAULT_MAX_BACKUP_AGE_HOURS:g} hours)"
+        ),
+    )
+    parser.add_argument(
         "--journal-dir",
         type=Path,
         default=DEFAULT_JOURNAL_DIR,
@@ -1031,6 +1118,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 backup_manifest=args.backup_manifest,
                 confirm_production=bool(args.confirm_production),
                 allow_missing=int(args.allow_missing),
+                max_backup_age_hours=args.max_backup_age_hours,
                 journal_path=args.journal_out,
                 journal_dir=args.journal_dir,
             )
@@ -1052,6 +1140,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             backup_manifest=args.backup_manifest,
             confirm_production=bool(args.confirm_production),
             allow_missing=int(args.allow_missing),
+            max_backup_age_hours=args.max_backup_age_hours,
             require_backup=True,
             # Preflight mode: confirmation is informational, not required.
             require_confirm=False,
