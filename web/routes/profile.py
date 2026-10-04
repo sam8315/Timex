@@ -1,7 +1,7 @@
 """صفحه پروفایل کاربر"""
 from datetime import date
 from fastapi import APIRouter, Request, Depends
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
 from sqlalchemy.orm import Session
@@ -11,6 +11,7 @@ from web.dependencies import get_db, check_password_change
 from models.user import User
 from models.employee import Employee
 from models.employee_phone import EmployeePhone
+from web.services.storage_activation import resolve_media_disk
 
 router = APIRouter(tags=["Profile"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
@@ -198,3 +199,28 @@ async def profile_page(
         "active_bank_ids": active_bank_ids,
         "bank_accounts_error": bank_accounts_error,
     })
+
+
+@router.get("/profile/avatar")
+async def profile_avatar(
+    user: User = Depends(check_password_change),
+    db: Session = Depends(get_db),
+):
+    """سرو امن عکس پروفایل کاربر فعلی از Unified Storage."""
+    employee = db.query(Employee).filter(Employee.user_id == user.user_id).first()
+    if not employee or not employee.photo_path:
+        return RedirectResponse(url="/static/uploads/avatars/image.png", status_code=302)
+
+    try:
+        disk = resolve_media_disk(employee.photo_path)
+    except Exception:
+        return RedirectResponse(url="/static/uploads/avatars/image.png", status_code=302)
+
+    if not disk.is_file():
+        return RedirectResponse(url="/static/uploads/avatars/image.png", status_code=302)
+
+    return FileResponse(
+        path=str(disk),
+        filename=disk.name,
+        content_disposition_type="inline",
+    )

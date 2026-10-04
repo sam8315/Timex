@@ -8,8 +8,8 @@ Phase scope (this module):
 - Phase 3B can pass DB path columns via ``extra_legacy_keys`` with
   ``scan_filesystem=False`` (still no DB writes in this module).
 
-Production DB columns (``Contract.file_path``, ``Education.certificate_path``,
-``Employee.photo_path``) are intentionally left unchanged until a later phase.
+For DB-backed activation (copy + verify + DB update), see
+``web.services.storage_activation.StorageActivationService``.
 """
 from __future__ import annotations
 

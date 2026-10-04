@@ -2,28 +2,49 @@
 روتر تحصیلات (بخش کاربر و ادمین)
 """
 from fastapi import APIRouter, Request, Depends, Form, UploadFile, File
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 import jdatetime
 from datetime import date
-import time
 
-from web.dependencies import get_db, get_current_user, require_admin
-from web.permissions import enforce_permission
+from web.dependencies import get_db, get_current_user, require_admin, check_password_change
+from web.permissions import enforce_permission, has_permission
 from models.user import User
 from models.employee import Employee
 from models.education import Education, EDUCATION_GROUPS, DEGREE_LEVELS, DEGREE_PRIORITY
+from web.services.file_storage import FileStorageError
+from web.services.storage_activation import (
+    delete_media_file,
+    resolve_media_disk,
+    save_media_bytes,
+)
 
 router = APIRouter(tags=["Education"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
 
-# 🆕 مسیر و محدودیت‌های آپلود (مطابق الگوی عکس پروفایل)
-UPLOAD_DIR = Path(__file__).parent.parent / "static" / "uploads" / "certificates"
 ALLOWED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.pdf'}
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 مگابایت
+
+
+def _store_certificate(content: bytes, original_filename: str) -> str:
+    """Save certificate into Unified Storage; return storage_key."""
+    try:
+        return save_media_bytes(
+            "education",
+            content,
+            original_filename=original_filename,
+        )
+    except FileStorageError as exc:
+        if exc.code == "invalid_extension":
+            raise ValueError("نوع فایل مجاز نیست (فقط JPG/PNG/PDF)") from exc
+        if exc.code == "file_too_large":
+            raise ValueError("حجم فایل بیش از 5 مگابایت است") from exc
+        if exc.code == "empty_file":
+            raise ValueError("فایل خالی است") from exc
+        raise ValueError(str(exc)) from exc
 
 
 def update_highest_degree(db: Session, user_id: str):
@@ -82,6 +103,42 @@ async def education_list(
         "total_count": len(education_list),
         "is_admin": user.is_admin,
     })
+
+
+@router.get("/education/{edu_id}/file")
+async def education_certificate_file(
+        edu_id: int,
+        user: User = Depends(check_password_change),
+        db: Session = Depends(get_db),
+):
+    """دانلود امن مدرک تحصیلی از Unified Storage (یا legacy سازگار)."""
+    edu = db.query(Education).filter(Education.id == edu_id).first()
+    if not edu or not edu.certificate_path:
+        return RedirectResponse(url="/education?error=فایل مدرک یافت نشد", status_code=302)
+
+    is_owner = edu.user_id == user.user_id
+    is_admin_viewer = user.is_admin and has_permission(db, user, "view_dashboard")
+    if not is_owner and not is_admin_viewer:
+        return RedirectResponse(url="/education?error=دسترسی غیرمجاز", status_code=302)
+
+    try:
+        disk = resolve_media_disk(edu.certificate_path)
+    except Exception:
+        return RedirectResponse(url="/education?error=فایل مدرک یافت نشد", status_code=302)
+
+    if not disk.is_file():
+        return RedirectResponse(
+            url="/education?error=فایل مدرک روی دیسک موجود نیست",
+            status_code=302,
+        )
+
+    media = "application/pdf" if disk.suffix.lower() == ".pdf" else None
+    return FileResponse(
+        path=str(disk),
+        filename=disk.name,
+        media_type=media,
+        content_disposition_type="inline",
+    )
 
 
 @router.get("/education/new", response_class=HTMLResponse)
@@ -160,19 +217,8 @@ async def education_create(
                     status_code=302
                 )
 
-            # ساخت پوشه اگر وجود ندارد
-            UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-
-            # ذخیره فایل با نام یکتا (user_id + timestamp + edu_id)
-            filename = f"{user.user_id}_{new_edu.id}_{int(time.time())}{ext}"
-            file_path = UPLOAD_DIR / filename
-
-            with open(file_path, 'wb') as f:
-                f.write(content)
-
-            # تعیین نوع فایل و ذخیره مسیر
             new_edu.certificate_type = 'pdf' if ext == '.pdf' else 'image'
-            new_edu.certificate_path = f"/static/uploads/certificates/{filename}"
+            new_edu.certificate_path = _store_certificate(content, certificate.filename)
 
         db.commit()
 
@@ -282,26 +328,11 @@ async def education_update(
                     status_code=302
                 )
 
-            # ساخت پوشه اگر وجود ندارد
-            UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-
-            # 🆕 حذف فایل قبلی
             if edu.certificate_path:
-                old_file = Path(__file__).parent.parent / "static" / edu.certificate_path.replace("/static/",
-                                                                                                  "").replace("\\", "/")
-                if old_file.exists():
-                    old_file.unlink()
+                delete_media_file(edu.certificate_path)
 
-            # ذخیره فایل جدید
-            filename = f"{user.user_id}_{edu.id}_{int(time.time())}{ext}"
-            file_path = UPLOAD_DIR / filename
-
-            with open(file_path, 'wb') as f:
-                f.write(content)
-
-            # به‌روزرسانی نوع فایل و مسیر
             edu.certificate_type = 'pdf' if ext == '.pdf' else 'image'
-            edu.certificate_path = f"/static/uploads/certificates/{filename}"
+            edu.certificate_path = _store_certificate(content, certificate.filename)
 
         db.commit()
 
@@ -335,12 +366,8 @@ async def education_delete(
         if edu.verified:
             raise ValueError("مدارک تایید شده قابل حذف نیستند")
 
-        # 🆕 حذف فایل (مطابق الگوی عکس پروفایل)
         if edu.certificate_path:
-            old_file = Path(__file__).parent.parent / "static" / edu.certificate_path.replace("/static/", "").replace(
-                "\\", "/")
-            if old_file.exists():
-                old_file.unlink()
+            delete_media_file(edu.certificate_path)
 
         db.delete(edu)
         db.commit()
@@ -460,12 +487,8 @@ async def admin_reject_education(
         if not edu:
             raise ValueError("مدرک یافت نشد")
 
-        # 🆕 حذف فایل
         if edu.certificate_path:
-            old_file = Path(__file__).parent.parent / "static" / edu.certificate_path.replace("/static/", "").replace(
-                "\\", "/")
-            if old_file.exists():
-                old_file.unlink()
+            delete_media_file(edu.certificate_path)
 
         db.delete(edu)
         db.commit()
@@ -585,26 +608,11 @@ async def admin_education_update(
                     status_code=302
                 )
 
-            # ساخت پوشه اگر وجود ندارد
-            UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-
-            # حذف فایل قبلی
             if edu.certificate_path:
-                old_file = Path(__file__).parent.parent / "static" / edu.certificate_path.replace("/static/",
-                                                                                                  "").replace("\\", "/")
-                if old_file.exists():
-                    old_file.unlink()
+                delete_media_file(edu.certificate_path)
 
-            # ذخیره فایل جدید
-            filename = f"{edu.user_id}_{edu.id}_{int(time.time())}{ext}"
-            file_path = UPLOAD_DIR / filename
-
-            with open(file_path, 'wb') as f:
-                f.write(content)
-
-            # به‌روزرسانی نوع فایل و مسیر
             edu.certificate_type = 'pdf' if ext == '.pdf' else 'image'
-            edu.certificate_path = f"/static/uploads/certificates/{filename}"
+            edu.certificate_path = _store_certificate(content, certificate.filename)
 
         db.commit()
 
@@ -637,12 +645,8 @@ async def admin_education_delete(
 
         user_id = edu.user_id
 
-        # حذف فایل
         if edu.certificate_path:
-            old_file = Path(__file__).parent.parent / "static" / edu.certificate_path.replace("/static/", "").replace(
-                "\\", "/")
-            if old_file.exists():
-                old_file.unlink()
+            delete_media_file(edu.certificate_path)
 
         db.delete(edu)
         db.commit()
