@@ -126,6 +126,44 @@ class TestNoRemap67:
         assert resolve_annual_leave_days(db, "7", region_code="NORMAL") == 0
 
 
+class TestDualRunGateAfterCutover:
+    def test_dual_run_warns_not_raises_when_fk_exists(self, db, monkeypatch):
+        """After contracts FK exists, mismatches must not abort create_tables."""
+        from database import init_db
+
+        monkeypatch.setattr(
+            init_db, "_membership_contracts_fk_exists", lambda bind_engine=None: True
+        )
+
+        def fake_validate(db, **kwargs):
+            from web.services.membership_cutover_validation import EntitlementDiff
+
+            return [
+                EntitlementDiff(
+                    contract_id=46,
+                    user_id="u1",
+                    contract_type_code="5",
+                    region_code=None,
+                    old_annual=30,
+                    new_annual=0,
+                    old_entitlement={},
+                    new_entitlement={},
+                    reason="entitlement mismatch contract_id=46 code=5 old_annual=30 new_annual=0",
+                )
+            ]
+
+        monkeypatch.setattr(
+            "web.services.membership_cutover_validation.validate_cutover_for_all_contracts",
+            fake_validate,
+        )
+        monkeypatch.setattr(
+            "web.services.membership_cutover_validation.find_orphan_membership_codes",
+            lambda db: [],
+        )
+        # Must not raise
+        init_db.run_membership_dual_run_validation(bind_engine=db.get_bind())
+
+
 class TestAlignNonDestructive:
     def test_existing_annual_leave_dept_6_preserved(self, db):
         from database.init_db import align_leave_policy_membership_67

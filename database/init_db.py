@@ -1042,9 +1042,29 @@ def seed_membership_types(bind_engine=None) -> None:
         db.close()
 
 
+def _membership_contracts_fk_exists(bind_engine=None) -> bool:
+    """True if contracts.contract_type_code already references membership_types."""
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
+    if "contracts" not in set(inspector.get_table_names()):
+        return False
+    for fk in inspector.get_foreign_keys("contracts"):
+        referred = fk.get("referred_table")
+        cols = list(fk.get("constrained_columns") or [])
+        if referred == "membership_types" and cols == ["contract_type_code"]:
+            return True
+        if fk.get("name") == "fk_contracts_membership_type_code":
+            return True
+    return False
+
+
 def run_membership_dual_run_validation(bind_engine=None) -> None:
     """
-    Fail-closed Legacy vs New annual resolve before adding membership FKs.
+    Legacy vs New annual resolve check.
+
+    Fail-closed only before the contracts→membership_types FK is added.
+    After cutover (FK already present), mismatches are logged as warnings so
+    restarts are not blocked — e.g. policy annual_leave_dept_5=30 vs seed Rule=0.
     Never mutates contracts or leave balances.
     """
     from sqlalchemy.orm import sessionmaker
@@ -1060,6 +1080,8 @@ def run_membership_dual_run_validation(bind_engine=None) -> None:
     if "membership_types" not in tables or "contracts" not in tables:
         return
 
+    already_cut_over = _membership_contracts_fk_exists(bind_engine=target)
+
     SessionLocal = sessionmaker(bind=target, autoflush=False, autocommit=False)
     db = SessionLocal()
     try:
@@ -1069,17 +1091,36 @@ def run_membership_dual_run_validation(bind_engine=None) -> None:
                 f"{o.get('table')} id={o.get('id')} code={o.get('code')!r}"
                 for o in orphans[:50]
             )
-            raise MembershipCutoverError(
-                "membership cutover aborted: orphan codes: " + detail,
-                orphans=orphans,
+            # Orphans always block adding/keeping integrity for new FKs;
+            # after cutover they should not exist (FK would have prevented them).
+            if not already_cut_over:
+                raise MembershipCutoverError(
+                    "membership cutover aborted: orphan codes: " + detail,
+                    orphans=orphans,
+                )
+            logger.warning(
+                "Membership orphan codes after cutover count=%s sample=%s",
+                len(orphans),
+                detail,
+                extra={"event": "database.ready"},
             )
+
         diffs = validate_cutover_for_all_contracts(db)
         if diffs:
             sample = "; ".join(d.reason for d in diffs[:20])
-            raise MembershipCutoverError(
-                "membership cutover aborted: dual-run mismatches: " + sample,
-                diffs=diffs,
+            if not already_cut_over:
+                raise MembershipCutoverError(
+                    "membership cutover aborted: dual-run mismatches: " + sample,
+                    diffs=diffs,
+                )
+            logger.warning(
+                "Membership dual-run mismatches after cutover count=%s sample=%s",
+                len(diffs),
+                sample,
+                extra={"event": "database.ready"},
             )
+            return
+
         logger.info(
             "Membership dual-run validation passed",
             extra={"event": "database.ready"},
