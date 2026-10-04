@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from models.employee_document import DOCUMENT_STATUSES, DOCUMENT_TYPES, EmployeeDocument
+from models.employee_document import DOCUMENT_STATUSES, EmployeeDocument
 from models.user import User
 from web.dependencies import check_password_change, get_db, require_admin
 from web.permissions import enforce_permission, has_permission
@@ -20,6 +20,7 @@ from web.services.employee_document_service import (
     EmployeeDocumentError,
     create_document,
     get_document,
+    list_active_document_types,
     list_documents,
     reject_document,
     resolve_document_file,
@@ -111,7 +112,7 @@ async def employee_documents_page(
         {
             "user": user,
             "documents": docs,
-            "document_types": DOCUMENT_TYPES,
+            "document_types": list_active_document_types(db),
             "document_statuses": DOCUMENT_STATUSES,
             "is_admin": user.is_admin,
         },
@@ -121,7 +122,7 @@ async def employee_documents_page(
 @router.post("/employee-documents/add")
 async def employee_add_document(
     request: Request,
-    document_type: str = Form(...),
+    document_type_id: str = Form(...),
     title: str = Form(...),
     document_number: str = Form(""),
     issue_date_str: str = Form(""),
@@ -138,7 +139,7 @@ async def employee_add_document(
             db,
             user_id=user.user_id,
             uploaded_by=user.user_id,
-            document_type=document_type,
+            document_type_id=int(str(document_type_id).strip()),
             title=title,
             file_bytes=content,
             original_filename=filename,
@@ -148,8 +149,8 @@ async def employee_add_document(
             notes=notes,
         )
         return _q(base, success="مدرک با موفقیت ثبت شد")
-    except EmployeeDocumentError as exc:
-        return _q(base, error=str(exc))
+    except (EmployeeDocumentError, ValueError) as exc:
+        return _q(base, error=str(exc) if str(exc) else "نوع مدرک نامعتبر است")
     except Exception as exc:
         return _q(base, error=f"خطا: {exc}")
 
@@ -212,7 +213,7 @@ async def download_document_file(
 @router.post("/admin/profile/{target_user_id}/documents/add")
 async def admin_add_document(
     target_user_id: str,
-    document_type: str = Form(...),
+    document_type_id: str = Form(...),
     title: str = Form(...),
     document_number: str = Form(""),
     issue_date_str: str = Form(""),
@@ -230,7 +231,7 @@ async def admin_add_document(
             db,
             user_id=target_user_id,
             uploaded_by=user.user_id,
-            document_type=document_type,
+            document_type_id=int(str(document_type_id).strip()),
             title=title,
             file_bytes=content,
             original_filename=filename,
@@ -240,8 +241,8 @@ async def admin_add_document(
             notes=notes,
         )
         return _q(base, success="مدرک با موفقیت ثبت شد")
-    except EmployeeDocumentError as exc:
-        return _q(base, error=str(exc))
+    except (EmployeeDocumentError, ValueError) as exc:
+        return _q(base, error=str(exc) if str(exc) else "نوع مدرک نامعتبر است")
     except Exception as exc:
         return _q(base, error=f"خطا: {exc}")
 

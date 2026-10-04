@@ -8,6 +8,7 @@ import jdatetime
 import pytest
 
 from models.employee_document import EmployeeDocument
+from models.employee_document_type import EmployeeDocumentType
 from web.services.employee_document_service import (
     EmployeeDocumentError,
     create_document,
@@ -35,12 +36,24 @@ def _jalali(d: date | None = None) -> str:
     return jdatetime.date.fromgregorian(date=g).strftime("%Y/%m/%d")
 
 
+def _type_id(db, code: str = "NATIONAL_ID") -> int:
+    row = (
+        db.query(EmployeeDocumentType)
+        .filter(EmployeeDocumentType.code == code)
+        .first()
+    )
+    assert row is not None, f"missing seeded document type {code}"
+    return row.id
+
+
 def _create_via_service(db, user_id, *, title="کارت ملی من", **kwargs):
+    code = kwargs.get("document_type_code", "NATIONAL_ID")
+    type_id = kwargs.get("document_type_id") or _type_id(db, code)
     return create_document(
         db,
         user_id=user_id,
         uploaded_by=user_id,
-        document_type=kwargs.get("document_type", "NATIONAL_ID"),
+        document_type_id=type_id,
         title=title,
         file_bytes=kwargs.get("file_bytes", b"%PDF-1.4\ndoc"),
         original_filename=kwargs.get("original_filename", "id.pdf"),
@@ -274,7 +287,7 @@ def test_orphan_file_cleaned_on_db_failure(db, make_user, monkeypatch, _isolated
             db,
             user_id=user["user_id"],
             uploaded_by=user["user_id"],
-            document_type="OTHER",
+            document_type_id=_type_id(db, "OTHER"),
             title="orphan",
             file_bytes=b"%PDF-orphan",
             original_filename="o.pdf",
@@ -311,10 +324,11 @@ def test_expiry_metadata(db, make_user):
 def test_employee_http_upload(client, db, make_user):
     user = make_user(role="user")
     login_as(client, user["national_code"])
+    insurance_id = _type_id(db, "INSURANCE")
     resp = client.post(
         "/employee-documents/add",
         data={
-            "document_type": "INSURANCE",
+            "document_type_id": str(insurance_id),
             "title": "بیمه تأمین",
             "document_number": "INS-9",
             "issue_date_str": _jalali(date(2024, 1, 1)),
@@ -331,12 +345,38 @@ def test_employee_http_upload(client, db, make_user):
     db.expire_all()
     docs = list_documents(db, user["user_id"])
     assert len(docs) == 1
-    assert docs[0].document_type == "INSURANCE"
+    assert docs[0].document_type_id == insurance_id
+    assert docs[0].document_type_code == "INSURANCE"
     assert docs[0].mime_type == "image/png"
     assert CATEGORY_CONFIGS["employee-documents"].name == "employee-documents"
+
+
+def test_inactive_type_rejected_for_new_document(db, make_user):
+    user = make_user(role="user")
+    row = (
+        db.query(EmployeeDocumentType)
+        .filter(EmployeeDocumentType.code == "OTHER")
+        .first()
+    )
+    assert row is not None
+    row.is_active = False
+    db.commit()
+    try:
+        with pytest.raises(EmployeeDocumentError) as exc:
+            _create_via_service(
+                db,
+                user["user_id"],
+                document_type_id=row.id,
+                title="غیرفعال",
+            )
+        assert "غیرفعال" in str(exc.value)
+    finally:
+        row.is_active = True
+        db.commit()
 
 
 def test_model_registered():
     from models.base import Base
 
     assert "employee_documents" in Base.metadata.tables
+    assert "employee_document_types" in Base.metadata.tables

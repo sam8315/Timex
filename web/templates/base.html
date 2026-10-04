@@ -1069,6 +1069,7 @@
         <!-- تنظیمات -->
         {% set set_active = '/admin/holidays' in request.url.path or '/admin/import-previous-leave' in request.url.path
             or '/admin/cities' in request.url.path or '/admin/positions' in request.url.path
+            or '/admin/employee-document-types' in request.url.path
         %}
         <a class="sidebar-link {% if set_active %}active{% endif %}" data-bs-toggle="collapse" href="#setMenu"
            role="button" aria-expanded="{{ 'true' if set_active else 'false' }}">
@@ -1097,6 +1098,10 @@
             <a href="/admin/positions"
                class="sidebar-link {% if '/admin/positions' in request.url.path %}active{% endif %}">
                 <i class="bi bi-briefcase"></i> مدیریت سمت‌ها
+            </a>
+            <a href="/admin/employee-document-types"
+               class="sidebar-link {% if '/admin/employee-document-types' in request.url.path %}active{% endif %}">
+                <i class="bi bi-folder2"></i> انواع مدارک پرسنلی
             </a>
         </div>
     </div>

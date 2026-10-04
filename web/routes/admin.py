@@ -2011,14 +2011,18 @@ async def admin_view_profile(
         acc.sheba_masked = _mask_tail(acc.sheba)
 
     # پرونده پرسنلی / مدارک
-    from models.employee_document import DOCUMENT_STATUSES, DOCUMENT_TYPES
-    from web.services.employee_document_service import list_documents as list_employee_documents
+    from models.employee_document import DOCUMENT_STATUSES
+    from web.services.employee_document_service import (
+        list_active_document_types,
+        list_documents as list_employee_documents,
+    )
 
     can_view_employee_documents = has_permission(db, user, "view_employee_documents")
     can_manage_employee_documents = has_permission(db, user, "manage_employee_documents")
     can_verify_employee_documents = has_permission(db, user, "verify_employee_documents")
     employee_documents_error = None
     target_employee_documents = []
+    active_document_types = list_active_document_types(db)
     if can_view_employee_documents or can_manage_employee_documents:
         try:
             target_employee_documents = list_employee_documents(db, target_user_id)
@@ -2144,7 +2148,7 @@ async def admin_view_profile(
         "bank_accounts_error": bank_accounts_error,
         "target_employee_documents": target_employee_documents,
         "employee_documents_error": employee_documents_error,
-        "document_types": DOCUMENT_TYPES,
+        "document_types": active_document_types,
         "document_statuses": DOCUMENT_STATUSES,
         "can_view_employee_documents": can_view_employee_documents,
         "can_manage_employee_documents": can_manage_employee_documents,

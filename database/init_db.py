@@ -716,6 +716,289 @@ def seed_service_health(bind_engine=None) -> None:
         )
 
 
+def seed_employee_document_types(bind_engine=None) -> None:
+    """
+    Ensure the eight legacy employee document types exist (idempotent).
+
+    INSERT … ON CONFLICT (code) DO NOTHING — never overwrites admin edits
+    to name / is_active / sort_order, and never deletes custom types.
+    """
+    from sqlalchemy import text as _sql_text
+    from models.employee_document import LEGACY_DOCUMENT_TYPE_SEED
+
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
+    if "employee_document_types" not in inspector.get_table_names():
+        return
+
+    with target.begin() as conn:
+        for sort_order, (code, name) in enumerate(LEGACY_DOCUMENT_TYPE_SEED, start=1):
+            conn.execute(
+                _sql_text(
+                    """
+                    INSERT INTO employee_document_types (
+                        code, name, is_active, sort_order
+                    )
+                    VALUES (:code, :name, TRUE, :sort_order)
+                    ON CONFLICT (code) DO NOTHING
+                    """
+                ),
+                {"code": code, "name": name, "sort_order": sort_order},
+            )
+    logger.info(
+        "Employee document types seeded legacy_count=%s",
+        len(LEGACY_DOCUMENT_TYPE_SEED),
+        extra={"event": "database.ready"},
+    )
+
+
+def migrate_employee_document_types(bind_engine=None) -> None:
+    """
+    Migrate employee_documents.document_type (string) → document_type_id FK.
+
+    Idempotent Production-safe steps:
+      1. Require employee_document_types table
+      2. Seed legacy types (ON CONFLICT DO NOTHING)
+      3. If legacy document_type column exists:
+         a. ADD document_type_id NULL + index if missing
+         b. Backfill from document_type = type.code
+         c. Fail hard if any row remains unmapped
+         d. ADD FK ON DELETE RESTRICT if missing
+         e. SET document_type_id NOT NULL
+         f. DROP CHECK ck_employee_document_type if present
+         g. DROP legacy document_type column (+ its indexes)
+      4. If only document_type_id exists (fresh schema): ensure FK exists
+    Never deletes employee_documents rows or storage files.
+    """
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
+    tables = set(inspector.get_table_names())
+    if "employee_documents" not in tables:
+        return
+    if "employee_document_types" not in tables:
+        return
+
+    seed_employee_document_types(bind_engine=target)
+
+    with target.connect() as conn:
+        inspector = inspect(target)
+        columns = {row["name"] for row in inspector.get_columns("employee_documents")}
+        has_legacy = "document_type" in columns
+        has_fk_col = "document_type_id" in columns
+
+        if has_legacy and not has_fk_col:
+            conn.execute(
+                text(
+                    'ALTER TABLE "employee_documents" '
+                    'ADD COLUMN "document_type_id" INTEGER NULL'
+                )
+            )
+            conn.commit()
+            logger.info(
+                "Column added table=employee_documents column=document_type_id",
+                extra={"event": "database.ready"},
+            )
+            inspector = inspect(target)
+            columns = {row["name"] for row in inspector.get_columns("employee_documents")}
+            has_fk_col = "document_type_id" in columns
+
+        if has_fk_col:
+            inspector = inspect(target)
+            index_names = {
+                idx["name"] for idx in inspector.get_indexes("employee_documents")
+            }
+            if "ix_employee_documents_document_type_id" not in index_names:
+                conn.execute(
+                    text(
+                        'CREATE INDEX "ix_employee_documents_document_type_id" '
+                        'ON "employee_documents" ("document_type_id")'
+                    )
+                )
+                conn.commit()
+                logger.info(
+                    "Index created name=ix_employee_documents_document_type_id",
+                    extra={"event": "database.ready"},
+                )
+
+        if has_legacy and has_fk_col:
+            conn.execute(
+                text(
+                    """
+                    UPDATE employee_documents AS d
+                    SET document_type_id = t.id
+                    FROM employee_document_types AS t
+                    WHERE d.document_type_id IS NULL
+                      AND d.document_type = t.code
+                    """
+                )
+            )
+            conn.commit()
+
+            unmapped = conn.execute(
+                text(
+                    """
+                    SELECT COUNT(*) FROM employee_documents
+                    WHERE document_type_id IS NULL
+                    """
+                )
+            ).scalar()
+            if unmapped:
+                samples = conn.execute(
+                    text(
+                        """
+                        SELECT DISTINCT document_type
+                        FROM employee_documents
+                        WHERE document_type_id IS NULL
+                        ORDER BY document_type
+                        LIMIT 20
+                        """
+                    )
+                ).fetchall()
+                sample_codes = [row[0] for row in samples]
+                raise RuntimeError(
+                    "employee_documents migration aborted: "
+                    f"{unmapped} row(s) have unmapped document_type values "
+                    f"(samples={sample_codes}). "
+                    "Fix or seed missing types before retrying."
+                )
+
+        # Ensure FK exists when document_type_id is present
+        if has_fk_col:
+            inspector = inspect(target)
+            fk_names = {
+                fk["name"]
+                for fk in inspector.get_foreign_keys("employee_documents")
+                if fk.get("name")
+            }
+            if "employee_documents_document_type_id_fkey" not in fk_names:
+                # Only add FK when all non-null rows are valid (or column empty)
+                bad_fk = conn.execute(
+                    text(
+                        """
+                        SELECT COUNT(*) FROM employee_documents d
+                        WHERE d.document_type_id IS NOT NULL
+                          AND NOT EXISTS (
+                            SELECT 1 FROM employee_document_types t
+                            WHERE t.id = d.document_type_id
+                          )
+                        """
+                    )
+                ).scalar()
+                if bad_fk:
+                    raise RuntimeError(
+                        "employee_documents migration aborted: "
+                        f"{bad_fk} row(s) have invalid document_type_id "
+                        "before FK creation."
+                    )
+                conn.execute(
+                    text(
+                        'ALTER TABLE "employee_documents" '
+                        'ADD CONSTRAINT "employee_documents_document_type_id_fkey" '
+                        'FOREIGN KEY ("document_type_id") '
+                        'REFERENCES "employee_document_types" ("id") '
+                        "ON DELETE RESTRICT"
+                    )
+                )
+                conn.commit()
+                logger.info(
+                    "Foreign key added employee_documents.document_type_id "
+                    "-> employee_document_types.id",
+                    extra={"event": "database.ready"},
+                )
+
+            # SET NOT NULL when safe
+            null_count = conn.execute(
+                text(
+                    """
+                    SELECT COUNT(*) FROM employee_documents
+                    WHERE document_type_id IS NULL
+                    """
+                )
+            ).scalar()
+            col_nullable = True
+            for col in inspect(target).get_columns("employee_documents"):
+                if col["name"] == "document_type_id":
+                    col_nullable = bool(col.get("nullable", True))
+                    break
+            if null_count == 0 and col_nullable:
+                conn.execute(
+                    text(
+                        'ALTER TABLE "employee_documents" '
+                        'ALTER COLUMN "document_type_id" SET NOT NULL'
+                    )
+                )
+                conn.commit()
+                logger.info(
+                    "Column employee_documents.document_type_id set NOT NULL",
+                    extra={"event": "database.ready"},
+                )
+
+        if has_legacy:
+            # Drop CHECK on legacy string column if present
+            has_check = conn.execute(
+                text(
+                    """
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'ck_employee_document_type'
+                      AND conrelid = 'employee_documents'::regclass
+                    """
+                )
+            ).fetchone()
+            if has_check:
+                conn.execute(
+                    text(
+                        'ALTER TABLE "employee_documents" '
+                        'DROP CONSTRAINT "ck_employee_document_type"'
+                    )
+                )
+                conn.commit()
+                logger.info(
+                    "Constraint dropped name=ck_employee_document_type",
+                    extra={"event": "database.ready"},
+                )
+
+            inspector = inspect(target)
+            for idx in inspector.get_indexes("employee_documents"):
+                cols = idx.get("column_names") or []
+                if cols == ["document_type"]:
+                    idx_name = idx["name"]
+                    conn.execute(text(f'DROP INDEX IF EXISTS "{idx_name}"'))
+                    conn.commit()
+                    logger.info(
+                        "Index dropped name=%s",
+                        idx_name,
+                        extra={"event": "database.ready"},
+                    )
+
+            inspector = inspect(target)
+            columns = {
+                row["name"] for row in inspector.get_columns("employee_documents")
+            }
+            if "document_type" in columns:
+                # Safety: never drop until every row is mapped
+                still_null = conn.execute(
+                    text(
+                        """
+                        SELECT COUNT(*) FROM employee_documents
+                        WHERE document_type_id IS NULL
+                        """
+                    )
+                ).scalar()
+                if still_null:
+                    raise RuntimeError(
+                        "Refusing to drop employee_documents.document_type: "
+                        f"{still_null} row(s) still have NULL document_type_id"
+                    )
+                conn.execute(
+                    text('ALTER TABLE "employee_documents" DROP COLUMN "document_type"')
+                )
+                conn.commit()
+                logger.info(
+                    "Column dropped table=employee_documents column=document_type",
+                    extra={"event": "database.ready"},
+                )
+
+
 def seed_role_permissions(bind_engine=None) -> None:
     """
     Seed missing role_permissions rows from ALL_PERMISSIONS catalog (idempotent).
@@ -786,6 +1069,7 @@ def create_tables() -> None:
         seed_travel_leave_policy_rules()
         seed_banks()
         seed_service_health()
+        migrate_employee_document_types()
         seed_role_permissions()
         logger.info(
             "Database tables created/verified successfully",

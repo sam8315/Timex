@@ -5,13 +5,10 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
-from models.employee_document import (
-    DOCUMENT_STATUSES,
-    DOCUMENT_TYPES,
-    EmployeeDocument,
-)
+from models.employee_document import DOCUMENT_STATUSES, EmployeeDocument
+from models.employee_document_type import EmployeeDocumentType
 from web.services.file_storage import (
     CATEGORY_CONFIGS,
     FileStorage,
@@ -42,10 +39,53 @@ def _storage() -> FileStorage:
 
 
 def _active_query(db: Session, user_id: Optional[str] = None):
-    q = db.query(EmployeeDocument).filter(EmployeeDocument.deleted_at.is_(None))
+    q = (
+        db.query(EmployeeDocument)
+        .options(joinedload(EmployeeDocument.document_type))
+        .filter(EmployeeDocument.deleted_at.is_(None))
+    )
     if user_id is not None:
         q = q.filter(EmployeeDocument.user_id == user_id)
     return q
+
+
+def list_active_document_types(db: Session) -> list[EmployeeDocumentType]:
+    return (
+        db.query(EmployeeDocumentType)
+        .filter(EmployeeDocumentType.is_active.is_(True))
+        .order_by(
+            EmployeeDocumentType.sort_order,
+            EmployeeDocumentType.name,
+            EmployeeDocumentType.id,
+        )
+        .all()
+    )
+
+
+def resolve_document_type_id(
+    db: Session,
+    raw: Optional[str | int],
+    *,
+    allow_inactive_id: Optional[int] = None,
+) -> int:
+    """Parse and validate document_type_id for create/edit forms."""
+    if raw is None or (isinstance(raw, str) and not str(raw).strip()):
+        raise EmployeeDocumentError("نوع مدرک الزامی است")
+    try:
+        type_id = int(str(raw).strip())
+    except (TypeError, ValueError) as exc:
+        raise EmployeeDocumentError("نوع مدرک نامعتبر است") from exc
+
+    doc_type = (
+        db.query(EmployeeDocumentType)
+        .filter(EmployeeDocumentType.id == type_id)
+        .first()
+    )
+    if not doc_type:
+        raise EmployeeDocumentError("نوع مدرک یافت نشد")
+    if not doc_type.is_active and doc_type.id != allow_inactive_id:
+        raise EmployeeDocumentError("نوع مدرک انتخاب‌شده غیرفعال است")
+    return doc_type.id
 
 
 def list_documents(db: Session, user_id: str) -> list[EmployeeDocument]:
@@ -62,7 +102,11 @@ def get_document(
     *,
     include_deleted: bool = False,
 ) -> EmployeeDocument:
-    q = db.query(EmployeeDocument).filter(EmployeeDocument.id == document_id)
+    q = (
+        db.query(EmployeeDocument)
+        .options(joinedload(EmployeeDocument.document_type))
+        .filter(EmployeeDocument.id == document_id)
+    )
     if not include_deleted:
         q = q.filter(EmployeeDocument.deleted_at.is_(None))
     doc = q.first()
@@ -76,7 +120,7 @@ def create_document(
     *,
     user_id: str,
     uploaded_by: str,
-    document_type: str,
+    document_type_id: int,
     title: str,
     file_bytes: bytes,
     original_filename: str,
@@ -85,8 +129,7 @@ def create_document(
     expiry_date: Optional[date] = None,
     notes: Optional[str] = None,
 ) -> EmployeeDocument:
-    if document_type not in DOCUMENT_TYPES:
-        raise EmployeeDocumentError("نوع مدرک نامعتبر است")
+    type_id = resolve_document_type_id(db, document_type_id)
 
     title = (title or "").strip()
     if not title:
@@ -111,7 +154,7 @@ def create_document(
 
     doc = EmployeeDocument(
         user_id=user_id,
-        document_type=document_type,
+        document_type_id=type_id,
         title=title,
         document_number=(document_number or "").strip() or None,
         issue_date=issue_date,

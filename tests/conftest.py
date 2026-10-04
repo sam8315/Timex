@@ -104,6 +104,7 @@ from database.init_db import (  # noqa: E402
     migrate_employee_address_range_check,
     migrate_city_region_code,
     migrate_employee_position_id,
+    migrate_employee_document_types,
     seed_role_permissions,
 )
 from sqlalchemy import text as _sql_text
@@ -193,6 +194,7 @@ with test_engine.connect() as _conn:
         )
 
 Base.metadata.create_all(bind=test_engine)
+migrate_employee_document_types(bind_engine=test_engine)
 seed_role_permissions(bind_engine=test_engine)
 
 with test_engine.connect() as _conn:

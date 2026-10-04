@@ -105,10 +105,10 @@
                     <div class="row g-3">
                         <div class="col-md-6">
                             <label class="form-label">نوع مدرک <span class="text-danger">*</span></label>
-                            <select name="document_type" class="form-select" required>
+                            <select name="document_type_id" class="form-select" required>
                                 <option value="">انتخاب کنید</option>
-                                {% for code, name in document_types.items() %}
-                                <option value="{{ code }}">{{ name }}</option>
+                                {% for dt in document_types %}
+                                <option value="{{ dt.id }}">{{ dt.name }}</option>
                                 {% endfor %}
                             </select>
                         </div>

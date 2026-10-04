@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+{% block title %}انواع مدارک پرسنلی | پنل مدیریت{% endblock %}
+{% block content %}
+
+{% if request.query_params.get('success') %}
+<div class="alert alert-success alert-dismissible fade show">
+    <i class="bi bi-check-circle"></i> {{ request.query_params.get('success') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+{% if request.query_params.get('error') %}
+<div class="alert alert-danger alert-dismissible fade show">
+    <i class="bi bi-exclamation-triangle"></i> {{ request.query_params.get('error') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4><i class="bi bi-folder2"></i> انواع مدارک پرسنلی</h4>
+    <a href="/admin/" class="btn btn-outline-primary btn-sm">
+        <i class="bi bi-arrow-right"></i> بازگشت به پنل مدیریت
+    </a>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header bg-white">
+        <h6><i class="bi bi-plus-circle"></i> افزودن نوع مدرک جدید</h6>
+    </div>
+    <div class="card-body">
+        <form method="post" action="/admin/employee-document-types/add" class="row g-3 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label">کد <span class="text-danger">*</span></label>
+                <input type="text" name="code" class="form-control" placeholder="مثلاً DRIVER_LICENSE"
+                       required maxlength="40" dir="ltr" pattern="[A-Za-z][A-Za-z0-9_]{0,39}">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">نام نمایشی <span class="text-danger">*</span></label>
+                <input type="text" name="name" class="form-control" placeholder="مثلاً گواهینامه رانندگی"
+                       required maxlength="100">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">ترتیب نمایش</label>
+                <input type="number" name="sort_order" class="form-control" value="0" dir="ltr">
+            </div>
+            <div class="col-md-1">
+                <label class="form-label">وضعیت</label>
+                <div class="form-check form-switch mt-2">
+                    <input class="form-check-input" type="checkbox" name="is_active" value="on" checked id="docTypeActive">
+                    <label class="form-check-label" for="docTypeActive">فعال</label>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-success w-100">
+                    <i class="bi bi-plus"></i> ثبت
+                </button>
+            </div>
+        </form>
+        <small class="text-muted d-block mt-2">
+            <i class="bi bi-info-circle"></i>
+            کد پس از ثبت قابل تغییر نیست. نوع استفاده‌شده در مدارک قابل حذف نیست؛ می‌توانید غیرفعال کنید.
+        </small>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-body py-2">
+        <form method="get" action="/admin/employee-document-types" class="d-flex flex-wrap align-items-center gap-2">
+            <input type="text" name="search" class="form-control form-control-sm" style="width: 220px;"
+                   value="{{ search }}" placeholder="جستجو: نام یا کد">
+            <select name="status_filter" class="form-select form-select-sm" style="width: auto;">
+                <option value="">همه وضعیت‌ها</option>
+                <option value="active" {% if status_filter == 'active' %}selected{% endif %}>فعال</option>
+                <option value="inactive" {% if status_filter == 'inactive' %}selected{% endif %}>غیرفعال</option>
+            </select>
+            <button type="submit" class="btn btn-primary btn-sm">
+                <i class="bi bi-search"></i> اعمال
+            </button>
+            <a href="/admin/employee-document-types?show_all=1" class="btn btn-success btn-sm {% if show_all %}disabled{% endif %}">
+                <i class="bi bi-list"></i> نمایش همه
+            </a>
+            {% if has_filter %}
+            <a href="/admin/employee-document-types" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-x-circle"></i> پاک کردن
+            </a>
+            {% endif %}
+        </form>
+    </div>
+</div>
+
+{% if not has_filter %}
+<div class="card">
+    <div class="card-body text-center py-5">
+        <i class="bi bi-search display-4 text-muted"></i>
+        <h5 class="mt-3 text-muted">برای مشاهده انواع مدرک، جستجو یا فیلتر اعمال کنید</h5>
+        <a href="/admin/employee-document-types?show_all=1" class="btn btn-success mt-2">
+            <i class="bi bi-list"></i> نمایش همه انواع
+        </a>
+    </div>
+</div>
+
+{% elif total_count == 0 %}
+<div class="card">
+    <div class="card-body text-center py-5">
+        <i class="bi bi-emoji-frown display-4 text-muted"></i>
+        <h5 class="mt-3 text-muted">هیچ نوع مدرکی یافت نشد</h5>
+    </div>
+</div>
+
+{% else %}
+<div class="card">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h6 class="mb-0"><i class="bi bi-list-ul"></i> انواع مدارک</h6>
+        <span class="badge bg-primary fs-6">{{ total_count }} مورد</span>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>ردیف</th>
+                        <th>کد</th>
+                        <th>نام</th>
+                        <th class="text-center">ترتیب</th>
+                        <th class="text-center">وضعیت</th>
+                        <th class="text-center">ثبت در</th>
+                        <th class="text-center">عملیات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in document_types %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td dir="ltr"><code>{{ item.doc_type.code }}</code></td>
+                        <td>{{ item.doc_type.name }}</td>
+                        <td class="text-center" dir="ltr">{{ item.doc_type.sort_order }}</td>
+                        <td class="text-center">
+                            {% if item.doc_type.is_active %}
+                            <span class="badge bg-success">فعال</span>
+                            {% else %}
+                            <span class="badge bg-danger">غیرفعال</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">{{ item.created_j }}</td>
+                        <td class="text-center">
+                            <div class="btn-group btn-group-sm">
+                                <button type="button" class="btn btn-outline-warning"
+                                        data-bs-toggle="modal" data-bs-target="#editDocTypeModal{{ item.doc_type.id }}">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <form method="post" action="/admin/employee-document-types/{{ item.doc_type.id }}/toggle"
+                                      class="d-inline"
+                                      onsubmit="return confirm('تغییر وضعیت نوع «{{ item.doc_type.name | e }}»؟');">
+                                    <button type="submit" class="btn {% if item.doc_type.is_active %}btn-outline-danger{% else %}btn-outline-success{% endif %}">
+                                        {% if item.doc_type.is_active %}<i class="bi bi-pause-circle"></i>{% else %}<i class="bi bi-play-circle"></i>{% endif %}
+                                    </button>
+                                </form>
+                                <form method="post" action="/admin/employee-document-types/{{ item.doc_type.id }}/delete"
+                                      class="d-inline"
+                                      onsubmit="return confirm('حذف نوع «{{ item.doc_type.name | e }}»؟ این عمل برگشت‌پذیر نیست.');">
+                                    <button type="submit" class="btn btn-outline-danger" title="حذف">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+
+                    <div class="modal fade" id="editDocTypeModal{{ item.doc_type.id }}" tabindex="-1">
+                        <div class="modal-dialog">
+                            <div class="modal-content">
+                                <form method="post" action="/admin/employee-document-types/{{ item.doc_type.id }}/edit">
+                                    <div class="modal-header">
+                                        <h5 class="modal-title">ویرایش نوع مدرک - {{ item.doc_type.name }}</h5>
+                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <div class="row g-3">
+                                            <div class="col-12">
+                                                <label class="form-label">کد</label>
+                                                <input type="text" class="form-control" value="{{ item.doc_type.code }}"
+                                                       dir="ltr" disabled readonly>
+                                                <div class="form-text">کد پس از ثبت قابل تغییر نیست.</div>
+                                            </div>
+                                            <div class="col-12">
+                                                <label class="form-label">نام نمایشی <span class="text-danger">*</span></label>
+                                                <input type="text" name="name" class="form-control"
+                                                       value="{{ item.doc_type.name }}" required maxlength="100">
+                                            </div>
+                                            <div class="col-md-6">
+                                                <label class="form-label">ترتیب نمایش</label>
+                                                <input type="number" name="sort_order" class="form-control" dir="ltr"
+                                                       value="{{ item.doc_type.sort_order }}">
+                                            </div>
+                                            <div class="col-md-6">
+                                                <label class="form-label">وضعیت</label>
+                                                <div class="form-check form-switch mt-2">
+                                                    <input class="form-check-input" type="checkbox" name="is_active" value="on"
+                                                           id="editDocTypeActive{{ item.doc_type.id }}"
+                                                           {% if item.doc_type.is_active %}checked{% endif %}>
+                                                    <label class="form-check-label" for="editDocTypeActive{{ item.doc_type.id }}">فعال</label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="modal-footer">
+                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
+                                        <button type="submit" class="btn btn-primary">ذخیره</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}

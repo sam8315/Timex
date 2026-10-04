@@ -44,6 +44,11 @@ ALL_PERMISSIONS = {
     'view_employee_documents': {'label': 'مشاهده مدارک پرسنلی',    'admin': True,  'super_admin': True},
     'manage_employee_documents': {'label': 'مدیریت مدارک پرسنلی', 'admin': True,  'super_admin': True},
     'verify_employee_documents': {'label': 'تأیید/رد مدارک پرسنلی', 'admin': True,  'super_admin': True},
+    'manage_employee_document_types': {
+        'label': 'مدیریت انواع مدارک پرسنلی',
+        'admin': True,
+        'super_admin': True,
+    },
 }
 
 # ترکیب‌هایی که از UI قابل غیرفعال‌کردن نیستند (جلوگیری از قفل‌شدن مدیریت)

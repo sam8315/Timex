@@ -10,16 +10,17 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from models.base import Base, TimestampMixin
 
-DOCUMENT_TYPES = {
-    "NATIONAL_ID": "کارت ملی",
-    "BIRTH_CERTIFICATE": "شناسنامه",
-    "MILITARY_SERVICE": "پایان خدمت / معافیت",
-    "EDUCATION_DEGREE": "مدرک تحصیلی",
-    "EMPLOYMENT_ORDER": "حکم / مدرک استخدامی",
-    "INSURANCE": "بیمه",
-    "PROFESSIONAL_LICENSE": "مجوز حرفه‌ای",
-    "OTHER": "سایر",
-}
+# فقط برای seed/migration اولیه — منبع حقیقت runtime جدول employee_document_types است.
+LEGACY_DOCUMENT_TYPE_SEED = (
+    ("NATIONAL_ID", "کارت ملی"),
+    ("BIRTH_CERTIFICATE", "شناسنامه"),
+    ("MILITARY_SERVICE", "پایان خدمت / معافیت"),
+    ("EDUCATION_DEGREE", "مدرک تحصیلی"),
+    ("EMPLOYMENT_ORDER", "حکم / مدرک استخدامی"),
+    ("INSURANCE", "بیمه"),
+    ("PROFESSIONAL_LICENSE", "مجوز حرفه‌ای"),
+    ("OTHER", "سایر"),
+)
 
 DOCUMENT_STATUSES = {
     "PENDING": "در انتظار بررسی",
@@ -28,7 +29,6 @@ DOCUMENT_STATUSES = {
 }
 
 _STATUS_VALUES = ", ".join(f"'{s}'" for s in DOCUMENT_STATUSES)
-_TYPE_VALUES = ", ".join(f"'{t}'" for t in DOCUMENT_TYPES)
 
 
 class EmployeeDocument(TimestampMixin, Base):
@@ -45,7 +45,13 @@ class EmployeeDocument(TimestampMixin, Base):
         index=True,
     )
 
-    document_type: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    document_type_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("employee_document_types.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     document_number: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     issue_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
@@ -81,22 +87,27 @@ class EmployeeDocument(TimestampMixin, Base):
     deleted_by: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
     user = relationship("User", backref="employee_documents")
+    document_type = relationship("EmployeeDocumentType")
 
     __table_args__ = (
         CheckConstraint(
             f"status IN ({_STATUS_VALUES})",
             name="ck_employee_document_status",
         ),
-        CheckConstraint(
-            f"document_type IN ({_TYPE_VALUES})",
-            name="ck_employee_document_type",
-        ),
         CheckConstraint("size_bytes > 0", name="ck_employee_document_size"),
     )
 
     @property
     def document_type_name(self) -> str:
-        return DOCUMENT_TYPES.get(self.document_type, self.document_type)
+        if self.document_type is not None:
+            return self.document_type.name
+        return ""
+
+    @property
+    def document_type_code(self) -> str:
+        if self.document_type is not None:
+            return self.document_type.code
+        return ""
 
     @property
     def status_name(self) -> str:
@@ -109,5 +120,5 @@ class EmployeeDocument(TimestampMixin, Base):
     def __repr__(self) -> str:
         return (
             f"<EmployeeDocument(id={self.id}, user_id='{self.user_id}', "
-            f"type='{self.document_type}', status='{self.status}')>"
+            f"type_id={self.document_type_id}, status='{self.status}')>"
         )
