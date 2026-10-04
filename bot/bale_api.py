@@ -157,6 +157,19 @@ def get_updates(offset: int = 0, timeout: int = 30) -> list:
         # Failure path: counter/error already updated in _log_api_failure.
         return []
 
+    if not isinstance(result, dict):
+        _get_updates_fail_count += 1
+        logger.warning(
+            "getUpdates invalid response consecutive=%s",
+            _get_updates_fail_count,
+            extra={"event": "bot.polling_error"},
+        )
+        _monitor_api_failure(
+            error_class="invalid_response",
+            consecutive=_get_updates_fail_count,
+        )
+        return []
+
     # Transport may succeed while the API payload reports failure — not a poll success.
     if result.get("ok") is not True:
         _get_updates_fail_count += 1
@@ -171,6 +184,20 @@ def get_updates(offset: int = 0, timeout: int = 30) -> list:
         )
         return []
 
+    updates = result.get("result")
+    if not isinstance(updates, list):
+        _get_updates_fail_count += 1
+        logger.warning(
+            "getUpdates invalid response consecutive=%s",
+            _get_updates_fail_count,
+            extra={"event": "bot.polling_error"},
+        )
+        _monitor_api_failure(
+            error_class="invalid_response",
+            consecutive=_get_updates_fail_count,
+        )
+        return []
+
     recovered = _get_updates_fail_count > 0
     if recovered:
         logger.info(
@@ -181,7 +208,7 @@ def get_updates(offset: int = 0, timeout: int = 30) -> list:
         _get_updates_fail_count = 0
 
     _monitor_poll_success(recovered=recovered)
-    return result.get("result", [])
+    return updates
 
 
 def send_message(chat_id, text: str, reply_markup: dict = None) -> dict:

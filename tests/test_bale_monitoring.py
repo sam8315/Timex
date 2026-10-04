@@ -121,6 +121,84 @@ def test_unsuccessful_api_response_does_not_update_last_success(monkeypatch):
     assert _metrics(row)["recovery"] == "failed"
 
 
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"ok": True},
+        {"ok": True, "result": None},
+        {"ok": True, "result": {}},
+        {"ok": True, "result": "bad"},
+    ],
+)
+def test_malformed_ok_true_payload_is_failure(monkeypatch, payload):
+    """ok=True without a list result must not count as poll success."""
+    import bot.bale_api as bale_api
+    from core.service_monitoring import record_startup
+
+    record_startup("bale")
+    monkeypatch.setattr(bale_api, "_post", lambda method, data: payload)
+
+    assert bale_api.get_updates(offset=0, timeout=1) == []
+
+    row = _get_bale()
+    assert row is not None
+    assert row.last_success_at is None
+    assert row.last_error_code == "BALE_API_FAILED"
+    assert "unsuccessful_response" not in (row.last_error_summary or "")
+    assert "invalid_response" in (row.last_error_summary or "")
+    assert bale_api._get_updates_fail_count == 1
+    assert _metrics(row)["consecutive_failures"] == 1
+    assert _metrics(row)["recovery"] == "failed"
+
+
+def test_ok_true_with_empty_list_result_is_success(monkeypatch):
+    import bot.bale_api as bale_api
+    from core.service_monitoring import record_startup
+
+    record_startup("bale")
+    monkeypatch.setattr(
+        bale_api,
+        "_post",
+        lambda method, data: {"ok": True, "result": []},
+    )
+
+    assert bale_api.get_updates(offset=0, timeout=1) == []
+
+    row = _get_bale()
+    assert row is not None
+    assert row.last_success_at is not None
+    assert _metrics(row)["consecutive_failures"] == 0
+    assert _metrics(row)["recovery"] == "ok"
+
+
+def test_malformed_failure_then_valid_success_resets_counter(monkeypatch):
+    import bot.bale_api as bale_api
+    from core.service_monitoring import record_startup
+
+    record_startup("bale")
+    monkeypatch.setattr(
+        bale_api,
+        "_post",
+        lambda method, data: {"ok": True, "result": None},
+    )
+    assert bale_api.get_updates() == []
+    assert bale_api._get_updates_fail_count == 1
+    assert _get_bale().last_success_at is None
+
+    monkeypatch.setattr(
+        bale_api,
+        "_post",
+        lambda method, data: {"ok": True, "result": [{"update_id": 7}]},
+    )
+    assert bale_api.get_updates() == [{"update_id": 7}]
+    assert bale_api._get_updates_fail_count == 0
+
+    row = _get_bale()
+    assert row.last_success_at is not None
+    assert _metrics(row)["consecutive_failures"] == 0
+    assert _metrics(row)["recovery"] == "recovered"
+
+
 def test_api_failure_records_bale_api_failed(monkeypatch):
     import bot.bale_api as bale_api
     import requests
