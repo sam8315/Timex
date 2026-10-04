@@ -85,6 +85,7 @@
     </a>
 </div>
 
+{% if can_add_contracts %}
 <!-- فرم ثبت قرارداد/عضویت جدید -->
 <div class="card mb-4">
     <div class="card-header bg-white">
@@ -259,6 +260,7 @@
         </div>
     </div>
 </div>
+{% endif %}
 
 {% if membership_timeline %}
 <div class="card mb-4 border-info">
@@ -468,11 +470,15 @@
                             {% endif %}
                         </td>
                         <td class="text-center">
+                            {% if can_edit_contracts or can_delete_contracts %}
                             <div class="btn-group btn-group-sm">
+                                {% if can_edit_contracts %}
                                 <button type="button" class="btn btn-outline-warning"
                                         data-bs-toggle="modal" data-bs-target="#editModal{{ item.contract.id }}">
                                     <i class="bi bi-pencil"></i>
                                 </button>
+                                {% endif %}
+                                {% if can_delete_contracts %}
                                 <form method="post" action="/admin/contracts/{{ item.contract.id }}/delete"
                                       class="d-inline"
                                       onsubmit="return confirm('آیا مطمئن هستید؟ مرخصی شارژ شده هم کسر می‌شود.');">
@@ -480,10 +486,15 @@
                                         <i class="bi bi-trash"></i>
                                     </button>
                                 </form>
+                                {% endif %}
                             </div>
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
                         </td>
                     </tr>
 
+                    {% if can_edit_contracts %}
                     <div class="modal fade" id="editModal{{ item.contract.id }}" tabindex="-1">
                         <div class="modal-dialog modal-lg">
                             <div class="modal-content">
@@ -615,6 +626,7 @@
                             </div>
                         </div>
                     </div>
+                    {% endif %}
                     {% endfor %}
                 </tbody>
             </table>
@@ -807,14 +819,16 @@ function initEmployeeSearch(opts) {
 }
 
 const contractUserId = document.getElementById('contractUserId');
-initEmployeeSearch({
-    inputEl: document.getElementById('userSearchInput'),
-    resultsEl: document.getElementById('userSearchResults'),
-    hiddenEl: contractUserId,
-    clearBtnEl: document.getElementById('clearUserBtn'),
-    requireSelection: true,
-    formEl: document.getElementById('addContractForm'),
-});
+if (document.getElementById('userSearchInput')) {
+    initEmployeeSearch({
+        inputEl: document.getElementById('userSearchInput'),
+        resultsEl: document.getElementById('userSearchResults'),
+        hiddenEl: contractUserId,
+        clearBtnEl: document.getElementById('clearUserBtn'),
+        requireSelection: true,
+        formEl: document.getElementById('addContractForm'),
+    });
+}
 
 initEmployeeSearch({
     inputEl: document.getElementById('filterUserSearchInput'),
@@ -831,6 +845,7 @@ const PERMANENT_CODE = '1';
 
 function toggleLeaveFields() {
     const typeSelect = document.getElementById('add_type');
+    if (!typeSelect) return;
     const selectedType = typeSelect.value;
     const isPermanent = selectedType === PERMANENT_CODE;
 

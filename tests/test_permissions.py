@@ -171,6 +171,144 @@ def test_granted_admin_can_add_attendance(client, db, make_user):
     assert allowed.status_code == 302
 
 
+def _revoke_contract_mutations(db, user_id):
+    for perm in ("add_contracts", "edit_contracts", "delete_contracts"):
+        set_user_permission(db, user_id, perm, False, created_by="SYS")
+    db.commit()
+
+
+def test_view_only_admin_can_list_contracts_but_not_mutate(client, db, make_user):
+    """view_contracts بدون add/edit/delete فقط لیست را باز می‌کند."""
+    from models.contract import Contract
+
+    admin = make_user(role="admin")
+    target = make_user(role="user", balance_al=None)
+    _revoke_contract_mutations(db, admin["user_id"])
+
+    login_as(client, admin["national_code"])
+    assert client.get("/admin/contracts").status_code == 200
+
+    today_j = jdatetime.date.today().strftime("%Y/%m/%d")
+    add_denied = client.post(
+        "/admin/contracts/add",
+        data={
+            "user_id": target["user_id"],
+            "contract_type_code": "4",
+            "start_date_str": today_j,
+            "end_date_str": "",
+            "annual_leave_days": "0",
+            "sick_leave_days": "0",
+            "service_deduction_days": "0",
+            "stored_leave_days": "0",
+            "buyback_leave_days": "0",
+        },
+        follow_redirects=False,
+    )
+    assert add_denied.status_code == 403
+
+    contract = (
+        db.query(Contract)
+        .filter(Contract.user_id == target["user_id"])
+        .order_by(Contract.id.desc())
+        .first()
+    )
+    assert contract is not None
+
+    edit_denied = client.post(
+        f"/admin/contracts/{contract.id}/edit",
+        data={
+            "contract_type_code": "4",
+            "start_date_str": today_j,
+            "end_date_str": "",
+            "annual_leave_days": "0",
+            "sick_leave_days": "0",
+            "service_deduction_days": "0",
+            "stored_leave_days": "0",
+            "buyback_leave_days": "0",
+            "description": "",
+        },
+        follow_redirects=False,
+    )
+    assert edit_denied.status_code == 403
+
+    delete_denied = client.post(
+        f"/admin/contracts/{contract.id}/delete",
+        follow_redirects=False,
+    )
+    assert delete_denied.status_code == 403
+
+
+def test_contract_mutation_permissions_open_matching_routes(client, db, make_user):
+    """grant جداگانهٔ add/edit/delete مسیر مربوطه را باز می‌کند."""
+    from models.contract import Contract
+
+    admin = make_user(role="admin")
+    target = make_user(role="user", balance_al=None)
+    _revoke_contract_mutations(db, admin["user_id"])
+    login_as(client, admin["national_code"])
+
+    today_j = jdatetime.date.today()
+    start_j = today_j.replace(day=1).strftime("%Y/%m/%d")
+    # قرارداد fixture ممکن است هم‌پوشانی بسازد؛ برای add یک کاربر بدون قرارداد بسازیم
+    db.query(Contract).filter(Contract.user_id == target["user_id"]).delete()
+    db.commit()
+
+    set_user_permission(db, admin["user_id"], "add_contracts", True, created_by="SYS")
+    db.commit()
+    add_ok = client.post(
+        "/admin/contracts/add",
+        data={
+            "user_id": target["user_id"],
+            "contract_type_code": "4",
+            "start_date_str": start_j,
+            "end_date_str": "",
+            "annual_leave_days": "0",
+            "sick_leave_days": "0",
+            "service_deduction_days": "0",
+            "stored_leave_days": "0",
+            "buyback_leave_days": "0",
+        },
+        follow_redirects=False,
+    )
+    assert add_ok.status_code == 302
+
+    db.expire_all()
+    contract = (
+        db.query(Contract)
+        .filter(Contract.user_id == target["user_id"])
+        .order_by(Contract.id.desc())
+        .first()
+    )
+    assert contract is not None
+
+    set_user_permission(db, admin["user_id"], "edit_contracts", True, created_by="SYS")
+    db.commit()
+    edit_ok = client.post(
+        f"/admin/contracts/{contract.id}/edit",
+        data={
+            "contract_type_code": "4",
+            "start_date_str": start_j,
+            "end_date_str": "",
+            "annual_leave_days": "0",
+            "sick_leave_days": "0",
+            "service_deduction_days": "0",
+            "stored_leave_days": "0",
+            "buyback_leave_days": "0",
+            "description": "perm-test",
+        },
+        follow_redirects=False,
+    )
+    assert edit_ok.status_code == 302
+
+    set_user_permission(db, admin["user_id"], "delete_contracts", True, created_by="SYS")
+    db.commit()
+    delete_ok = client.post(
+        f"/admin/contracts/{contract.id}/delete",
+        follow_redirects=False,
+    )
+    assert delete_ok.status_code == 302
+
+
 # ---------------------------------------------------------------------------
 # CSRF on the toggle endpoint
 # ---------------------------------------------------------------------------

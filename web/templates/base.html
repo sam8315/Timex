@@ -1036,10 +1036,12 @@
             <i class="bi bi-chevron-down sidebar-toggle-icon"></i>
         </a>
         <div class="collapse sidebar-submenu {% if org_active %}show{% endif %}" id="orgMenu">
+            {% if can_view_contracts | default(true) %}
             <a href="/admin/contracts"
                class="sidebar-link {% if request.url.path == '/admin/contracts' %}active{% endif %}">
                 <i class="bi bi-file-earmark-text"></i> مدیریت قراردادها
             </a>
+            {% endif %}
             <a href="/admin/users" class="sidebar-link {% if request.url.path == '/admin/users' %}active{% endif %}">
                 <i class="bi bi-people"></i> مدیریت کاربران
             </a>

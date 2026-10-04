@@ -2,7 +2,7 @@
 پنل مدیریت عضویت / قراردادها
 """
 from datetime import date, timedelta
-from fastapi import APIRouter, Request, Depends, Form, Query, File, UploadFile
+from fastapi import APIRouter, Request, Depends, Form, Query, File, UploadFile, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
@@ -13,7 +13,7 @@ import json
 from typing import Optional
 
 from web.dependencies import get_db, require_admin
-from web.permissions import enforce_permission
+from web.permissions import enforce_permission, has_permission
 from models.user import User
 from models.employee import Employee
 from models.contract import Contract, CONTRACT_TYPES
@@ -237,6 +237,10 @@ async def contracts_page(
         "membership_timeline": membership_timeline,
         "timeline_user_id": timeline_user_id,
         "timeline_name": timeline_name,
+        "can_view_contracts": True,
+        "can_add_contracts": has_permission(db, user, "add_contracts"),
+        "can_edit_contracts": has_permission(db, user, "edit_contracts"),
+        "can_delete_contracts": has_permission(db, user, "delete_contracts"),
     })
 
 
@@ -258,7 +262,7 @@ async def add_contract(
     db: Session = Depends(get_db)
 ):
     """ثبت عضویت جدید + شارژ مرخصی"""
-    enforce_permission(db, user, 'view_contracts')
+    enforce_permission(db, user, 'add_contracts')
     try:
         if contract_type_code not in CONTRACT_TYPES:
             raise ValueError("نوع عضویت نامعتبر است")
@@ -402,7 +406,11 @@ async def permanent_history_plan(
     db: Session = Depends(get_db),
 ):
     """پیش‌نمایش سال‌ها و استحقاق تاریخچه رسمی برای مودال."""
-    enforce_permission(db, user, 'view_contracts')
+    if not (
+        has_permission(db, user, 'add_contracts')
+        or has_permission(db, user, 'edit_contracts')
+    ):
+        raise HTTPException(status_code=403, detail="دسترسی غیرمجاز")
     try:
         start_j = jdatetime.datetime.strptime(start_date_str.strip(), "%Y/%m/%d").date()
         start_date = start_j.togregorian()
@@ -441,7 +449,7 @@ async def edit_contract(
     db: Session = Depends(get_db)
 ):
     """ویرایش عضویت + بروزرسانی مرخصی"""
-    enforce_permission(db, user, 'view_contracts')
+    enforce_permission(db, user, 'edit_contracts')
     contract = db.query(Contract).filter(Contract.id == contract_id).first()
     if not contract:
         referer = request.headers.get("referer", "/admin/contracts")
@@ -603,7 +611,7 @@ async def delete_contract(
     db: Session = Depends(get_db)
 ):
     """حذف عضویت + حذف مرخصی"""
-    enforce_permission(db, user, 'view_contracts')
+    enforce_permission(db, user, 'delete_contracts')
     contract = db.query(Contract).filter(Contract.id == contract_id).first()
     if not contract:
         referer = request.headers.get("referer", "/admin/contracts")
