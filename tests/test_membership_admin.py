@@ -96,9 +96,16 @@ def test_rule_snapshot_and_effective(db):
     ).delete()
     db.commit()
 
-    create_membership_type(db, code=code, name="تست قاعده")
+    create_membership_type(
+        db, code=code, name="تست قاعده", migration_date=date(2019, 1, 1)
+    )
     db.commit()
-    create_rule_snapshot(
+    from web.services.membership_retroactive_service import (
+        confirm_and_recalculate,
+        create_preview_request,
+    )
+
+    pending = create_rule_snapshot(
         db,
         membership_type_code=code,
         effective_from=date(2020, 1, 1),
@@ -108,6 +115,15 @@ def test_rule_snapshot_and_effective(db):
         supports_positive_seniority=False,
         created_by="tester",
     )
+    db.commit()
+    assert pending.status == "pending"
+    # Before confirm, effective remains the initial v1 (annual 0)
+    before = get_effective_rule(db, code, on_date=date(2021, 1, 1))
+    assert before is not None
+    assert before.annual_leave_base == 0
+    req = create_preview_request(db, rule_id=pending.id, created_by="tester")
+    db.commit()
+    confirm_and_recalculate(db, req.id, confirmed_by="tester")
     db.commit()
     rule = get_effective_rule(db, code, on_date=date(2021, 1, 1))
     assert rule is not None
@@ -206,6 +222,7 @@ def test_future_rule_edit_delete_past_immutable(db):
         supports_extra_service=False,
         supports_positive_seniority=False,
     )
+    assert past.status == "pending"
     future = create_rule_snapshot(
         db,
         membership_type_code=code,

@@ -42,7 +42,7 @@ class ServiceAdjustment(Base):
     )
     contract_id: Mapped[Optional[int]] = mapped_column(
         Integer,
-        ForeignKey("contracts.id", ondelete="SET NULL"),
+        ForeignKey("contracts.id", ondelete="RESTRICT"),
         nullable=True,
         index=True,
     )

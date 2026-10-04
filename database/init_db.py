@@ -2,6 +2,8 @@
 مدیریت ساخت و مقداردهی اولیه جداول دیتابیس
 """
 import logging
+from typing import Optional
+
 from sqlalchemy import inspect, text, types as sa_types
 from database.engine import engine
 from models import Base
@@ -377,7 +379,21 @@ def seed_travel_leave_policy_rules() -> None:
     """Seed contract-scoped Travel Leave policies, rules, and default quotas."""
     from sqlalchemy import text as _sql_text
 
-    contract_types = ("1", "2", "3", "4", "5", "6", "7")
+    # Prefer DB membership codes; fallback seed list only if table empty (A)
+    contract_types = []
+    try:
+        with engine.connect() as conn:
+            if "membership_types" in inspect(engine).get_table_names():
+                rows = conn.execute(
+                    _sql_text(
+                        "SELECT code FROM membership_types ORDER BY sort_order, code"
+                    )
+                ).fetchall()
+                contract_types = [r[0] for r in rows]
+    except Exception:
+        contract_types = []
+    if not contract_types:
+        contract_types = ["1", "2", "3", "4", "5", "6", "7"]
 
     with engine.begin() as conn:
         for contract_type_code in contract_types:
@@ -1268,94 +1284,194 @@ def migrate_membership_contract_fk(bind_engine=None) -> None:
                 )
 
 
-def migrate_service_adjustment_employee_fk_restrict(bind_engine=None) -> None:
+def _fk_delete_rule(conn, table: str, column: str) -> Optional[str]:
+    try:
+        row = conn.execute(
+            text(
+                """
+                SELECT rc.delete_rule
+                FROM information_schema.referential_constraints rc
+                JOIN information_schema.key_column_usage kcu
+                  ON rc.constraint_name = kcu.constraint_name
+                 AND rc.constraint_schema = kcu.constraint_schema
+                WHERE kcu.table_name = :table
+                  AND kcu.column_name = :column
+                LIMIT 1
+                """
+            ),
+            {"table": table, "column": column},
+        ).first()
+        return str(row[0]).upper() if row else None
+    except Exception:
+        return None
+
+
+def _ensure_fk_restrict(
+    conn,
+    *,
+    table: str,
+    column: str,
+    constraint_name: str,
+    references: str,
+) -> None:
+    rule = _fk_delete_rule(conn, table, column)
+    if rule == "RESTRICT":
+        return
+    # drop existing FK on column if any
+    row = conn.execute(
+        text(
+            """
+            SELECT tc.constraint_name
+            FROM information_schema.table_constraints tc
+            JOIN information_schema.key_column_usage kcu
+              ON tc.constraint_name = kcu.constraint_name
+             AND tc.table_schema = kcu.table_schema
+            WHERE tc.table_name = :table
+              AND tc.constraint_type = 'FOREIGN KEY'
+              AND kcu.column_name = :column
+            LIMIT 1
+            """
+        ),
+        {"table": table, "column": column},
+    ).first()
+    if row:
+        conn.execute(text(f'ALTER TABLE "{table}" DROP CONSTRAINT "{row[0]}"'))
+        conn.commit()
+    conn.execute(
+        text(
+            f'ALTER TABLE "{table}" '
+            f'ADD CONSTRAINT "{constraint_name}" '
+            f'FOREIGN KEY ("{column}") REFERENCES {references} ON DELETE RESTRICT'
+        )
+    )
+    conn.commit()
+    logger.info(
+        "FK ensured %s.%s ON DELETE RESTRICT",
+        table,
+        column,
+        extra={"event": "database.ready"},
+    )
+
+
+def migrate_membership_foundation_hardening(bind_engine=None) -> None:
     """
-    Change service_adjustments.employee_id FK from CASCADE to RESTRICT.
-    Safe drop+add when the existing constraint is present.
+    Runtime equivalent of 012_membership_foundation_hardening.sql:
+    behavior_profile column, pending status check, SA FKs RESTRICT.
+    Idempotent; does not rewrite contracts/leave.
     """
     target = bind_engine if bind_engine is not None else engine
     inspector = inspect(target)
-    if "service_adjustments" not in set(inspector.get_table_names()):
+    tables = set(inspector.get_table_names())
+    if "membership_types" not in tables:
         return
 
     with target.connect() as conn:
-        inspector = inspect(target)
-        fks = inspector.get_foreign_keys("service_adjustments")
-        employee_fk = None
-        for fk in fks:
-            if fk.get("constrained_columns") == ["employee_id"]:
-                employee_fk = fk
-                break
-        if employee_fk is None:
+        cols = {c["name"] for c in inspect(target).get_columns("membership_types")}
+        if "behavior_profile" not in cols:
             conn.execute(
                 text(
-                    """
-                    ALTER TABLE service_adjustments
-                    ADD CONSTRAINT fk_service_adjustments_employee_id
-                    FOREIGN KEY (employee_id)
-                    REFERENCES users(user_id)
-                    ON DELETE RESTRICT
-                    """
+                    "ALTER TABLE membership_types "
+                    "ADD COLUMN behavior_profile VARCHAR(40) "
+                    "NOT NULL DEFAULT 'standard_prorate'"
                 )
             )
             conn.commit()
             logger.info(
-                "FK added service_adjustments.employee_id -> users RESTRICT",
+                "Column added membership_types.behavior_profile",
                 extra={"event": "database.ready"},
             )
-            return
-
-        ondelete = (employee_fk.get("options") or {}).get("ondelete")
-        # SQLAlchemy/inspector may report None; also check via pg catalog when possible
-        needs_restrict = True
-        try:
-            row = conn.execute(
-                text(
-                    """
-                    SELECT rc.delete_rule
-                    FROM information_schema.referential_constraints rc
-                    JOIN information_schema.key_column_usage kcu
-                      ON rc.constraint_name = kcu.constraint_name
-                     AND rc.constraint_schema = kcu.constraint_schema
-                    WHERE kcu.table_name = 'service_adjustments'
-                      AND kcu.column_name = 'employee_id'
-                    LIMIT 1
-                    """
-                )
-            ).first()
-            if row and str(row[0]).upper() == "RESTRICT":
-                needs_restrict = False
-        except Exception:
-            if ondelete and str(ondelete).upper() == "RESTRICT":
-                needs_restrict = False
-
-        if not needs_restrict:
-            return
-
-        old_name = employee_fk.get("name")
-        if old_name:
-            conn.execute(
-                text(
-                    f'ALTER TABLE service_adjustments DROP CONSTRAINT "{old_name}"'
-                )
-            )
-            conn.commit()
+        # one-time backfill for seed codes still on default
         conn.execute(
             text(
                 """
-                ALTER TABLE service_adjustments
-                ADD CONSTRAINT fk_service_adjustments_employee_id
-                FOREIGN KEY (employee_id)
-                REFERENCES users(user_id)
-                ON DELETE RESTRICT
+                UPDATE membership_types SET behavior_profile = 'permanent'
+                WHERE code = '1' AND behavior_profile = 'standard_prorate'
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                UPDATE membership_types SET behavior_profile = 'conscript'
+                WHERE code = '2' AND behavior_profile = 'standard_prorate'
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                UPDATE membership_types SET behavior_profile = 'physician'
+                WHERE code = '5' AND behavior_profile = 'standard_prorate'
                 """
             )
         )
         conn.commit()
-        logger.info(
-            "FK migrated service_adjustments.employee_id ON DELETE RESTRICT",
-            extra={"event": "database.ready"},
-        )
+
+        # ensure check constraint for behavior_profile (best-effort)
+        try:
+            conn.execute(
+                text(
+                    """
+                    DO $$
+                    BEGIN
+                        IF NOT EXISTS (
+                            SELECT 1 FROM pg_constraint
+                            WHERE conname = 'ck_membership_types_behavior_profile'
+                        ) THEN
+                            ALTER TABLE membership_types
+                            ADD CONSTRAINT ck_membership_types_behavior_profile
+                            CHECK (behavior_profile IN (
+                                'permanent', 'conscript', 'physician', 'standard_prorate'
+                            ));
+                        END IF;
+                    END $$;
+                    """
+                )
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+
+        if "membership_type_rules" in tables:
+            try:
+                conn.execute(
+                    text(
+                        "ALTER TABLE membership_type_rules "
+                        "DROP CONSTRAINT IF EXISTS ck_membership_rule_status"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "ALTER TABLE membership_type_rules "
+                        "ADD CONSTRAINT ck_membership_rule_status "
+                        "CHECK (status IN "
+                        "('pending', 'scheduled', 'active', 'superseded'))"
+                    )
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+
+        if "service_adjustments" in tables:
+            _ensure_fk_restrict(
+                conn,
+                table="service_adjustments",
+                column="employee_id",
+                constraint_name="fk_service_adjustments_employee_id",
+                references='users("user_id")',
+            )
+            _ensure_fk_restrict(
+                conn,
+                table="service_adjustments",
+                column="contract_id",
+                constraint_name="fk_service_adjustments_contract_id",
+                references='contracts("id")',
+            )
+
+
+def migrate_service_adjustment_employee_fk_restrict(bind_engine=None) -> None:
+    """Compat alias — foundation migrate covers employee + contract RESTRICT."""
+    migrate_membership_foundation_hardening(bind_engine=bind_engine)
 
 
 def seed_role_permissions(bind_engine=None) -> None:
@@ -1430,13 +1546,13 @@ def create_tables() -> None:
         seed_service_health()
         migrate_employee_document_types()
         # Membership cutover order (fail-closed before FKs):
-        # 1) tables  2) seed/reconcile  3) policy 6/7 INSERT-only
-        # 4) dual-run  5) orphan check (inside dual-run)  6) FKs
+        # 1) foundation columns/checks  2) seed insert-only  3) policy 6/7
+        # 4) dual-run  5) orphan check  6) FKs
+        migrate_membership_foundation_hardening()
         seed_membership_types()
         align_leave_policy_membership_67()
         run_membership_dual_run_validation()
         migrate_membership_contract_fk()
-        migrate_service_adjustment_employee_fk_restrict()
         seed_role_permissions()
         logger.info(
             "Database tables created/verified successfully",

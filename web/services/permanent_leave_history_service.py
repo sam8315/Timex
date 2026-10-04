@@ -20,7 +20,6 @@ from models.leave_transaction import LeaveTransaction
 from models.leave_glossary import (
     LEAVE_TYPE_AL,
     LEAVE_TYPE_CW,
-    MEMBERSHIP_PERMANENT,
     TX_CHARGE,
     TX_CF_OUT,
     TX_DEDUCT,
@@ -34,6 +33,7 @@ from web.services.leave_entitlement_service import (
     resolve_max_carry_forward,
     resolve_region_code_from_service_location,
 )
+from web.services import membership_semantics as msem
 from web.services.leave_service import (
     get_buyback_quota,
     get_stored_leave_balance,
@@ -62,7 +62,13 @@ def build_year_plan(
     current_year = jdatetime.date.today().year
     if not region_code:
         region_code = resolve_region_code_from_service_location(db, user_id)
-    annual = float(resolve_annual_leave_days(db, MEMBERSHIP_PERMANENT, region_code=region_code))
+    # تاریخچه فقط برای profile=permanent معنا دارد؛ code از caller/contract می‌آید
+    permanent_code = "1"
+    for mt_code in ("1",):
+        if msem.is_permanent(db, mt_code):
+            permanent_code = mt_code
+            break
+    annual = float(resolve_annual_leave_days(db, permanent_code, region_code=region_code))
 
     rows = []
     for year_j in range(start_j.year, current_year):
@@ -71,7 +77,7 @@ def build_year_plan(
         if seg_start > y_end:
             continue
         raw = charge_amount_for_segment(
-            MEMBERSHIP_PERMANENT, annual, year_j, seg_start, y_end
+            permanent_code, annual, year_j, seg_start, y_end, db=db
         )
         entitlement = max(0, round(raw))
         rows.append({

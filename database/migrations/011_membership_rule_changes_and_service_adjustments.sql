@@ -33,9 +33,9 @@ CREATE TABLE IF NOT EXISTS membership_rule_change_audit (
 CREATE TABLE IF NOT EXISTS service_adjustments (
     id SERIAL PRIMARY KEY,
     employee_id VARCHAR(50) NOT NULL
-        REFERENCES users(user_id) ON DELETE CASCADE,
+        REFERENCES users(user_id) ON DELETE RESTRICT,
     contract_id INTEGER NULL
-        REFERENCES contracts(id) ON DELETE SET NULL,
+        REFERENCES contracts(id) ON DELETE RESTRICT,
     adjustment_type VARCHAR(40) NOT NULL,
     years INTEGER NOT NULL DEFAULT 0,
     months INTEGER NOT NULL DEFAULT 0,

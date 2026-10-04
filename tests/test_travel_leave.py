@@ -24,6 +24,26 @@ from models.travel_leave_detail import TravelLeaveDetail
 from models.travel_leave_policy_rules import TravelLeavePolicyRule, TravelLeaveQuotaSetting
 
 
+def _pick_distant_cities(db, min_km: float = 200.0):
+    """Pick two active cities far enough for a non-zero travel-day rule."""
+    cities = [
+        c
+        for c in get_active_cities(db)
+        if c.latitude is not None and c.longitude is not None
+    ]
+    if len(cities) < 2:
+        pytest.skip("Need at least 2 active cities")
+    for i, origin in enumerate(cities):
+        for dest in cities[i + 1 :]:
+            dist = calculate_distance_km(
+                (origin.latitude, origin.longitude),
+                (dest.latitude, dest.longitude),
+            )
+            if dist >= min_km:
+                return origin, dest
+    pytest.skip(f"No city pair with distance >= {min_km} km")
+
+
 # ---------------------------------------------------------------------------
 # Distance engine
 # ---------------------------------------------------------------------------
@@ -183,11 +203,7 @@ class TestQuota:
 class TestCreateTravelLeaveDetail:
     def _setup_travel_leave(self, db, user_id):
         """Helper: set up city, ESL, and return (origin_city, dest_city)."""
-        cities = get_active_cities(db)
-        if len(cities) < 2:
-            pytest.skip("Need at least 2 active cities")
-        origin_city = cities[0]
-        dest_city = cities[1]
+        origin_city, dest_city = _pick_distant_cities(db)
 
         esl = EmployeeServiceLocation(
             user_id=user_id, city_id=origin_city.id,
@@ -265,11 +281,7 @@ class TestCreateTravelLeaveDetail:
 class TestAdminOverride:
     def test_override_pending_request(self, db, make_user):
         u = make_user()
-        cities = get_active_cities(db)
-        if len(cities) < 2:
-            pytest.skip("Need cities")
-
-        origin_city, dest_city = cities[0], cities[1]
+        origin_city, dest_city = _pick_distant_cities(db)
         esl = EmployeeServiceLocation(
             user_id=u["user_id"], city_id=origin_city.id,
             effective_from=date(2020, 1, 1),
@@ -305,11 +317,7 @@ class TestAdminOverride:
 
     def test_override_rejects_approved_request(self, db, make_user):
         u = make_user()
-        cities = get_active_cities(db)
-        if len(cities) < 2:
-            pytest.skip("Need cities")
-
-        origin_city, dest_city = cities[0], cities[1]
+        origin_city, dest_city = _pick_distant_cities(db)
         esl = EmployeeServiceLocation(
             user_id=u["user_id"], city_id=origin_city.id,
             effective_from=date(2020, 1, 1),
@@ -336,11 +344,7 @@ class TestAdminOverride:
 
     def test_override_rejects_empty_reason(self, db, make_user):
         u = make_user()
-        cities = get_active_cities(db)
-        if len(cities) < 2:
-            pytest.skip("Need cities")
-
-        origin_city, dest_city = cities[0], cities[1]
+        origin_city, dest_city = _pick_distant_cities(db)
         esl = EmployeeServiceLocation(
             user_id=u["user_id"], city_id=origin_city.id,
             effective_from=date(2020, 1, 1),

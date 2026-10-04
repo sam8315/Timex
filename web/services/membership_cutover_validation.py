@@ -5,6 +5,7 @@ Compares entitlement resolve results between:
 - independent Legacy policy path (annual_leave_dept_*)
 - New membership-rule path (resolve_annual_leave_base_with_region)
 
+Temporal: New path uses on_date clamped to each contract's coverage window.
 Fail-closed: returns diffs; never auto-fixes or remaps codes.
 """
 from __future__ import annotations
@@ -33,9 +34,21 @@ class EntitlementDiff:
     old_entitlement: dict
     new_entitlement: dict
     reason: str
+    as_of: Optional[str] = None
 
     def to_dict(self) -> dict:
         return asdict(self)
+
+
+def contract_comparison_date(contract: Contract, global_as_of: date) -> date:
+    """Clamp global_as_of into the contract coverage window."""
+    start = contract.start_date
+    end = contract.end_date or global_as_of
+    if global_as_of < start:
+        return start
+    if global_as_of > end:
+        return end
+    return global_as_of
 
 
 def _new_annual_resolver():
@@ -49,10 +62,13 @@ def snapshot_resolve_matrix(
     db: Session,
     membership_codes: Optional[List[str]] = None,
     region_codes: Optional[List[str]] = None,
+    *,
+    on_date: Optional[date] = None,
 ) -> List[dict]:
     """Baseline snapshot of Legacy vs New annual resolve for codes × regions."""
     codes = membership_codes or [str(i) for i in range(1, 8)]
     regions = region_codes or [None, "NORMAL", "GRADE_2", "GRADE_3", "GRADE_4"]
+    as_of = on_date or date.today()
     new_fn = _new_annual_resolver()
     rows: List[dict] = []
     for code in codes:
@@ -60,11 +76,14 @@ def snapshot_resolve_matrix(
             legacy = resolve_annual_leave_days_legacy(
                 db, code, region_code=region
             )
-            new_annual = int(new_fn(db, code, region_code=region))
+            new_annual = int(
+                new_fn(db, code, region_code=region, on_date=as_of)
+            )
             rows.append(
                 {
                     "membership_code": code,
                     "region_code": region,
+                    "as_of": as_of.isoformat(),
                     "legacy_annual_leave_days": legacy,
                     "new_annual_leave_days": new_annual,
                     "annual_leave_days": new_annual,
@@ -78,14 +97,12 @@ def compare_annual_paths(
     membership_code: str,
     region_code: Optional[str],
     *,
+    on_date: Optional[date] = None,
     legacy_fn=None,
     new_fn=None,
 ) -> Optional[EntitlementDiff]:
-    """
-    Compare two annual resolvers for one membership/region.
-    Defaults: legacy = resolve_annual_leave_days_legacy;
-    new = membership_service.resolve_annual_leave_base_with_region.
-    """
+    """Compare two annual resolvers for one membership/region at on_date."""
+    as_of = on_date or date.today()
     legacy = legacy_fn or resolve_annual_leave_days_legacy
     old_annual = int(legacy(db, membership_code, region_code=region_code))
 
@@ -95,7 +112,9 @@ def compare_annual_paths(
         except Exception:
             return None
 
-    new_annual = int(new_fn(db, membership_code, region_code=region_code))
+    new_annual = int(
+        new_fn(db, membership_code, region_code=region_code, on_date=as_of)
+    )
     if old_annual == new_annual:
         return None
     return EntitlementDiff(
@@ -109,8 +128,9 @@ def compare_annual_paths(
         new_entitlement={},
         reason=(
             f"annual mismatch for membership={membership_code} "
-            f"region={region_code}: old={old_annual} new={new_annual}"
+            f"region={region_code} as_of={as_of}: old={old_annual} new={new_annual}"
         ),
+        as_of=as_of.isoformat(),
     )
 
 
@@ -119,11 +139,15 @@ def compare_contract_entitlement(
     contract: Contract,
     *,
     region_code: Optional[str] = None,
+    on_date: Optional[date] = None,
     new_annual_fn=None,
     legacy_annual_fn=None,
 ) -> Optional[EntitlementDiff]:
-    """Compare calculate_entitlement_by_year using Legacy vs New annual bases."""
+    """Compare calculate_entitlement_by_year using Legacy vs New at contract as_of."""
     from models.employee import Employee
+
+    global_as_of = on_date or date.today()
+    as_of = contract_comparison_date(contract, global_as_of)
 
     employee = db.query(Employee).filter(Employee.user_id == contract.user_id).first()
     effective_region = region_code
@@ -146,7 +170,10 @@ def compare_contract_entitlement(
 
     new_annual = int(
         new_annual_fn(
-            db, contract.contract_type_code, region_code=effective_region
+            db,
+            contract.contract_type_code,
+            region_code=effective_region,
+            on_date=as_of,
         )
     )
     new_ent = calculate_entitlement_by_year(
@@ -167,9 +194,10 @@ def compare_contract_entitlement(
         new_entitlement={str(k): v for k, v in new_ent.items()},
         reason=(
             f"entitlement mismatch contract_id={contract.id} "
-            f"code={contract.contract_type_code} "
+            f"code={contract.contract_type_code} as_of={as_of} "
             f"old_annual={old_annual} new_annual={new_annual}"
         ),
+        as_of=as_of.isoformat(),
     )
 
 
@@ -181,8 +209,8 @@ def validate_cutover_for_all_contracts(
     legacy_annual_fn=None,
 ) -> List[EntitlementDiff]:
     """
-    Fail-closed dual-run over all contracts that cover as_of (default: today).
-    Returns list of diffs; empty list means safe to cut over.
+    Fail-closed dual-run over contracts.
+    Each contract compared at clamp(as_of, start, end).
     Never mutates DB.
     """
     on_date = as_of or date.today()
@@ -198,6 +226,7 @@ def validate_cutover_for_all_contracts(
         diff = compare_contract_entitlement(
             db,
             contract,
+            on_date=on_date,
             new_annual_fn=new_annual_fn,
             legacy_annual_fn=legacy_annual_fn,
         )

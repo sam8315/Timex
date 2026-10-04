@@ -254,7 +254,10 @@ async def membership_type_detail(
                 "effective_j": jdatetime.date.fromgregorian(
                     date=r.effective_from
                 ).strftime("%Y/%m/%d"),
-                "editable": r.status == "scheduled" and r.effective_from > date.today(),
+                "editable": (
+                    r.status == "scheduled" and r.effective_from > date.today()
+                ),
+                "is_pending": r.status == "pending",
             }
         )
     return templates.TemplateResponse(

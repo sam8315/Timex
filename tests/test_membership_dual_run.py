@@ -52,8 +52,9 @@ class TestMembershipSeed:
         assert resolve_annual_leave_base(db, "6") == 0
         assert resolve_annual_leave_base(db, "7") == 0
 
-    def test_reconcile_seed_flags(self, db):
-        # Drift first rule of code 1, then reconcile
+    def test_reconcile_seed_does_not_overwrite_flags(self, db):
+        from web.services.membership_service import SEED_CODE_FLAGS
+
         rule = (
             db.query(MembershipTypeRule)
             .filter(MembershipTypeRule.membership_type_code == "1")
@@ -61,27 +62,25 @@ class TestMembershipSeed:
             .first()
         )
         assert rule is not None
+        seed = SEED_CODE_FLAGS["1"]
         rule.supports_positive_seniority = False
         rule.supports_extra_service = True
+        rule.annual_leave_base = 22
         db.commit()
-        n = reconcile_seed_membership_rules(db)
-        db.commit()
-        assert n >= 1
-        db.refresh(rule)
-        assert rule.supports_positive_seniority is True
-        assert rule.supports_extra_service is False
-        assert rule.supports_service_deduction is False
-        assert rule.annual_leave_base == 30
-
-        rule2 = (
-            db.query(MembershipTypeRule)
-            .filter(MembershipTypeRule.membership_type_code == "2")
-            .order_by(MembershipTypeRule.effective_from.asc())
-            .first()
-        )
-        assert rule2.supports_service_deduction is True
-        assert rule2.supports_extra_service is True
-        assert rule2.supports_positive_seniority is False
+        try:
+            reconcile_seed_membership_rules(db)
+            db.commit()
+            db.refresh(rule)
+            # Insert-only: drifted values must remain
+            assert rule.supports_positive_seniority is False
+            assert rule.supports_extra_service is True
+            assert rule.annual_leave_base == 22
+        finally:
+            rule.annual_leave_base = seed["annual_leave_base"]
+            rule.supports_service_deduction = seed["supports_service_deduction"]
+            rule.supports_extra_service = seed["supports_extra_service"]
+            rule.supports_positive_seniority = seed["supports_positive_seniority"]
+            db.commit()
 
 
 class TestNoRemap67:

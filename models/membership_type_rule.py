@@ -43,7 +43,7 @@ class MembershipTypeRule(TimestampMixin, Base):
     supports_positive_seniority: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False
     )
-    # scheduled | active | superseded
+    # pending | scheduled | active | superseded
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
     supersedes_rule_id: Mapped[Optional[int]] = mapped_column(
         Integer,
@@ -65,7 +65,7 @@ class MembershipTypeRule(TimestampMixin, Base):
             name="ck_membership_rule_annual_nonneg",
         ),
         CheckConstraint(
-            "status IN ('scheduled', 'active', 'superseded')",
+            "status IN ('pending', 'scheduled', 'active', 'superseded')",
             name="ck_membership_rule_status",
         ),
     )

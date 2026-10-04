@@ -8,9 +8,15 @@ CREATE TABLE IF NOT EXISTS membership_types (
     description TEXT NULL,
     sort_order INTEGER NOT NULL DEFAULT 0,
     code_locked BOOLEAN NOT NULL DEFAULT FALSE,
+    behavior_profile VARCHAR(40) NOT NULL DEFAULT 'standard_prorate',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT ck_membership_types_code_positive CHECK (code ~ '^[1-9][0-9]{0,5}$')
+    CONSTRAINT ck_membership_types_code_positive CHECK (code ~ '^[1-9][0-9]{0,5}$'),
+    CONSTRAINT ck_membership_types_behavior_profile CHECK (
+        behavior_profile IN (
+            'permanent', 'conscript', 'physician', 'standard_prorate'
+        )
+    )
 );
 
 CREATE INDEX IF NOT EXISTS ix_membership_types_is_active
@@ -36,7 +42,7 @@ CREATE TABLE IF NOT EXISTS membership_type_rules (
     CONSTRAINT ck_membership_rule_annual_nonneg
         CHECK (annual_leave_base >= 0),
     CONSTRAINT ck_membership_rule_status
-        CHECK (status IN ('scheduled', 'active', 'superseded'))
+        CHECK (status IN ('pending', 'scheduled', 'active', 'superseded'))
 );
 
 CREATE INDEX IF NOT EXISTS ix_membership_type_rules_code

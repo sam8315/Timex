@@ -275,7 +275,7 @@ class TestMembershipChargeRules:
         db.commit()
         db.refresh(c)
 
-        segs = split_contract_coverage_by_year(c)
+        segs = split_contract_coverage_by_year(c, db=db)
         assert segs[0][2] == c.actual_end_date
         result = calculate_entitlement_by_year(db, c, annual_override=35)
         year_days = get_jalali_year_days(year)

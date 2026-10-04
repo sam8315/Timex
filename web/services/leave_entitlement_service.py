@@ -13,15 +13,10 @@ from sqlalchemy.orm import Session
 
 from models.contract import Contract
 from models.employee import Employee
-from models.leave_glossary import (
-    MEMBERSHIP_CONSCRIPT,
-    MEMBERSHIP_PERMANENT,
-    MEMBERSHIP_PHYSICIAN,
-    MEMBERSHIP_PRORATE_BY_CONTRACT,
-    POLICY_MEMBERSHIP_CODES,
-)
+from models.leave_glossary import POLICY_MEMBERSHIP_CODES
 from models.policy import Policy, PolicyValue
 from models.region import Region
+from web.services import membership_semantics as msem
 
 logger = logging.getLogger(__name__)
 
@@ -121,16 +116,15 @@ DEFAULT_ERA_GRADE4_CAP = 25
 DEFAULT_ERA_MODERN_FROM = 1399
 
 
-def default_buyback_cap_for_membership(membership_code: str) -> Optional[int]:
-    """پیش‌فرض بدون رکورد سیاست: غیررسمی نامحدود؛ رسمی ۱۵."""
-    code = resolve_membership_code_for_policy(membership_code)
-    if code in MEMBERSHIP_PRORATE_BY_CONTRACT or code == MEMBERSHIP_PHYSICIAN:
+def default_buyback_cap_for_membership(
+    membership_code: str,
+    db: Optional[Session] = None,
+) -> Optional[int]:
+    """پیش‌فرض بدون رکورد سیاست — از MembershipSemantics."""
+    if db is None:
+        # بدون Session نمی‌توان profile را از DB خواند
         return None
-    if code == MEMBERSHIP_CONSCRIPT:
-        return None
-    if code == MEMBERSHIP_PERMANENT:
-        return 15
-    return None
+    return msem.default_buyback_cap(db, resolve_membership_code_for_policy(membership_code))
 
 
 def resolve_max_carry_forward(db: Session, membership_code: str) -> Optional[int]:
@@ -256,22 +250,18 @@ def resolve_max_buyback(
     policy_code = resolve_membership_code_for_policy(membership_code)
     policy = _get_leave_policy(db)
     year = year_j if year_j is not None else jdatetime.date.today().year
+    permanent = msem.is_permanent(db, policy_code)
 
     # صریح گروه: برای غیررسمی اولویت دارد
     if policy:
         dept_pv = _get_policy_param(db, policy.id, f'buyback_dept_{policy_code}')
-        if policy_code != MEMBERSHIP_PERMANENT:
+        if not permanent:
             if dept_pv is not None and dept_pv.parameter_value is not None:
                 return _parse_buyback_cap(dept_pv.parameter_value)
-            if policy_code in MEMBERSHIP_PRORATE_BY_CONTRACT or policy_code == MEMBERSHIP_PHYSICIAN:
-                return None
-            if policy_code == MEMBERSHIP_CONSCRIPT:
-                return None
+            return msem.default_buyback_cap(db, policy_code)
 
         # رسمی با اعمال منطقه → سقف منطقه/عصر
-        if policy_code == MEMBERSHIP_PERMANENT and _region_applies_for_membership(
-            db, policy.id, policy_code
-        ):
+        if _region_applies_for_membership(db, policy.id, policy_code):
             effective_region = region_code
             if not effective_region and user_id:
                 effective_region = resolve_region_code_from_service_location(db, user_id)
@@ -283,15 +273,14 @@ def resolve_max_buyback(
                 year_j=year,
             )
 
-        # رسمی بدون اعمال منطقه → buyback_dept_1 یا max_buyback
-        if policy_code == MEMBERSHIP_PERMANENT:
-            if dept_pv is not None and dept_pv.parameter_value is not None:
-                return _parse_buyback_cap(dept_pv.parameter_value)
-            global_pv = _get_policy_param(db, policy.id, 'max_buyback')
-            if global_pv is not None and global_pv.parameter_value is not None:
-                return _parse_buyback_cap(global_pv.parameter_value)
+        # رسمی بدون اعمال منطقه → buyback_dept یا max_buyback
+        if dept_pv is not None and dept_pv.parameter_value is not None:
+            return _parse_buyback_cap(dept_pv.parameter_value)
+        global_pv = _get_policy_param(db, policy.id, 'max_buyback')
+        if global_pv is not None and global_pv.parameter_value is not None:
+            return _parse_buyback_cap(global_pv.parameter_value)
 
-    return default_buyback_cap_for_membership(policy_code)
+    return default_buyback_cap_for_membership(policy_code, db=db)
 
 
 def resolve_membership_for_user(db: Session, user_id: str) -> str:
@@ -421,14 +410,11 @@ def contract_effective_end(contract: Contract) -> Optional[date]:
 
 def split_contract_coverage_by_year(
     contract: Contract,
+    db: Optional[Session] = None,
 ) -> List[Tuple[int, date, Optional[date]]]:
     """
     تقسیم پوشش قرارداد برای شارژ مرخصی — فقط سال شمسی جاری.
-
-    - رسمی: اگر در سال جاری فعال باشد، از max(شروع، اول سال) تا پایان سال جاری
-      (پایان بلندمدت قرارداد روی سال‌های قبل/بعد شارژ نمی‌سازد)
-    - وظیفه: تا actual_end_date، فقط بخش سال جاری
-    - قراردادی و مشابه: تا end_date، فقط بخش سال جاری
+    پوشش از MembershipSemantics.coverage_mode گرفته می‌شود (نه code literal).
     """
     code = contract.contract_type_code
     start_g = contract.start_date
@@ -438,22 +424,33 @@ def split_contract_coverage_by_year(
     if start_g > y_end:
         return []
 
-    if code == MEMBERSHIP_PERMANENT:
-        # رسمی: پایان قرارداد روی شارژ سال جاری اثر ندارد (تا پایان سال جاری)
-        if start_g > y_end:
-            return []
-        # اگر قرارداد صریحاً قبل از سال جاری تمام شده باشد، شارژ نکن
+    if db is not None:
+        mode = msem.coverage_mode(db, code)
+    else:
+        # Legacy/test path without Session: seed profile map (نه runtime identity)
+        from web.services.membership_semantics import SEED_BEHAVIOR_BY_CODE
+        from models.membership_type import (
+            BEHAVIOR_CONSCRIPT,
+            BEHAVIOR_PERMANENT,
+            BEHAVIOR_STANDARD_PRORATE,
+        )
+        profile = SEED_BEHAVIOR_BY_CODE.get(str(code), BEHAVIOR_STANDARD_PRORATE)
+        if profile == BEHAVIOR_PERMANENT:
+            mode = msem.COVERAGE_OPEN_YEAR
+        elif profile == BEHAVIOR_CONSCRIPT:
+            mode = msem.COVERAGE_ACTUAL_END
+        else:
+            mode = msem.COVERAGE_CONTRACT_END
+
+    if mode == msem.COVERAGE_OPEN_YEAR:
         if contract.end_date is not None and contract.end_date < y_start:
             return []
         seg_start = max(start_g, y_start)
         return [(current_year, seg_start, y_end)]
 
-    # وظیفه: actual_end_date
-    if code == MEMBERSHIP_CONSCRIPT:
+    if mode == msem.COVERAGE_ACTUAL_END:
         end_g = contract_effective_end(contract)
         if end_g is None:
-            if start_g > y_end:
-                return []
             seg_start = max(start_g, y_start)
             return [(current_year, seg_start, y_end)]
         if end_g < start_g or end_g < y_start:
@@ -464,7 +461,7 @@ def split_contract_coverage_by_year(
             return [(current_year, seg_start, seg_end)]
         return []
 
-    # قراردادی / خریدخدمت / سایر / بیمه / پزشکی
+    # contract_end (standard_prorate / physician)
     end_g = contract.end_date
     if end_g is None:
         seg_start = max(start_g, y_start)
@@ -485,35 +482,40 @@ def charge_amount_for_segment(
     year_j: int,
     seg_start: date,
     seg_end: Optional[date],
+    db: Optional[Session] = None,
 ) -> float:
-    """محاسبه مقدار شارژ AL برای یک سگمنت سال."""
+    """محاسبه مقدار شارژ AL برای یک سگمنت سال — از charge_mode Semantics."""
     year_days = get_jalali_year_days(year_j)
     y_start, y_end = jalali_year_bounds_g(year_j)
 
     if seg_end is None:
         seg_end = y_end
 
-    # clamp to year
     start = max(seg_start, y_start)
     end = min(seg_end, y_end)
     if end < start:
         return 0.0
 
     duration = (end - start).days + 1
+    if db is not None:
+        mode = msem.charge_mode(db, membership_code)
+    else:
+        from web.services.membership_semantics import SEED_BEHAVIOR_BY_CODE
+        from models.membership_type import BEHAVIOR_PERMANENT, BEHAVIOR_PHYSICIAN
+        profile = SEED_BEHAVIOR_BY_CODE.get(str(membership_code), "")
+        if profile == BEHAVIOR_PERMANENT:
+            mode = msem.CHARGE_PERMANENT
+        elif profile == BEHAVIOR_PHYSICIAN:
+            mode = msem.CHARGE_PHYSICIAN
+        else:
+            mode = msem.CHARGE_PRORATE
 
-    if membership_code == MEMBERSHIP_PERMANENT:
-        # رسمی: اگر از اول سال (یا کل سال) پوشش دارد → کامل؛
-        # اگر وسط سال عضو شده → تناسب از شروع عضویت تا پایان سال
+    if mode == msem.CHARGE_PERMANENT:
         if start <= y_start and end >= y_end:
             return float(annual_days)
         return float(annual_days) * (duration / year_days)
 
-    if membership_code == MEMBERSHIP_PHYSICIAN:
-        if duration >= year_days:
-            return float(annual_days)
-        return float(annual_days) * (duration / year_days)
-
-    # قراردادی و وظیفه و سایر: تناسب مدت پوشش
+    # physician و prorate: تناسب مدت (رفتار فعلی حفظ)
     if duration >= year_days:
         return float(annual_days)
     return float(annual_days) * (duration / year_days)
@@ -541,11 +543,13 @@ def calculate_entitlement_by_year(
         else resolve_annual_for_employee_contract(db, employee, contract)
     )
     code = contract.contract_type_code
-    segments = split_contract_coverage_by_year(contract)
+    segments = split_contract_coverage_by_year(contract, db=db)
     result: Dict[int, Dict[str, float]] = {}
 
     for year_j, seg_start, seg_end in segments:
-        al = charge_amount_for_segment(code, annual, year_j, seg_start, seg_end)
+        al = charge_amount_for_segment(
+            code, annual, year_j, seg_start, seg_end, db=db
+        )
         if year_j not in result:
             result[year_j] = {'AL': 0.0, 'SL': 0.0}
         result[year_j]['AL'] += al

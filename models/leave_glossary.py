@@ -28,16 +28,15 @@ TX_CASH_OUT = 'CASH_OUT'
 TX_CF_OUT = 'CF_OUT'
 TX_CF_IN = 'CF_IN'
 
-# business semantic — نه catalog UI (عمداً (B)؛ موتور تناسب/رسمی/وظیفه هنوز DB-flag کامل نیست)
-# عضویت‌هایی که تناسب مدت قرارداد دارند
+# Seed/legacy identity map فقط — runtime behavior از membership_types.behavior_profile
+# و web.services.membership_semantics می‌آید. این ثابت‌ها را در مسیر entitlement/travel
+# جدید استفاده نکنید (A/B seed compatibility).
 MEMBERSHIP_PRORATE_BY_CONTRACT = frozenset({'3', '4', '6', '7'})
-# رسمی: پایان قرارداد در تناسب دخالت ندارد
 MEMBERSHIP_PERMANENT = '1'
-# وظیفه: تا actual_end_date
 MEMBERSHIP_CONSCRIPT = '2'
 MEMBERSHIP_PHYSICIAN = '5'
 
-# کدهای عضویت با کلید مستقل در Leave Policy (بدون remap 6/7→4)
+# کدهای عضویت با کلید مستقل در Leave Policy (بدون remap 6/7→4) — seed/policy keys
 POLICY_MEMBERSHIP_CODES = frozenset({'1', '2', '3', '4', '5', '6', '7'})
 
 LEAVE_TYPE_NAMES: Dict[str, str] = {

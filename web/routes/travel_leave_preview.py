@@ -45,7 +45,7 @@ async def travel_leave_preview(
         from_j = jdatetime.datetime.strptime(from_date.strip(), "%Y/%m/%d").date()
         from_g = from_j.togregorian()
         policy, contract, employee = resolve_policy(db, user.user_id, from_g)
-        membership_code = resolve_membership_code(employee, contract)
+        membership_code = resolve_membership_code(employee, contract, db=db)
 
         if not employee:
             return _preview_error("اطلاعات کارمند یافت نشد")

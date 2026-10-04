@@ -92,9 +92,13 @@ def resolve_policy(db: Session, user_id: str, effective_date: date) -> Tuple[Opt
     if not employee:
         return None, None, None
 
+    from web.services import membership_semantics as msem
+
     department_membership_code = resolve_department_membership_code(employee)
-    # (B) intentional: department shortcut for memberships 1/2 — not catalog-driven yet
-    if department_membership_code in {"1", "2"}:
+    # Department shortcut for permanent/conscript profiles (رفتار فعلی؛ نه code literal)
+    if department_membership_code and msem.uses_department_travel_resolve(
+        db, department_membership_code
+    ):
         policy = db.query(TravelLeavePolicy).filter(
             TravelLeavePolicy.contract_type_code == department_membership_code
         ).first()
@@ -110,13 +114,21 @@ def resolve_policy(db: Session, user_id: str, effective_date: date) -> Tuple[Opt
     return policy, contract, employee
 
 
-def resolve_membership_code(employee: Optional[Employee], contract: Optional[Contract]) -> Optional[str]:
+def resolve_membership_code(
+    employee: Optional[Employee],
+    contract: Optional[Contract],
+    db: Optional[Session] = None,
+) -> Optional[str]:
+    from web.services import membership_semantics as msem
+
     department_membership_code = resolve_department_membership_code(employee)
-    # (B) intentional: department shortcut for memberships 1/2 — not catalog-driven yet
-    if department_membership_code in {"1", "2"}:
+    if department_membership_code and db is not None:
+        if msem.uses_department_travel_resolve(db, department_membership_code):
+            return department_membership_code
+    elif department_membership_code in {"1", "2"}:
+        # fallback وقتی Session نیست (سازگاری تست/legacy)
         return department_membership_code
     return contract.contract_type_code if contract else None
-
 
 def calculate_travel_days(distance_km: float, rules: list) -> Tuple[int, Optional[TravelLeavePolicyRule]]:
     for rule in sorted(rules, key=lambda r: r.min_km):
@@ -174,7 +186,7 @@ def create_travel_leave_detail(db: Session, leave_request: LeaveRequest, destina
     if leave_request.leave_type != "AL":
         raise ValueError("Travel Leave is only available for Annual Leave (AL)")
     policy, contract, employee = resolve_policy(db, leave_request.user_id, leave_request.from_date)
-    membership_code = resolve_membership_code(employee, contract)
+    membership_code = resolve_membership_code(employee, contract, db=db)
     if not policy or not employee or not membership_code:
         raise ValueError("سیاست مرخصی توراهی برای عضویت مؤثر کاربر یافت نشد")
     if not policy.is_enabled:

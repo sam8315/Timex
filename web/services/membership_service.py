@@ -13,18 +13,22 @@ from sqlalchemy.orm import Session
 from models.contract import Contract
 from models.employee import Employee
 from models.membership_rule_change import MembershipRuleChangeRequest
-from models.membership_type import MembershipType
+from models.membership_type import (
+    BEHAVIOR_STANDARD_PRORATE,
+    MembershipType,
+)
 from models.membership_type_rule import MembershipTypeRule
 from models.policy import Policy, PolicyValue
 from models.region import Region
 from models.reserved_membership_code import ReservedMembershipCode
 from models.service_adjustment import ServiceAdjustment
 from models.travel_leave_policy import TravelLeavePolicy
+from web.services.membership_semantics import SEED_BEHAVIOR_BY_CODE
 
 CODE_RE = re.compile(r"^[1-9][0-9]{0,5}$")
 
 # Seed snapshot: code, name, annual, deduction, extra, seniority, sort_order
-# فقط برای seed/reconcile — نه برای runtime name lookup در UI/reports.
+# فقط برای seed insert — نه برای runtime name lookup یا overwrite.
 SEED_MEMBERSHIPS: Tuple[Tuple[str, str, int, bool, bool, bool, int], ...] = (
     ("1", "رسمی", 30, False, False, True, 1),
     ("2", "وظیفه", 30, True, True, False, 2),
@@ -43,6 +47,7 @@ SEED_CODE_FLAGS = {
         "supports_extra_service": extra,
         "supports_positive_seniority": seniority,
         "sort_order": sort_order,
+        "behavior_profile": SEED_BEHAVIOR_BY_CODE.get(code, BEHAVIOR_STANDARD_PRORATE),
     }
     for code, name, annual, deduction, extra, seniority, sort_order in SEED_MEMBERSHIPS
 }
@@ -95,6 +100,7 @@ def membership_types_as_dict(db: Session, *, active_only: bool = True) -> Dict[s
             "supports_positive_seniority": (
                 rule.supports_positive_seniority if rule else False
             ),
+            "behavior_profile": row.behavior_profile,
             "is_active": row.is_active,
             "description": row.description,
             "sort_order": row.sort_order,
@@ -116,8 +122,9 @@ def get_effective_rule(
     on_date: Optional[date] = None,
 ) -> Optional[MembershipTypeRule]:
     """
-    Rule مؤثر فقط بر اساس تاریخ: آخرین effective_from <= on_date.
-    status مانع resolve نیست (برای lifecycle/UI به‌روز می‌شود).
+    Rule مؤثر: آخرین effective_from <= on_date که pending نباشد.
+    pending تا Confirm وارد runtime نمی‌شود.
+    scheduled با رسیدن تاریخ (effective_from <= on_date) خودکار effective است.
     """
     on_date = on_date or date.today()
     return (
@@ -125,6 +132,7 @@ def get_effective_rule(
         .filter(
             MembershipTypeRule.membership_type_code == membership_type_code,
             MembershipTypeRule.effective_from <= on_date,
+            MembershipTypeRule.status != "pending",
         )
         .order_by(MembershipTypeRule.effective_from.desc())
         .first()
@@ -137,7 +145,7 @@ def refresh_rule_lifecycle_statuses(
     *,
     as_of: Optional[date] = None,
 ) -> None:
-    """به‌روزرسانی status برای UI؛ resolve از status استفاده نمی‌کند."""
+    """به‌روزرسانی status برای UI؛ pending هرگز promote نمی‌شود."""
     today = as_of or date.today()
     rules = (
         db.query(MembershipTypeRule)
@@ -147,6 +155,8 @@ def refresh_rule_lifecycle_statuses(
     )
     effective = None
     for rule in rules:
+        if rule.status == "pending":
+            continue
         if rule.effective_from > today:
             rule.status = "scheduled"
         elif effective is None or rule.effective_from >= effective.effective_from:
@@ -157,6 +167,19 @@ def refresh_rule_lifecycle_statuses(
         else:
             rule.status = "superseded"
     db.flush()
+
+
+def activate_pending_rule(db: Session, rule_id: int) -> MembershipTypeRule:
+    """Confirm path: pending → active + lifecycle refresh."""
+    rule = db.query(MembershipTypeRule).filter(MembershipTypeRule.id == rule_id).first()
+    if not rule:
+        raise MembershipError("Rule یافت نشد")
+    if rule.status != "pending":
+        raise MembershipError("فقط Rule در وضعیت pending قابل تأیید است")
+    rule.status = "active"
+    db.flush()
+    refresh_rule_lifecycle_statuses(db, rule.membership_type_code)
+    return rule
 
 
 def resolve_annual_leave_base(
@@ -292,15 +315,21 @@ def create_membership_type(
     description: Optional[str] = None,
     sort_order: int = 0,
     is_active: bool = True,
+    behavior_profile: str = BEHAVIOR_STANDARD_PRORATE,
     created_by: Optional[str] = None,
     migration_date: Optional[date] = None,
 ) -> MembershipType:
+    from models.membership_type import BEHAVIOR_PROFILES
+
     code = validate_membership_code(code)
     name = (name or "").strip()
     if not name:
         raise MembershipError("نام نوع عضویت الزامی است")
     if len(name) > 100:
         raise MembershipError("نام نوع عضویت نباید بیشتر از ۱۰۰ کاراکتر باشد")
+    profile = (behavior_profile or BEHAVIOR_STANDARD_PRORATE).strip()
+    if profile not in BEHAVIOR_PROFILES:
+        raise MembershipError("behavior_profile نامعتبر است")
 
     if db.query(ReservedMembershipCode).filter(
         ReservedMembershipCode.code == code
@@ -317,6 +346,7 @@ def create_membership_type(
         sort_order=sort_order,
         is_active=is_active,
         code_locked=False,
+        behavior_profile=profile,
     )
     db.add(row)
     db.flush()
@@ -350,7 +380,10 @@ def create_rule_snapshot(
     supports_positive_seniority: bool,
     created_by: Optional[str] = None,
 ) -> MembershipTypeRule:
-    """ایجاد Rule جدید به‌صورت snapshot کامل؛ non-overlapping."""
+    """
+    ایجاد Rule جدید به‌صورت snapshot کامل.
+    آینده → scheduled؛ گذشته/جاری → pending (تا Confirm وارد resolve نمی‌شود).
+    """
     mt = get_membership_type(db, membership_type_code)
     if not mt:
         raise MembershipError("نوع عضویت یافت نشد")
@@ -370,7 +403,11 @@ def create_rule_snapshot(
     today = date.today()
     prev = get_effective_rule(db, membership_type_code, on_date=effective_from)
 
-    status = "scheduled" if effective_from > today else "active"
+    if effective_from > today:
+        status = "scheduled"
+    else:
+        status = "pending"
+
     rule = MembershipTypeRule(
         membership_type_code=membership_type_code,
         effective_from=effective_from,
@@ -384,7 +421,8 @@ def create_rule_snapshot(
     )
     db.add(rule)
     db.flush()
-    refresh_rule_lifecycle_statuses(db, membership_type_code)
+    if status == "scheduled":
+        refresh_rule_lifecycle_statuses(db, membership_type_code)
 
     if has_business_history(db, membership_type_code):
         mt.code_locked = True
@@ -405,8 +443,7 @@ def update_scheduled_rule(
     if not rule:
         raise MembershipError("Rule یافت نشد")
     today = date.today()
-    # Past/current immutable؛ فقط آینده قابل ویرایش
-    if rule.effective_from <= today:
+    if rule.status != "scheduled" or rule.effective_from <= today:
         raise MembershipError("فقط Rule آینده (scheduled) قابل ویرایش است")
 
     if effective_from is not None:
@@ -439,8 +476,14 @@ def delete_scheduled_rule(db: Session, rule_id: int) -> None:
     if not rule:
         raise MembershipError("Rule یافت نشد")
     today = date.today()
-    if rule.effective_from <= today:
-        raise MembershipError("فقط Rule آینده (scheduled) قابل حذف است")
+    if rule.status == "pending":
+        # pending قابل حذف قبل از confirm
+        code = rule.membership_type_code
+        db.delete(rule)
+        db.flush()
+        return
+    if rule.status != "scheduled" or rule.effective_from <= today:
+        raise MembershipError("فقط Rule آینده (scheduled) یا pending قابل حذف است")
     code = rule.membership_type_code
     db.delete(rule)
     db.flush()
@@ -486,7 +529,6 @@ def delete_membership(
             f"تعدیل خدمت={deps['service_adjustments']}, "
             f"کارمند={deps['employees']})"
         )
-    # Hard delete: rules cascade as technical children؛ reserve code
     db.delete(mt)
     db.flush()
     if not db.query(ReservedMembershipCode).filter(
@@ -504,89 +546,83 @@ def delete_membership(
 
 def seed_default_memberships(db: Session, *, migration_date: Optional[date] = None) -> int:
     """
-    Seed هفت عضویت اولیه. Idempotent: اگر وجود داشته باشد چیزی اضافه نمی‌کند.
-    هیچ عضویت جدیدی فراتر از ۱..۷ نمی‌سازد.
+    Seed هفت عضویت اولیه — فقط insert برای missing type یا missing initial rule.
+    هیچ overwrite روی name/sort_order/flags/annual/behavior_profile موجود.
     """
     today = migration_date or date.today()
     created = 0
     for code, name, annual, deduction, extra, seniority, sort_order in SEED_MEMBERSHIPS:
-        if get_membership_type(db, code):
-            continue
-        min_start = (
-            db.query(func.min(Contract.start_date))
-            .filter(Contract.contract_type_code == code)
-            .scalar()
-        )
-        effective = min_start or today
-        row = MembershipType(
-            code=code,
-            name=name,
-            is_active=True,
-            description=None,
-            sort_order=sort_order,
-            code_locked=has_business_history(db, code),
-        )
-        db.add(row)
-        db.flush()
-        db.add(
-            MembershipTypeRule(
-                membership_type_code=code,
-                effective_from=effective,
-                annual_leave_base=annual,
-                supports_service_deduction=deduction,
-                supports_extra_service=extra,
-                supports_positive_seniority=seniority,
-                status="active",
-                created_by="system_seed",
+        flags = SEED_CODE_FLAGS[code]
+        mt = get_membership_type(db, code)
+        if mt is None:
+            min_start = (
+                db.query(func.min(Contract.start_date))
+                .filter(Contract.contract_type_code == code)
+                .scalar()
             )
+            effective = min_start or today
+            mt = MembershipType(
+                code=code,
+                name=name,
+                is_active=True,
+                description=None,
+                sort_order=sort_order,
+                code_locked=has_business_history(db, code),
+                behavior_profile=flags["behavior_profile"],
+            )
+            db.add(mt)
+            db.flush()
+            db.add(
+                MembershipTypeRule(
+                    membership_type_code=code,
+                    effective_from=effective,
+                    annual_leave_base=annual,
+                    supports_service_deduction=deduction,
+                    supports_extra_service=extra,
+                    supports_positive_seniority=seniority,
+                    status="active",
+                    created_by="system_seed",
+                )
+            )
+            created += 1
+            continue
+
+        # Type exists: only insert initial rule if none at all
+        has_rule = (
+            db.query(MembershipTypeRule.id)
+            .filter(MembershipTypeRule.membership_type_code == code)
+            .first()
         )
-        created += 1
+        if has_rule is None:
+            min_start = (
+                db.query(func.min(Contract.start_date))
+                .filter(Contract.contract_type_code == code)
+                .scalar()
+            )
+            effective = min_start or today
+            db.add(
+                MembershipTypeRule(
+                    membership_type_code=code,
+                    effective_from=effective,
+                    annual_leave_base=annual,
+                    supports_service_deduction=deduction,
+                    supports_extra_service=extra,
+                    supports_positive_seniority=seniority,
+                    status="active",
+                    created_by="system_seed",
+                )
+            )
+            created += 1
     db.flush()
     return created
 
 
 def reconcile_seed_membership_rules(db: Session) -> int:
     """
-    هم‌ترازی flags (+ annual_leave_base seed) روی اولین Rule کدهای 1–7.
-    هیچ UPDATE روی contracts / leave_balances / leave_transactions نمی‌زند.
+    Insert-only safety net: missing initial Rule برای کدهای seed.
+    هیچ overwrite روی Membership/Rule موجود انجام نمی‌دهد.
     """
-    updated = 0
-    for code, flags in SEED_CODE_FLAGS.items():
-        mt = get_membership_type(db, code)
-        if not mt:
-            continue
-        if mt.name != flags["name"]:
-            mt.name = flags["name"]
-        if mt.sort_order != flags["sort_order"]:
-            mt.sort_order = flags["sort_order"]
-        first_rule = (
-            db.query(MembershipTypeRule)
-            .filter(MembershipTypeRule.membership_type_code == code)
-            .order_by(
-                MembershipTypeRule.effective_from.asc(),
-                MembershipTypeRule.id.asc(),
-            )
-            .first()
-        )
-        if not first_rule:
-            continue
-        changed = False
-        if first_rule.annual_leave_base != flags["annual_leave_base"]:
-            first_rule.annual_leave_base = flags["annual_leave_base"]
-            changed = True
-        if first_rule.supports_service_deduction != flags["supports_service_deduction"]:
-            first_rule.supports_service_deduction = flags["supports_service_deduction"]
-            changed = True
-        if first_rule.supports_extra_service != flags["supports_extra_service"]:
-            first_rule.supports_extra_service = flags["supports_extra_service"]
-            changed = True
-        if first_rule.supports_positive_seniority != flags["supports_positive_seniority"]:
-            first_rule.supports_positive_seniority = flags["supports_positive_seniority"]
-            changed = True
-        if changed:
-            updated += 1
-    db.flush()
-    return updated
+    return seed_default_memberships(db)
 
 
 def lock_codes_with_history(db: Session) -> int:

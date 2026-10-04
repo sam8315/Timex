@@ -164,7 +164,7 @@ class TestPermanent:
         db.commit()
         db.refresh(c)
 
-        segs = split_contract_coverage_by_year(c)
+        segs = split_contract_coverage_by_year(c, db=db)
         assert len(segs) == 1
         assert segs[0][0] == year
 

@@ -105,6 +105,7 @@ from database.init_db import (  # noqa: E402
     migrate_city_region_code,
     migrate_employee_position_id,
     migrate_employee_document_types,
+    migrate_membership_foundation_hardening,
     seed_membership_types,
     seed_role_permissions,
 )
@@ -196,6 +197,7 @@ with test_engine.connect() as _conn:
 
 Base.metadata.create_all(bind=test_engine)
 migrate_employee_document_types(bind_engine=test_engine)
+migrate_membership_foundation_hardening(bind_engine=test_engine)
 seed_membership_types(bind_engine=test_engine)
 seed_role_permissions(bind_engine=test_engine)
 
@@ -496,25 +498,41 @@ def _reset_role_permissions(session) -> None:
                 row.updated_by = None
 
 
-@pytest.fixture(autouse=True)
-def cleanup_test_db():
-    """Clean up test database before and after each test."""
+def _cleanup_users_and_adjustments(session) -> None:
+    """Delete RESTRICT children before users (service adjustments, rule changes)."""
     from models.user import User
     from models.employee import Employee
     from models.employee_phone import EmployeePhone
     from models.password_reset import PasswordResetRequest
     from models.user_permission import UserPermission, UserPermissionHistory
 
+    try:
+        from models.service_adjustment import ServiceAdjustment
+        from models.membership_rule_change import (
+            MembershipRuleChangeAudit,
+            MembershipRuleChangeRequest,
+        )
+        session.query(MembershipRuleChangeAudit).delete()
+        session.query(MembershipRuleChangeRequest).delete()
+        session.query(ServiceAdjustment).delete()
+    except Exception:
+        session.rollback()
+    session.query(PasswordResetRequest).delete()
+    session.query(UserPermissionHistory).delete()
+    session.query(UserPermission).delete()
+    session.query(EmployeePhone).delete()
+    session.query(Employee).delete()
+    session.query(User).delete()
+    _reset_role_permissions(session)
+    session.commit()
+
+
+@pytest.fixture(autouse=True)
+def cleanup_test_db():
+    """Clean up test database before and after each test."""
     session = TestingSessionLocal()
     try:
-        session.query(PasswordResetRequest).delete()
-        session.query(UserPermissionHistory).delete()
-        session.query(UserPermission).delete()
-        session.query(EmployeePhone).delete()
-        session.query(Employee).delete()
-        session.query(User).delete()
-        _reset_role_permissions(session)
-        session.commit()
+        _cleanup_users_and_adjustments(session)
     finally:
         session.close()
 
@@ -522,14 +540,7 @@ def cleanup_test_db():
 
     session = TestingSessionLocal()
     try:
-        session.query(PasswordResetRequest).delete()
-        session.query(UserPermissionHistory).delete()
-        session.query(UserPermission).delete()
-        session.query(EmployeePhone).delete()
-        session.query(Employee).delete()
-        session.query(User).delete()
-        _reset_role_permissions(session)
-        session.commit()
+        _cleanup_users_and_adjustments(session)
     finally:
         session.close()
 

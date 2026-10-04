@@ -1,14 +1,12 @@
 """
-Workflow Rule گذشته‌نگر: preview → confirm → recalculate transactional + audit.
+Workflow Rule گذشته‌نگر: preview → confirm → activate pending → recalculate.
 
-Preview محاسبهٔ تأثیر را بدون mutate کردن contracts/leave انجام می‌دهد.
-به‌روزرسانی contract.annual_leave_days فقط داخل confirm تأییدشده + audit است.
+Preview بدون اثر runtime؛ Confirm ابتدا Rule را active می‌کند سپس leave را به‌روز می‌کند.
 """
 from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Optional
 
 from sqlalchemy.orm import Session
 
@@ -23,6 +21,7 @@ from web.services.leave_entitlement_service import calculate_entitlement_by_year
 from web.services.leave_service import update_leave_for_contract
 from web.services.membership_service import (
     MembershipError,
+    activate_pending_rule,
     get_effective_rule,
     resolve_annual_leave_base_with_region,
 )
@@ -31,12 +30,46 @@ from web.services.membership_service import (
 SAMPLE_LIMIT = 10
 
 
+def _annual_from_rule_base(
+    db: Session,
+    membership_type_code: str,
+    rule: MembershipTypeRule,
+    region_code,
+) -> int:
+    """New value for preview: pending rule base + region policy layer (without activating)."""
+    base = max(0, int(rule.annual_leave_base))
+    from web.services.membership_service import _get_leave_policy, _region_applies, _get_policy_param
+    from models.region import Region
+
+    policy = _get_leave_policy(db)
+    if not policy or not _region_applies(db, policy.id, membership_type_code):
+        return base
+    if not region_code:
+        return base
+    region = db.query(Region).filter(Region.code == region_code).first()
+    if region is None:
+        return base
+    region_days = int(region.default_annual_leave_days)
+    scoped = _get_policy_param(
+        db, policy.id, "annual_leave_days", region_code=region_code
+    )
+    if scoped and scoped.parameter_value is not None:
+        try:
+            region_days = int(float(scoped.parameter_value))
+        except (TypeError, ValueError):
+            pass
+    return max(0, region_days)
+
+
 def build_impact_preview(
     db: Session,
     membership_type_code: str,
     rule: MembershipTypeRule,
 ) -> dict:
-    """Compare old vs new annual/entitlement for affected contracts (no writes)."""
+    """
+    Compare old vs new for affected contracts (no writes to contracts/leave).
+    old = effective rule excluding pending; new = pending rule values.
+    """
     contracts = (
         db.query(Contract)
         .filter(Contract.contract_type_code == membership_type_code)
@@ -53,41 +86,22 @@ def build_impact_preview(
         )
         region = employee.region_code if employee else None
 
-        # Old: rule effective just before this rule's effective_from
-        old_rule = (
-            db.query(MembershipTypeRule)
-            .filter(
-                MembershipTypeRule.membership_type_code == membership_type_code,
-                MembershipTypeRule.id != rule.id,
-                MembershipTypeRule.effective_from <= rule.effective_from,
-            )
-            .order_by(MembershipTypeRule.effective_from.desc())
-            .first()
+        old_rule = get_effective_rule(
+            db, membership_type_code, on_date=rule.effective_from
         )
         if old_rule:
             old_annual = resolve_annual_leave_base_with_region(
                 db,
                 membership_type_code,
                 region_code=region,
-                on_date=old_rule.effective_from,
+                on_date=rule.effective_from,
             )
         else:
             old_annual = int(contract.annual_leave_days or 0)
 
-        # New: resolve as-of this rule's effective date (date-based, status-agnostic)
-        effective = get_effective_rule(
-            db, membership_type_code, on_date=rule.effective_from
+        new_annual = _annual_from_rule_base(
+            db, membership_type_code, rule, region
         )
-        if effective and effective.id == rule.id:
-            new_annual = resolve_annual_leave_base_with_region(
-                db,
-                membership_type_code,
-                region_code=region,
-                on_date=rule.effective_from,
-            )
-        else:
-            # Rule not yet visible for that date (shouldn't happen after flush)
-            new_annual = int(rule.annual_leave_base)
 
         old_ent = calculate_entitlement_by_year(
             db, contract, employee=employee, annual_override=old_annual
@@ -127,6 +141,8 @@ def create_preview_request(
     rule = db.query(MembershipTypeRule).filter(MembershipTypeRule.id == rule_id).first()
     if not rule:
         raise MembershipError("Rule یافت نشد")
+    if rule.status != "pending":
+        raise MembershipError("Preview فقط برای Rule در وضعیت pending مجاز است")
     preview = build_impact_preview(db, rule.membership_type_code, rule)
     req = MembershipRuleChangeRequest(
         membership_type_code=rule.membership_type_code,
@@ -148,10 +164,8 @@ def confirm_and_recalculate(
     confirmed_by: str,
 ) -> MembershipRuleChangeRequest:
     """
-    تأیید صریح + recalculate تراکنشی.
+    تأیید صریح: activate pending → recalculate تراکنشی.
     leave updates با commit=False؛ یک commit نهایی توسط caller.
-    failure → full rollback.
-    به‌روزرسانی contract.annual_leave_days فقط اینجا (+ audit).
     """
     req = (
         db.query(MembershipRuleChangeRequest)
@@ -172,13 +186,8 @@ def confirm_and_recalculate(
     )
     if not rule:
         raise MembershipError("Rule یافت نشد")
-
-    contracts = (
-        db.query(Contract)
-        .filter(Contract.contract_type_code == req.membership_type_code)
-        .order_by(Contract.id.asc())
-        .all()
-    )
+    if rule.status != "pending":
+        raise MembershipError("Rule مرتبط در وضعیت pending نیست")
 
     req.status = "confirmed"
     req.confirmed_by = confirmed_by
@@ -186,6 +195,16 @@ def confirm_and_recalculate(
     db.flush()
 
     try:
+        # Rule becomes effective only here
+        activate_pending_rule(db, rule.id)
+
+        contracts = (
+            db.query(Contract)
+            .filter(Contract.contract_type_code == req.membership_type_code)
+            .order_by(Contract.id.asc())
+            .all()
+        )
+
         for contract in contracts:
             employee = (
                 db.query(Employee)
@@ -213,7 +232,6 @@ def confirm_and_recalculate(
                     db, contract, employee=employee, annual_override=old_annual
                 ),
             }
-            # تنها مسیر مجاز برای silent-free annual update
             contract.annual_leave_days = new_annual
             update_leave_for_contract(
                 db,

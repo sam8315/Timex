@@ -18,7 +18,7 @@ from models.user import User
 from models.employee import Employee
 from models.contract import Contract
 from models.leave_transaction import LeaveTransaction
-from models.leave_glossary import MEMBERSHIP_PERMANENT
+from web.services import membership_semantics as msem
 from web.services.membership_service import (
     get_effective_rule,
     membership_types_as_dict,
@@ -107,9 +107,9 @@ def get_charged_by_year(db: Session, contract_id: int) -> dict:
     return charged_by_year
 
 
-def _ensure_permanent_end(contract_type_code: str, start_date: date, end_date: Optional[date]) -> Optional[date]:
+def _ensure_permanent_end(db, contract_type_code: str, start_date: date, end_date: Optional[date]) -> Optional[date]:
     """رسمی بدون پایان → شروع + ۳۰ سال."""
-    if contract_type_code == MEMBERSHIP_PERMANENT and end_date is None:
+    if msem.is_permanent(db, contract_type_code) and end_date is None:
         return add_years(start_date, 30)
     return end_date
 
@@ -179,7 +179,7 @@ async def contracts_page(
             current_year = jdatetime.date.today().year
             stored_cw_current = get_stored_leave_balance(db, c.user_id, current_year)
             buyback_current = get_buyback_quota(db, c.user_id, current_year)
-            history_used = get_used_by_year_from_contract(db, c.id) if c.contract_type_code == MEMBERSHIP_PERMANENT else {}
+            history_used = get_used_by_year_from_contract(db, c.id) if msem.is_permanent(db, c.contract_type_code) else {}
 
             contracts_data.append({
                 'contract': c,
@@ -189,8 +189,8 @@ async def contracts_page(
                 'end_j': end_j.strftime('%Y/%m/%d') if end_j else 'دائمی',
                 'is_active': c.is_active,
                 'charged_by_year': get_charged_by_year(db, c.id),
-                'stored_leave_days': stored_cw_current if c.contract_type_code == MEMBERSHIP_PERMANENT else stored_cw,
-                'buyback_leave_days': buyback_current if c.contract_type_code == MEMBERSHIP_PERMANENT else buyback_days,
+                'stored_leave_days': stored_cw_current if msem.is_permanent(db, c.contract_type_code) else stored_cw,
+                'buyback_leave_days': buyback_current if msem.is_permanent(db, c.contract_type_code) else buyback_days,
                 'history_used': history_used,
                 'history_used_json': json.dumps({str(k): v for k, v in history_used.items()}),
                 'start_year': start_year,
@@ -284,7 +284,7 @@ async def add_contract(
             end_j = jdatetime.datetime.strptime(end_date_str.strip(), "%Y/%m/%d").date()
             end_date = end_j.togregorian()
 
-        end_date = _ensure_permanent_end(contract_type_code, start_date, end_date)
+        end_date = _ensure_permanent_end(db, contract_type_code, start_date, end_date)
 
         if end_date and start_date >= end_date:
             raise ValueError("تاریخ شروع باید قبل از تاریخ پایان باشد")
@@ -348,7 +348,7 @@ async def add_contract(
         used_by_year = parse_used_by_year_from_form(form)
         current_year = jdatetime.date.today().year
         needs_history = (
-            contract_type_code == MEMBERSHIP_PERMANENT and start_j.year < current_year
+            msem.is_permanent(db, contract_type_code) and start_j.year < current_year
         )
 
         if needs_history:
@@ -484,7 +484,7 @@ async def edit_contract(
             end_j = jdatetime.datetime.strptime(end_date_str.strip(), "%Y/%m/%d").date()
             end_date = end_j.togregorian()
 
-        end_date = _ensure_permanent_end(contract_type_code, start_date, end_date)
+        end_date = _ensure_permanent_end(db, contract_type_code, start_date, end_date)
 
         if end_date and start_date >= end_date:
             raise ValueError("تاریخ شروع باید قبل از تاریخ پایان باشد")
@@ -556,7 +556,7 @@ async def edit_contract(
         used_by_year = parse_used_by_year_from_form(form)
         current_year = jdatetime.date.today().year
         needs_history = (
-            contract_type_code == MEMBERSHIP_PERMANENT and start_j.year < current_year
+            msem.is_permanent(db, contract_type_code) and start_j.year < current_year
         )
 
         if needs_history:
@@ -566,7 +566,7 @@ async def edit_contract(
             changes.setdefault(current_year, {})['CW'] = hist['stored_cw']
             changes.setdefault(current_year, {})['BB'] = hist['buyback']
         else:
-            if old_type_code == MEMBERSHIP_PERMANENT or contract_type_code == MEMBERSHIP_PERMANENT:
+            if msem.is_permanent(db, old_type_code) or msem.is_permanent(db, contract_type_code):
                 clear_permanent_history(db, contract)
                 db.commit()
             start_year = jdatetime.date.fromgregorian(date=start_date).year
@@ -631,7 +631,7 @@ async def delete_contract(
     try:
         user_id = contract.user_id
         file_path = contract.file_path
-        if contract.contract_type_code == MEMBERSHIP_PERMANENT:
+        if contract.msem.is_permanent(db, contract_type_code):
             clear_permanent_history(db, contract)
             db.flush()
         removed = remove_leave_for_contract(db, contract)
