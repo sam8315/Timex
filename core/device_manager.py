@@ -643,7 +643,14 @@ class DeviceManager:
             },
         )
 
-        if not sync_failed:
+        if sync_failed:
+            pass
+        elif int(stats.get("errors", 0) or 0) > 0:
+            # Partial record failures are not a full sync success.
+            _monitor_sync_failure(
+                "Attendance synchronization completed with record errors"
+            )
+        else:
             _monitor_sync_success(stats)
 
         return stats

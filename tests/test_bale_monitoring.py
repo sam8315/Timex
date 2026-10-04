@@ -98,6 +98,29 @@ def test_successful_poll_updates_last_success_at(monkeypatch):
     assert _metrics(row)["recovery"] == "ok"
 
 
+def test_unsuccessful_api_response_does_not_update_last_success(monkeypatch):
+    """HTTP/JSON received with ok!=true must not count as a successful poll."""
+    import bot.bale_api as bale_api
+    from core.service_monitoring import record_startup
+
+    record_startup("bale")
+    monkeypatch.setattr(
+        bale_api,
+        "_post",
+        lambda method, data: {"ok": False, "description": "forbidden"},
+    )
+
+    assert bale_api.get_updates(offset=0, timeout=1) == []
+
+    row = _get_bale()
+    assert row is not None
+    assert row.last_success_at is None
+    assert row.last_error_code == "BALE_API_FAILED"
+    assert bale_api._get_updates_fail_count == 1
+    assert _metrics(row)["consecutive_failures"] == 1
+    assert _metrics(row)["recovery"] == "failed"
+
+
 def test_api_failure_records_bale_api_failed(monkeypatch):
     import bot.bale_api as bale_api
     import requests

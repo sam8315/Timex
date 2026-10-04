@@ -157,6 +157,20 @@ def get_updates(offset: int = 0, timeout: int = 30) -> list:
         # Failure path: counter/error already updated in _log_api_failure.
         return []
 
+    # Transport may succeed while the API payload reports failure — not a poll success.
+    if result.get("ok") is not True:
+        _get_updates_fail_count += 1
+        logger.warning(
+            "getUpdates unsuccessful response consecutive=%s",
+            _get_updates_fail_count,
+            extra={"event": "bot.polling_error"},
+        )
+        _monitor_api_failure(
+            error_class="unsuccessful_response",
+            consecutive=_get_updates_fail_count,
+        )
+        return []
+
     recovered = _get_updates_fail_count > 0
     if recovered:
         logger.info(

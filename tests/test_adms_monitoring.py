@@ -127,6 +127,45 @@ def test_successful_sync_updates_last_success_and_metrics(monkeypatch):
     }
 
 
+def test_sync_with_record_errors_not_full_success(monkeypatch):
+    """errors > 0 must use failure path; last_success_at must not advance."""
+    from datetime import datetime
+
+    from sqlalchemy.exc import SQLAlchemyError
+
+    from core.device_manager import DeviceManager
+    from core.service_monitoring import record_startup
+
+    record_startup("adms")
+    before = _get_adms().last_success_at
+
+    record = MagicMock()
+    record.user_id = 42
+    record.timestamp = datetime(2024, 1, 1, 8, 0, 0)
+    record.status = 0
+    record.punch = 0
+
+    manager = DeviceManager(ip="127.0.0.1", port=4370)
+    manager.conn = MagicMock()
+    manager.conn.get_attendance.return_value = [record]
+    manager.conn.disconnect = MagicMock()
+
+    fake_db = MagicMock()
+    fake_db.query.return_value.filter.return_value.order_by.return_value.first.return_value = None
+    fake_db.execute.side_effect = SQLAlchemyError("insert failed")
+    _patch_db_session_local(monkeypatch, MagicMock(return_value=fake_db))
+
+    result = manager.sync_attendance_to_db(dry_run_first=False)
+    assert result["errors"] > 0
+    assert result["total_fetched"] == 1
+
+    row = _get_adms()
+    assert row is not None
+    assert row.last_success_at == before
+    assert row.last_error_code == "SYNC_FAILED"
+    assert "record errors" in (row.last_error_summary or "")
+
+
 def test_sync_metrics_from_stats(monkeypatch):
     from core.device_manager import _monitor_sync_success
     from core.service_monitoring import record_startup
