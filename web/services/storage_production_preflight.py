@@ -510,7 +510,7 @@ def format_human_report(report: ProductionPreflightReport) -> str:
             "Safety:",
             f"  db_changed: {'YES' if report.db_changed else 'NO'}",
             f"  filesystem_changed: {'YES' if report.filesystem_changed else 'NO'}",
-            "  production execute: NOT IMPLEMENTED",
+            "  production execute: use python -m web.services.storage_production_migration",
         ]
     )
     return "\n".join(lines).rstrip() + "\n"
