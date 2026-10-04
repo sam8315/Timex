@@ -964,6 +964,13 @@
             <i class="bi bi-grid-1x2"></i> پنل مدیریت
         </a>
 
+        {% if can_view_system_monitoring | default(false) %}
+        <a href="/admin/system"
+           class="sidebar-link {% if request.url.path.startswith('/admin/system') %}active{% endif %}">
+            <i class="bi bi-heart-pulse"></i> وضعیت سرویس‌ها
+        </a>
+        {% endif %}
+
         <!-- حضور و غیاب -->
         {% set att_active = '/admin/attendance' in request.url.path or '/admin/incomplete' in request.url.path or
         '/admin/daily-status' in request.url.path %}

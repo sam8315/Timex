@@ -682,6 +682,40 @@ def migrate_city_region_code(bind_engine=None) -> None:
             conn.commit()
 
 
+def seed_service_health(bind_engine=None) -> None:
+    """
+    Ensure one current-state row exists for each Timex service (idempotent).
+
+    Inserts web / adms / bale with unknown process/health when missing.
+    Never updates existing rows (runtime monitoring owns those fields later).
+    """
+    from sqlalchemy import text as _sql_text
+
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
+    if "service_health" not in inspector.get_table_names():
+        return
+
+    with target.begin() as conn:
+        for service_name in ("web", "adms", "bale"):
+            conn.execute(
+                _sql_text(
+                    """
+                    INSERT INTO service_health (
+                        service_name, process_state, health_state
+                    )
+                    VALUES (:service_name, 'unknown', 'unknown')
+                    ON CONFLICT (service_name) DO NOTHING
+                    """
+                ),
+                {"service_name": service_name},
+            )
+        logger.info(
+            "Service health rows ensured count=3",
+            extra={"event": "database.ready"},
+        )
+
+
 def create_tables() -> None:
     """
     ساخت تمام جداول تعریف شده در مدل‌ها
@@ -702,6 +736,7 @@ def create_tables() -> None:
         migrate_data_fixes()
         seed_travel_leave_policy_rules()
         seed_banks()
+        seed_service_health()
         logger.info(
             "Database tables created/verified successfully",
             extra={"event": "database.ready"},

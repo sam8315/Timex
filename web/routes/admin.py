@@ -181,6 +181,9 @@ def _admin_nav_flags(db: Session, user: User) -> dict:
     """فلگ‌های Sidebar بر اساس دسترسی مؤثر (بدون تغییر مدل Permission)."""
     return {
         "can_view_incomplete": has_permission(db, user, "view_incomplete"),
+        "can_view_system_monitoring": has_permission(
+            db, user, "view_system_monitoring"
+        ),
     }
 
 # نام انواع مرخصی

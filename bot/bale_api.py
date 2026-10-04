@@ -10,6 +10,7 @@ from bot.config import build_api_url
 logger = logging.getLogger(__name__)
 
 # Consecutive getUpdates failures (log-storm control; retry timing unchanged).
+# Also the source of truth for service_health metrics.consecutive_failures.
 _get_updates_fail_count = 0
 
 
@@ -23,6 +24,47 @@ def _classify_error(exc: BaseException) -> str:
     if isinstance(exc, (ValueError, json.JSONDecodeError)):
         return "invalid_response"
     return "unexpected_exception"
+
+
+def _monitor_api_failure(*, error_class: str, consecutive: int) -> None:
+    """Best-effort Bale API failure snapshot (never raises)."""
+    try:
+        from core.service_monitoring import merge_metrics, record_error
+
+        record_error(
+            "bale",
+            error_code="BALE_API_FAILED",
+            error_summary=f"Bale API getUpdates failed ({error_class})",
+        )
+        merge_metrics(
+            "bale",
+            {
+                "consecutive_failures": int(consecutive),
+                "recovery": "failed",
+            },
+        )
+    except Exception:
+        logger.exception(
+            "Bale API failure monitoring update failed",
+            extra={"event": "database.operation_failed"},
+        )
+
+
+def _monitor_poll_success(*, recovered: bool) -> None:
+    """Best-effort successful polling snapshot (never raises)."""
+    try:
+        from core.service_monitoring import record_success
+
+        metrics = {
+            "consecutive_failures": 0,
+            "recovery": "recovered" if recovered else "ok",
+        }
+        record_success("bale", metrics=metrics)
+    except Exception:
+        logger.exception(
+            "Bale poll success monitoring update failed",
+            extra={"event": "database.operation_failed"},
+        )
 
 
 def _post(method: str, data: dict) -> dict:
@@ -60,6 +102,10 @@ def _log_api_failure(method: str, exc: BaseException) -> None:
                 _get_updates_fail_count,
                 extra={"event": "bot.polling_error"},
             )
+        _monitor_api_failure(
+            error_class=error_class,
+            consecutive=_get_updates_fail_count,
+        )
         return
 
     if method == "sendMessage":
@@ -108,9 +154,11 @@ def get_updates(offset: int = 0, timeout: int = 30) -> list:
     }
     result = _post("getUpdates", data)
     if not result:
+        # Failure path: counter/error already updated in _log_api_failure.
         return []
 
-    if _get_updates_fail_count > 0:
+    recovered = _get_updates_fail_count > 0
+    if recovered:
         logger.info(
             "Polling recovered after %s consecutive failures",
             _get_updates_fail_count,
@@ -118,6 +166,7 @@ def get_updates(offset: int = 0, timeout: int = 30) -> list:
         )
         _get_updates_fail_count = 0
 
+    _monitor_poll_success(recovered=recovered)
     return result.get("result", [])
 
 

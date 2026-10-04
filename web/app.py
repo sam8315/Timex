@@ -9,6 +9,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from web.routes import auth, dashboard, attendance, leave, admin, contract, profile, holidays, admin_contracts, admin_leave, admin_daily_status, carry_forward, education, phones, addresses, reports, admin_policy, bank_accounts
 from web.routes import admin_cities, admin_service_locations, admin_travel_leave_policy, travel_leave_preview, admin_travel_leave_preview
 from web.routes import admin_positions
+from web.routes import admin_system
 BASE_PATH = Path(__file__).parent
 from web.config import WebConfig
 from web.routes.admin_permissions import router as permissions_router
@@ -57,6 +58,7 @@ app.router.routes = [
 app.include_router(admin_daily_status.router, prefix="/admin")
 app.include_router(admin_cities.router, prefix="/admin")
 app.include_router(admin_positions.router, prefix="/admin")
+app.include_router(admin_system.router, prefix="/admin")
 app.include_router(admin_service_locations.router, prefix="/admin")
 app.include_router(carry_forward.router)
 app.include_router(education.router)

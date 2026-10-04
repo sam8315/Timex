@@ -34,6 +34,7 @@ from models.employee_service_location import EmployeeServiceLocation
 from models.travel_leave_detail import TravelLeaveDetail
 from models.travel_leave_policy import TravelLeavePolicy
 from models.travel_leave_policy_rules import TravelLeavePolicyRule, TravelLeaveQuotaSetting
+from models.service_health import ServiceHealth
 
 __all__ = [
     'Base', 'User', 'Attendance', 'AttendancePolicy', 'AttendancePolicyDay',
@@ -49,4 +50,5 @@ __all__ = [
     'TravelLeavePolicyRule', 'TravelLeaveQuotaSetting',
     'Bank', 'EmployeeBankAccount',
     'PasswordResetRequest',
+    'ServiceHealth',
 ]

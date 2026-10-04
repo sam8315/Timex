@@ -33,6 +33,7 @@ ALL_PERMISSIONS = {
     'manage_cities':        {'label': 'مدیریت شهرها',              'admin': True,  'super_admin': True},
     'manage_positions':     {'label': 'مدیریت سمت‌ها',              'admin': True,  'super_admin': True},
     'manage_service_locations': {'label': 'مدیریت محل خدمت',       'admin': True,  'super_admin': True},
+    'view_system_monitoring': {'label': 'مشاهده پایش سرویس‌ها',   'admin': True,  'super_admin': True},
 }
 
 

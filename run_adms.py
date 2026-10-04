@@ -21,10 +21,15 @@ logger = logging.getLogger(__name__)
 
 from core.device_manager import DeviceManager
 from core.adms_server import run_server
+from core.service_monitoring import record_heartbeat, record_startup
 
 
 def perform_initial_sync(device_ip: str, device_port: int):
-    """Perform a one-time sync of existing attendance records before starting the API"""
+    """Perform a one-time sync of existing attendance records before starting the API.
+
+    Monitoring success/failure is recorded inside DeviceManager.sync_attendance_to_db /
+    DeviceManager.connect — do not duplicate those writes here.
+    """
     logger.info(
         "Initial device sync starting",
         extra={"event": "sync.started", "device_id": device_ip},
@@ -92,6 +97,9 @@ def monitor_device_connection(device_ip: str, device_port: int, check_interval: 
 
     while True:
         try:
+            # Existing 60s loop — one heartbeat per interval (no extra scheduler).
+            record_heartbeat("adms")
+
             manager = DeviceManager(ip=device_ip, port=device_port)
             is_connected = manager.connect()
             manager.disconnect()
@@ -137,6 +145,9 @@ if __name__ == "__main__":
     )
 
     try:
+        # Process is committed to run (initial sync may still fail; API starts anyway).
+        record_startup("adms")
+
         perform_initial_sync(device_ip, device_port)
 
         monitor_thread = threading.Thread(

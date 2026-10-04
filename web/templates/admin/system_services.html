@@ -1,0 +1,338 @@
+{% extends "base.html" %}
+{% block title %}وضعیت سرویس‌ها | پنل مدیریت{% endblock %}
+{% block topbar_title %}وضعیت سرویس‌ها{% endblock %}
+
+{% block content %}
+<style>
+    .svc-card .svc-dot {
+        display: inline-block;
+        width: 0.65rem;
+        height: 0.65rem;
+        border-radius: 50%;
+        margin-inline-end: 0.4rem;
+        vertical-align: middle;
+    }
+    .svc-dot-healthy { background: #198754; }
+    .svc-dot-degraded { background: #ffc107; }
+    .svc-dot-offline { background: #6c757d; }
+    .svc-dot-failed { background: #dc3545; }
+    .svc-dot-unknown { background: #adb5bd; }
+    .svc-meta dt {
+        font-weight: 600;
+        color: var(--bs-secondary-color, #6c757d);
+        font-size: 0.85rem;
+    }
+    .svc-meta dd {
+        margin-bottom: 0.55rem;
+        font-size: 0.95rem;
+    }
+    .svc-error-box {
+        border: 1px solid rgba(220, 53, 69, 0.35);
+        background: rgba(220, 53, 69, 0.08);
+        border-radius: 0.5rem;
+        padding: 0.75rem 0.9rem;
+        margin-top: 0.75rem;
+    }
+    #svcLastChecked {
+        font-variant-numeric: tabular-nums;
+    }
+</style>
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
+    <div>
+        <h4 class="mb-1"><i class="bi bi-heart-pulse"></i> وضعیت سرویس‌ها</h4>
+        <div class="text-muted small">
+            آخرین بررسی: <span id="svcLastChecked" dir="ltr">—</span>
+        </div>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+        <button type="button" class="btn btn-primary btn-sm" id="svcRefreshBtn">
+            <i class="bi bi-arrow-clockwise"></i> بروزرسانی
+        </button>
+        <a href="/admin/" class="btn btn-outline-primary btn-sm">
+            <i class="bi bi-arrow-right"></i> بازگشت به پنل مدیریت
+        </a>
+    </div>
+</div>
+
+<div id="svcLoading" class="alert alert-info" role="status">
+    <i class="bi bi-hourglass-split"></i> در حال دریافت وضعیت سرویس‌ها...
+</div>
+
+<div id="svcError" class="alert alert-danger d-none" role="alert">
+    <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap">
+        <span><i class="bi bi-exclamation-triangle"></i> خطا در دریافت وضعیت سرویس‌ها</span>
+        <button type="button" class="btn btn-outline-danger btn-sm" id="svcErrorRetryBtn">
+            <i class="bi bi-arrow-clockwise"></i> بروزرسانی
+        </button>
+    </div>
+</div>
+
+<div id="svcCards" class="row g-3" aria-live="polite"></div>
+
+<script>
+(function () {
+    const API_URL = "/admin/system/services";
+    const REFRESH_MS = 30000;
+    const EMPTY = "—";
+
+    const SERVICE_ORDER = ["web", "adms", "bale"];
+    const SERVICE_LABELS = {
+        web: "Web",
+        adms: "ADMS",
+        bale: "BaleBot"
+    };
+    const HEALTH_LABELS = {
+        healthy: "Healthy",
+        degraded: "Degraded",
+        offline: "Offline",
+        failed: "Failed",
+        unknown: "Unknown"
+    };
+    const PROCESS_LABELS = {
+        running: "Running",
+        stopped: "Stopped",
+        unknown: "Unknown"
+    };
+    const HEALTH_BADGE = {
+        healthy: "bg-success",
+        degraded: "bg-warning text-dark",
+        offline: "bg-secondary",
+        failed: "bg-danger",
+        unknown: "bg-light text-dark border"
+    };
+
+    const loadingEl = document.getElementById("svcLoading");
+    const errorEl = document.getElementById("svcError");
+    const cardsEl = document.getElementById("svcCards");
+    const lastCheckedEl = document.getElementById("svcLastChecked");
+    const refreshBtn = document.getElementById("svcRefreshBtn");
+    const errorRetryBtn = document.getElementById("svcErrorRetryBtn");
+
+    let refreshTimer = null;
+    let inFlight = false;
+
+    function esc(value) {
+        return String(value == null ? "" : value)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+    }
+
+    function formatTs(iso) {
+        if (!iso) return EMPTY;
+        const d = new Date(iso);
+        if (Number.isNaN(d.getTime())) return EMPTY;
+        try {
+            return d.toLocaleString(undefined, { hour12: false });
+        } catch (e) {
+            return d.toISOString();
+        }
+    }
+
+    function formatTime(iso) {
+        if (!iso) return EMPTY;
+        const d = new Date(iso);
+        if (Number.isNaN(d.getTime())) return EMPTY;
+        try {
+            return d.toLocaleTimeString(undefined, { hour12: false });
+        } catch (e) {
+            return EMPTY;
+        }
+    }
+
+    function metric(metrics, path) {
+        if (!metrics || typeof metrics !== "object") return null;
+        const parts = path.split(".");
+        let cur = metrics;
+        for (let i = 0; i < parts.length; i++) {
+            if (cur == null || typeof cur !== "object" || !(parts[i] in cur)) {
+                return null;
+            }
+            cur = cur[parts[i]];
+        }
+        return cur;
+    }
+
+    function displayValue(value) {
+        if (value === null || value === undefined || value === "") return EMPTY;
+        if (typeof value === "boolean") return value ? "Yes" : "No";
+        return String(value);
+    }
+
+    function row(label, value) {
+        return "<dt>" + esc(label) + "</dt><dd dir=\"auto\">" + esc(displayValue(value)) + "</dd>";
+    }
+
+    function errorBlock(svc) {
+        if (!svc.last_error_code && !svc.last_error_summary && !svc.last_error_at) {
+            return "";
+        }
+        return (
+            '<div class="svc-error-box">' +
+            "<div class=\"fw-semibold mb-1\">آخرین خطا</div>" +
+            "<div dir=\"ltr\">" + esc(displayValue(svc.last_error_code)) + "</div>" +
+            "<div>" + esc(displayValue(svc.last_error_summary)) + "</div>" +
+            "<div class=\"small text-muted mt-1\" dir=\"ltr\">" + esc(formatTs(svc.last_error_at)) + "</div>" +
+            "</div>"
+        );
+    }
+
+    function webBody(svc) {
+        return (
+            "<dl class=\"svc-meta mb-0\">" +
+            row("Process", PROCESS_LABELS[svc.process_state] || svc.process_state || EMPTY) +
+            row("Health", HEALTH_LABELS[svc.health_state] || svc.health_state || EMPTY) +
+            row("Startup", formatTs(svc.started_at)) +
+            row("Last success", formatTs(svc.last_success_at)) +
+            row("Last error", formatTs(svc.last_error_at)) +
+            "</dl>" +
+            errorBlock(svc)
+        );
+    }
+
+    function admsBody(svc) {
+        const m = svc.metrics || {};
+        return (
+            "<dl class=\"svc-meta mb-0\">" +
+            row("Process", PROCESS_LABELS[svc.process_state] || svc.process_state || EMPTY) +
+            row("Health", HEALTH_LABELS[svc.health_state] || svc.health_state || EMPTY) +
+            row("Device", metric(m, "device_connected")) +
+            row("Device connection", formatTs(metric(m, "last_device_connection_at"))) +
+            row("Last sync", formatTs(svc.last_success_at)) +
+            row("Fetched", metric(m, "last_sync.fetched")) +
+            row("Inserted", metric(m, "last_sync.inserted")) +
+            row("Duplicates", metric(m, "last_sync.duplicates")) +
+            row("Errors", metric(m, "last_sync.errors")) +
+            "</dl>" +
+            errorBlock(svc)
+        );
+    }
+
+    function baleBody(svc) {
+        const m = svc.metrics || {};
+        return (
+            "<dl class=\"svc-meta mb-0\">" +
+            row("Process", PROCESS_LABELS[svc.process_state] || svc.process_state || EMPTY) +
+            row("Health", HEALTH_LABELS[svc.health_state] || svc.health_state || EMPTY) +
+            row("Bot", metric(m, "bot_connected")) +
+            row("Last poll", formatTs(svc.last_success_at)) +
+            row("Consecutive failures", metric(m, "consecutive_failures")) +
+            row("Loop consecutive failures", metric(m, "loop_consecutive_failures")) +
+            row("Recovery", metric(m, "recovery")) +
+            "</dl>" +
+            errorBlock(svc)
+        );
+    }
+
+    function renderCard(svc) {
+        const name = svc.service_name || "unknown";
+        const health = svc.health_state || "unknown";
+        const healthLabel = HEALTH_LABELS[health] || health;
+        const badgeClass = HEALTH_BADGE[health] || HEALTH_BADGE.unknown;
+        const dotClass = "svc-dot svc-dot-" + (HEALTH_LABELS[health] ? health : "unknown");
+        let body = webBody(svc);
+        if (name === "adms") body = admsBody(svc);
+        if (name === "bale") body = baleBody(svc);
+
+        return (
+            '<div class="col-12 col-lg-4">' +
+            '<div class="card svc-card h-100" data-service="' + esc(name) + '" data-health="' + esc(health) + '">' +
+            '<div class="card-header bg-white d-flex justify-content-between align-items-center">' +
+            "<strong>" + esc(SERVICE_LABELS[name] || name) + "</strong>" +
+            '<span class="badge ' + badgeClass + '">' +
+            '<span class="' + dotClass + '" aria-hidden="true"></span>' +
+            esc(healthLabel) +
+            "</span>" +
+            "</div>" +
+            '<div class="card-body">' + body + "</div>" +
+            "</div></div>"
+        );
+    }
+
+    function showLoading(isLoading) {
+        loadingEl.classList.toggle("d-none", !isLoading);
+    }
+
+    function showError(isError) {
+        errorEl.classList.toggle("d-none", !isError);
+    }
+
+    function updateLastChecked(services) {
+        let latest = null;
+        (services || []).forEach(function (svc) {
+            if (!svc || !svc.checked_at) return;
+            const d = new Date(svc.checked_at);
+            if (!Number.isNaN(d.getTime()) && (!latest || d > latest)) {
+                latest = d;
+            }
+        });
+        lastCheckedEl.textContent = latest
+            ? latest.toLocaleTimeString(undefined, { hour12: false })
+            : EMPTY;
+    }
+
+    async function loadServices() {
+        if (inFlight) return;
+        inFlight = true;
+        showError(false);
+        if (!cardsEl.children.length) {
+            showLoading(true);
+        }
+        try {
+            const resp = await fetch(API_URL, {
+                headers: { "Accept": "application/json" },
+                credentials: "same-origin"
+            });
+            if (!resp.ok) {
+                throw new Error("api_failed");
+            }
+            const data = await resp.json();
+            const services = Array.isArray(data.services) ? data.services : [];
+            const byName = {};
+            services.forEach(function (svc) {
+                if (svc && svc.service_name) byName[svc.service_name] = svc;
+            });
+            const ordered = SERVICE_ORDER.map(function (name) {
+                return byName[name] || {
+                    service_name: name,
+                    process_state: "unknown",
+                    health_state: "unknown",
+                    metrics: null
+                };
+            });
+            cardsEl.innerHTML = ordered.map(renderCard).join("");
+            updateLastChecked(ordered);
+            showLoading(false);
+        } catch (e) {
+            showLoading(false);
+            showError(true);
+        } finally {
+            inFlight = false;
+        }
+    }
+
+    function startAutoRefresh() {
+        if (refreshTimer) {
+            clearInterval(refreshTimer);
+            refreshTimer = null;
+        }
+        refreshTimer = setInterval(loadServices, REFRESH_MS);
+    }
+
+    refreshBtn.addEventListener("click", function () {
+        loadServices();
+        startAutoRefresh();
+    });
+    errorRetryBtn.addEventListener("click", function () {
+        loadServices();
+        startAutoRefresh();
+    });
+
+    loadServices();
+    startAutoRefresh();
+})();
+</script>
+{% endblock %}

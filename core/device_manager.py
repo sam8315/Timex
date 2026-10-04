@@ -1,11 +1,73 @@
 from zk import ZK
 from typing import List, Dict, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 import time
 import jdatetime
 
 logger = logging.getLogger(__name__)
+
+
+def _monitor_device_connection(connected: bool) -> None:
+    """Best-effort connection snapshot for ADMS service_health (never raises)."""
+    try:
+        from core.service_monitoring import merge_metrics, record_error
+
+        patch = {"device_connected": connected}
+        if connected:
+            patch["last_device_connection_at"] = datetime.now(timezone.utc).isoformat()
+        merge_metrics("adms", patch)
+        if not connected:
+            record_error(
+                "adms",
+                error_code="DEVICE_CONNECTION_FAILED",
+                error_summary="Device connection failed",
+            )
+    except Exception:
+        logger.exception(
+            "ADMS connection monitoring update failed",
+            extra={"event": "database.operation_failed", "device_id": "adms"},
+        )
+
+
+def _monitor_sync_success(stats: Dict) -> None:
+    """Best-effort successful sync snapshot (never raises)."""
+    try:
+        from core.service_monitoring import record_success
+
+        record_success(
+            "adms",
+            metrics={
+                "last_sync": {
+                    "fetched": int(stats.get("total_fetched", 0) or 0),
+                    "inserted": int(stats.get("inserted", 0) or 0),
+                    "duplicates": int(stats.get("skipped_duplicates", 0) or 0),
+                    "errors": int(stats.get("errors", 0) or 0),
+                }
+            },
+        )
+    except Exception:
+        logger.exception(
+            "ADMS sync success monitoring update failed",
+            extra={"event": "database.operation_failed", "device_id": "adms"},
+        )
+
+
+def _monitor_sync_failure(summary: str) -> None:
+    """Best-effort sync failure snapshot (never raises)."""
+    try:
+        from core.service_monitoring import record_error
+
+        record_error(
+            "adms",
+            error_code="SYNC_FAILED",
+            error_summary=summary,
+        )
+    except Exception:
+        logger.exception(
+            "ADMS sync failure monitoring update failed",
+            extra={"event": "database.operation_failed", "device_id": "adms"},
+        )
 
 
 class DeviceManager:
@@ -23,6 +85,7 @@ class DeviceManager:
         """برقراری اتصال با دستگاه"""
         try:
             self.conn = self.zk.connect()
+            _monitor_device_connection(True)
             return True
         except Exception as e:
             logger.warning(
@@ -30,6 +93,7 @@ class DeviceManager:
                 type(e).__name__,
                 extra={"event": "device.offline", "device_id": self.ip},
             )
+            _monitor_device_connection(False)
             return False
 
     def disconnect(self):
@@ -290,6 +354,7 @@ class DeviceManager:
                         "duration_ms": stats['duration_ms'],
                     },
                 )
+                # Connection monitoring already recorded DEVICE_CONNECTION_FAILED.
                 return {'error': '❌ Could not establish connection to device'}
             logger.info(
                 "Device successfully connected",
@@ -301,6 +366,7 @@ class DeviceManager:
                 extra={"event": "sync.started", "device_id": self.ip},
             )
 
+        sync_failed = False
         try:
             # Step 2: Get the latest record from the database
             logger.debug(
@@ -355,6 +421,7 @@ class DeviceManager:
             if stats['total_fetched'] == 0:
                 stats['duration_ms'] = _duration_ms()
                 _log_sync_completed("No records found on device")
+                _monitor_sync_success(stats)
                 return stats
 
             # Step 4: Find the first unsynchronized record
@@ -412,6 +479,7 @@ class DeviceManager:
                 else:
                     stats['duration_ms'] = _duration_ms()
                     _log_sync_completed("All records are synchronized", level=logging.DEBUG)
+                    _monitor_sync_success(stats)
                     return stats
             else:
                 # Database is empty, all records are new
@@ -454,6 +522,7 @@ class DeviceManager:
                             "duration_ms": stats['duration_ms'],
                         },
                     )
+                    # Operator cancel is not a successful sync.
                     return stats
 
             # Step 6: Actual execution
@@ -536,6 +605,8 @@ class DeviceManager:
                 extra={"event": "sync.failed", "device_id": self.ip},
             )
             stats['errors'] += 1
+            sync_failed = True
+            _monitor_sync_failure("Attendance synchronization failed")
 
         finally:
             # Step 7: Disconnect
@@ -571,6 +642,9 @@ class DeviceManager:
                 "duration_ms": stats['duration_ms'],
             },
         )
+
+        if not sync_failed:
+            _monitor_sync_success(stats)
 
         return stats
 

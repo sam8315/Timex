@@ -10,17 +10,24 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import OperationalError
 
 from core.logging_config import configure_logging
+from core.service_monitoring import record_error, record_startup, record_success
 
 load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-# تنظیم کدگذاری خروجی به UTF-8
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
-
 TEST_USER_ID = "admin"
 TEST_PASSWORD = "123456"
+
+
+def _configure_stdio_utf8() -> None:
+    """Set UTF-8 stdio only for the real process entrypoint (not imports/tests)."""
+    try:
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
+    except Exception:
+        # Some hosts/tests replace stdio without a raw buffer.
+        pass
 
 
 def create_database_if_missing() -> None:
@@ -136,7 +143,9 @@ def ensure_test_access() -> None:
         db.close()
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """Web process entrypoint (DB readiness → startup mark → uvicorn)."""
+    _configure_stdio_utf8()
     configure_logging("web")
 
     host = os.getenv("WEB_HOST", "0.0.0.0")
@@ -150,8 +159,45 @@ if __name__ == "__main__":
     )
 
     try:
-        ensure_database_tables()
+        try:
+            ensure_database_tables()
+        except Exception:
+            # Best-effort only; never hide the original startup failure.
+            try:
+                record_error(
+                    "web",
+                    error_code="DB_STARTUP_FAILED",
+                    error_summary="Database startup failed",
+                )
+            except Exception:
+                logger.exception(
+                    "Web DB startup failure monitoring update failed",
+                    extra={"event": "database.operation_failed"},
+                )
+            raise
+
+        # last_success_at for web = last successful DB readiness.
+        try:
+            record_success(
+                "web",
+                metrics={"last_success_kind": "db_ready"},
+            )
+        except Exception:
+            logger.exception(
+                "Web DB readiness monitoring update failed",
+                extra={"event": "database.operation_failed"},
+            )
+
         ensure_test_access()
+
+        # Entering the real web serve lifecycle (uvicorn about to run).
+        try:
+            record_startup("web")
+        except Exception:
+            logger.exception(
+                "Web startup monitoring update failed",
+                extra={"event": "database.operation_failed"},
+            )
 
         logger.info(
             "Web server starting at http://%s:%s",
@@ -180,3 +226,7 @@ if __name__ == "__main__":
             extra={"event": "service.stopping"},
         )
         raise
+
+
+if __name__ == "__main__":
+    main()
