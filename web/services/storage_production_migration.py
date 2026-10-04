@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import sys
 from dataclasses import asdict, dataclass, field
@@ -255,14 +256,14 @@ def path_is_within_root(path: Path, root: Path) -> bool:
 
 
 def coerce_max_backup_age_hours(value: Any) -> tuple[Optional[float], Optional[str]]:
-    """Return ``(hours, error)``. Negative / non-numeric values are rejected."""
+    """Return ``(hours, error)``. Negative / non-finite / non-numeric values are rejected."""
     if value is None:
         return DEFAULT_MAX_BACKUP_AGE_HOURS, None
     try:
         hours = float(value)
     except (TypeError, ValueError):
         return None, "max_backup_age_hours must be a non-negative number"
-    if hours != hours or hours < 0:  # NaN or negative
+    if not math.isfinite(hours) or hours < 0:
         return None, "max_backup_age_hours must be a non-negative number"
     return hours, None
 

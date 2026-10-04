@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -840,6 +841,39 @@ def test_invalid_max_backup_age_hours_rejects(mig_env, make_user):
     gates = _eval(mig_env, backup_manifest=manifest, max_backup_age_hours="abc")
     assert gates.allowed is False
     assert any("max_backup_age_hours" in b for b in gates.blockers)
+
+
+def test_inf_max_backup_age_hours_rejects(mig_env, make_user):
+    _attach_legacy_paths(mig_env, make_user)
+    manifest = _write_backup_manifest(mig_env)
+    gates = _eval(mig_env, backup_manifest=manifest, max_backup_age_hours=math.inf)
+    assert gates.allowed is False
+    assert any(
+        b == "max_backup_age_hours must be a non-negative number"
+        for b in gates.blockers
+    )
+
+
+def test_neg_inf_max_backup_age_hours_rejects(mig_env, make_user):
+    _attach_legacy_paths(mig_env, make_user)
+    manifest = _write_backup_manifest(mig_env)
+    gates = _eval(mig_env, backup_manifest=manifest, max_backup_age_hours=-math.inf)
+    assert gates.allowed is False
+    assert any(
+        b == "max_backup_age_hours must be a non-negative number"
+        for b in gates.blockers
+    )
+
+
+def test_nan_max_backup_age_hours_rejects(mig_env, make_user):
+    _attach_legacy_paths(mig_env, make_user)
+    manifest = _write_backup_manifest(mig_env)
+    gates = _eval(mig_env, backup_manifest=manifest, max_backup_age_hours=math.nan)
+    assert gates.allowed is False
+    assert any(
+        b == "max_backup_age_hours must be a non-negative number"
+        for b in gates.blockers
+    )
 
 
 def test_backup_path_inside_storage_root_rejects(mig_env, make_user):
