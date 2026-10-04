@@ -1106,10 +1106,12 @@ def align_leave_policy_membership_67(bind_engine=None) -> None:
                         """
                         INSERT INTO policy_values (
                             policy_id, parameter_key, parameter_value,
-                            region_code, notes, created_at, updated_at
+                            region_code, notes, is_editable,
+                            created_at, updated_at
                         )
                         VALUES (
-                            :pid, :key, :val, NULL, :notes, NOW(), NOW()
+                            :pid, :key, :val, NULL, :notes, TRUE,
+                            NOW(), NOW()
                         )
                         """
                     ),
