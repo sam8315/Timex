@@ -1070,6 +1070,8 @@
         {% set set_active = '/admin/holidays' in request.url.path or '/admin/import-previous-leave' in request.url.path
             or '/admin/cities' in request.url.path or '/admin/positions' in request.url.path
             or '/admin/employee-document-types' in request.url.path
+            or '/admin/membership-types' in request.url.path
+            or '/admin/service-adjustments' in request.url.path
         %}
         <a class="sidebar-link {% if set_active %}active{% endif %}" data-bs-toggle="collapse" href="#setMenu"
            role="button" aria-expanded="{{ 'true' if set_active else 'false' }}">
@@ -1103,6 +1105,16 @@
                class="sidebar-link {% if '/admin/employee-document-types' in request.url.path %}active{% endif %}">
                 <i class="bi bi-folder2"></i> انواع مدارک پرسنلی
             </a>
+            {% if user and user.role == 'super_admin' %}
+            <a href="/admin/membership-types"
+               class="sidebar-link {% if '/admin/membership-types' in request.url.path %}active{% endif %}">
+                <i class="bi bi-people"></i> انواع عضویت
+            </a>
+            <a href="/admin/service-adjustments"
+               class="sidebar-link {% if '/admin/service-adjustments' in request.url.path %}active{% endif %}">
+                <i class="bi bi-hourglass-split"></i> تعدیل خدمت
+            </a>
+            {% endif %}
         </div>
     </div>
     {% endif %}

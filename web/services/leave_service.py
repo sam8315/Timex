@@ -142,6 +142,8 @@ def update_leave_for_contract(
     old_end_date: date,
     old_deduction: int,
     old_type_code: Optional[str] = None,
+    *,
+    commit: bool = True,
 ) -> dict:
     """بروزرسانی مرخصی هنگام ویرایش قرارداد با قواعد عضویت."""
     employee = db.query(Employee).filter(Employee.user_id == contract.user_id).first()
@@ -230,7 +232,8 @@ def update_leave_for_contract(
             changes.setdefault(year_j, {})[leave_type] = diff
 
     sync_employee_department_from_active_contract(db, contract.user_id, commit=False)
-    db.commit()
+    if commit:
+        db.commit()
     return changes
 
 

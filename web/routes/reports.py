@@ -15,7 +15,7 @@ from web.dependencies import get_db, require_admin
 from web.permissions import enforce_permission
 from models.user import User
 from models.employee import Employee
-from models.contract import CONTRACT_TYPES
+from web.services.membership_service import membership_types_as_dict
 from core.raw_report import (
     JALALI_MONTHS,
     EMPLOYMENT_TYPE_OPTIONS,
@@ -74,8 +74,16 @@ def _employment_type_label(employment_type: str) -> str:
     return employment_type or 'همه'
 
 
-def _validate_monthly_employment_type(employment_type: str) -> None:
-    if employment_type not in CONTRACT_TYPES and employment_type != 'all':
+def _validate_monthly_employment_type(employment_type: str, db: Session = None) -> None:
+    if employment_type == 'all':
+        return
+    if db is not None:
+        known = membership_types_as_dict(db, active_only=False)
+        if employment_type not in known:
+            raise ValueError('نوع عضویت نامعتبر است')
+        return
+    from web.services.membership_service import SEED_MEMBERSHIPS
+    if employment_type not in {c for c, *_ in SEED_MEMBERSHIPS}:
         raise ValueError('نوع عضویت نامعتبر است')
 
 
@@ -464,7 +472,9 @@ def _validate_raw_report_params(
 ):
     if month < 1 or month > 12:
         raise ValueError('ماه نامعتبر است')
-    if employment_type not in CONTRACT_TYPES and employment_type != 'all':
+    from web.services.membership_service import SEED_MEMBERSHIPS
+    known = {c for c, *_ in SEED_MEMBERSHIPS}
+    if employment_type not in known and employment_type != 'all':
         raise ValueError('نوع عضویت نامعتبر است')
     valid_status_filters = {value for value, _ in STATUS_FILTER_OPTIONS}
     if status_filter not in valid_status_filters:

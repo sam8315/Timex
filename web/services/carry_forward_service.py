@@ -19,6 +19,19 @@ CARRY_FORWARD_LEAVE_TYPE = 'CW'
 DEFAULT_CARRY_FORWARD_LIMIT = 9
 
 
+def _membership_name(db: Session, code) -> str:
+    if not code:
+        return 'نامشخص'
+    try:
+        from web.services.membership_service import get_membership_type
+        mt = get_membership_type(db, str(code))
+        if mt:
+            return mt.name
+    except Exception:
+        pass
+    return f'نامشخص ({code})'
+
+
 # ============================================
 # 📊 توابع تحلیلی
 # ============================================
@@ -248,8 +261,10 @@ def _get_contract_limit_days(contracts: list, year_start_g, year_end_g, db=None)
     Returns: (total_worked_days, base_limit, last_contract_type)
     base_limit=None یعنی بدون سقف سیاستی.
     """
-    from models.contract import CONTRACT_TYPES
-    from web.services.leave_entitlement_service import resolve_max_carry_forward
+    from web.services.leave_entitlement_service import (
+        CARRY_FORWARD_FALLBACK,
+        resolve_max_carry_forward,
+    )
 
     total_worked_days = 0
     base_limit = 0
@@ -257,7 +272,6 @@ def _get_contract_limit_days(contracts: list, year_start_g, year_end_g, db=None)
     unlimited = False
 
     for contract in contracts:
-        type_config = CONTRACT_TYPES.get(contract.contract_type_code, {})
         if db is not None:
             policy_cap = resolve_max_carry_forward(db, contract.contract_type_code)
             if policy_cap is None:
@@ -266,7 +280,7 @@ def _get_contract_limit_days(contracts: list, year_start_g, year_end_g, db=None)
             else:
                 type_limit = policy_cap
         else:
-            type_limit = type_config.get('carry_forward_max', 0)
+            type_limit = CARRY_FORWARD_FALLBACK.get(contract.contract_type_code, 0)
 
         if type_limit is None:
             last_contract_type = contract.contract_type_code
@@ -296,8 +310,6 @@ def calculate_carry_forward_limit(db: Session, user_id: str, from_year: int) -> 
     🐛 اصلاح شده: محاسبه سقف انتقال مرخصی با اولویت‌بندی قراردادها
     اگر هیچ قراردادی نباشد ولی کارمند فعال باشد، کل سال در نظر گرفته می‌شود
     """
-    from models.contract import CONTRACT_TYPES
-
     year_start_g, year_end_g = _get_year_range_g(from_year)
     year_days = (year_end_g - year_start_g).days + 1
 
@@ -381,7 +393,7 @@ def calculate_carry_forward_limit(db: Session, user_id: str, from_year: int) -> 
             'year_days': year_days,
             'full_year': total_worked_days >= year_days,
             'contract_type_code': last_contract_type,
-            'contract_type_name': CONTRACT_TYPES.get(last_contract_type, {}).get('name', 'نامشخص'),
+            'contract_type_name': _membership_name(db, last_contract_type),
             'source': source,
         }
 
@@ -394,7 +406,7 @@ def calculate_carry_forward_limit(db: Session, user_id: str, from_year: int) -> 
             'year_days': year_days,
             'full_year': total_worked_days >= year_days,
             'contract_type_code': last_contract_type,
-            'contract_type_name': CONTRACT_TYPES.get(last_contract_type, {}).get('name', 'نامشخص'),
+            'contract_type_name': _membership_name(db, last_contract_type),
             'source': source,
         }
 
@@ -415,7 +427,7 @@ def calculate_carry_forward_limit(db: Session, user_id: str, from_year: int) -> 
         'year_days': year_days,
         'full_year': full_year,
         'contract_type_code': last_contract_type,
-        'contract_type_name': CONTRACT_TYPES.get(last_contract_type, {}).get('name', 'نامشخص'),
+        'contract_type_name': _membership_name(db, last_contract_type),
         'source': source,
     }
 

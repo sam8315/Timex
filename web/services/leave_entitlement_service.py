@@ -11,7 +11,7 @@ from typing import Dict, List, Optional, Tuple
 import jdatetime
 from sqlalchemy.orm import Session
 
-from models.contract import CONTRACT_TYPES, Contract
+from models.contract import Contract
 from models.employee import Employee
 from models.leave_glossary import (
     MEMBERSHIP_CONSCRIPT,
@@ -26,6 +26,17 @@ from models.region import Region
 logger = logging.getLogger(__name__)
 
 DEPT_DEFAULT_ANNUAL = 30
+
+# Carry-forward fallbacks previously embedded in CONTRACT_TYPES
+CARRY_FORWARD_FALLBACK = {
+    '1': 0,
+    '2': 35,
+    '3': 9,
+    '4': 9,
+    '5': 0,
+    '6': 0,
+    '7': 0,
+}
 
 
 def get_jalali_year_days(year: int) -> int:
@@ -76,10 +87,12 @@ def _parse_int(value: Optional[str], default: int) -> int:
 
 
 def resolve_membership_code_for_policy(contract_type_code: str) -> str:
-    """Map contract type 6/7 onto policy dept keys (fallback to 4=قراردادی)."""
-    if contract_type_code in POLICY_MEMBERSHIP_CODES:
-        return contract_type_code
-    return '4'
+    """Identity: هر کد عضویت کلید Policy مستقل خود را دارد (بدون remap)."""
+    code = str(contract_type_code or '').strip()
+    if code in POLICY_MEMBERSHIP_CODES:
+        return code
+    # Unknown codes stay as-is; callers/FK validation handle orphans.
+    return code or '4'
 
 
 def _parse_buyback_cap(raw: Optional[str]) -> Optional[int]:
@@ -146,10 +159,8 @@ def resolve_max_carry_forward(db: Session, membership_code: str) -> Optional[int
         if global_pv is not None and global_pv.parameter_value is not None:
             return _parse_buyback_cap(global_pv.parameter_value)
 
-    # پیش‌فرض از CONTRACT_TYPES
-    from models.contract import CONTRACT_TYPES
-    cfg = CONTRACT_TYPES.get(policy_code, {})
-    raw = cfg.get('carry_forward_max', 0)
+    # پیش‌فرض ثابت (جایگزین CONTRACT_TYPES.carry_forward_max)
+    raw = CARRY_FORWARD_FALLBACK.get(policy_code, 0)
     try:
         return max(0, int(raw))
     except (TypeError, ValueError):
@@ -319,32 +330,56 @@ def resolve_membership_for_user(db: Session, user_id: str) -> str:
     return '4'
 
 
+def _has_membership_rule(db: Session, membership_code: str) -> bool:
+    try:
+        from models.membership_type_rule import MembershipTypeRule
+        return (
+            db.query(MembershipTypeRule.id)
+            .filter(MembershipTypeRule.membership_type_code == membership_code)
+            .first()
+            is not None
+        )
+    except Exception:
+        return False
+
+
 def resolve_annual_leave_days(
     db: Session,
     membership_code: str,
     region_code: Optional[str] = None,
 ) -> int:
     """
-    استحقاق سالانه از سیاست عضویت (+ منطقه فقط اگر flag صریحاً true باشد).
+    استحقاق سالانه:
+    Membership annual_leave_base → region_applies → regional override → fallback base.
 
-    Fallback: DEPT_DEFAULT_ANNUAL (نه CONTRACT_TYPES).
+    اگر هنوز Rule عضویت seed نشده باشد، مسیر legacy annual_leave_dept_* استفاده می‌شود
+    (فقط برای سازگاری موقت قبل از seed).
     """
     policy_code = resolve_membership_code_for_policy(membership_code)
+
+    if _has_membership_rule(db, policy_code):
+        from web.services.membership_service import (
+            resolve_annual_leave_base_with_region,
+        )
+        return resolve_annual_leave_base_with_region(
+            db, policy_code, region_code=region_code
+        )
 
     policy = _get_leave_policy(db)
     if not policy:
         return DEPT_DEFAULT_ANNUAL
 
     annual_pv = _get_policy_param(db, policy.id, f'annual_leave_dept_{policy_code}')
+    # برای 5/6/7 بدون رکورد سیاست، پیش‌فرض 0 (نه 30)
+    default_annual = 0 if policy_code in ('5', '6', '7') else DEPT_DEFAULT_ANNUAL
     annual = _parse_int(
         annual_pv.parameter_value if annual_pv else None,
-        DEPT_DEFAULT_ANNUAL,
+        default_annual,
     )
 
     region_flag_pv = _get_policy_param(
         db, policy.id, f'region_applies_dept_{policy_code}'
     )
-    # هم‌خوان با UI سیاست مرخصی: پیش‌فرض اعمال منطقه؛ فقط با false صریح خاموش
     if region_flag_pv is None:
         region_applies = True
     else:
@@ -587,7 +622,8 @@ def sync_employee_department_from_active_contract(
         return None
 
     code = chosen.contract_type_code
-    dept = code if code in POLICY_MEMBERSHIP_CODES else resolve_membership_code_for_policy(code)
+    # بدون remap: همان کد عضویت مؤثر روی department نوشته می‌شود
+    dept = resolve_membership_code_for_policy(code)
     if employee.department != dept:
         employee.department = dept
         if commit:

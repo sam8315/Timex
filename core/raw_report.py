@@ -7,8 +7,8 @@ from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session, selectinload
 
 from models.attendance import Attendance
-from models.contract import CONTRACT_TYPES
 from models.daily_status import DailyStatus
+from web.services.membership_service import SEED_MEMBERSHIPS
 from models.employee import Employee
 from models.holiday import Holiday
 from models.hourly_mission import HourlyMission
@@ -237,7 +237,8 @@ class RawReportService:
 
     @staticmethod
     def _membership_name(department: Optional[str]) -> str:
-        return CONTRACT_TYPES.get(department or '', {}).get('name', department or '-')
+        names = {code: name for code, name, *_ in SEED_MEMBERSHIPS}
+        return names.get(department or '', department or '-')
 
     @staticmethod
     def _holiday_dates_for_department(

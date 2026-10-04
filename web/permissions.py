@@ -49,6 +49,21 @@ ALL_PERMISSIONS = {
         'admin': True,
         'super_admin': True,
     },
+    'manage_membership_types': {
+        'label': 'مدیریت انواع عضویت',
+        'admin': False,
+        'super_admin': True,
+    },
+    'manage_membership_rules': {
+        'label': 'مدیریت قواعد عضویت',
+        'admin': False,
+        'super_admin': True,
+    },
+    'manage_service_adjustments': {
+        'label': 'مدیریت تعدیل خدمت',
+        'admin': False,
+        'super_admin': True,
+    },
 }
 
 # ترکیب‌هایی که از UI قابل غیرفعال‌کردن نیستند (جلوگیری از قفل‌شدن مدیریت)

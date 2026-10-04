@@ -4,68 +4,8 @@
 from datetime import date, timedelta
 from typing import Optional
 from sqlalchemy import Integer, String, Date, ForeignKey, Text, CheckConstraint
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, object_session
 from models.base import Base, TimestampMixin
-
-
-CONTRACT_TYPES = {
-    '1': {
-        'name': 'رسمی',
-        'annual_leave': 30,
-        'sick_leave': 120,
-        'allow_service_deduction': False,
-        'editable_leave': False,
-        'carry_forward_max': 0,
-    },
-    '2': {
-        'name': 'وظیفه',
-        'annual_leave': 30,
-        'sick_leave': 0,
-        'allow_service_deduction': True,
-        'editable_leave': False,
-        'carry_forward_max': 35,
-    },
-    '3': {
-        'name': 'خریدخدمت',
-        'annual_leave': 30,
-        'sick_leave': 0,
-        'allow_service_deduction': False,
-        'editable_leave': False,
-        'carry_forward_max': 9,
-    },
-    '4': {
-        'name': 'قراردادی',
-        'annual_leave': 30,
-        'sick_leave': 0,
-        'allow_service_deduction': False,
-        'editable_leave': False,
-        'carry_forward_max': 9,
-    },
-    '5': {
-        'name': 'پزشکی',
-        'annual_leave': 0,
-        'sick_leave': 0,
-        'allow_service_deduction': False,
-        'editable_leave': False,
-        'carry_forward_max': 0,
-    },
-    '6': {
-        'name': 'سایر / متفرقه',
-        'annual_leave': 0,
-        'sick_leave': 0,
-        'allow_service_deduction': False,
-        'editable_leave': True,
-        'carry_forward_max': 0,
-    },
-    '7': {
-        'name': 'قرارداد با بیمه‌ها',
-        'annual_leave': 0,
-        'sick_leave': 0,
-        'allow_service_deduction': False,
-        'editable_leave': True,
-        'carry_forward_max': 0,
-    },
-}
 
 
 class Contract(TimestampMixin, Base):
@@ -81,7 +21,7 @@ class Contract(TimestampMixin, Base):
         index=True
     )
 
-    # 🆕 کد نوع قرارداد (1=رسمی، 2=وظیفه، ...، 7=بیمه‌ها)
+    # کد نوع عضویت (FK منطقی به membership_types.code؛ مقدار موجود تغییر نمی‌کند)
     contract_type_code: Mapped[str] = mapped_column(
         String(10),
         nullable=False,
@@ -93,11 +33,11 @@ class Contract(TimestampMixin, Base):
     # قرارداد رسمی هم ممکن است end_date داشته باشد (۲۰-۳۰ سال)
     end_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
 
-    # مرخصی استحقاقی و استعلاجی (به روز)
+    # مرخصی استحقاقی و استعلاجی (به روز) — backward compatibility snapshot
     annual_leave_days: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     sick_leave_days: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
-    # 🆕 کسر خدمت (فقط برای وظیفه)
+    # کسر خدمت (فقط وقتی Rule.supports_service_deduction)
     service_deduction_days: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -122,17 +62,33 @@ class Contract(TimestampMixin, Base):
 
     @property
     def contract_type_name(self) -> str:
-        """نام فارسی نوع قرارداد"""
-        return CONTRACT_TYPES.get(
-            self.contract_type_code, {}
-        ).get('name', f'نامشخص ({self.contract_type_code})')
+        """نام فارسی نوع عضویت از membership_types."""
+        session = object_session(self)
+        if session is not None:
+            try:
+                from models.membership_type import MembershipType
+                mt = session.get(MembershipType, self.contract_type_code)
+                if mt is not None:
+                    return mt.name
+            except Exception:
+                pass
+        return f'نامشخص ({self.contract_type_code})'
 
     @property
     def allow_service_deduction(self) -> bool:
-        """آیا کسر خدمت مجاز است؟"""
-        return CONTRACT_TYPES.get(
-            self.contract_type_code, {}
-        ).get('allow_service_deduction', False)
+        """آیا کسر خدمت طبق Rule مؤثر مجاز است؟"""
+        session = object_session(self)
+        if session is not None:
+            try:
+                from web.services.membership_service import get_effective_rule
+                rule = get_effective_rule(
+                    session, self.contract_type_code, on_date=self.start_date
+                )
+                if rule is not None:
+                    return bool(rule.supports_service_deduction)
+            except Exception:
+                pass
+        return False
 
     @property
     def contract_duration_days(self) -> Optional[int]:
@@ -200,6 +156,7 @@ class Contract(TimestampMixin, Base):
         days_passed = (effective_end - self.start_date).days
         prorated = int((days_passed / 365.0) * self.sick_leave_days)
         return max(0, min(prorated, self.sick_leave_days))
+
     def to_dict(self) -> dict:
         return {
             'id': self.id,

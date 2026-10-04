@@ -11,6 +11,8 @@ from web.routes import auth, dashboard, attendance, leave, admin, contract, prof
 from web.routes import admin_cities, admin_service_locations, admin_travel_leave_policy, travel_leave_preview, admin_travel_leave_preview
 from web.routes import admin_positions
 from web.routes import admin_employee_document_types
+from web.routes import admin_membership_types
+from web.routes import admin_service_adjustments
 from web.routes import admin_system
 BASE_PATH = Path(__file__).parent
 from web.config import WebConfig
@@ -91,6 +93,8 @@ app.include_router(admin_daily_status.router, prefix="/admin")
 app.include_router(admin_cities.router, prefix="/admin")
 app.include_router(admin_positions.router, prefix="/admin")
 app.include_router(admin_employee_document_types.router, prefix="/admin")
+app.include_router(admin_membership_types.router, prefix="/admin")
+app.include_router(admin_service_adjustments.router, prefix="/admin")
 app.include_router(admin_system.router, prefix="/admin")
 app.include_router(admin_service_locations.router, prefix="/admin")
 app.include_router(carry_forward.router)

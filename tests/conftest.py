@@ -105,6 +105,7 @@ from database.init_db import (  # noqa: E402
     migrate_city_region_code,
     migrate_employee_position_id,
     migrate_employee_document_types,
+    seed_membership_types,
     seed_role_permissions,
 )
 from sqlalchemy import text as _sql_text
@@ -195,6 +196,7 @@ with test_engine.connect() as _conn:
 
 Base.metadata.create_all(bind=test_engine)
 migrate_employee_document_types(bind_engine=test_engine)
+seed_membership_types(bind_engine=test_engine)
 seed_role_permissions(bind_engine=test_engine)
 
 with test_engine.connect() as _conn:
@@ -280,7 +282,7 @@ _seed_regions()
 def _seed_travel_leave_data() -> None:
     """Seed cities and contract-scoped travel leave policies (idempotent)."""
     from models.city import City
-    from models.contract import CONTRACT_TYPES
+    from web.services.membership_service import SEED_MEMBERSHIPS
     from models.travel_leave_policy import TravelLeavePolicy
     from models.travel_leave_policy_rules import (
         TravelLeavePolicyRule,
@@ -299,7 +301,7 @@ def _seed_travel_leave_data() -> None:
             ])
             session.commit()
 
-        for contract_type_code in CONTRACT_TYPES:
+        for contract_type_code, *_rest in SEED_MEMBERSHIPS:
             policy = session.query(TravelLeavePolicy).filter(
                 TravelLeavePolicy.contract_type_code == contract_type_code
             ).first()

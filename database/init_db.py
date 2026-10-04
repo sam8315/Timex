@@ -999,6 +999,218 @@ def migrate_employee_document_types(bind_engine=None) -> None:
                 )
 
 
+def seed_membership_types(bind_engine=None) -> None:
+    """
+    Ensure the seven legacy membership types + first rules exist (idempotent).
+    Never creates memberships beyond codes 1..7. Never rewrites contracts.
+    """
+    from sqlalchemy.orm import sessionmaker
+    from web.services.membership_service import (
+        lock_codes_with_history,
+        seed_default_memberships,
+    )
+
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
+    tables = set(inspector.get_table_names())
+    if "membership_types" not in tables or "membership_type_rules" not in tables:
+        return
+
+    SessionLocal = sessionmaker(bind=target, autoflush=False, autocommit=False)
+    db = SessionLocal()
+    try:
+        created = seed_default_memberships(db)
+        locked = lock_codes_with_history(db)
+        db.commit()
+        logger.info(
+            "Membership types seeded created=%s locked=%s",
+            created,
+            locked,
+            extra={"event": "database.ready"},
+        )
+    except Exception:
+        db.rollback()
+        logger.exception(
+            "Failed to seed membership types",
+            extra={"event": "database.operation_failed"},
+        )
+        raise
+    finally:
+        db.close()
+
+
+def align_leave_policy_membership_67(bind_engine=None) -> None:
+    """
+    Ensure leave policy keys for memberships 6/7 exist with annual=0.
+    Does not rewrite contracts or leave balances.
+    """
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
+    if "policies" not in inspector.get_table_names():
+        return
+    if "policy_values" not in inspector.get_table_names():
+        return
+
+    with target.begin() as conn:
+        leave_id = conn.execute(
+            text(
+                "SELECT id FROM policies WHERE category = 'leave' "
+                "ORDER BY id ASC LIMIT 1"
+            )
+        ).scalar()
+        if leave_id is None:
+            return
+        for code in ("6", "7"):
+            for key, value, notes in (
+                (
+                    f"annual_leave_dept_{code}",
+                    "0",
+                    f"هم‌ترازی cutover عضویت {code}",
+                ),
+                (
+                    f"region_applies_dept_{code}",
+                    "true",
+                    f"اعمال منطقه برای عضویت {code}",
+                ),
+            ):
+                exists = conn.execute(
+                    text(
+                        """
+                        SELECT 1 FROM policy_values
+                        WHERE policy_id = :pid
+                          AND parameter_key = :key
+                          AND region_code IS NULL
+                        LIMIT 1
+                        """
+                    ),
+                    {"pid": leave_id, "key": key},
+                ).first()
+                if exists:
+                    # Only force annual_leave_dept_6/7 to 0 for cutover alignment
+                    if key.startswith("annual_leave_dept_"):
+                        conn.execute(
+                            text(
+                                """
+                                UPDATE policy_values
+                                SET parameter_value = :val
+                                WHERE policy_id = :pid
+                                  AND parameter_key = :key
+                                  AND region_code IS NULL
+                                """
+                            ),
+                            {"pid": leave_id, "key": key, "val": value},
+                        )
+                    continue
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO policy_values (
+                            policy_id, parameter_key, parameter_value,
+                            region_code, notes, created_at, updated_at
+                        )
+                        VALUES (
+                            :pid, :key, :val, NULL, :notes, NOW(), NOW()
+                        )
+                        """
+                    ),
+                    {
+                        "pid": leave_id,
+                        "key": key,
+                        "val": value,
+                        "notes": notes,
+                    },
+                )
+    logger.info(
+        "Leave policy aligned for memberships 6/7",
+        extra={"event": "database.ready"},
+    )
+
+
+def migrate_membership_contract_fk(bind_engine=None) -> None:
+    """
+    Add FK contracts.contract_type_code → membership_types.code after orphan check.
+    Fail-closed: raises if unknown codes exist. Never remaps codes.
+    """
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
+    tables = set(inspector.get_table_names())
+    if "contracts" not in tables or "membership_types" not in tables:
+        return
+
+    seed_membership_types(bind_engine=target)
+
+    with target.connect() as conn:
+        orphans = conn.execute(
+            text(
+                """
+                SELECT id, contract_type_code
+                FROM contracts c
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM membership_types m
+                    WHERE m.code = c.contract_type_code
+                )
+                ORDER BY id
+                LIMIT 50
+                """
+            )
+        ).fetchall()
+        if orphans:
+            detail = ", ".join(
+                f"id={r[0]} code={r[1]!r}" for r in orphans
+            )
+            raise RuntimeError(
+                "membership FK aborted: orphan contract_type_code values: "
+                + detail
+            )
+
+        travel_orphans = []
+        if "travel_leave_policies" in tables:
+            travel_orphans = conn.execute(
+                text(
+                    """
+                    SELECT id, contract_type_code
+                    FROM travel_leave_policies p
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM membership_types m
+                        WHERE m.code = p.contract_type_code
+                    )
+                    ORDER BY id
+                    LIMIT 50
+                    """
+                )
+            ).fetchall()
+        if travel_orphans:
+            detail = ", ".join(
+                f"id={r[0]} code={r[1]!r}" for r in travel_orphans
+            )
+            raise RuntimeError(
+                "membership FK aborted: orphan travel_leave_policies codes: "
+                + detail
+            )
+
+        fks = {
+            fk["name"]
+            for fk in inspector.get_foreign_keys("contracts")
+        }
+        if "fk_contracts_membership_type_code" not in fks:
+            conn.execute(
+                text(
+                    """
+                    ALTER TABLE contracts
+                    ADD CONSTRAINT fk_contracts_membership_type_code
+                    FOREIGN KEY (contract_type_code)
+                    REFERENCES membership_types(code)
+                    ON DELETE RESTRICT
+                    """
+                )
+            )
+            conn.commit()
+            logger.info(
+                "FK added contracts.contract_type_code -> membership_types.code",
+                extra={"event": "database.ready"},
+            )
+
+
 def seed_role_permissions(bind_engine=None) -> None:
     """
     Seed missing role_permissions rows from ALL_PERMISSIONS catalog (idempotent).
@@ -1070,6 +1282,9 @@ def create_tables() -> None:
         seed_banks()
         seed_service_health()
         migrate_employee_document_types()
+        seed_membership_types()
+        align_leave_policy_membership_67()
+        migrate_membership_contract_fk()
         seed_role_permissions()
         logger.info(
             "Database tables created/verified successfully",

@@ -16,9 +16,13 @@ from web.dependencies import get_db, require_admin
 from web.permissions import enforce_permission, has_permission
 from models.user import User
 from models.employee import Employee
-from models.contract import Contract, CONTRACT_TYPES
+from models.contract import Contract
 from models.leave_transaction import LeaveTransaction
 from models.leave_glossary import MEMBERSHIP_PERMANENT
+from web.services.membership_service import (
+    get_effective_rule,
+    membership_types_as_dict,
+)
 from web.services.leave_service import (
     charge_leave_for_new_contract,
     update_leave_for_contract,
@@ -232,7 +236,7 @@ async def contracts_page(
         "expiry_filter": expiry_filter or "",
         "file_filter": file_filter or "",
         "employees": employees_list,
-        "contract_types": CONTRACT_TYPES,
+        "contract_types": membership_types_as_dict(db, active_only=True),
         "is_admin": True,
         "membership_timeline": membership_timeline,
         "timeline_user_id": timeline_user_id,
@@ -264,7 +268,8 @@ async def add_contract(
     """ثبت عضویت جدید + شارژ مرخصی"""
     enforce_permission(db, user, 'add_contracts')
     try:
-        if contract_type_code not in CONTRACT_TYPES:
+        membership_types = membership_types_as_dict(db, active_only=True)
+        if contract_type_code not in membership_types:
             raise ValueError("نوع عضویت نامعتبر است")
         if stored_leave_days < 0:
             raise ValueError("مرخصی ذخیره نمی‌تواند منفی باشد")
@@ -299,8 +304,8 @@ async def add_contract(
                 f"{jdatetime.date.fromgregorian(date=overlapping.start_date).strftime('%Y/%m/%d')})"
             )
 
-        type_config = CONTRACT_TYPES.get(contract_type_code, {})
-        if not type_config.get('allow_service_deduction', False):
+        rule = get_effective_rule(db, contract_type_code, on_date=start_date)
+        if not rule or not rule.supports_service_deduction:
             service_deduction_days = 0
 
         # منطقه خدمتی از شهر محل خدمت؛ قبل از محاسبه استحقاق همگام شود
@@ -308,13 +313,13 @@ async def add_contract(
             db, user_id, commit=False, approved_by=user.user_id,
         )
 
-        if not type_config.get('editable_leave', False):
-            annual_leave_days = resolve_annual_leave_days(
-                db,
-                contract_type_code,
-                region_code=region_code,
-            )
-            sick_leave_days = type_config.get('sick_leave', 0)
+        # editable_leave حذف شد — annual همیشه از Membership Rule + منطقه
+        annual_leave_days = resolve_annual_leave_days(
+            db,
+            contract_type_code,
+            region_code=region_code,
+        )
+        sick_leave_days = 0
 
         new_contract = Contract(
             user_id=user_id,
@@ -493,8 +498,12 @@ async def edit_contract(
                 f"{jdatetime.date.fromgregorian(date=overlapping.start_date).strftime('%Y/%m/%d')})"
             )
 
-        type_config = CONTRACT_TYPES.get(contract_type_code, {})
-        if not type_config.get('allow_service_deduction', False):
+        membership_types = membership_types_as_dict(db, active_only=True)
+        if contract_type_code not in membership_types:
+            raise ValueError("نوع عضویت نامعتبر است")
+
+        rule = get_effective_rule(db, contract_type_code, on_date=start_date)
+        if not rule or not rule.supports_service_deduction:
             service_deduction_days = 0
 
         employee = db.query(Employee).filter(Employee.user_id == contract.user_id).first()
@@ -504,13 +513,12 @@ async def edit_contract(
                 db, contract.user_id, commit=False, approved_by=user.user_id,
             )
 
-        if not type_config.get('editable_leave', False):
-            annual_leave_days = resolve_annual_leave_days(
-                db,
-                contract_type_code,
-                region_code=region_code,
-            )
-            sick_leave_days = type_config.get('sick_leave', 0)
+        annual_leave_days = resolve_annual_leave_days(
+            db,
+            contract_type_code,
+            region_code=region_code,
+        )
+        sick_leave_days = 0
 
         contract.contract_type_code = contract_type_code
         contract.start_date = start_date

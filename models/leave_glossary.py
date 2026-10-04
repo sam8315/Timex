@@ -36,8 +36,8 @@ MEMBERSHIP_PERMANENT = '1'
 MEMBERSHIP_CONSCRIPT = '2'
 MEMBERSHIP_PHYSICIAN = '5'
 
-# کدهای عضویت ۱–۵ که در سیاست leave با annual_leave_dept_* نگاشت می‌شوند
-POLICY_MEMBERSHIP_CODES = frozenset({'1', '2', '3', '4', '5'})
+# کدهای عضویت با کلید مستقل در Leave Policy (بدون remap 6/7→4)
+POLICY_MEMBERSHIP_CODES = frozenset({'1', '2', '3', '4', '5', '6', '7'})
 
 LEAVE_TYPE_NAMES: Dict[str, str] = {
     LEAVE_TYPE_AL: 'استحقاقی',

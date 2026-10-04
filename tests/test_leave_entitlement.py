@@ -33,24 +33,30 @@ from web.services.hr_leave_import_service import import_hr_opening_line
 
 
 def _seed_leave_policy(db, dept_annual: Dict[str, int], region_applies: Optional[Dict[str, bool]] = None):
+    from datetime import date as _date
+    from models.membership_type_rule import MembershipTypeRule
+
     policy = db.query(Policy).filter(Policy.category == 'leave').first()
     if not policy:
         policy = Policy(category='leave', name='سیاست مرخصی تست', is_active=True)
         db.add(policy)
         db.flush()
     for code, annual in dept_annual.items():
-        existing = db.query(PolicyValue).filter(
-            PolicyValue.policy_id == policy.id,
-            PolicyValue.parameter_key == f'annual_leave_dept_{code}',
-            PolicyValue.region_code.is_(None),
-        ).first()
-        if existing:
-            existing.parameter_value = str(annual)
+        # منبع annual اکنون Membership Rule است
+        rule = (
+            db.query(MembershipTypeRule)
+            .filter(MembershipTypeRule.membership_type_code == code)
+            .order_by(MembershipTypeRule.effective_from.desc())
+            .first()
+        )
+        if rule:
+            rule.annual_leave_base = int(annual)
         else:
-            db.add(PolicyValue(
-                policy_id=policy.id,
-                parameter_key=f'annual_leave_dept_{code}',
-                parameter_value=str(annual),
+            db.add(MembershipTypeRule(
+                membership_type_code=code,
+                effective_from=_date(2000, 1, 1),
+                annual_leave_base=int(annual),
+                status='active',
             ))
         applies = True if region_applies is None else region_applies.get(code, True)
         flag = db.query(PolicyValue).filter(

@@ -6,7 +6,8 @@ from datetime import timedelta
 import jdatetime
 import pytest
 
-from models.contract import Contract, CONTRACT_TYPES
+from models.contract import Contract
+from web.services.membership_service import resolve_annual_leave_base
 from models.employee import Employee
 from models.leave_balance import LeaveBalance
 from models.policy import Policy, PolicyValue
@@ -29,23 +30,29 @@ from web.services.leave_service import (
 
 
 def _seed_policy(db, dept_annual, region_applies=None):
+    from datetime import date as _date
+    from models.membership_type_rule import MembershipTypeRule
+
     policy = db.query(Policy).filter(Policy.category == 'leave').first()
     if not policy:
         policy = Policy(category='leave', name='test leave', is_active=True)
         db.add(policy)
         db.flush()
     for code, annual in dept_annual.items():
-        key = f'annual_leave_dept_{code}'
-        existing = db.query(PolicyValue).filter(
-            PolicyValue.policy_id == policy.id,
-            PolicyValue.parameter_key == key,
-            PolicyValue.region_code.is_(None),
-        ).first()
-        if existing:
-            existing.parameter_value = str(annual)
+        rule = (
+            db.query(MembershipTypeRule)
+            .filter(MembershipTypeRule.membership_type_code == code)
+            .order_by(MembershipTypeRule.effective_from.desc())
+            .first()
+        )
+        if rule:
+            rule.annual_leave_base = int(annual)
         else:
-            db.add(PolicyValue(
-                policy_id=policy.id, parameter_key=key, parameter_value=str(annual)
+            db.add(MembershipTypeRule(
+                membership_type_code=code,
+                effective_from=_date(2000, 1, 1),
+                annual_leave_base=int(annual),
+                status='active',
             ))
         applies = (region_applies or {}).get(code)
         if applies is not None:
@@ -115,7 +122,7 @@ class TestPolicyCharge:
         user = make_user(department="2", balance_al=None, contract_type_code="2")
         _seed_policy(db, {'2': 30}, region_applies={'2': False})
         assert resolve_annual_leave_days(db, '2', region_code='NORMAL') == 30
-        assert CONTRACT_TYPES['2']['annual_leave'] == 30
+        assert resolve_annual_leave_base(db, '2') == 30
 
         year = jdatetime.date.today().year
         y_start, _ = jalali_year_bounds_g(year)

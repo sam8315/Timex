@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}عضویت {{ mt.code }} | پنل مدیریت{% endblock %}
+{% block content %}
+
+{% if request.query_params.get('success') %}
+<div class="alert alert-success alert-dismissible fade show">
+    {{ request.query_params.get('success') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+{% if request.query_params.get('error') %}
+<div class="alert alert-danger alert-dismissible fade show">
+    {{ request.query_params.get('error') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4>نوع عضویت {{ mt.code }} — {{ mt.name }}</h4>
+    <a href="/admin/membership-types?show_all=1" class="btn btn-outline-secondary btn-sm">بازگشت</a>
+</div>
+
+<div class="card mb-3">
+    <div class="card-body">
+        <form method="post" action="/admin/membership-types/{{ mt.code }}/edit" class="row g-3">
+            <div class="col-md-4">
+                <label class="form-label">نام</label>
+                <input type="text" name="name" class="form-control" value="{{ mt.name }}" required>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">توضیح</label>
+                <input type="text" name="description" class="form-control" value="{{ mt.description or '' }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">ترتیب</label>
+                <input type="number" name="sort_order" class="form-control" value="{{ mt.sort_order }}">
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <button class="btn btn-primary w-100" type="submit">ذخیره</button>
+            </div>
+        </form>
+        <p class="small text-muted mt-2 mb-0">
+            وابستگی‌ها — قرارداد: {{ deps.contracts }} / توراهی: {{ deps.travel_leave_policies }}
+            {% if mt.code_locked %} | کد قفل است{% endif %}
+        </p>
+    </div>
+</div>
+
+{% if can_manage_rules %}
+<div class="card mb-3">
+    <div class="card-header">افزودن Rule جدید (snapshot کامل)</div>
+    <div class="card-body">
+        <form method="post" action="/admin/membership-types/{{ mt.code }}/rules/add" class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label">effective_from (جلالی)</label>
+                <input type="text" name="effective_from_str" class="form-control" placeholder="1404/01/01" required dir="ltr">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">annual_leave_base</label>
+                <input type="number" name="annual_leave_base" class="form-control" value="0" min="0">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">کسر خدمت</label>
+                <div class="form-check form-switch mt-2">
+                    <input class="form-check-input" type="checkbox" name="supports_service_deduction" value="on">
+                </div>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">اضافه خدمت</label>
+                <div class="form-check form-switch mt-2">
+                    <input class="form-check-input" type="checkbox" name="supports_extra_service" value="on">
+                </div>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">سنوات مثبت</label>
+                <div class="form-check form-switch mt-2">
+                    <input class="form-check-input" type="checkbox" name="supports_positive_seniority" value="on">
+                </div>
+            </div>
+            <div class="col-md-1 d-flex align-items-end">
+                <button class="btn btn-success w-100" type="submit">ثبت</button>
+            </div>
+        </form>
+        <small class="text-muted">Rule گذشته/جاری مانده‌ها را silently عوض نمی‌کند؛ preview و تأیید جداگانه لازم است.</small>
+    </div>
+</div>
+{% endif %}
+
+<div class="card">
+    <div class="card-header">Timeline قواعد</div>
+    <div class="card-body p-0">
+        <table class="table mb-0 align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>از تاریخ</th>
+                    <th>پایه</th>
+                    <th>کسر</th>
+                    <th>اضافه</th>
+                    <th>سنوات</th>
+                    <th>وضعیت</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rules %}
+                <tr>
+                    <td dir="ltr">{{ row.effective_j }}</td>
+                    <td>{{ row.rule.annual_leave_base }}</td>
+                    <td>{{ '✓' if row.rule.supports_service_deduction else '—' }}</td>
+                    <td>{{ '✓' if row.rule.supports_extra_service else '—' }}</td>
+                    <td>{{ '✓' if row.rule.supports_positive_seniority else '—' }}</td>
+                    <td><span class="badge bg-secondary">{{ row.rule.status }}</span></td>
+                    <td class="text-end">
+                        {% if can_manage_rules and row.editable %}
+                        <form method="post" action="/admin/membership-types/{{ mt.code }}/rules/{{ row.rule.id }}/delete" class="d-inline"
+                              onsubmit="return confirm('حذف Rule آینده؟');">
+                            <button class="btn btn-sm btn-outline-danger" type="submit">حذف</button>
+                        </form>
+                        {% else %}
+                        <span class="text-muted small">غیرقابل ویرایش مستقیم</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="7" class="text-center text-muted py-3">Ruleی ثبت نشده</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% endblock %}
