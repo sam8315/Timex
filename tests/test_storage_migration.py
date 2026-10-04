@@ -10,6 +10,7 @@ from web.services.storage_migration import (
     StorageMigrationService,
     build_destination_key,
     category_for_legacy_key,
+    extension_allowed_for_category,
     run_dry_run_report,
 )
 
@@ -59,15 +60,33 @@ def test_category_mapping():
     assert category_for_legacy_key("/static/js/app.js") is None
 
 
-def test_uuid_destination_not_legacy_filename(legacy_layout):
-    source = legacy_layout["education"] / "degree.pdf"
-    key = build_destination_key("education", source)
+def test_uuid_destination_portable_from_legacy_key(legacy_layout):
+    legacy_key = "/static/uploads/certificates/degree.pdf"
+    key = build_destination_key("education", legacy_key)
     assert key.startswith("/private/education/")
     name = Path(key).name
     assert name != "degree.pdf"
     assert legacy_layout["storage"].is_uuid_filename(name)
-    # deterministic
-    assert build_destination_key("education", source) == key
+    # deterministic + portable (not tied to absolute filesystem path)
+    assert build_destination_key("education", legacy_key) == key
+    assert build_destination_key(
+        "education", r"\static\uploads\certificates\degree.pdf"
+    ) == key
+
+
+def test_destination_key_stable_across_install_roots(tmp_path: Path):
+    """Same logical legacy key → same destination even if project root differs."""
+    key_a = build_destination_key("avatars", "/static/uploads/avatars/face.jpg")
+    key_b = build_destination_key("avatars", "/static/uploads/avatars/face.jpg")
+    assert key_a == key_b
+    # Different absolute-looking paths must not be used; only legacy_key matters.
+    assert key_a != build_destination_key(
+        "avatars", "/static/uploads/avatars/other.jpg"
+    )
+    # Sanity: storage root location is irrelevant to key derivation
+    _ = FileStorage(root=tmp_path / "install-a" / "storage")
+    _ = FileStorage(root=tmp_path / "install-b" / "storage")
+    assert key_a == build_destination_key("avatars", "/static/uploads/avatars/face.jpg")
 
 
 def test_dry_run_summary(legacy_layout):
@@ -110,12 +129,34 @@ def test_missing_source(legacy_layout):
     assert missing
     assert any("missing.pdf" in i.legacy_key for i in missing)
     assert report.count_status(MigrationStatus.MISSING) >= 1
+    # destination key is still planned from the logical legacy key
+    item = next(i for i in missing if i.legacy_key.endswith("missing.pdf"))
+    assert item.destination_key.startswith("/private/education/")
+
+
+def test_db_keys_only_mode_for_phase_3b(legacy_layout):
+    """Phase 3B can pass only DB legacy keys without scanning all files."""
+    keys = [
+        "/static/uploads/certificates/degree.pdf",
+        "/static/uploads/avatars/face.jpg",
+    ]
+    report = legacy_layout["service"].dry_run(
+        extra_legacy_keys=keys,
+        scan_filesystem=False,
+    )
+    assert report.count_status(MigrationStatus.PENDING) == 2
+    assert report.counts_by_category()["contracts"] == 0
+    assert report.counts_by_category()["education"] == 1
+    assert report.counts_by_category()["avatars"] == 1
+    planned = {i.legacy_key for i in report.items if i.status == MigrationStatus.PENDING}
+    assert planned == set(keys)
 
 
 def test_destination_already_exists_same_content(legacy_layout):
     service = legacy_layout["service"]
+    legacy_key = "/static/uploads/certificates/degree.pdf"
     source = legacy_layout["education"] / "degree.pdf"
-    dest_key = build_destination_key("education", source)
+    dest_key = build_destination_key("education", legacy_key)
     dest_path = legacy_layout["storage"].resolve(dest_key)
     dest_path.parent.mkdir(parents=True, exist_ok=True)
     dest_path.write_bytes(source.read_bytes())
@@ -128,8 +169,9 @@ def test_destination_already_exists_same_content(legacy_layout):
 
 def test_destination_already_exists_different_content_no_overwrite(legacy_layout):
     service = legacy_layout["service"]
+    legacy_key = "/static/uploads/certificates/degree.pdf"
     source = legacy_layout["education"] / "degree.pdf"
-    dest_key = build_destination_key("education", source)
+    dest_key = build_destination_key("education", legacy_key)
     dest_path = legacy_layout["storage"].resolve(dest_key)
     dest_path.parent.mkdir(parents=True, exist_ok=True)
     dest_path.write_bytes(b"%PDF-OTHER-CONTENT")
@@ -182,12 +224,60 @@ def test_idempotent_execute(legacy_layout):
     assert len(stored) == 4
 
 
+def test_copy_failure_leaves_no_partial_destination(legacy_layout, monkeypatch):
+    service = legacy_layout["service"]
+    source = legacy_layout["education"] / "degree.pdf"
+    source_bytes = source.read_bytes()
+
+    def boom(src, dst, *args, **kwargs):
+        Path(dst).write_bytes(b"partial-corrupt")
+        raise OSError("disk full")
+
+    monkeypatch.setattr(
+        "web.services.storage_migration.shutil.copy2",
+        boom,
+    )
+    report = service.execute(dry_run=False)
+    edu = [i for i in report.items if i.legacy_key.endswith("degree.pdf")][0]
+    assert edu.status == MigrationStatus.ERROR
+    assert "copy failed" in edu.message
+    assert source.is_file()
+    assert source.read_bytes() == source_bytes
+    assert not edu.destination_path.exists()
+    assert not edu.destination_path.with_name(
+        edu.destination_path.name + ".migrating"
+    ).exists()
+
+
+def test_invalid_extension_skipped_not_migrated(legacy_layout):
+    assert not extension_allowed_for_category("contracts", "evil.exe")
+    junk = legacy_layout["contracts_private"] / "notes.exe"
+    junk.write_bytes(b"MZ")
+
+    report = legacy_layout["service"].dry_run()
+    skipped = [
+        i
+        for i in report.items
+        if i.legacy_key.endswith("notes.exe")
+    ]
+    assert len(skipped) == 1
+    assert skipped[0].status == MigrationStatus.SKIPPED
+    assert "extension not allowed" in skipped[0].message
+
+    executed = legacy_layout["service"].execute(dry_run=False)
+    assert all(
+        i.status != MigrationStatus.COPIED
+        for i in executed.items
+        if i.legacy_key.endswith("notes.exe")
+    )
+    # no .exe under unified storage
+    stored = list((legacy_layout["tmp"] / "unified_storage").rglob("*"))
+    assert not any(p.suffix.lower() == ".exe" for p in stored if p.is_file())
+
+
 def test_legacy_paths_still_resolvable_via_file_storage(legacy_layout):
     """Compatibility layer must keep resolving legacy keys (no removal)."""
     storage = legacy_layout["storage"]
-    # Place a legacy-style file using real LEGACY paths? Use isolated FileStorage
-    # resolve against the service's storage + monkeypatched isn't needed —
-    # verify planner preserves legacy_key prefixes that FileStorage understands.
     report = legacy_layout["service"].dry_run()
     keys = {i.legacy_key for i in report.items if i.status == MigrationStatus.PENDING}
     assert any(k.startswith("/private/contracts/") for k in keys)
@@ -195,14 +285,12 @@ def test_legacy_paths_still_resolvable_via_file_storage(legacy_layout):
     assert any(k.startswith("/static/uploads/certificates/") for k in keys)
     assert any(k.startswith("/static/uploads/avatars/") for k in keys)
 
-    # Unified FileStorage still resolves static legacy prefixes on real web tree
     from web.services.file_storage import LEGACY_STATIC_UPLOAD_PREFIXES
 
     assert "/static/uploads/contracts/" in LEGACY_STATIC_UPLOAD_PREFIXES
     assert "/static/uploads/certificates/" in LEGACY_STATIC_UPLOAD_PREFIXES
     assert "/static/uploads/avatars/" in LEGACY_STATIC_UPLOAD_PREFIXES
 
-    # Destination keys use private prefixes
     for item in report.items:
         if item.status == MigrationStatus.PENDING:
             assert item.destination_key.startswith("/private/")

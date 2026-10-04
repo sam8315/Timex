@@ -2,9 +2,11 @@
 
 Phase scope (this module):
 - Scan known legacy locations for contracts, education certificates, and avatars.
-- Build deterministic destination ``storage_key`` values under Unified Storage.
+- Build portable deterministic destination keys from ``category + legacy_key``.
 - Support **dry-run** reporting with no file or DB changes.
 - Optional execute mode **copies** (never deletes/moves source, never updates DB).
+- Phase 3B can pass DB path columns via ``extra_legacy_keys`` with
+  ``scan_filesystem=False`` (still no DB writes in this module).
 
 Production DB columns (``Contract.file_path``, ``Education.certificate_path``,
 ``Employee.photo_path``) are intentionally left unchanged until a later phase.
@@ -27,7 +29,7 @@ from web.services.file_storage import (
     get_default_storage,
 )
 
-# Stable namespace so the same source path always maps to the same destination key.
+# Stable namespace so the same logical legacy key always maps to the same destination.
 _MIGRATION_NAMESPACE = UUID("6f1c8b2e-4a7d-4f91-9c3e-2d8a5b6e7f10")
 
 MIGRATABLE_CATEGORIES = ("contracts", "education", "avatars")
@@ -161,13 +163,31 @@ def category_for_legacy_key(legacy_key: str) -> Optional[str]:
     return None
 
 
-def build_destination_key(category: str, source_path: Path) -> str:
-    """Deterministic UUID storage key (not the legacy filename)."""
+def normalize_legacy_key(legacy_key: str) -> str:
+    return (legacy_key or "").replace("\\", "/").strip()
+
+
+def build_destination_key(category: str, legacy_key: str) -> str:
+    """Deterministic UUID storage key from category + logical legacy key.
+
+    Portable across hosts/install paths: does not hash absolute filesystem paths.
+    """
     if category not in CATEGORY_CONFIGS:
         raise ValueError(f"unknown category: {category}")
-    ext = source_path.suffix.lower() or ".bin"
-    digest = uuid5(_MIGRATION_NAMESPACE, f"{category}:{source_path.resolve().as_posix()}")
+    normalized = normalize_legacy_key(legacy_key)
+    if not normalized:
+        raise ValueError("legacy key is empty")
+    ext = Path(normalized).suffix.lower() or ".bin"
+    digest = uuid5(_MIGRATION_NAMESPACE, f"{category}:{normalized}")
     return f"{CATEGORY_CONFIGS[category].key_prefix}{digest.hex}{ext}"
+
+
+def extension_allowed_for_category(category: str, legacy_key_or_name: str) -> bool:
+    """True when the file extension is allowed by CATEGORY_CONFIGS."""
+    if category not in CATEGORY_CONFIGS:
+        return False
+    ext = Path(normalize_legacy_key(legacy_key_or_name)).suffix.lower()
+    return ext in CATEGORY_CONFIGS[category].allowed_extensions
 
 
 def _file_fingerprint(path: Path) -> str:
@@ -194,23 +214,43 @@ class StorageMigrationService:
         self,
         *,
         extra_legacy_keys: Optional[Iterable[str]] = None,
+        scan_filesystem: bool = True,
     ) -> MigrationReport:
-        """Scan legacy roots (+ optional DB-like keys) and classify each item."""
+        """Classify migration items.
+
+        Parameters
+        ----------
+        extra_legacy_keys:
+            Logical keys (e.g. DB ``file_path`` / ``certificate_path`` /
+            ``photo_path`` values). Phase 3B can pass only the keys that still
+            need migration — no DB writes happen here.
+        scan_filesystem:
+            When True (default), scan configured legacy directories.
+            When False, only ``extra_legacy_keys`` are planned (DB-driven mode
+            for Phase 3B).
+        """
         report = MigrationReport(dry_run=True)
         seen_sources: set[Path] = set()
+        seen_keys: set[str] = set()
 
-        for root in self.legacy_roots:
-            report.items.extend(self._scan_root(root, seen_sources))
+        if scan_filesystem:
+            for root in self.legacy_roots:
+                report.items.extend(self._scan_root(root, seen_sources, seen_keys))
 
         if extra_legacy_keys:
             for key in extra_legacy_keys:
-                item = self._plan_from_legacy_key(key)
+                normalized = normalize_legacy_key(key)
+                if not normalized or normalized in seen_keys:
+                    continue
+                item = self._plan_from_legacy_key(normalized)
                 if item is None:
                     continue
                 if item.source_path and item.source_path.resolve() in seen_sources:
+                    seen_keys.add(normalized)
                     continue
                 if item.source_path:
                     seen_sources.add(item.source_path.resolve())
+                seen_keys.add(normalized)
                 report.items.append(item)
 
         return report
@@ -219,22 +259,33 @@ class StorageMigrationService:
         self,
         *,
         extra_legacy_keys: Optional[Iterable[str]] = None,
+        scan_filesystem: bool = True,
     ) -> MigrationReport:
         """Alias for ``plan`` — never mutates files or DB."""
-        return self.plan(extra_legacy_keys=extra_legacy_keys)
+        return self.plan(
+            extra_legacy_keys=extra_legacy_keys,
+            scan_filesystem=scan_filesystem,
+        )
 
     def execute(
         self,
         *,
         dry_run: bool = True,
         extra_legacy_keys: Optional[Iterable[str]] = None,
+        scan_filesystem: bool = True,
     ) -> MigrationReport:
         """Run a plan. With ``dry_run=True`` (default) nothing is written.
 
         When ``dry_run=False``, pending files are **copied** to Unified Storage.
         Sources are never deleted; DB columns are never updated.
+
+        Phase 3B can call with ``scan_filesystem=False`` and DB-sourced
+        ``extra_legacy_keys`` only.
         """
-        report = self.plan(extra_legacy_keys=extra_legacy_keys)
+        report = self.plan(
+            extra_legacy_keys=extra_legacy_keys,
+            scan_filesystem=scan_filesystem,
+        )
         report.dry_run = dry_run
         if dry_run:
             return report
@@ -255,6 +306,7 @@ class StorageMigrationService:
         self,
         root: LegacySourceRoot,
         seen_sources: set[Path],
+        seen_keys: set[str],
     ) -> list[MigrationItem]:
         items: list[MigrationItem] = []
         directory = root.directory
@@ -264,26 +316,28 @@ class StorageMigrationService:
         for path in sorted(directory.iterdir()):
             if not path.is_file():
                 continue
+            legacy_key = f"{root.legacy_key_prefix}{path.name}"
             if path.name.lower() in SKIP_FILENAMES or path.name.startswith("."):
                 items.append(
                     MigrationItem(
                         category=root.category,
                         source_path=path,
-                        legacy_key=f"{root.legacy_key_prefix}{path.name}",
+                        legacy_key=legacy_key,
                         destination_key="",
                         destination_path=Path(),
                         status=MigrationStatus.SKIPPED,
                         message="ignored auxiliary file",
                     )
                 )
+                seen_keys.add(legacy_key)
                 continue
 
             resolved = path.resolve()
-            if resolved in seen_sources:
+            if resolved in seen_sources or legacy_key in seen_keys:
                 continue
             seen_sources.add(resolved)
+            seen_keys.add(legacy_key)
 
-            legacy_key = f"{root.legacy_key_prefix}{path.name}"
             items.append(self._classify(root.category, path, legacy_key))
         return items
 
@@ -300,8 +354,20 @@ class StorageMigrationService:
                 message="unrecognized legacy key",
             )
 
+        normalized = normalize_legacy_key(legacy_key)
+        if not extension_allowed_for_category(category, normalized):
+            ext = Path(normalized).suffix.lower() or "(none)"
+            return MigrationItem(
+                category=category,
+                source_path=None,
+                legacy_key=normalized,
+                destination_key="",
+                destination_path=Path(),
+                status=MigrationStatus.SKIPPED,
+                message=f"extension not allowed for category: {ext}",
+            )
+
         # Already a unified private key living under storage root → migrated.
-        normalized = legacy_key.replace("\\", "/").strip()
         cfg = CATEGORY_CONFIGS[category]
         if normalized.startswith(cfg.key_prefix):
             dest = self.storage.resolve(normalized)
@@ -318,11 +384,8 @@ class StorageMigrationService:
 
         source = self._resolve_legacy_source(category, normalized)
         if source is None or not source.is_file():
-            dest_key = ""
-            dest_path = Path()
-            if source is not None:
-                dest_key = build_destination_key(category, source)
-                dest_path = self.storage.resolve(dest_key)
+            dest_key = build_destination_key(category, normalized)
+            dest_path = self.storage.resolve(dest_key)
             return MigrationItem(
                 category=category,
                 source_path=source,
@@ -340,14 +403,27 @@ class StorageMigrationService:
         source: Path,
         legacy_key: str,
     ) -> MigrationItem:
+        normalized = normalize_legacy_key(legacy_key)
+        if not extension_allowed_for_category(category, normalized):
+            ext = Path(normalized).suffix.lower() or "(none)"
+            return MigrationItem(
+                category=category,
+                source_path=source,
+                legacy_key=normalized,
+                destination_key="",
+                destination_path=Path(),
+                status=MigrationStatus.SKIPPED,
+                message=f"extension not allowed for category: {ext}",
+            )
+
         try:
-            dest_key = build_destination_key(category, source)
+            dest_key = build_destination_key(category, normalized)
             dest_path = self.storage.resolve(dest_key)
         except Exception as exc:  # noqa: BLE001
             return MigrationItem(
                 category=category,
                 source_path=source,
-                legacy_key=legacy_key,
+                legacy_key=normalized,
                 destination_key="",
                 destination_path=Path(),
                 status=MigrationStatus.ERROR,
@@ -355,14 +431,14 @@ class StorageMigrationService:
             )
 
         # Source already sits in unified storage with a private key → done.
-        if self._is_under_storage(source) and legacy_key.startswith(
+        if self._is_under_storage(source) and normalized.startswith(
             CATEGORY_CONFIGS[category].key_prefix
         ):
             return MigrationItem(
                 category=category,
                 source_path=source,
-                legacy_key=legacy_key,
-                destination_key=legacy_key,
+                legacy_key=normalized,
+                destination_key=normalized,
                 destination_path=source,
                 status=MigrationStatus.ALREADY_MIGRATED,
                 message="source already in unified storage",
@@ -374,7 +450,7 @@ class StorageMigrationService:
                     return MigrationItem(
                         category=category,
                         source_path=source,
-                        legacy_key=legacy_key,
+                        legacy_key=normalized,
                         destination_key=dest_key,
                         destination_path=dest_path,
                         status=MigrationStatus.ALREADY_MIGRATED,
@@ -383,7 +459,7 @@ class StorageMigrationService:
                 return MigrationItem(
                     category=category,
                     source_path=source,
-                    legacy_key=legacy_key,
+                    legacy_key=normalized,
                     destination_key=dest_key,
                     destination_path=dest_path,
                     status=MigrationStatus.ERROR,
@@ -393,7 +469,7 @@ class StorageMigrationService:
                 return MigrationItem(
                     category=category,
                     source_path=source,
-                    legacy_key=legacy_key,
+                    legacy_key=normalized,
                     destination_key=dest_key,
                     destination_path=dest_path,
                     status=MigrationStatus.ERROR,
@@ -404,7 +480,7 @@ class StorageMigrationService:
             return MigrationItem(
                 category=category,
                 source_path=source,
-                legacy_key=legacy_key,
+                legacy_key=normalized,
                 destination_key=dest_key,
                 destination_path=dest_path,
                 status=MigrationStatus.MISSING,
@@ -414,7 +490,7 @@ class StorageMigrationService:
         return MigrationItem(
             category=category,
             source_path=source,
-            legacy_key=legacy_key,
+            legacy_key=normalized,
             destination_key=dest_key,
             destination_path=dest_path,
             status=MigrationStatus.PENDING,
@@ -422,13 +498,28 @@ class StorageMigrationService:
         )
 
     def _copy_item(self, item: MigrationItem) -> None:
+        """Copy source → destination via a temp file; clean up on failure."""
         if item.source_path is None or not item.source_path.is_file():
             raise FileNotFoundError("source missing")
-        if item.destination_path.is_file():
+        dest = item.destination_path
+        if dest.is_file():
             raise FileExistsError("destination already exists")
-        item.destination_path.parent.mkdir(parents=True, exist_ok=True)
-        # Copy only — never move/delete source (rollback-friendly).
-        shutil.copy2(item.source_path, item.destination_path)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        tmp = dest.with_name(dest.name + ".migrating")
+        try:
+            if tmp.exists():
+                tmp.unlink()
+            # Copy only — never move/delete source (rollback-friendly).
+            shutil.copy2(item.source_path, tmp)
+            tmp.replace(dest)
+        except Exception:
+            for path in (tmp, dest):
+                try:
+                    if path.is_file():
+                        path.unlink()
+                except OSError:
+                    pass
+            raise
 
     def _resolve_legacy_source(self, category: str, legacy_key: str) -> Optional[Path]:
         """Best-effort locate a legacy file without requiring Unified Storage."""
@@ -468,10 +559,14 @@ def run_dry_run_report(
     storage: Optional[FileStorage] = None,
     legacy_roots: Optional[Sequence[LegacySourceRoot]] = None,
     extra_legacy_keys: Optional[Iterable[str]] = None,
+    scan_filesystem: bool = True,
 ) -> str:
     """Convenience helper used by ops/scripts — dry-run only."""
     service = StorageMigrationService(storage=storage, legacy_roots=legacy_roots)
-    report = service.dry_run(extra_legacy_keys=extra_legacy_keys)
+    report = service.dry_run(
+        extra_legacy_keys=extra_legacy_keys,
+        scan_filesystem=scan_filesystem,
+    )
     return report.format_summary()
 
 
