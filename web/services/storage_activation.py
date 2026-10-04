@@ -221,11 +221,9 @@ class StorageActivationService:
         if dry_run:
             return report
 
-        to_copy = [
-            i
-            for i in report.items
-            if i.status == MigrationStatus.PENDING and i.needs_db_update
-        ]
+        # Copy all PENDING items — including copy-only alias migrations where
+        # destination_key == legacy_key and needs_db_update is False.
+        to_copy = [i for i in report.items if i.status == MigrationStatus.PENDING]
         for item in to_copy:
             try:
                 file_item = MigrationItem(
@@ -243,7 +241,12 @@ class StorageActivationService:
                     raise RuntimeError("SHA-256 mismatch after copy")
                 item.checksum = dst_hash
                 item.status = MigrationStatus.COPIED
-                item.message = "copied and verified; source retained"
+                if item.needs_db_update:
+                    item.message = "copied and verified; source retained"
+                else:
+                    item.message = (
+                        "copied and verified; source retained; DB key unchanged"
+                    )
             except Exception as exc:  # noqa: BLE001
                 item.status = MigrationStatus.ERROR
                 item.error = str(exc)
@@ -374,8 +377,14 @@ class StorageActivationService:
         return item
 
     def _preflight_unified_key(self, item: ActivationItem, key: str) -> ActivationItem:
-        """Validate an already-private DB key without legacy filesystem fallbacks."""
-        from web.services.file_storage import FileStorageError
+        """Validate an already-private DB key.
+
+        Existence is checked under ``storage.root`` only (no static legacy resolve).
+        Exception: contracts with ``/private/contracts/<file>`` may treat
+        ``web/private_uploads/contracts/<file>`` as a copy-only source when the
+        unified destination is missing (DB key stays unchanged).
+        """
+        from web.services.file_storage import LEGACY_PRIVATE_UPLOADS, FileStorageError
 
         key_category = category_for_legacy_key(key)
         if key_category != item.category:
@@ -418,14 +427,71 @@ class StorageActivationService:
 
         item.destination_key = key
         item.destination_path = dest
-        if not dest.is_file():
-            item.status = MigrationStatus.MISSING
-            item.message = "unified key missing under storage root"
+
+        # Contracts-only alias: legacy private_uploads/contracts (never static).
+        legacy_private_source: Optional[Path] = None
+        if item.category == "contracts" and key.startswith("/private/contracts/"):
+            try:
+                candidate = self.storage._safe_join(  # noqa: SLF001
+                    LEGACY_PRIVATE_UPLOADS / "contracts",
+                    filename,
+                )
+                if candidate.is_file():
+                    legacy_private_source = candidate
+            except FileStorageError:
+                legacy_private_source = None
+
+        if dest.is_file():
+            if legacy_private_source is not None:
+                try:
+                    src_hash = _file_fingerprint(legacy_private_source)
+                    dest_hash = _file_fingerprint(dest)
+                except OSError as exc:
+                    item.status = MigrationStatus.ERROR
+                    item.error = f"cannot checksum alias/destination: {exc}"
+                    item.message = item.error
+                    item.needs_db_update = False
+                    return item
+                if src_hash != dest_hash:
+                    item.status = MigrationStatus.ERROR
+                    item.error = (
+                        "destination exists with different content; refusing overwrite"
+                    )
+                    item.message = item.error
+                    item.source_path = legacy_private_source
+                    item.needs_db_update = False
+                    return item
+            item.status = MigrationStatus.ALREADY_MIGRATED
+            item.message = "already unified storage key; left unchanged"
             item.needs_db_update = False
             return item
 
-        item.status = MigrationStatus.ALREADY_MIGRATED
-        item.message = "already unified storage key; left unchanged"
+        if legacy_private_source is not None:
+            if not extension_allowed_for_category("contracts", key):
+                ext = Path(key).suffix.lower() or "(none)"
+                item.status = MigrationStatus.SKIPPED
+                item.message = f"extension not allowed for category: {ext}"
+                item.needs_db_update = False
+                return item
+            try:
+                item.checksum = _file_fingerprint(legacy_private_source)
+            except OSError as exc:
+                item.status = MigrationStatus.ERROR
+                item.error = f"cannot checksum legacy private source: {exc}"
+                item.message = item.error
+                item.needs_db_update = False
+                return item
+            item.source_path = legacy_private_source
+            item.status = MigrationStatus.PENDING
+            item.message = (
+                "ready to copy legacy private contract into unified storage; "
+                "DB key unchanged"
+            )
+            item.needs_db_update = False
+            return item
+
+        item.status = MigrationStatus.MISSING
+        item.message = "unified key missing under storage root"
         item.needs_db_update = False
         return item
 
