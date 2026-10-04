@@ -469,3 +469,278 @@ def test_preflight_error_blocks_all_db_updates(activation_env, make_user):
     assert report.count_db_updated() == 0
     db.expire_all()
     assert db.query(Contract).filter(Contract.id == c1.id).first().file_path == paths1["contract"]
+
+
+# ---------------------------------------------------------------------------
+# Hardening: public static block, atomic replace, unified-key validation
+# ---------------------------------------------------------------------------
+
+def test_legacy_static_upload_dirs_are_not_public(client):
+    from web.app import BASE_PATH
+
+    created = []
+    try:
+        for relative, payload in (
+            ("uploads/contracts/legacy-secret.pdf", b"%PDF-secret-contract"),
+            ("uploads/certificates/legacy-secret.pdf", b"%PDF-secret-edu"),
+            ("uploads/avatars/legacy-secret.jpg", b"jpeg-secret-avatar"),
+        ):
+            path = BASE_PATH / "static" / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(payload)
+            created.append(path)
+            resp = client.get(f"/static/{relative}", follow_redirects=False)
+            assert resp.status_code == 404, relative
+
+        placeholder = BASE_PATH / "static" / "uploads" / "avatars" / "image.png"
+        created_placeholder = False
+        if not placeholder.exists():
+            placeholder.parent.mkdir(parents=True, exist_ok=True)
+            placeholder.write_bytes(b"\x89PNG\r\n\x1a\nplaceholder")
+            created_placeholder = True
+            created.append(placeholder)
+        ok = client.get("/static/uploads/avatars/image.png", follow_redirects=False)
+        assert ok.status_code == 200
+        if created_placeholder:
+            placeholder.unlink(missing_ok=True)
+    finally:
+        for path in created:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
+def test_secure_routes_still_work_after_static_block(client, activation_env, make_user):
+    user = make_user(role="user")
+    db = activation_env["db"]
+    paths = _seed_legacy_files(activation_env, user["user_id"])
+    edu = Education(
+        user_id=user["user_id"],
+        education_group="TECH",
+        degree_level="BACHELOR",
+        major="Net",
+        graduation_date=__import__("datetime").date(2018, 1, 1),
+        certificate_path=paths["education"],
+        certificate_type="pdf",
+    )
+    db.add(edu)
+    emp = db.query(Employee).filter(Employee.user_id == user["user_id"]).first()
+    emp.photo_path = paths["avatar"]
+    db.commit()
+    activation_env["service"].execute(dry_run=False)
+    db.expire_all()
+    edu = db.query(Education).filter(Education.id == edu.id).first()
+
+    login_as(client, user["national_code"])
+    assert client.get(f"/education/{edu.id}/file", follow_redirects=False).status_code == 200
+    assert client.get("/profile/avatar", follow_redirects=False).status_code == 200
+
+    # migrated private filenames must not be reachable via /static
+    assert client.get(
+        f"/static/uploads/certificates/{Path(edu.certificate_path).name}",
+        follow_redirects=False,
+    ).status_code == 404
+    emp = db.query(Employee).filter(Employee.user_id == user["user_id"]).first()
+    assert client.get(
+        f"/static/uploads/avatars/{Path(emp.photo_path).name}",
+        follow_redirects=False,
+    ).status_code == 404
+
+
+def test_cross_category_private_key_rejected(activation_env, make_user):
+    user = make_user(role="user", balance_al=None, contract_type_code="4")
+    db = activation_env["db"]
+    contract = (
+        db.query(Contract)
+        .filter(Contract.user_id == user["user_id"])
+        .order_by(Contract.id.desc())
+        .first()
+    )
+    # education private key on a contract record
+    fake = "/private/education/" + ("c" * 32) + ".pdf"
+    dest = activation_env["storage"].resolve(fake)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(b"%PDF-cross")
+    contract.file_path = fake
+    db.commit()
+
+    report = activation_env["service"].preflight()
+    item = next(i for i in report.items if i.record_id == contract.id)
+    assert item.status == MigrationStatus.ERROR
+    assert "cross-category" in item.error
+
+
+def test_unified_key_without_file_is_missing(activation_env, make_user):
+    user = make_user(role="user", balance_al=None, contract_type_code="4")
+    db = activation_env["db"]
+    contract = (
+        db.query(Contract)
+        .filter(Contract.user_id == user["user_id"])
+        .order_by(Contract.id.desc())
+        .first()
+    )
+    key = "/private/contracts/" + ("d" * 32) + ".pdf"
+    contract.file_path = key
+    db.commit()
+
+    report = activation_env["service"].preflight()
+    item = next(i for i in report.items if i.record_id == contract.id)
+    assert item.status == MigrationStatus.MISSING
+    assert "no resolvable file" in item.message
+
+
+def test_education_update_keeps_old_on_save_failure(activation_env, make_user, monkeypatch):
+    from web.routes import education as education_routes
+
+    user = make_user(role="user")
+    db = activation_env["db"]
+    storage = activation_env["storage"]
+    old_key = storage.save("education", b"%PDF-old", original_filename="old.pdf")
+    edu = Education(
+        user_id=user["user_id"],
+        education_group="TECH",
+        degree_level="BACHELOR",
+        major="X",
+        graduation_date=__import__("datetime").date(2017, 1, 1),
+        certificate_path=old_key,
+        certificate_type="pdf",
+    )
+    db.add(edu)
+    db.commit()
+    db.refresh(edu)
+
+    def boom(*args, **kwargs):
+        raise ValueError("نوع فایل مجاز نیست (فقط JPG/PNG/PDF)")
+
+    monkeypatch.setattr(education_routes, "_store_certificate", boom)
+    with pytest.raises(ValueError):
+        education_routes._apply_certificate_bytes(edu, b"%PDF-new", "new.exe")
+
+    db.refresh(edu)
+    assert edu.certificate_path == old_key
+    assert storage.resolve(old_key).is_file()
+
+
+def test_education_update_keeps_old_and_cleans_new_on_db_failure(
+    activation_env, make_user, monkeypatch
+):
+    from web.routes import education as education_routes
+
+    user = make_user(role="user")
+    db = activation_env["db"]
+    storage = activation_env["storage"]
+    old_key = storage.save("education", b"%PDF-old2", original_filename="old2.pdf")
+    edu = Education(
+        user_id=user["user_id"],
+        education_group="TECH",
+        degree_level="MASTER",
+        major="Y",
+        graduation_date=__import__("datetime").date(2016, 1, 1),
+        certificate_path=old_key,
+        certificate_type="pdf",
+    )
+    db.add(edu)
+    db.commit()
+    db.refresh(edu)
+
+    old_path, new_key = education_routes._apply_certificate_bytes(
+        edu, b"%PDF-new2", "new2.pdf"
+    )
+    assert old_path == old_key
+    assert storage.resolve(new_key).is_file()
+
+    def boom():
+        raise RuntimeError("db commit failed")
+
+    monkeypatch.setattr(db, "commit", boom)
+    with pytest.raises(RuntimeError):
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            from web.services.storage_activation import delete_media_file
+
+            delete_media_file(new_key)
+            raise
+
+    # restore session state like the route would
+    db.rollback()
+    db.expire_all()
+    edu = db.query(Education).filter(Education.id == edu.id).first()
+    assert edu.certificate_path == old_key
+    assert storage.resolve(old_key).is_file()
+    assert not storage.resolve(new_key).is_file()
+
+
+def test_avatar_upload_keeps_old_on_db_failure(activation_env, make_user, monkeypatch):
+    from web.services.storage_activation import delete_media_file, save_media_bytes
+
+    user = make_user(role="user")
+    db = activation_env["db"]
+    storage = activation_env["storage"]
+    emp = db.query(Employee).filter(Employee.user_id == user["user_id"]).first()
+    old_key = storage.save("avatars", b"jpeg-old", original_filename="old.jpg")
+    emp.photo_path = old_key
+    db.commit()
+
+    new_key = save_media_bytes("avatars", b"jpeg-new", original_filename="new.jpg")
+    emp.photo_path = new_key
+
+    def boom():
+        raise RuntimeError("commit failed")
+
+    monkeypatch.setattr(db, "commit", boom)
+    with pytest.raises(RuntimeError):
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            delete_media_file(new_key)
+            raise
+
+    db.expire_all()
+    emp = db.query(Employee).filter(Employee.user_id == user["user_id"]).first()
+    # after rollback photo_path should still be old
+    assert emp.photo_path == old_key
+    assert storage.resolve(old_key).is_file()
+    assert not storage.resolve(new_key).is_file()
+
+
+def test_avatar_delete_does_not_unlink_before_commit(activation_env, make_user, monkeypatch):
+    from web.services.storage_activation import delete_media_file
+
+    user = make_user(role="user")
+    db = activation_env["db"]
+    storage = activation_env["storage"]
+    emp = db.query(Employee).filter(Employee.user_id == user["user_id"]).first()
+    old_key = storage.save("avatars", b"jpeg-del", original_filename="del.jpg")
+    emp.photo_path = old_key
+    db.commit()
+
+    old_path = emp.photo_path
+    emp.photo_path = None
+
+    deleted_before_commit = {"called": False}
+
+    def tracking_delete(key, **kwargs):
+        deleted_before_commit["called"] = True
+        return delete_media_file(key, **kwargs)
+
+    def boom():
+        raise RuntimeError("commit failed")
+
+    monkeypatch.setattr(db, "commit", boom)
+    with pytest.raises(RuntimeError):
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            # route must NOT have deleted yet
+            assert deleted_before_commit["called"] is False
+            raise
+
+    assert storage.resolve(old_path).is_file()
+    db.expire_all()
+    emp = db.query(Employee).filter(Employee.user_id == user["user_id"]).first()
+    assert emp.photo_path == old_path

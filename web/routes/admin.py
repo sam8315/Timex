@@ -2432,29 +2432,40 @@ async def admin_upload_photo(
     if not employee:
         return RedirectResponse(url="/admin/users", status_code=302)
 
+    old_path = employee.photo_path
+    new_key = None
     try:
-        if employee.photo_path:
-            delete_media_file(employee.photo_path)
-        employee.photo_path = save_media_bytes(
+        new_key = save_media_bytes(
             "avatars",
             content,
             original_filename=file.filename or f"avatar{ext}",
         )
+        employee.photo_path = new_key
         db.commit()
-        return RedirectResponse(
-            url=f"/admin/profile/{target_user_id}?photo_uploaded=1",
-            status_code=302
-        )
     except FileStorageError as e:
+        db.rollback()
+        if new_key:
+            delete_media_file(new_key)
         return RedirectResponse(
             url=f"/admin/profile/{target_user_id}?error=خطا در آپلود: {e}",
             status_code=302
         )
     except Exception as e:
+        db.rollback()
+        if new_key:
+            delete_media_file(new_key)
         return RedirectResponse(
             url=f"/admin/profile/{target_user_id}?error=خطا در آپلود: {str(e)}",
             status_code=302
         )
+
+    if old_path and old_path != new_key:
+        delete_media_file(old_path)
+
+    return RedirectResponse(
+        url=f"/admin/profile/{target_user_id}?photo_uploaded=1",
+        status_code=302
+    )
 
 
 @router.post("/admin/profile/{target_user_id}/delete-photo")
@@ -2463,16 +2474,24 @@ async def admin_delete_photo(
     user: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
-    """حذف عکس پروفایل کاربر"""
+    """حذف عکس پروفایل کاربر — ابتدا DB، سپس فایل فیزیکی."""
     enforce_permission(db, user, 'upload_photo')
     employee = db.query(Employee).filter(Employee.user_id == target_user_id).first()
     if not employee:
         return RedirectResponse(url="/admin/users", status_code=302)
 
     if employee.photo_path:
-        delete_media_file(employee.photo_path)
+        old_path = employee.photo_path
         employee.photo_path = None
-        db.commit()
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            return RedirectResponse(
+                url=f"/admin/profile/{target_user_id}?error=خطا در حذف عکس",
+                status_code=302,
+            )
+        delete_media_file(old_path)
 
     return RedirectResponse(
         url=f"/admin/profile/{target_user_id}?photo_deleted=1",

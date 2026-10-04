@@ -47,6 +47,20 @@ def _store_certificate(content: bytes, original_filename: str) -> str:
         raise ValueError(str(exc)) from exc
 
 
+def _apply_certificate_bytes(edu: Education, content: bytes, original_filename: str):
+    """Save new certificate and point ``edu`` at it without deleting the old file.
+
+    Returns ``(old_path_or_none, new_storage_key)``. Caller must commit DB first,
+    then delete ``old_path``; on failure, delete ``new_storage_key`` and rollback.
+    """
+    old_path = edu.certificate_path
+    ext = Path(original_filename or "").suffix.lower()
+    new_key = _store_certificate(content, original_filename)
+    edu.certificate_type = "pdf" if ext == ".pdf" else "image"
+    edu.certificate_path = new_key
+    return old_path, new_key
+
+
 def update_highest_degree(db: Session, user_id: str):
     """به‌روزرسانی بالاترین مدرک کاربر"""
     educations = db.query(Education).filter(Education.user_id == user_id).all()
@@ -197,30 +211,31 @@ async def education_create(
         db.add(new_edu)
         db.flush()  # 🆕 دریافت id بدون commit
 
-        # 🆕 آپلود فایل مدرک (مطابق الگوی عکس پروفایل)
-        if certificate and certificate.filename:
-            # اعتبارسنجی نوع فایل
-            ext = Path(certificate.filename).suffix.lower()
-            if ext not in ALLOWED_EXTENSIONS:
-                db.rollback()
-                return RedirectResponse(
-                    url="/education/new?error=نوع فایل مجاز نیست (فقط JPG/PNG/PDF)",
-                    status_code=302
-                )
+        new_key = None
+        try:
+            if certificate and certificate.filename:
+                ext = Path(certificate.filename).suffix.lower()
+                if ext not in ALLOWED_EXTENSIONS:
+                    db.rollback()
+                    return RedirectResponse(
+                        url="/education/new?error=نوع فایل مجاز نیست (فقط JPG/PNG/PDF)",
+                        status_code=302
+                    )
+                content = await certificate.read()
+                if len(content) > MAX_FILE_SIZE:
+                    db.rollback()
+                    return RedirectResponse(
+                        url="/education/new?error=حجم فایل بیش از 5 مگابایت است",
+                        status_code=302
+                    )
+                _, new_key = _apply_certificate_bytes(new_edu, content, certificate.filename)
 
-            # بررسی اندازه فایل
-            content = await certificate.read()
-            if len(content) > MAX_FILE_SIZE:
-                db.rollback()
-                return RedirectResponse(
-                    url="/education/new?error=حجم فایل بیش از 5 مگابایت است",
-                    status_code=302
-                )
-
-            new_edu.certificate_type = 'pdf' if ext == '.pdf' else 'image'
-            new_edu.certificate_path = _store_certificate(content, certificate.filename)
-
-        db.commit()
+            db.commit()
+        except Exception:
+            db.rollback()
+            if new_key:
+                delete_media_file(new_key)
+            raise
 
         # به‌روزرسانی بالاترین مدرک
         update_highest_degree(db, user.user_id)
@@ -310,31 +325,35 @@ async def education_update(
         edu.graduation_date = g_date
         edu.notes = notes.strip() or None
 
-        # 🆕 آپلود فایل جدید (مطابق الگوی عکس پروفایل)
+        old_cert_path = None
+        new_cert_key = None
         if certificate and certificate.filename:
-            # اعتبارسنجی نوع فایل
             ext = Path(certificate.filename).suffix.lower()
             if ext not in ALLOWED_EXTENSIONS:
                 return RedirectResponse(
                     url=f"/education/{edu_id}/edit?error=نوع فایل مجاز نیست (فقط JPG/PNG/PDF)",
                     status_code=302
                 )
-
-            # بررسی اندازه فایل
             content = await certificate.read()
             if len(content) > MAX_FILE_SIZE:
                 return RedirectResponse(
                     url=f"/education/{edu_id}/edit?error=حجم فایل بیش از 5 مگابایت است",
                     status_code=302
                 )
-
-            if edu.certificate_path:
-                delete_media_file(edu.certificate_path)
-
-            edu.certificate_type = 'pdf' if ext == '.pdf' else 'image'
-            edu.certificate_path = _store_certificate(content, certificate.filename)
-
-        db.commit()
+            try:
+                old_cert_path, new_cert_key = _apply_certificate_bytes(
+                    edu, content, certificate.filename
+                )
+                db.commit()
+            except Exception:
+                db.rollback()
+                if new_cert_key:
+                    delete_media_file(new_cert_key)
+                raise
+            if old_cert_path and old_cert_path != new_cert_key:
+                delete_media_file(old_cert_path)
+        else:
+            db.commit()
 
         # به‌روزرسانی بالاترین مدرک
         update_highest_degree(db, user.user_id)
@@ -590,31 +609,35 @@ async def admin_education_update(
             edu.verification_date = None
             edu.verified_by = None
 
-        # آپلود فایل جدید (اختیاری)
+        old_cert_path = None
+        new_cert_key = None
         if certificate and certificate.filename:
-            # اعتبارسنجی نوع فایل
             ext = Path(certificate.filename).suffix.lower()
             if ext not in ALLOWED_EXTENSIONS:
                 return RedirectResponse(
                     url=f"/admin/education/{edu_id}/edit?error=نوع فایل مجاز نیست (فقط JPG/PNG/PDF)",
                     status_code=302
                 )
-
-            # بررسی اندازه فایل
             content = await certificate.read()
             if len(content) > MAX_FILE_SIZE:
                 return RedirectResponse(
                     url=f"/admin/education/{edu_id}/edit?error=حجم فایل بیش از 5 مگابایت است",
                     status_code=302
                 )
-
-            if edu.certificate_path:
-                delete_media_file(edu.certificate_path)
-
-            edu.certificate_type = 'pdf' if ext == '.pdf' else 'image'
-            edu.certificate_path = _store_certificate(content, certificate.filename)
-
-        db.commit()
+            try:
+                old_cert_path, new_cert_key = _apply_certificate_bytes(
+                    edu, content, certificate.filename
+                )
+                db.commit()
+            except Exception:
+                db.rollback()
+                if new_cert_key:
+                    delete_media_file(new_cert_key)
+                raise
+            if old_cert_path and old_cert_path != new_cert_key:
+                delete_media_file(old_cert_path)
+        else:
+            db.commit()
 
         # 🆕 به‌روزرسانی بالاترین مدرک (اگر مقطع تغییر کرد)
         if degree_changed:
