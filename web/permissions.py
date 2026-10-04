@@ -1,15 +1,19 @@
 """
 🔐 سیستم کنترل دسترسی (RBAC + Per-User Override)
+
+پیش‌فرض نقش از جدول role_permissions خوانده می‌شود (قابل‌ویرایش از UI).
+ALL_PERMISSIONS کاتالوگ کد/برچسب و seed اولیه است.
 """
 from datetime import datetime
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from models.user import User
 from models.user_permission import UserPermission, UserPermissionHistory
+from models.role_permission import RolePermission, RolePermissionHistory
 
 
 # ============================================
-# 📋 تعریف همه دسترسی‌ها
+# 📋 تعریف همه دسترسی‌ها (کاتالوگ + seed اولیه)
 # ============================================
 ALL_PERMISSIONS = {
     'view_dashboard':       {'label': 'مشاهده داشبورد مدیریت',     'admin': True,  'super_admin': True},
@@ -36,32 +40,74 @@ ALL_PERMISSIONS = {
     'view_system_monitoring': {'label': 'مشاهده پایش سرویس‌ها',   'admin': True,  'super_admin': True},
 }
 
+# ترکیب‌هایی که از UI قابل غیرفعال‌کردن نیستند (جلوگیری از قفل‌شدن مدیریت)
+LOCKED_ROLE_DEFAULTS = {
+    ('super_admin', 'manage_users'),
+    ('super_admin', 'change_role'),
+}
+
+KNOWN_ROLES = ('user', 'admin', 'super_admin')
+
+
+def catalog_role_default(permission: str, role: str) -> bool:
+    """پیش‌فرض seed داخل کد (fallback و مقدار اولیه seed)."""
+    info = ALL_PERMISSIONS.get(permission)
+    if not info:
+        return False
+    return bool(info.get(role or 'user', False))
+
+
+def is_role_default_locked(role: str, permission: str) -> bool:
+    return (role, permission) in LOCKED_ROLE_DEFAULTS
+
+
+def get_role_permission_map(db: Session, role: str) -> dict[str, bool]:
+    """
+    نقشهٔ پیش‌فرض دسترسی برای یک نقش.
+    ردیف DB اولویت دارد؛ در نبود ردیف → seed کد.
+    """
+    role = role or 'user'
+    result = {
+        code: catalog_role_default(code, role)
+        for code in ALL_PERMISSIONS
+    }
+    try:
+        rows = db.query(RolePermission).filter(RolePermission.role == role).all()
+    except Exception:
+        return result
+    for row in rows:
+        if row.permission in result:
+            result[row.permission] = bool(row.granted)
+    return result
+
+
+def role_has_permission_default(db: Session, role: str, permission: str) -> bool:
+    if permission not in ALL_PERMISSIONS:
+        return False
+    return get_role_permission_map(db, role).get(permission, False)
+
 
 def get_effective_permissions(db: Session, user: User) -> set:
     """
     محاسبه دسترسی‌های مؤثر کاربر
-    = دسترسی‌های نقش + grant‌های دستی - revoke‌های دستی
+    = دسترسی‌های نقش (از DB) + grant‌های دستی - revoke‌های دستی
     """
     if not user:
         return set()
 
-    # ۱. دسترسی‌های پایه از نقش
     role = user.role or 'user'
-    base_perms = set()
-    for perm_code, perm_info in ALL_PERMISSIONS.items():
-        if perm_info.get(role, False):
-            base_perms.add(perm_code)
+    role_map = get_role_permission_map(db, role)
+    base_perms = {code for code, granted in role_map.items() if granted}
 
-    # ۲. اعمال override‌های فردی
     overrides = db.query(UserPermission).filter(
         UserPermission.user_id == user.user_id
     ).all()
 
     for override in overrides:
         if override.granted:
-            base_perms.add(override.permission)      # اعطا
+            base_perms.add(override.permission)
         else:
-            base_perms.discard(override.permission)  # سلب
+            base_perms.discard(override.permission)
 
     return base_perms
 
@@ -105,6 +151,23 @@ def get_permission_history(db: Session, user_id: str, limit: int = 50) -> list:
         )
 
 
+def get_role_permission_history(db: Session, role: str, limit: int = 50) -> list:
+    """تاریخچه تغییرات پیش‌فرض یک نقش."""
+    try:
+        return (
+            db.query(RolePermissionHistory)
+            .filter(RolePermissionHistory.role == role)
+            .order_by(
+                RolePermissionHistory.created_at.desc(),
+                RolePermissionHistory.id.desc(),
+            )
+            .limit(limit)
+            .all()
+        )
+    except Exception:
+        return []
+
+
 def _log_history(
     db: Session,
     user_id: str,
@@ -117,6 +180,28 @@ def _log_history(
     try:
         db.add(UserPermissionHistory(
             user_id=user_id,
+            permission=permission,
+            action=action,
+            granted=granted,
+            reason=reason,
+            created_by=created_by,
+        ))
+    except Exception:
+        pass
+
+
+def _log_role_history(
+    db: Session,
+    role: str,
+    permission: str,
+    action: str,
+    granted,
+    reason: str = "",
+    created_by: str = "",
+) -> None:
+    try:
+        db.add(RolePermissionHistory(
+            role=role,
             permission=permission,
             action=action,
             granted=granted,
@@ -193,3 +278,50 @@ def remove_user_permission(
     except Exception:
         db.rollback()
     return False
+
+
+def set_role_permission(
+    db: Session,
+    role: str,
+    permission: str,
+    granted: bool,
+    reason: str = "",
+    created_by: str = "",
+) -> tuple[bool, str]:
+    """
+    تنظیم پیش‌فرض دسترسی یک نقش.
+    برمی‌گرداند: (موفقیت، پیام خطا/خالی)
+    """
+    if role not in KNOWN_ROLES:
+        return False, "نقش نامعتبر"
+    if permission not in ALL_PERMISSIONS:
+        return False, "دسترسی نامعتبر"
+    if is_role_default_locked(role, permission) and not granted:
+        return False, "این پیش‌فرض برای مدیر ارشد قفل است"
+
+    existing = db.query(RolePermission).filter(
+        RolePermission.role == role,
+        RolePermission.permission == permission,
+    ).first()
+
+    if existing:
+        existing.granted = granted
+        existing.reason = reason
+        existing.updated_by = created_by
+        try:
+            existing.updated_at = datetime.now()
+        except Exception:
+            pass
+    else:
+        db.add(RolePermission(
+            role=role,
+            permission=permission,
+            granted=granted,
+            reason=reason,
+            updated_by=created_by,
+        ))
+
+    action = 'enable' if granted else 'disable'
+    _log_role_history(db, role, permission, action, granted, reason, created_by)
+    db.commit()
+    return True, ""

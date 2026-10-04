@@ -23,6 +23,7 @@ from models.leave_carry_forward_request import LeaveCarryForwardRequest
 from models.leave_buyback_quota import LeaveBuybackQuota
 from models import leave_glossary  # noqa: F401 — domain constants
 from models.user_permission import UserPermission, UserPermissionHistory
+from models.role_permission import RolePermission, RolePermissionHistory
 from models.bale_user import BaleUser
 from models.password_reset import PasswordResetRequest
 from models.region import Region
@@ -43,7 +44,9 @@ __all__ = [
     'LeaveRequest', 'LeaveCarryForwardRequest', 'LeaveBuybackQuota',
     'Holiday', 'DailyStatus',
     'HourlyMission', 'HourlyMissionPolicy',
-    'EmployeePhone', 'EmployeeAddress', 'EmployeeAddressHistory', 'Education', 'UserPermission', 'UserPermissionHistory', 'BaleUser',
+    'EmployeePhone', 'EmployeeAddress', 'EmployeeAddressHistory', 'Education',
+    'UserPermission', 'UserPermissionHistory',
+    'RolePermission', 'RolePermissionHistory', 'BaleUser',
     'Employee', 'Position', 'Region', 'Policy', 'PolicyValue', 'PolicyAuditLog',
     'EmployeeRegion',
     'City', 'EmployeeServiceLocation', 'TravelLeaveDetail', 'TravelLeavePolicy',

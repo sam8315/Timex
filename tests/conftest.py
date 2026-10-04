@@ -104,6 +104,7 @@ from database.init_db import (  # noqa: E402
     migrate_employee_address_range_check,
     migrate_city_region_code,
     migrate_employee_position_id,
+    seed_role_permissions,
 )
 from sqlalchemy import text as _sql_text
 
@@ -192,6 +193,7 @@ with test_engine.connect() as _conn:
         )
 
 Base.metadata.create_all(bind=test_engine)
+seed_role_permissions(bind_engine=test_engine)
 
 with test_engine.connect() as _conn:
     _conn.execute(_sql_text("""
@@ -465,6 +467,31 @@ def db():
         session.close()
 
 
+def _reset_role_permissions(session) -> None:
+    """Restore role defaults to catalog seed and clear role history."""
+    from models.role_permission import RolePermission, RolePermissionHistory
+    from web.permissions import ALL_PERMISSIONS, KNOWN_ROLES, catalog_role_default
+
+    session.query(RolePermissionHistory).delete()
+    existing = {
+        (row.role, row.permission): row
+        for row in session.query(RolePermission).all()
+    }
+    for permission in ALL_PERMISSIONS:
+        for role in KNOWN_ROLES:
+            granted = catalog_role_default(permission, role)
+            key = (role, permission)
+            row = existing.get(key)
+            if row is None:
+                session.add(RolePermission(
+                    role=role, permission=permission, granted=granted
+                ))
+            elif row.granted != granted:
+                row.granted = granted
+                row.reason = None
+                row.updated_by = None
+
+
 @pytest.fixture(autouse=True)
 def cleanup_test_db():
     """Clean up test database before and after each test."""
@@ -472,25 +499,32 @@ def cleanup_test_db():
     from models.employee import Employee
     from models.employee_phone import EmployeePhone
     from models.password_reset import PasswordResetRequest
-    
+    from models.user_permission import UserPermission, UserPermissionHistory
+
     session = TestingSessionLocal()
     try:
         session.query(PasswordResetRequest).delete()
+        session.query(UserPermissionHistory).delete()
+        session.query(UserPermission).delete()
         session.query(EmployeePhone).delete()
         session.query(Employee).delete()
         session.query(User).delete()
+        _reset_role_permissions(session)
         session.commit()
     finally:
         session.close()
-    
+
     yield
-    
+
     session = TestingSessionLocal()
     try:
         session.query(PasswordResetRequest).delete()
+        session.query(UserPermissionHistory).delete()
+        session.query(UserPermission).delete()
         session.query(EmployeePhone).delete()
         session.query(Employee).delete()
         session.query(User).delete()
+        _reset_role_permissions(session)
         session.commit()
     finally:
         session.close()

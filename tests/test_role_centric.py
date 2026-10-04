@@ -1,20 +1,18 @@
-"""Tests for the role-centric access view (Phase 6).
+"""Tests for the role-centric access view.
 
 `?tab=roles&role=<code>` — «این نقش به‌صورت پیش‌فرض کدام دسترسی‌ها را دارد؟»
 
 اصول اینجا:
-- نما کاملاً فقط‌خواندنی است: هیچ اعطا/سلب/بازنشانی/تغییر نقشی انجام نمی‌شود.
 - نقش‌ها از منبع واقعی پروژه (WebConfig.ROLE_*) خوانده می‌شوند — نه از سمت کلاینت.
-- پیش‌فرض هر نقش از `ALL_PERMISSIONS[code].get(role, False)` می‌آید
-  (دقیقاً قدم اولِ `get_effective_permissions`) — Backend = منبع حقیقت؛ هیچ عددی حدس نمی‌شود.
-- آمار (کل/فعال/غیرفعال) از ALL_PERMISSIONS محاسبه می‌شود، نه از ردیف‌های صفحه.
-- درب: فقط سوپرادمین (`require_super_admin`)؛ CSRF/دسترسی بدون تغییر.
+- پیش‌فرض هر نقش از DB (`role_permissions`) می‌آید؛ seed اولیه = کاتالوگ کد.
+- آمار (کل/فعال/غیرفعال) از پیش‌فرض نقش محاسبه می‌شود، نه از ردیف‌های صفحه.
+- درب: فقط سوپرادمین (`require_super_admin`)؛ CSRF روی تغییر پیش‌فرض.
 """
 import re
 
 from .conftest import login_as
 
-from web.permissions import ALL_PERMISSIONS
+from web.permissions import ALL_PERMISSIONS, get_role_permission_map
 
 HTML_ACCEPT = {"Accept": "text/html"}
 
@@ -45,9 +43,10 @@ def _n(body, marker):
     return body.count(marker)
 
 
-def _role_flags(role):
-    """تعداد فعال/غیرفعال برای یک نقش، مستقیماً از ALL_PERMISSIONS (منبع حقیقت)."""
-    granted = sum(1 for info in ALL_PERMISSIONS.values() if info.get(role, False))
+def _role_flags(db, role):
+    """تعداد فعال/غیرفعال برای یک نقش از پیش‌فرض DB (منبع حقیقت)."""
+    role_map = get_role_permission_map(db, role)
+    granted = sum(1 for granted in role_map.values() if granted)
     return granted, len(ALL_PERMISSIONS) - granted
 
 
@@ -66,7 +65,7 @@ def test_roles_tab_renders_selector_only(client, db, make_user):
     # بدون نقش انتخاب‌شده → هیچ جدول/کاشی‌ای رندر نمی‌شود
     assert "کل دسترسی‌ها" not in body
     assert "وضعیت</th>" not in body
-    assert "این نما فقط‌خواندنی است" in body
+    assert "در صورت نیاز تغییر دهید" in body
 
 
 def test_roles_tab_active_tab_and_tablink(client, db, make_user):
@@ -87,7 +86,7 @@ def test_valid_role_admin_matches_all_permissions(client, db, make_user):
     super_u = make_user(role="super_admin")
     login_as(client, super_u["national_code"])
 
-    granted, not_granted = _role_flags("admin")
+    granted, not_granted = _role_flags(db, "admin")
     body = _page(client, "/admin/permissions?tab=roles&role=admin")
 
     assert "مدیر" in body            # role_label
@@ -98,6 +97,8 @@ def test_valid_role_admin_matches_all_permissions(client, db, make_user):
     # نشان‌های جدول: دقیقاً همان تعداد فعال/غیرفعال
     assert _n(body, "state-badge badge-allowed") == granted
     assert _n(body, "state-badge badge-denied") == not_granted
+    # تب نقش‌ها قابل‌ویرایش است
+    assert 'action="/admin/permissions/roles/toggle"' in body
 
 
 def test_admin_role_known_permission_flags(client, db, make_user):
@@ -134,7 +135,7 @@ def test_super_admin_role_grants_all(client, db, make_user):
     super_u = make_user(role="super_admin")
     login_as(client, super_u["national_code"])
 
-    granted, not_granted = _role_flags("super_admin")
+    granted, not_granted = _role_flags(db, "super_admin")
     assert granted == len(ALL_PERMISSIONS)
     body = _page(client, "/admin/permissions?tab=roles&role=super_admin")
     assert "مدیر ارشد" in body

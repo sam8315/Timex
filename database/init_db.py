@@ -716,6 +716,55 @@ def seed_service_health(bind_engine=None) -> None:
         )
 
 
+def seed_role_permissions(bind_engine=None) -> None:
+    """
+    Seed missing role_permissions rows from ALL_PERMISSIONS catalog (idempotent).
+
+    Never overwrites existing rows — UI edits must persist across restarts.
+    New permission codes added in code get inserted with catalog defaults.
+    """
+    from sqlalchemy import text as _sql_text
+    from web.permissions import ALL_PERMISSIONS, KNOWN_ROLES, catalog_role_default
+
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
+    if "role_permissions" not in inspector.get_table_names():
+        return
+
+    inserted = 0
+    with target.begin() as conn:
+        for permission in ALL_PERMISSIONS:
+            for role in KNOWN_ROLES:
+                granted = catalog_role_default(permission, role)
+                result = conn.execute(
+                    _sql_text(
+                        """
+                        INSERT INTO role_permissions (
+                            role, permission, granted, created_at, updated_at
+                        )
+                        VALUES (
+                            :role, :permission, :granted, NOW(), NOW()
+                        )
+                        ON CONFLICT (role, permission) DO NOTHING
+                        """
+                    ),
+                    {
+                        "role": role,
+                        "permission": permission,
+                        "granted": granted,
+                    },
+                )
+                try:
+                    inserted += result.rowcount or 0
+                except Exception:
+                    pass
+    logger.info(
+        "Role permissions seeded inserted=%s",
+        inserted,
+        extra={"event": "database.ready"},
+    )
+
+
 def create_tables() -> None:
     """
     ساخت تمام جداول تعریف شده در مدل‌ها
@@ -737,6 +786,7 @@ def create_tables() -> None:
         seed_travel_leave_policy_rules()
         seed_banks()
         seed_service_health()
+        seed_role_permissions()
         logger.info(
             "Database tables created/verified successfully",
             extra={"event": "database.ready"},

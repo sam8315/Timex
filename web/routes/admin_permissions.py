@@ -1,4 +1,6 @@
 """صفحه مدیریت دسترسی‌های کاربران"""
+from urllib.parse import quote
+
 from fastapi import APIRouter, Request, Depends, Form, Query, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -13,6 +15,11 @@ from web.permissions import (
     ALL_PERMISSIONS,
     get_effective_permissions,
     get_permission_history,
+    get_role_permission_history,
+    get_role_permission_map,
+    is_role_default_locked,
+    role_has_permission_default,
+    set_role_permission,
     set_user_permission,
     remove_user_permission,
 )
@@ -47,7 +54,7 @@ async def admin_permissions_page(
     role: str = Query(None),
     state: str = Query(None),            # allowed / denied
     only_override: bool = Query(False),
-    tab: str = Query(None),              # users / perms
+    tab: str = Query(None),              # users / perms / roles
     user: User = Depends(require_super_admin),
     db: Session = Depends(get_db)
 ):
@@ -89,27 +96,50 @@ async def admin_permissions_page(
     ]
     permission_label = ALL_PERMISSIONS[permission]["label"] if perm_selected else ""
     role_default_self = (
-        ALL_PERMISSIONS[permission].get(user.role or 'user', False)
+        role_has_permission_default(db, user.role or 'user', permission)
         if perm_selected else None
     )
 
-    # ── نمای Role-Centric: فقط-خواندنی؛ پیش‌فرض نقش دقیقاً از همان فرمول موتور ──
+    # ── نمای Role-Centric: پیش‌فرض نقش از DB (قابل‌ویرایش) ──
     role_selected = active_tab == 'roles' and role in VALID_ROLES
     role_label = ""
     role_perms = []
     role_counts = None
+    role_history_list = []
     if role_selected:
         role_label = next((r["label"] for r in ROLE_CATALOG if r["code"] == role), role)
+        role_map = get_role_permission_map(db, role)
         for code, info in ALL_PERMISSIONS.items():
-            # همان `info.get(role, False)` قدم اولِ get_effective_permissions
-            active = info.get(role, False)
-            role_perms.append({"code": code, "label": info["label"], "active": active})
+            active = role_map.get(code, False)
+            role_perms.append({
+                "code": code,
+                "label": info["label"],
+                "active": active,
+                "locked": is_role_default_locked(role, code),
+            })
         granted = sum(1 for rp in role_perms if rp["active"])
         role_counts = {
             "total": len(role_perms),
             "granted": granted,
             "not_granted": len(role_perms) - granted,
         }
+        for h in get_role_permission_history(db, role, limit=30):
+            role_history_list.append({
+                "permission": h.permission,
+                "permission_label": ALL_PERMISSIONS.get(h.permission, {}).get(
+                    "label", h.permission
+                ),
+                "action": h.action,
+                "granted": h.granted,
+                "reason": h.reason,
+                "created_by": h.created_by,
+                "created_at_j": (
+                    jdatetime.datetime.fromgregorian(datetime=h.created_at).strftime(
+                        "%Y/%m/%d %H:%M"
+                    )
+                    if h.created_at else "-"
+                ),
+            })
 
     query = db.query(User).outerjoin(Employee, User.user_id == Employee.user_id)
 
@@ -142,11 +172,18 @@ async def admin_permissions_page(
             ).all():
                 ov_map[ov.user_id] = ov
 
-        # مؤثر = نقش + grant/revoke — همان فرمول get_effective_permissions (ترکیب نقش/override)
+        # پیش‌فرض نقش‌ها یک‌بار برای نقش‌های موجود در صفحه
+        role_defaults_cache = {}
+        # مؤثر = نقش + grant/revoke — همان فرمول get_effective_permissions
         perm_rows = []  # (user_id, role, active, source, has_override)
         cnt_eff = cnt_denied = cnt_override = 0
         for uid, urole in matched:
-            rd = ALL_PERMISSIONS[permission].get(urole or 'user', False)
+            urole = urole or 'user'
+            if urole not in role_defaults_cache:
+                role_defaults_cache[urole] = role_has_permission_default(
+                    db, urole, permission
+                )
+            rd = role_defaults_cache[urole]
             ov = ov_map.get(uid)
             has_ov = ov is not None
             active = ov.granted if has_ov else rd
@@ -200,9 +237,8 @@ async def admin_permissions_page(
                 "perm_source": source,
             })
 
-    # ══════════════════ نمای Role-Centric (فاز ۶ — فقط-خواندنی) ══════════════════
+    # ══════════════════ نمای Role-Centric ══════════════════
     elif active_tab == 'roles':
-        # هیچ تغییر دسترسی/نقشی انجام نمی‌شود؛ فقط پیش‌فرض‌های نقش از ALL_PERMISSIONS.
         user_list = []
         perm_counts = None
         total = 0
@@ -226,12 +262,18 @@ async def admin_permissions_page(
             for ov in db.query(UserPermission).filter(UserPermission.user_id.in_(user_ids)).all():
                 override_map_all.setdefault(ov.user_id, []).append(ov)
 
+        # پیش‌فرض نقش‌ها یک‌بار برای نقش‌های صفحه
+        role_maps_cache = {}
         user_list = []
         perm_counts = None
         for u in users:
             overrides = override_map_all.get(u.user_id, [])
             role_u = u.role or 'user'
-            effective = {code for code, info in ALL_PERMISSIONS.items() if info.get(role_u, False)}
+            if role_u not in role_maps_cache:
+                role_maps_cache[role_u] = get_role_permission_map(db, role_u)
+            effective = {
+                code for code, granted in role_maps_cache[role_u].items() if granted
+            }
             for ov in overrides:
                 if ov.granted:
                     effective.add(ov.permission)
@@ -254,6 +296,7 @@ async def admin_permissions_page(
         "total_pages": total_pages,
         "is_admin": True,
         "is_super_admin": True,
+        "csrf_token": make_csrf_token(user.user_id),
         # ── نمای Permission-Centric ──
         "active_tab": active_tab,
         "all_permissions": all_permissions,
@@ -272,7 +315,46 @@ async def admin_permissions_page(
         "role_perms": role_perms,
         "role_counts": role_counts,
         "role_error": role_error,
+        "role_history_list": role_history_list,
     })
+
+
+@router.post("/admin/permissions/roles/toggle")
+async def toggle_role_permission(
+    request: Request,
+    role: str = Form(...),
+    permission: str = Form(...),
+    action: str = Form(...),  # enable / disable
+    reason: str = Form(""),
+    csrf_token: str = Form(""),
+    user: User = Depends(require_super_admin),
+    db: Session = Depends(get_db),
+):
+    """تغییر پیش‌فرض دسترسی یک نقش (قابل‌ویرایش از تب نقش‌ها)."""
+    if not check_csrf_token(csrf_token, user.user_id):
+        raise HTTPException(status_code=403, detail="توکن امنیتی نامعتبر")
+
+    if action == "enable":
+        ok, err = set_role_permission(
+            db, role, permission, True, reason, user.user_id
+        )
+        msg = "پیش‌فرض نقش فعال شد" if ok else (err or "عملیات ناموفق")
+    elif action == "disable":
+        ok, err = set_role_permission(
+            db, role, permission, False, reason, user.user_id
+        )
+        msg = "پیش‌فرض نقش غیرفعال شد" if ok else (err or "عملیات ناموفق")
+    else:
+        msg = "عملیات نامعتبر"
+
+    redirect_role = role if role in VALID_ROLES else ""
+    return RedirectResponse(
+        url=(
+            f"/admin/permissions?tab=roles&role={quote(redirect_role)}"
+            f"&msg={quote(msg)}"
+        ),
+        status_code=302,
+    )
 
 
 @router.get("/admin/permissions/{target_user_id}", response_class=HTMLResponse)
@@ -298,10 +380,12 @@ async def admin_user_permissions(
     ).all()
     override_map = {o.permission: o for o in overrides}
 
+    role_map = get_role_permission_map(db, target_user.role or 'user')
+
     # ساخت لیست دسترسی‌ها با وضعیت هر کدام
     permissions_list = []
     for perm_code, perm_info in ALL_PERMISSIONS.items():
-        role_default = perm_info.get(target_user.role or 'user', False)
+        role_default = role_map.get(perm_code, False)
         override = override_map.get(perm_code)
 
         if override:
@@ -381,4 +465,5 @@ async def toggle_permission(
         msg = "عملیات نامعتبر"
 
     referer = request.headers.get("referer", f"/admin/permissions/{target_user_id}")
-    return RedirectResponse(url=f"{referer}?msg={msg}", status_code=302)
+    sep = "&" if "?" in referer else "?"
+    return RedirectResponse(url=f"{referer}{sep}msg={quote(msg)}", status_code=302)
