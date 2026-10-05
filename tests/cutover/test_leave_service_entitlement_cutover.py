@@ -98,13 +98,15 @@ def test_shadow_returns_legacy_on_match(db, make_user, path_shadow):
 def test_shadow_returns_legacy_even_when_engine_forced_mismatch(
     db, make_user, path_shadow, monkeypatch
 ):
+    from web.services.leave_entitlement_cutover import _EngineStageError
+
     _, c, _, _, _ = _seed_contract(db, make_user)
 
     def _boom(*args, **kwargs):
-        raise RuntimeError('forced engine failure')
+        raise _EngineStageError('forced engine failure')
 
     monkeypatch.setattr(
-        'web.services.leave_entitlement_cutover.entitlement_via_resolver_engine',
+        'web.services.leave_entitlement_cutover._compute_engine_entitlement',
         _boom,
     )
     legacy = calculate_entitlement_by_year(db, c, annual_override=30)

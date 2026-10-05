@@ -34,6 +34,9 @@ MYSQL_DB = os.getenv("MYSQL_DB", "")
 APP_NAME = "سیستم مدیریت حضور و غیاب"
 APP_VERSION = "1.1.0"
 
-# Phase 3 AL entitlement cutover path for leave_service.calculate_prorated_leave_by_year:
-# legacy (default) | shadow | engine
-AL_ENTITLEMENT_PATH = os.getenv("TIMEX_AL_ENTITLEMENT_PATH", "legacy").strip().lower()
+# Phase 3/4 AL entitlement cutover path (leave_service.calculate_prorated_leave_by_year):
+# Sole source of truth: env TIMEX_AL_ENTITLEMENT_PATH via
+# web.services.leave_entitlement_cutover.get_entitlement_path()
+# Values: legacy (default) | shadow | engine
+# Phase 4 does not auto-promote to engine. Production evidence = structured logs.
+# Do not mirror this setting here — a second constant would create operator ambiguity.

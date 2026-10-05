@@ -202,8 +202,151 @@ Updated for Membership Foundation baseline (`f3d490a` / Phase 2):
   mid-year Policy/Region slices, union coverage, Service Duration / Start-Date / Bomi,
   Membership Change Settlement, admin live-snapshot resolve changes, legacy deletion
 
-### Phase 4+
+### Phase 4 (Shadow Validation / Parity Evidence — delivered)
 
+**Phase 4 default = legacy**
+
+**Phase 4 does not promote to engine automatically**
+
+Scope remains the Phase 3 consumer only:
+`leave_service.calculate_prorated_leave_by_year` via
+`web/services/leave_entitlement_cutover.py`.
+
+#### Shadow semantics
+
+```text
+Legacy calculation
+      +
+Resolver → Context → Pure Engine
+      ↓
+Compare / Classify / Metrics / Log
+      ↓
+return Legacy
+      ↓
+existing mutation
+```
+
+Engine under shadow never writes LeaveBalance / LeaveTransaction / Contract /
+region sync / snapshot — even on mismatch.
+
+#### ShadowOutcome taxonomy (deterministic precedence)
+
+First match wins:
+
+| Code | Name | Meaning |
+|------|------|---------|
+| G | resolver failure | Context cannot be built |
+| H | engine failure | Pure Engine exception |
+| C | coverage mismatch | year keys / empty-vs-nonempty / covered-days shape |
+| D | annual source mismatch | snapshot/override invariant broken |
+| F | membership mismatch | membership identity ≠ contract identity |
+| E | region mismatch | unexpected on snapshot path (meta flag) |
+| A | raw mismatch | raw amounts disagree beyond tolerance |
+| B | rounded mismatch | raw close, `round()` differs |
+| OK | match | parity holds |
+
+No mismatch class is suppressed.
+
+#### In-process metrics (local evidence only)
+
+API: `get_shadow_metrics()` / `reset_shadow_metrics()`
+
+Counters:
+
+- `shadow_total` — every shadow execution
+- `shadow_match` — classification `OK` only
+- `shadow_mismatch` — A–F only
+- `resolver_failure` — G
+- `engine_failure` — H
+- `raw_mismatch` / `rounded_mismatch` / `coverage_mismatch` — A / B / C detail
+
+**Multi-worker note:** these counters are in-process only. They are **not** a
+global production metric across workers/processes. Do not add DB/Redis/Prometheus
+for Phase 4. Production evidence aggregation uses structured logs.
+
+#### Structured logging
+
+Prefix: `al_entitlement_shadow`
+
+Minimum fields: `user_id`, `contract_id`, `year_j`, `membership_code`,
+`legacy_raw`, `engine_raw`, `legacy_rounded`, `engine_rounded`, `diff`,
+`mismatch_type`, `resolver_engine_status`, `mutation=legacy`,
+`annual_source=snapshot`.
+
+Logging / metrics / classifier failures must not change the business result
+(`logging failure != business failure`).
+
+#### Failure isolation
+
+| Failure | Behavior |
+|---------|----------|
+| Resolver (G) | log + `resolver_failure` += 1 + return legacy |
+| Engine (H) | log + `engine_failure` += 1 + return legacy |
+| Logging | ignored; legacy returned unchanged |
+| Classifier | log + bump `shadow_total` if needed; return legacy |
+
+#### Operational procedure (human; agent has no Production access)
+
+```text
+TIMEX_AL_ENTITLEMENT_PATH=shadow
+restart service
+verify log (prefix al_entitlement_shadow)
+collect evidence (aggregate logs; optional per-process get_shadow_metrics)
+evaluate mismatch taxonomy
+rollback:
+TIMEX_AL_ENTITLEMENT_PATH=legacy
+restart service
+```
+
+Phase 4 does **not** change Production ENV from this codebase/agent session.
+Auto-promotion is forbidden.
+
+Acceptance criterion (manual gate, not runtime auto-promote):
+`TIMEX_AL_SHADOW_PROMOTION_MIN_MATCH_RATE` is a documentation / ops threshold only
+in Phase 4 (not wired as auto-promotion).
+
+#### Evidence report format (manual)
+
+```text
+Shadow Window:
+Consumer:
+Environment:
+shadow_total:
+shadow_match:
+shadow_mismatch:
+match_rate:
+
+A:
+B:
+C:
+D:
+E:
+F:
+G:
+H:
+
+Unexpected Critical:
+Unexpected High:
+Unresolved:
+Recommendation:
+```
+
+This is a report template only — not an auto-promotion mechanism.
+
+#### Rollback
+
+Set `TIMEX_AL_ENTITLEMENT_PATH=legacy` and restart. No migration, no data rewrite,
+no Contract snapshot rewrite.
+
+#### Target Rules still inactive in Phase 4
+
+Same as Phase 3: contractual base 26, contractual region default false, union
+overlap, mid-year Policy/Region slicing, Service Duration, Start-Date Policy,
+Bomi/Non-Bomi, Membership Settlement, new storage, new buyback — **not activated**.
+
+### Phase 5+
+
+- Optional controlled `engine` path activation (manual promotion after evidence)
 - Additional consumers (Permanent History, retroactive unification)
 - Settlement Layer
 - Service Duration / Start-Date / Bomi / Unit history models (when designed)
