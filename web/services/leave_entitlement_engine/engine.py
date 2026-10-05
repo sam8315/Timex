@@ -16,6 +16,49 @@ from web.services.leave_entitlement_engine.context import (
 )
 
 
+def compute_annual_entitlement_for_slices(
+    contexts: list[AnnualLeaveContext],
+) -> EntitlementResult:
+    """
+    Sum raw entitlements across date-effective policy/coverage slices.
+
+    All contexts must share the same ``year_j``. Empty input → zero result.
+    Used when Resolver splits a Jalali year by effective Policy/Region dates.
+    Current Behavior single-slice charge path continues to call
+    ``compute_annual_entitlement`` once.
+    """
+    if not contexts:
+        return EntitlementResult(
+            year_j=0,
+            raw_amount=0.0,
+            covered_days=0,
+            year_days=0,
+            membership_code='',
+            notes=('empty_slices',),
+        )
+    year_j = contexts[0].year_j
+    membership = contexts[0].membership_code
+    year_days = contexts[0].year_days
+    total_raw = 0.0
+    total_days = 0
+    notes: list[str] = ['multi_slice']
+    for ctx in contexts:
+        if ctx.year_j != year_j:
+            raise ValueError('all slices must share year_j')
+        part = compute_annual_entitlement(ctx)
+        total_raw += float(part.raw_amount)
+        total_days += int(part.covered_days)
+        notes.extend(part.notes)
+    return EntitlementResult(
+        year_j=year_j,
+        raw_amount=float(total_raw),
+        covered_days=total_days,
+        year_days=year_days,
+        membership_code=membership,
+        notes=tuple(notes),
+    )
+
+
 def compute_annual_entitlement(ctx: AnnualLeaveContext) -> EntitlementResult:
     """
     Compute raw AL entitlement for one membership coverage segment in one Jalali year.

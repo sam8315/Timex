@@ -307,6 +307,12 @@
     {% if cw_balance > 0 %}
     <span class="leave-side-chip chip-cw"><i class="bi bi-box-seam"></i> ذخیره سال قبل: <span class="chip-value">{{ cw_balance }}</span> روز</span>
     {% endif %}
+    {% if buyback_quota is defined and buyback_quota %}
+    <span class="leave-side-chip"><i class="bi bi-cash-coin"></i> سهمیه بازخرید: <span class="chip-value">{{ buyback_quota }}</span> روز</span>
+    {% endif %}
+    {% if storage_cap_label is defined %}
+    <span class="leave-side-chip"><i class="bi bi-shield"></i> سقف ذخیره: <span class="chip-value">{{ storage_cap_label }}</span></span>
+    {% endif %}
 </div>
 {% else %}
 <div class="mb-4"></div>

@@ -1105,6 +1105,10 @@
                class="sidebar-link {% if '/admin/employee-document-types' in request.url.path %}active{% endif %}">
                 <i class="bi bi-folder2"></i> انواع مدارک پرسنلی
             </a>
+            <a href="/admin/annual-leave/policies"
+               class="sidebar-link {% if '/admin/annual-leave' in request.url.path %}active{% endif %}">
+                <i class="bi bi-calendar2-check"></i> مرخصی استحقاقی
+            </a>
             {% if user and user.role == 'super_admin' %}
             <a href="/admin/membership-types"
                class="sidebar-link {% if '/admin/membership-types' in request.url.path %}active{% endif %}">

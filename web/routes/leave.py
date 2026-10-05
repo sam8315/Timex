@@ -183,6 +183,19 @@ async def leave_page(request: Request, user: User = Depends(get_current_user), d
     today_j_year = jdatetime.date.today().year
     tl_allowed, tl_used, tl_max = check_quota(db, user.user_id, today_j_year)
 
+    buyback_quota = 0
+    storage_cap_label = '—'
+    try:
+        from web.services.annual_leave_dashboard_service import (
+            build_user_annual_leave_dashboard,
+        )
+        dash = build_user_annual_leave_dashboard(db, user.user_id, year_j=current_year)
+        buyback_quota = dash.get('buyback_quota') or 0
+        cap = dash.get('storage_cap')
+        storage_cap_label = 'نامحدود' if cap is None else str(cap)
+    except Exception:
+        pass
+
     return templates.TemplateResponse(request, "leave.html", {
         "user": user,
         "today_j": today_j.strftime('%Y/%m/%d'),
@@ -196,6 +209,8 @@ async def leave_page(request: Request, user: User = Depends(get_current_user), d
         "al_used": al_snapshot['used'],
         "al_remaining": al_snapshot['remaining'],
         "cw_days": al_snapshot['cw_days'],
+        "buyback_quota": buyback_quota,
+        "storage_cap_label": storage_cap_label,
         "recent_requests": recent_requests,
         "pending_count": pending_count,
         "approved_count": approved_count,

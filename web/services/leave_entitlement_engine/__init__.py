@@ -19,6 +19,7 @@ from web.services.leave_entitlement_engine.context import (
 from web.services.leave_entitlement_engine.engine import (
     build_context_for_segment,
     compute_annual_entitlement,
+    compute_annual_entitlement_for_slices,
 )
 
 __all__ = [
@@ -30,6 +31,7 @@ __all__ = [
     'CHARGE_MODE_PRORATE',
     'build_context_for_segment',
     'compute_annual_entitlement',
+    'compute_annual_entitlement_for_slices',
     'get_jalali_year_days',
     'jalali_year_bounds_g',
 ]

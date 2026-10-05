@@ -97,6 +97,10 @@
             <i class="bi bi-pencil"></i> ویرایش اطلاعات
         </a>
         {% endif %}
+        <a href="/admin/annual-leave/employee?target_user_id={{ target_user.user_id }}"
+           class="btn btn-outline-success btn-sm">
+            <i class="bi bi-calendar2-check"></i> مرخصی استحقاقی
+        </a>
         <a href="/admin/attendance/user/{{ target_user.user_id }}" class="btn btn-outline-primary btn-sm">
             <i class="bi bi-calendar-check"></i> تردد
         </a>

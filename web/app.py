@@ -14,6 +14,7 @@ from web.routes import admin_employee_document_types
 from web.routes import admin_membership_types
 from web.routes import admin_service_adjustments
 from web.routes import admin_system
+from web.routes import admin_annual_leave
 BASE_PATH = Path(__file__).parent
 from web.config import WebConfig
 from web.routes.admin_permissions import router as permissions_router
@@ -83,6 +84,7 @@ app.include_router(admin_employee_document_types.router, prefix="/admin")
 app.include_router(admin_membership_types.router, prefix="/admin")
 app.include_router(admin_service_adjustments.router, prefix="/admin")
 app.include_router(admin_system.router, prefix="/admin")
+app.include_router(admin_annual_leave.router)
 app.include_router(admin_service_locations.router, prefix="/admin")
 app.include_router(carry_forward.router)
 app.include_router(education.router)

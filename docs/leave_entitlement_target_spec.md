@@ -377,22 +377,44 @@ Membership 4: 36/36 OK
 Total: 40/40 OK; A–H = 0
 ```
 
-**Still not activated (Target Rule / future phases — no invented business rules):**
+### Phase 6 (architecture + settlement facades + AL UI — delivered)
 
-- Contractual base 26 / contractual `apply_region` default false
-- Union / unique covered days for overlaps
-- Mid-year Policy / Region slicing
-- Permanent mid-year end prorata (Target vs Current ignore end)
-- ServiceDurationPolicy / StartDatePolicy / Bomi-NonBomi models
-- Membership Change Settlement Policy
-- Settlement consolidation (buyback / CF Gregorian paths)
-- Full legacy path deletion
+Delivered without inventing legal thresholds:
 
-### Phase 6+
+- Multi-slice Pure Engine: `compute_annual_entitlement_for_slices`
+- Resolver Rule timeline + `resolve_sliced_contexts_for_contract` (Target-ready;
+  **does not** replace Current Behavior snapshot charge path)
+- Settlement package `web/services/leave_settlement/` (year-end storage, buyback,
+  membership-change mode; default `keep_separate` = Current Behavior)
+- Conscript service context builder (facts from Contract/ServiceAdjustment;
+  legal duration remains owner-dependent / unresolved until Policy exists)
+- Admin UI: `/admin/annual-leave/policies`, `/admin/annual-leave/employee`
+- User leave page shows buyback quota + storage cap labels from central facades
+- Ops diagnostic retained: `tools/shadow_parity_diagnostic.py` (not a runtime dependency)
+
+#### Owner-dependent rules (explicitly unresolved — do not invent)
+
+- Contractual base 26 / contractual `apply_region` default false (Policy data change)
+- Union / unique covered days for overlaps (admin rule + CoveragePolicy)
+- Permanent mid-year end prorata Target change
+- ServiceDurationPolicy / StartDatePolicy numeric thresholds
+- Bomi/Non-Bomi / unit master duration tables
+- Membership Change modes other than `keep_separate` (transfer/expire/cash_out)
+- Settlement consolidation of Gregorian CF paths
+
+#### Deployment / rollback
+
+```text
+Default path: engine (unset TIMEX_AL_ENTITLEMENT_PATH)
+Rollback: TIMEX_AL_ENTITLEMENT_PATH=legacy|shadow + restart
+No migration required for Phase 6 architecture/UI
+Production ENV not changed by this repository push
+```
+
+### Phase 7+
 
 - Activate Target Rule defaults only after owner-approved Policy data changes
-- Settlement Layer completion (Membership Change Settlement)
-- Service Duration / Start-Date / Bomi / Unit history models (when designed)
-- Mid-year Policy/Region slicing
-- Union coverage
+- Persist Conscript unit/service-type/bomi fields when models are approved
+- Execute Membership Change settlement ledger when owner sets Policy mode
+- Union coverage + mid-year Region history tables
 - Legacy path deprecation after sustained engine stability

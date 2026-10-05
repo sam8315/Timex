@@ -17,7 +17,7 @@ Compatibility notes (Current Behavior couplings deliberately NOT copied):
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from typing import List, Literal, Optional, Tuple
 
 from sqlalchemy.orm import Session
@@ -234,3 +234,112 @@ def resolve_annual_leave_contexts(
         if ctx is not None:
             contexts.append(ctx)
     return contexts
+
+
+def membership_rule_timeline_for_year(
+    db: Session,
+    membership_code: str,
+    year_j: int,
+) -> List[Tuple[date, date, MembershipTypeRule]]:
+    """
+    Inclusive Gregorian intervals inside Jalali ``year_j`` for each Rule
+    version that applies. Read-only; no Target Rule invention.
+
+    If no rules exist, returns empty list (caller falls back to single-slice).
+    """
+    y_start, y_end = jalali_year_bounds_g(year_j)
+    code = resolve_membership_code_for_policy(membership_code)
+    rules = (
+        db.query(MembershipTypeRule)
+        .filter(
+            MembershipTypeRule.membership_type_code == code,
+            MembershipTypeRule.status.in_(('active', 'superseded', 'scheduled')),
+            MembershipTypeRule.effective_from <= y_end,
+        )
+        .order_by(MembershipTypeRule.effective_from.asc())
+        .all()
+    )
+    if not rules:
+        return []
+
+    # Clip to year; each rule applies until the day before the next rule.
+    intervals: List[Tuple[date, date, MembershipTypeRule]] = []
+    for idx, rule in enumerate(rules):
+        start = max(y_start, rule.effective_from)
+        if idx + 1 < len(rules):
+            next_from = rules[idx + 1].effective_from
+            end = min(y_end, next_from - timedelta(days=1))
+        else:
+            end = y_end
+        if end < start:
+            continue
+        intervals.append((start, end, rule))
+    return intervals
+
+
+def resolve_sliced_contexts_for_contract(
+    db: Session,
+    contract: Contract,
+    year_j: int,
+    *,
+    as_of_date: date,
+) -> List[AnnualLeaveContext]:
+    """
+    Target-ready: split contract coverage by MembershipTypeRule effective dates
+    and build one Context per non-empty intersection (live annual per slice).
+
+    Does **not** replace Current Behavior snapshot charge path.
+    Empty when base coverage is empty.
+    """
+    base = coverage_for_contract_year(contract, year_j, db=db)
+    if base is None:
+        return []
+    cov_start, cov_end = base
+    membership_code = resolve_membership_code_for_policy(contract.contract_type_code)
+    timeline = membership_rule_timeline_for_year(db, membership_code, year_j)
+    charge = msem.charge_mode(db, membership_code)
+    y_start, y_end = jalali_year_bounds_g(year_j)
+    year_days = get_jalali_year_days(year_j)
+
+    employee = (
+        db.query(Employee).filter(Employee.user_id == contract.user_id).first()
+    )
+    region_code = employee.region_code if employee else None
+
+    if not timeline:
+        # Single live slice — same as Current Behavior live resolve
+        ctx = resolve_annual_leave_context_for_contract(
+            db,
+            contract,
+            year_j,
+            as_of_date=as_of_date,
+            annual_source='live',
+        )
+        return [ctx] if ctx is not None else []
+
+    slices: List[AnnualLeaveContext] = []
+    for slice_start, slice_end, rule in timeline:
+        seg_start = max(cov_start, slice_start)
+        seg_end = min(cov_end, slice_end)
+        if seg_end < seg_start:
+            continue
+        # Live annual as-of slice start (region + effective rule via existing resolver)
+        annual_days = float(
+            _resolve_live_annual_days(
+                db, membership_code, region_code, max(as_of_date, slice_start)
+            )
+        )
+        slices.append(
+            AnnualLeaveContext(
+                year_j=year_j,
+                year_days=year_days,
+                year_start_g=y_start,
+                year_end_g=y_end,
+                as_of_date=as_of_date,
+                membership_code=membership_code,
+                annual_days=annual_days,
+                coverage=CoverageInterval(start=seg_start, end=seg_end),
+                charge_mode=charge,
+            )
+        )
+    return slices
