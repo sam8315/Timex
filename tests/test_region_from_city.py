@@ -217,7 +217,16 @@ def test_contract_charge_uses_city_region(client, db, make_user):
         policy = Policy(category="leave", name="leave", is_active=True)
         db.add(policy)
         db.flush()
-    for key, val in (("annual_leave_dept_2", "30"), ("region_applies_dept_2", "true")):
+    from models.membership_type_rule import MembershipTypeRule
+    rule = (
+        db.query(MembershipTypeRule)
+        .filter(MembershipTypeRule.membership_type_code == "2")
+        .order_by(MembershipTypeRule.effective_from.desc())
+        .first()
+    )
+    if rule:
+        rule.annual_leave_base = 30
+    for key, val in (("region_applies_dept_2", "true"),):
         pv = db.query(PolicyValue).filter(
             PolicyValue.policy_id == policy.id,
             PolicyValue.parameter_key == key,

@@ -15,7 +15,6 @@ from models.leave_transaction import LeaveTransaction
 from models.leave_glossary import (
     LEAVE_TYPE_NAMES as GLOSSARY_LEAVE_TYPE_NAMES,
     LEAVE_TYPE_CW,
-    MEMBERSHIP_PERMANENT,
     TX_CHARGE,
     TX_DEDUCT,
     TX_REVERSE,
@@ -36,8 +35,11 @@ logger = logging.getLogger(__name__)
 LEAVE_TYPE_NAMES = dict(GLOSSARY_LEAVE_TYPE_NAMES)
 
 
-def split_contract_by_year(contract: Contract) -> List[Tuple[int, date, Optional[date]]]:
-    return split_contract_coverage_by_year(contract)
+def split_contract_by_year(
+    contract: Contract,
+    db: Optional[Session] = None,
+) -> List[Tuple[int, date, Optional[date]]]:
+    return split_contract_coverage_by_year(contract, db=db)
 
 
 def calculate_prorated_leave_by_year(
@@ -63,9 +65,9 @@ def calculate_prorated_leave_by_year(
         annual_override if annual_override is not None else contract.annual_leave_days
     )
     result = {}
-    for year_j, seg_start, seg_end in split_contract_coverage_by_year(contract):
+    for year_j, seg_start, seg_end in split_contract_coverage_by_year(contract, db=None):
         al = charge_amount_for_segment(
-            contract.contract_type_code, annual, year_j, seg_start, seg_end
+            contract.contract_type_code, annual, year_j, seg_start, seg_end, db=None
         )
         if year_j not in result:
             result[year_j] = {'AL': 0.0, 'SL': 0.0}
@@ -142,6 +144,8 @@ def update_leave_for_contract(
     old_end_date: date,
     old_deduction: int,
     old_type_code: Optional[str] = None,
+    *,
+    commit: bool = True,
 ) -> dict:
     """بروزرسانی مرخصی هنگام ویرایش قرارداد با قواعد عضویت."""
     employee = db.query(Employee).filter(Employee.user_id == contract.user_id).first()
@@ -176,9 +180,10 @@ def update_leave_for_contract(
 
         for leave_type in ['AL']:
             # رسمی: تغییر صرفاً end_date نباید AL را عوض کند
+            from web.services import membership_semantics as msem
             if (
-                contract.contract_type_code == MEMBERSHIP_PERMANENT
-                and old_code == MEMBERSHIP_PERMANENT
+                msem.is_permanent(db, contract.contract_type_code)
+                and msem.is_permanent(db, old_code)
                 and leave_type == 'AL'
                 and old_start_date == contract.start_date
                 and old_annual_leave == contract.annual_leave_days
@@ -230,7 +235,8 @@ def update_leave_for_contract(
             changes.setdefault(year_j, {})[leave_type] = diff
 
     sync_employee_department_from_active_contract(db, contract.user_id, commit=False)
-    db.commit()
+    if commit:
+        db.commit()
     return changes
 
 

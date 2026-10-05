@@ -53,7 +53,15 @@ def _seed_leave_policy(db, *, annual=30, cf_cap=9, buyback_cap=15):
                 region_code=region_code,
             ))
 
-    upsert('annual_leave_dept_1', annual)
+    from models.membership_type_rule import MembershipTypeRule
+    rule = (
+        db.query(MembershipTypeRule)
+        .filter(MembershipTypeRule.membership_type_code == '1')
+        .order_by(MembershipTypeRule.effective_from.desc())
+        .first()
+    )
+    if rule:
+        rule.annual_leave_base = int(annual)
     upsert('region_applies_dept_1', 'false')
     upsert('carry_forward_dept_1', cf_cap)
     upsert('buyback_dept_1', buyback_cap)

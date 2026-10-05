@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}انواع عضویت | پنل مدیریت{% endblock %}
+{% block content %}
+
+{% if request.query_params.get('success') %}
+<div class="alert alert-success alert-dismissible fade show">
+    <i class="bi bi-check-circle"></i> {{ request.query_params.get('success') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+{% if request.query_params.get('error') %}
+<div class="alert alert-danger alert-dismissible fade show">
+    <i class="bi bi-exclamation-triangle"></i> {{ request.query_params.get('error') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4><i class="bi bi-people"></i> انواع عضویت</h4>
+    <a href="/admin/" class="btn btn-outline-primary btn-sm">
+        <i class="bi bi-arrow-right"></i> بازگشت
+    </a>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header bg-white">
+        <h6><i class="bi bi-plus-circle"></i> افزودن نوع عضویت</h6>
+    </div>
+    <div class="card-body">
+        <form method="post" action="/admin/membership-types/add" class="row g-3 align-items-end">
+            <div class="col-md-2">
+                <label class="form-label">کد <span class="text-danger">*</span></label>
+                <input type="text" name="code" class="form-control" required maxlength="6"
+                       dir="ltr" pattern="[1-9][0-9]{0,5}" placeholder="مثلاً 8">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">نام <span class="text-danger">*</span></label>
+                <input type="text" name="name" class="form-control" required maxlength="100">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">توضیح</label>
+                <input type="text" name="description" class="form-control">
+            </div>
+            <div class="col-md-1">
+                <label class="form-label">ترتیب</label>
+                <input type="number" name="sort_order" class="form-control" value="0" dir="ltr">
+            </div>
+            <div class="col-md-1">
+                <label class="form-label">وضعیت</label>
+                <div class="form-check form-switch mt-2">
+                    <input class="form-check-input" type="checkbox" name="is_active" value="on" checked>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-success w-100">ثبت</button>
+            </div>
+        </form>
+        <small class="text-muted d-block mt-2">
+            Rule نسخه اول با annual_leave_base=0 و بدون پشتیبانی کسر/اضافه/سنوات به‌صورت خودکار ساخته می‌شود.
+            کد پس از استفاده در داده کسب‌وکاری قفل می‌شود؛ کد حذف‌شده قابل استفاده مجدد نیست.
+        </small>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-body py-2">
+        <form method="get" action="/admin/membership-types" class="d-flex flex-wrap align-items-center gap-2">
+            <input type="text" name="search" class="form-control form-control-sm" style="width: 220px;"
+                   value="{{ search }}" placeholder="جستجو: نام یا کد">
+            <select name="status_filter" class="form-select form-select-sm" style="width: auto;">
+                <option value="">همه وضعیت‌ها</option>
+                <option value="active" {% if status_filter == 'active' %}selected{% endif %}>فعال</option>
+                <option value="inactive" {% if status_filter == 'inactive' %}selected{% endif %}>غیرفعال</option>
+            </select>
+            <button type="submit" class="btn btn-primary btn-sm">اعمال</button>
+            <a href="/admin/membership-types?show_all=1" class="btn btn-success btn-sm {% if show_all %}disabled{% endif %}">نمایش همه</a>
+            {% if has_filter %}
+            <a href="/admin/membership-types" class="btn btn-outline-secondary btn-sm">پاک کردن</a>
+            {% endif %}
+        </form>
+    </div>
+</div>
+
+{% if not has_filter %}
+<div class="card">
+    <div class="card-body text-center py-5">
+        <h5 class="text-muted">برای مشاهده، جستجو یا «نمایش همه» را بزنید</h5>
+        <a href="/admin/membership-types?show_all=1" class="btn btn-success mt-2">نمایش همه</a>
+    </div>
+</div>
+{% else %}
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>کد</th>
+                        <th>نام</th>
+                        <th>وضعیت</th>
+                        <th>قفل کد</th>
+                        <th>وابستگی</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in membership_types %}
+                    <tr>
+                        <td dir="ltr">{{ row.mt.code }}</td>
+                        <td>{{ row.mt.name }}</td>
+                        <td>
+                            {% if row.mt.is_active %}
+                            <span class="badge bg-success">فعال</span>
+                            {% else %}
+                            <span class="badge bg-secondary">غیرفعال</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if row.mt.code_locked %}
+                            <span class="badge bg-warning text-dark">قفل</span>
+                            {% else %}
+                            —
+                            {% endif %}
+                        </td>
+                        <td class="small text-muted">
+                            قرارداد: {{ row.deps.contracts }} /
+                            توراهی: {{ row.deps.travel_leave_policies }}
+                        </td>
+                        <td class="text-end">
+                            <a href="/admin/membership-types/{{ row.mt.code }}" class="btn btn-sm btn-outline-primary">جزئیات / Rules</a>
+                            <form method="post" action="/admin/membership-types/{{ row.mt.code }}/toggle" class="d-inline">
+                                <button class="btn btn-sm btn-outline-secondary" type="submit">فعال/غیرفعال</button>
+                            </form>
+                            <form method="post" action="/admin/membership-types/{{ row.mt.code }}/delete" class="d-inline"
+                                  onsubmit="return confirm('حذف فقط بدون سابقه کسب‌وکاری مجاز است. ادامه؟');">
+                                <button class="btn btn-sm btn-outline-danger" type="submit">حذف</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="6" class="text-center text-muted py-4">موردی یافت نشد</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}

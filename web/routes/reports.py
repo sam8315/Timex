@@ -15,12 +15,15 @@ from web.dependencies import get_db, require_admin
 from web.permissions import enforce_permission
 from models.user import User
 from models.employee import Employee
-from models.contract import CONTRACT_TYPES
+from web.services.membership_service import (
+    employment_type_options,
+    membership_types_as_dict,
+)
 from core.raw_report import (
     JALALI_MONTHS,
-    EMPLOYMENT_TYPE_OPTIONS,
     STATUS_FILTER_OPTIONS,
     build_raw_report,
+    get_employment_type_options,
 )
 from core.excel_raw_report import (
     export_individual as export_raw_excel_individual,
@@ -67,15 +70,23 @@ def _ascii_filename_part(value: str, fallback: str = 'report') -> str:
     return cleaned or fallback
 
 
-def _employment_type_label(employment_type: str) -> str:
-    for value, label in EMPLOYMENT_TYPE_OPTIONS:
-        if value == employment_type:
-            return label
+def _employment_type_label(employment_type: str, db: Session = None) -> str:
+    if employment_type == 'all':
+        return 'همه'
+    if db is not None:
+        for value, label in employment_type_options(db, active_only=False):
+            if value == employment_type:
+                return label
     return employment_type or 'همه'
 
 
-def _validate_monthly_employment_type(employment_type: str) -> None:
-    if employment_type not in CONTRACT_TYPES and employment_type != 'all':
+def _validate_monthly_employment_type(employment_type: str, db: Session = None) -> None:
+    if employment_type == 'all':
+        return
+    if db is None:
+        raise ValueError('نوع عضویت نامعتبر است')
+    known = membership_types_as_dict(db, active_only=False)
+    if employment_type not in known:
         raise ValueError('نوع عضویت نامعتبر است')
 
 
@@ -105,7 +116,7 @@ def _monthly_group_reports(
     """
     if month < 1 or month > 12:
         raise ValueError('ماه نامعتبر است')
-    _validate_monthly_employment_type(employment_type)
+    _validate_monthly_employment_type(employment_type, db)
     build = data_fn or _monthly_full_report_data
     reports = []
     for employee in _employees_for_employment_type(db, employment_type):
@@ -113,7 +124,7 @@ def _monthly_group_reports(
             reports.append(build(employee.user_id, year, month))
         except ValueError:
             continue
-    return reports, _employment_type_label(employment_type)
+    return reports, _employment_type_label(employment_type, db)
 
 
 def _monthly_legal_ot_report_data(target_user_id: str, year: int, month: int):
@@ -333,7 +344,7 @@ def _monthly_form_context(
         'employees': employees_list,
         'available_years': list(range(today_j.year, today_j.year - 6, -1)),
         'jalali_months': JALALI_MONTHS,
-        'employment_type_options': EMPLOYMENT_TYPE_OPTIONS,
+        'employment_type_options': get_employment_type_options(db),
         'current_year': today_j.year,
         'current_month': today_j.month,
         'report': report,
@@ -444,7 +455,7 @@ def _raw_context(
         'employees_data': _raw_employee_search_data(db),
         'available_years': list(range(today_j.year, today_j.year - 6, -1)),
         'jalali_months': JALALI_MONTHS,
-        'employment_type_options': EMPLOYMENT_TYPE_OPTIONS,
+        'employment_type_options': get_employment_type_options(db),
         'status_filter_options': STATUS_FILTER_OPTIONS,
         'selected_user_id': selected_user_id or '',
         'selected_user_name': selected_employee.full_name if selected_employee else '',
@@ -461,11 +472,11 @@ def _validate_raw_report_params(
     month: int,
     employment_type: str,
     status_filter: str,
+    db: Session = None,
 ):
     if month < 1 or month > 12:
         raise ValueError('ماه نامعتبر است')
-    if employment_type not in CONTRACT_TYPES and employment_type != 'all':
-        raise ValueError('نوع عضویت نامعتبر است')
+    _validate_monthly_employment_type(employment_type, db)
     valid_status_filters = {value for value, _ in STATUS_FILTER_OPTIONS}
     if status_filter not in valid_status_filters:
         raise ValueError('فیلتر وضعیت نامعتبر است')
@@ -492,6 +503,7 @@ async def raw_report_form(
         selected_month,
         selected_employment_type,
         selected_status_filter,
+        db,
     )
     return templates.TemplateResponse(
         request,
@@ -522,7 +534,7 @@ async def raw_report_generate(
 ):
     enforce_permission(db, user, 'view_reports')
     try:
-        _validate_raw_report_params(year, month, employment_type, status_filter)
+        _validate_raw_report_params(year, month, employment_type, status_filter, db)
         report = build_raw_report(
             db,
             year,
@@ -562,7 +574,7 @@ def _raw_export_report(
     employment_type: str,
     status_filter: str,
 ):
-    _validate_raw_report_params(year, month, employment_type, status_filter)
+    _validate_raw_report_params(year, month, employment_type, status_filter, db)
     return build_raw_report(
         db,
         year,
@@ -671,7 +683,7 @@ async def monthly_detailed_report_form(
     selected_employment_type = request.query_params.get(
         'employment_type', 'all')
     try:
-        _validate_monthly_employment_type(selected_employment_type)
+        _validate_monthly_employment_type(selected_employment_type, db)
     except ValueError:
         selected_employment_type = 'all'
     return templates.TemplateResponse(
@@ -702,7 +714,7 @@ async def monthly_detailed_report_generate(
     try:
         if month < 1 or month > 12:
             raise ValueError("ماه نامعتبر است")
-        _validate_monthly_employment_type(employment_type)
+        _validate_monthly_employment_type(employment_type, db)
         target_user_id = (target_user_id or '').strip()
         if not target_user_id:
             return _monthly_group_print_redirect(
@@ -858,7 +870,7 @@ async def monthly_full_report_form(
     selected_employment_type = request.query_params.get(
         'employment_type', 'all')
     try:
-        _validate_monthly_employment_type(selected_employment_type)
+        _validate_monthly_employment_type(selected_employment_type, db)
     except ValueError:
         selected_employment_type = 'all'
     return templates.TemplateResponse(
@@ -889,7 +901,7 @@ async def monthly_full_report_generate(
     try:
         if month < 1 or month > 12:
             raise ValueError("ماه نامعتبر است")
-        _validate_monthly_employment_type(employment_type)
+        _validate_monthly_employment_type(employment_type, db)
         target_user_id = (target_user_id or '').strip()
         if not target_user_id:
             return _monthly_group_print_redirect(
@@ -1045,7 +1057,7 @@ async def monthly_legal_ot_report_form(
     selected_employment_type = request.query_params.get(
         'employment_type', 'all')
     try:
-        _validate_monthly_employment_type(selected_employment_type)
+        _validate_monthly_employment_type(selected_employment_type, db)
     except ValueError:
         selected_employment_type = 'all'
     return templates.TemplateResponse(
@@ -1073,7 +1085,7 @@ async def monthly_legal_ot_report_generate(
     try:
         if month < 1 or month > 12:
             raise ValueError("ماه نامعتبر است")
-        _validate_monthly_employment_type(employment_type)
+        _validate_monthly_employment_type(employment_type, db)
         target_user_id = (target_user_id or '').strip()
         if not target_user_id:
             return _monthly_group_print_redirect(

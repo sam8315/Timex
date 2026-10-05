@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}تعدیل خدمت | پنل مدیریت{% endblock %}
+{% block content %}
+
+{% if request.query_params.get('success') %}
+<div class="alert alert-success alert-dismissible fade show">
+    {{ request.query_params.get('success') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+{% if request.query_params.get('error') %}
+<div class="alert alert-danger alert-dismissible fade show">
+    {{ request.query_params.get('error') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4><i class="bi bi-hourglass-split"></i> تعدیل خدمت</h4>
+    <a href="/admin/" class="btn btn-outline-primary btn-sm">بازگشت</a>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header">ثبت تعدیل جدید (immutable)</div>
+    <div class="card-body">
+        <form method="post" action="/admin/service-adjustments/add" class="row g-3">
+            <div class="col-md-2">
+                <label class="form-label">کد پرسنلی</label>
+                <input type="text" name="employee_id" class="form-control" required dir="ltr">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">نوع</label>
+                <select name="adjustment_type" class="form-select" required>
+                    <option value="service_deduction">کسر خدمت</option>
+                    <option value="extra_service">اضافه خدمت</option>
+                    <option value="positive_seniority">سنوات مثبت</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">تاریخ مؤثر</label>
+                <input type="text" name="effective_date_str" class="form-control" placeholder="1404/01/01" required dir="ltr">
+            </div>
+            <div class="col-md-1">
+                <label class="form-label">سال</label>
+                <input type="number" name="years" class="form-control" value="0" min="0">
+            </div>
+            <div class="col-md-1">
+                <label class="form-label">ماه</label>
+                <input type="number" name="months" class="form-control" value="0" min="0" max="11">
+            </div>
+            <div class="col-md-1">
+                <label class="form-label">روز</label>
+                <input type="number" name="days" class="form-control" value="0" min="0">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">قرارداد (اختیاری)</label>
+                <input type="number" name="contract_id" class="form-control" dir="ltr">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">عنوان</label>
+                <input type="text" name="title" class="form-control">
+            </div>
+            <div class="col-md-5">
+                <label class="form-label">دلیل</label>
+                <input type="text" name="reason" class="form-control">
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <button class="btn btn-success w-100" type="submit">ثبت</button>
+            </div>
+        </form>
+        <small class="text-muted">ویرایش/حذف مستقیم مجاز نیست؛ اصلاح فقط با correction.</small>
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <form method="get" class="d-flex gap-2">
+            <input type="text" name="employee_id" class="form-control form-control-sm" style="width:200px"
+                   value="{{ employee_id }}" placeholder="کد پرسنلی" dir="ltr">
+            <button class="btn btn-primary btn-sm" type="submit">فیلتر</button>
+            <a href="/admin/service-adjustments?show_all=1" class="btn btn-success btn-sm">نمایش همه</a>
+        </form>
+    </div>
+</div>
+
+{% if has_filter %}
+<div class="card">
+    <div class="table-responsive">
+        <table class="table mb-0 align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>شناسه</th>
+                    <th>کارمند</th>
+                    <th>نوع</th>
+                    <th>مدت</th>
+                    <th>تاریخ</th>
+                    <th>وضعیت</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in rows %}
+                <tr>
+                    <td>{{ item.row.id }}</td>
+                    <td dir="ltr">{{ item.row.employee_id }}</td>
+                    <td>{{ item.row.adjustment_type }}</td>
+                    <td>{{ item.row.years }}ی {{ item.row.months }}م {{ item.row.days }}ر</td>
+                    <td dir="ltr">{{ item.effective_j }}</td>
+                    <td>{{ item.row.status }}</td>
+                    <td class="text-end">
+                        {% if item.row.status == 'active' %}
+                        <form method="post" action="/admin/service-adjustments/{{ item.row.id }}/void" class="d-inline"
+                              onsubmit="return confirm('ابطال؟');">
+                            <button class="btn btn-sm btn-outline-danger" type="submit">ابطال</button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="7" class="text-center text-muted py-3">موردی نیست</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}

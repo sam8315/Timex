@@ -183,17 +183,19 @@
 
     <div class="col-lg-6">
         <form method="post" action="/admin/policies/employment/save" class="card mb-3">
-            <div class="card-header py-2">استحقاقی پیش‌فرض عضویت</div>
+            <div class="card-header py-2">استحقاقی عضویت و اعمال منطقه</div>
             <div class="card-body py-3">
                 <p class="small text-muted mb-2">
-                    اعمال منطقه: استحقاقی منطقه + ماده ۱۱ برای رسمی.
+                    پایه استحقاقی از
+                    <a href="/admin/membership-types">انواع عضویت</a>
+                    خوانده می‌شود (فقط‌خواندنی). اینجا فقط پرچم اعمال منطقه ذخیره می‌شود.
                     <a href="/admin/policies/regions">مناطق</a>
                 </p>
                 <table class="table table-sm table-bordered align-middle mb-3">
                     <thead class="table-light">
                         <tr>
                             <th>عضویت</th>
-                            <th style="width:6rem">روز</th>
+                            <th style="width:6rem">پایه</th>
                             <th style="width:7rem">منطقه</th>
                         </tr>
                     </thead>
@@ -202,9 +204,7 @@
                         <tr>
                             <td>{{ dept.name }}</td>
                             <td>
-                                <input type="number" name="annual_{{ dept.code }}"
-                                       class="form-control form-control-sm"
-                                       value="{{ dept.annual }}" min="0" max="100">
+                                <span class="form-control-plaintext form-control-sm px-1">{{ dept.annual }}</span>
                             </td>
                             <td>
                                 <div class="form-check form-switch mb-0">

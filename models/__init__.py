@@ -5,6 +5,14 @@ from models.base import Base
 from models.user import User
 from models.attendance import Attendance, AttendancePolicy, AttendancePolicyDay, HourlyLeavePolicy, HourlyLeaveResolution, HourlyLeaveTransaction, HourlyLeavePolicy, HourlyLeaveResolution, HourlyLeaveTransaction
 from models.contract import Contract
+from models.membership_type import MembershipType
+from models.membership_type_rule import MembershipTypeRule
+from models.reserved_membership_code import ReservedMembershipCode
+from models.membership_rule_change import (
+    MembershipRuleChangeRequest,
+    MembershipRuleChangeAudit,
+)
+from models.service_adjustment import ServiceAdjustment
 from models.leave_balance import LeaveBalance
 from models.leave_transaction import LeaveTransaction
 from models.leave_request import LeaveRequest
@@ -42,7 +50,10 @@ from models.service_health import ServiceHealth
 __all__ = [
     'Base', 'User', 'Attendance', 'AttendancePolicy', 'AttendancePolicyDay',
     'HourlyLeavePolicy', 'HourlyLeaveResolution', 'HourlyLeaveTransaction',
-    'Contract', 'LeaveBalance', 'LeaveTransaction',
+    'Contract', 'MembershipType', 'MembershipTypeRule', 'ReservedMembershipCode',
+    'MembershipRuleChangeRequest', 'MembershipRuleChangeAudit',
+    'ServiceAdjustment',
+    'LeaveBalance', 'LeaveTransaction',
     'LeaveRequest', 'LeaveCarryForwardRequest', 'LeaveBuybackQuota',
     'Holiday', 'DailyStatus',
     'HourlyMission', 'HourlyMissionPolicy',

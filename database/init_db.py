@@ -2,6 +2,8 @@
 مدیریت ساخت و مقداردهی اولیه جداول دیتابیس
 """
 import logging
+from typing import Optional
+
 from sqlalchemy import inspect, text, types as sa_types
 from database.engine import engine
 from models import Base
@@ -377,7 +379,21 @@ def seed_travel_leave_policy_rules() -> None:
     """Seed contract-scoped Travel Leave policies, rules, and default quotas."""
     from sqlalchemy import text as _sql_text
 
-    contract_types = ("1", "2", "3", "4", "5", "6", "7")
+    # Prefer DB membership codes; fallback seed list only if table empty (A)
+    contract_types = []
+    try:
+        with engine.connect() as conn:
+            if "membership_types" in inspect(engine).get_table_names():
+                rows = conn.execute(
+                    _sql_text(
+                        "SELECT code FROM membership_types ORDER BY sort_order, code"
+                    )
+                ).fetchall()
+                contract_types = [r[0] for r in rows]
+    except Exception:
+        contract_types = []
+    if not contract_types:
+        contract_types = ["1", "2", "3", "4", "5", "6", "7"]
 
     with engine.begin() as conn:
         for contract_type_code in contract_types:
@@ -999,6 +1015,465 @@ def migrate_employee_document_types(bind_engine=None) -> None:
                 )
 
 
+def seed_membership_types(bind_engine=None) -> None:
+    """
+    Ensure the seven legacy membership types + first rules exist (idempotent).
+    Never creates memberships beyond codes 1..7. Never rewrites contracts.
+    """
+    from sqlalchemy.orm import sessionmaker
+    from web.services.membership_service import (
+        lock_codes_with_history,
+        reconcile_seed_membership_rules,
+        seed_default_memberships,
+    )
+
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
+    tables = set(inspector.get_table_names())
+    if "membership_types" not in tables or "membership_type_rules" not in tables:
+        return
+
+    SessionLocal = sessionmaker(bind=target, autoflush=False, autocommit=False)
+    db = SessionLocal()
+    try:
+        created = seed_default_memberships(db)
+        reconciled = reconcile_seed_membership_rules(db)
+        locked = lock_codes_with_history(db)
+        db.commit()
+        logger.info(
+            "Membership types seeded created=%s reconciled=%s locked=%s",
+            created,
+            reconciled,
+            locked,
+            extra={"event": "database.ready"},
+        )
+    except Exception:
+        db.rollback()
+        logger.exception(
+            "Failed to seed membership types",
+            extra={"event": "database.operation_failed"},
+        )
+        raise
+    finally:
+        db.close()
+
+
+def _membership_contracts_fk_exists(bind_engine=None) -> bool:
+    """True if contracts.contract_type_code already references membership_types."""
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
+    if "contracts" not in set(inspector.get_table_names()):
+        return False
+    for fk in inspector.get_foreign_keys("contracts"):
+        referred = fk.get("referred_table")
+        cols = list(fk.get("constrained_columns") or [])
+        if referred == "membership_types" and cols == ["contract_type_code"]:
+            return True
+        if fk.get("name") == "fk_contracts_membership_type_code":
+            return True
+    return False
+
+
+def run_membership_dual_run_validation(bind_engine=None) -> None:
+    """
+    Legacy vs New annual resolve check.
+
+    Fail-closed only before the contracts→membership_types FK is added.
+    After cutover (FK already present), mismatches are logged as warnings so
+    restarts are not blocked — e.g. policy annual_leave_dept_5=30 vs seed Rule=0.
+    Never mutates contracts or leave balances.
+    """
+    from sqlalchemy.orm import sessionmaker
+    from web.services.membership_cutover_validation import (
+        MembershipCutoverError,
+        validate_cutover_for_all_contracts,
+        find_orphan_membership_codes,
+    )
+
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
+    tables = set(inspector.get_table_names())
+    if "membership_types" not in tables or "contracts" not in tables:
+        return
+
+    already_cut_over = _membership_contracts_fk_exists(bind_engine=target)
+
+    SessionLocal = sessionmaker(bind=target, autoflush=False, autocommit=False)
+    db = SessionLocal()
+    try:
+        orphans = find_orphan_membership_codes(db)
+        if orphans:
+            detail = ", ".join(
+                f"{o.get('table')} id={o.get('id')} code={o.get('code')!r}"
+                for o in orphans[:50]
+            )
+            # Orphans always block adding/keeping integrity for new FKs;
+            # after cutover they should not exist (FK would have prevented them).
+            if not already_cut_over:
+                raise MembershipCutoverError(
+                    "membership cutover aborted: orphan codes: " + detail,
+                    orphans=orphans,
+                )
+            logger.warning(
+                "Membership orphan codes after cutover count=%s sample=%s",
+                len(orphans),
+                detail,
+                extra={"event": "database.ready"},
+            )
+
+        diffs = validate_cutover_for_all_contracts(db)
+        if diffs:
+            sample = "; ".join(d.reason for d in diffs[:20])
+            if not already_cut_over:
+                raise MembershipCutoverError(
+                    "membership cutover aborted: dual-run mismatches: " + sample,
+                    diffs=diffs,
+                )
+            logger.warning(
+                "Membership dual-run mismatches after cutover count=%s sample=%s",
+                len(diffs),
+                sample,
+                extra={"event": "database.ready"},
+            )
+            return
+
+        logger.info(
+            "Membership dual-run validation passed",
+            extra={"event": "database.ready"},
+        )
+    finally:
+        db.close()
+
+
+def align_leave_policy_membership_67(bind_engine=None) -> None:
+    """
+    Ensure leave policy keys for memberships 6/7 exist with annual=0.
+    Does not rewrite contracts or leave balances.
+    """
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
+    if "policies" not in inspector.get_table_names():
+        return
+    if "policy_values" not in inspector.get_table_names():
+        return
+
+    with target.begin() as conn:
+        leave_id = conn.execute(
+            text(
+                "SELECT id FROM policies WHERE category = 'leave' "
+                "ORDER BY id ASC LIMIT 1"
+            )
+        ).scalar()
+        if leave_id is None:
+            return
+        for code in ("6", "7"):
+            for key, value, notes in (
+                (
+                    f"annual_leave_dept_{code}",
+                    "0",
+                    f"هم‌ترازی cutover عضویت {code}",
+                ),
+                (
+                    f"region_applies_dept_{code}",
+                    "true",
+                    f"اعمال منطقه برای عضویت {code}",
+                ),
+            ):
+                exists = conn.execute(
+                    text(
+                        """
+                        SELECT 1 FROM policy_values
+                        WHERE policy_id = :pid
+                          AND parameter_key = :key
+                          AND region_code IS NULL
+                        LIMIT 1
+                        """
+                    ),
+                    {"pid": leave_id, "key": key},
+                ).first()
+                if exists:
+                    # Non-destructive: keep existing operator/custom values
+                    continue
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO policy_values (
+                            policy_id, parameter_key, parameter_value,
+                            region_code, notes, is_editable,
+                            created_at, updated_at
+                        )
+                        VALUES (
+                            :pid, :key, :val, NULL, :notes, TRUE,
+                            NOW(), NOW()
+                        )
+                        """
+                    ),
+                    {
+                        "pid": leave_id,
+                        "key": key,
+                        "val": value,
+                        "notes": notes,
+                    },
+                )
+    logger.info(
+        "Leave policy aligned for memberships 6/7",
+        extra={"event": "database.ready"},
+    )
+
+
+def migrate_membership_contract_fk(bind_engine=None) -> None:
+    """
+    Add FK contracts / travel_leave_policies → membership_types.code.
+    Assumes dual-run + orphan validation already passed. Never remaps codes.
+    """
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
+    tables = set(inspector.get_table_names())
+    if "contracts" not in tables or "membership_types" not in tables:
+        return
+
+    with target.connect() as conn:
+        inspector = inspect(target)
+        fks = {
+            fk["name"]
+            for fk in inspector.get_foreign_keys("contracts")
+            if fk.get("name")
+        }
+        if "fk_contracts_membership_type_code" not in fks:
+            conn.execute(
+                text(
+                    """
+                    ALTER TABLE contracts
+                    ADD CONSTRAINT fk_contracts_membership_type_code
+                    FOREIGN KEY (contract_type_code)
+                    REFERENCES membership_types(code)
+                    ON DELETE RESTRICT
+                    """
+                )
+            )
+            conn.commit()
+            logger.info(
+                "FK added contracts.contract_type_code -> membership_types.code",
+                extra={"event": "database.ready"},
+            )
+
+        if "travel_leave_policies" in tables:
+            inspector = inspect(target)
+            travel_fks = {
+                fk["name"]
+                for fk in inspector.get_foreign_keys("travel_leave_policies")
+                if fk.get("name")
+            }
+            if "fk_travel_leave_policies_membership_type_code" not in travel_fks:
+                conn.execute(
+                    text(
+                        """
+                        ALTER TABLE travel_leave_policies
+                        ADD CONSTRAINT fk_travel_leave_policies_membership_type_code
+                        FOREIGN KEY (contract_type_code)
+                        REFERENCES membership_types(code)
+                        ON DELETE RESTRICT
+                        """
+                    )
+                )
+                conn.commit()
+                logger.info(
+                    "FK added travel_leave_policies.contract_type_code "
+                    "-> membership_types.code",
+                    extra={"event": "database.ready"},
+                )
+
+
+def _fk_delete_rule(conn, table: str, column: str) -> Optional[str]:
+    try:
+        row = conn.execute(
+            text(
+                """
+                SELECT rc.delete_rule
+                FROM information_schema.referential_constraints rc
+                JOIN information_schema.key_column_usage kcu
+                  ON rc.constraint_name = kcu.constraint_name
+                 AND rc.constraint_schema = kcu.constraint_schema
+                WHERE kcu.table_name = :table
+                  AND kcu.column_name = :column
+                LIMIT 1
+                """
+            ),
+            {"table": table, "column": column},
+        ).first()
+        return str(row[0]).upper() if row else None
+    except Exception:
+        return None
+
+
+def _ensure_fk_restrict(
+    conn,
+    *,
+    table: str,
+    column: str,
+    constraint_name: str,
+    references: str,
+) -> None:
+    rule = _fk_delete_rule(conn, table, column)
+    if rule == "RESTRICT":
+        return
+    # drop existing FK on column if any
+    row = conn.execute(
+        text(
+            """
+            SELECT tc.constraint_name
+            FROM information_schema.table_constraints tc
+            JOIN information_schema.key_column_usage kcu
+              ON tc.constraint_name = kcu.constraint_name
+             AND tc.table_schema = kcu.table_schema
+            WHERE tc.table_name = :table
+              AND tc.constraint_type = 'FOREIGN KEY'
+              AND kcu.column_name = :column
+            LIMIT 1
+            """
+        ),
+        {"table": table, "column": column},
+    ).first()
+    if row:
+        conn.execute(text(f'ALTER TABLE "{table}" DROP CONSTRAINT "{row[0]}"'))
+        conn.commit()
+    conn.execute(
+        text(
+            f'ALTER TABLE "{table}" '
+            f'ADD CONSTRAINT "{constraint_name}" '
+            f'FOREIGN KEY ("{column}") REFERENCES {references} ON DELETE RESTRICT'
+        )
+    )
+    conn.commit()
+    logger.info(
+        "FK ensured %s.%s ON DELETE RESTRICT",
+        table,
+        column,
+        extra={"event": "database.ready"},
+    )
+
+
+def migrate_membership_foundation_hardening(bind_engine=None) -> None:
+    """
+    Runtime equivalent of 012_membership_foundation_hardening.sql:
+    behavior_profile column, pending status check, SA FKs RESTRICT.
+    Idempotent; does not rewrite contracts/leave.
+    """
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
+    tables = set(inspector.get_table_names())
+    if "membership_types" not in tables:
+        return
+
+    with target.connect() as conn:
+        cols = {c["name"] for c in inspect(target).get_columns("membership_types")}
+        if "behavior_profile" not in cols:
+            conn.execute(
+                text(
+                    "ALTER TABLE membership_types "
+                    "ADD COLUMN behavior_profile VARCHAR(40) "
+                    "NOT NULL DEFAULT 'standard_prorate'"
+                )
+            )
+            conn.commit()
+            logger.info(
+                "Column added membership_types.behavior_profile",
+                extra={"event": "database.ready"},
+            )
+        # one-time backfill for seed codes still on default
+        conn.execute(
+            text(
+                """
+                UPDATE membership_types SET behavior_profile = 'permanent'
+                WHERE code = '1' AND behavior_profile = 'standard_prorate'
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                UPDATE membership_types SET behavior_profile = 'conscript'
+                WHERE code = '2' AND behavior_profile = 'standard_prorate'
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                UPDATE membership_types SET behavior_profile = 'physician'
+                WHERE code = '5' AND behavior_profile = 'standard_prorate'
+                """
+            )
+        )
+        conn.commit()
+
+        # ensure check constraint for behavior_profile (best-effort)
+        try:
+            conn.execute(
+                text(
+                    """
+                    DO $$
+                    BEGIN
+                        IF NOT EXISTS (
+                            SELECT 1 FROM pg_constraint
+                            WHERE conname = 'ck_membership_types_behavior_profile'
+                        ) THEN
+                            ALTER TABLE membership_types
+                            ADD CONSTRAINT ck_membership_types_behavior_profile
+                            CHECK (behavior_profile IN (
+                                'permanent', 'conscript', 'physician', 'standard_prorate'
+                            ));
+                        END IF;
+                    END $$;
+                    """
+                )
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+
+        if "membership_type_rules" in tables:
+            try:
+                conn.execute(
+                    text(
+                        "ALTER TABLE membership_type_rules "
+                        "DROP CONSTRAINT IF EXISTS ck_membership_rule_status"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "ALTER TABLE membership_type_rules "
+                        "ADD CONSTRAINT ck_membership_rule_status "
+                        "CHECK (status IN "
+                        "('pending', 'scheduled', 'active', 'superseded'))"
+                    )
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+
+        if "service_adjustments" in tables:
+            _ensure_fk_restrict(
+                conn,
+                table="service_adjustments",
+                column="employee_id",
+                constraint_name="fk_service_adjustments_employee_id",
+                references='users("user_id")',
+            )
+            _ensure_fk_restrict(
+                conn,
+                table="service_adjustments",
+                column="contract_id",
+                constraint_name="fk_service_adjustments_contract_id",
+                references='contracts("id")',
+            )
+
+
+def migrate_service_adjustment_employee_fk_restrict(bind_engine=None) -> None:
+    """Compat alias — foundation migrate covers employee + contract RESTRICT."""
+    migrate_membership_foundation_hardening(bind_engine=bind_engine)
+
+
 def seed_role_permissions(bind_engine=None) -> None:
     """
     Seed missing role_permissions rows from ALL_PERMISSIONS catalog (idempotent).
@@ -1070,6 +1545,14 @@ def create_tables() -> None:
         seed_banks()
         seed_service_health()
         migrate_employee_document_types()
+        # Membership cutover order (fail-closed before FKs):
+        # 1) foundation columns/checks  2) seed insert-only  3) policy 6/7
+        # 4) dual-run  5) orphan check  6) FKs
+        migrate_membership_foundation_hardening()
+        seed_membership_types()
+        align_leave_policy_membership_67()
+        run_membership_dual_run_validation()
+        migrate_membership_contract_fk()
         seed_role_permissions()
         logger.info(
             "Database tables created/verified successfully",

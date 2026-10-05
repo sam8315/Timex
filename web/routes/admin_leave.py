@@ -20,7 +20,8 @@ from models.leave_balance import LeaveBalance
 from models.leave_transaction import LeaveTransaction
 from datetime import datetime
 from models.leave_request import LeaveRequest
-from models.contract import Contract, CONTRACT_TYPES
+from models.contract import Contract
+from web.services.membership_service import membership_types_as_dict
 from sqlalchemy import func
 from datetime import datetime, timedelta
 from models.employee_phone import EmployeePhone
@@ -256,7 +257,7 @@ async def leave_balances_page(
         "leave_type": leave_type or "",                 # 🆕
         "negative_only": negative_only,                 # 🆕
         "available_years": available_years,
-        "contract_types": CONTRACT_TYPES,
+        "contract_types": membership_types_as_dict(db, active_only=False),
         "leave_types": LEAVE_TYPES,
         "summary": summary,                             # 🆕
         "is_admin": True,

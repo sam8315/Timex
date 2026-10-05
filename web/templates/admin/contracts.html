@@ -131,14 +131,8 @@
                 <input type="text" name="end_date_str" class="form-control jalali-date" id="add_end_date"
                        placeholder="رسمی: خالی=۳۰ سال" autocomplete="off">
             </div>
-            <div class="col-md-1 leave-editable" style="display:none;">
-                <label class="form-label">🏖️ استحقاقی</label>
-                <input type="number" name="annual_leave_days" class="form-control" value="0" min="0">
-            </div>
-            <div class="col-md-1 leave-editable" style="display:none;">
-                <label class="form-label">🏥 استعلاجی</label>
-                <input type="number" name="sick_leave_days" class="form-control" value="0" min="0">
-            </div>
+            <input type="hidden" name="annual_leave_days" value="0">
+            <input type="hidden" name="sick_leave_days" value="0">
             <div class="col-md-1 deduction-field" style="display:none;">
                 <label class="form-label">⏳ کسر خدمت</label>
                 <input type="number" name="service_deduction_days" class="form-control" value="0" min="0">
@@ -839,8 +833,11 @@ initEmployeeSearch({
     formEl: document.getElementById('contractsFilterForm'),
 });
 
-const editableTypes = ['6', '7'];
-const deductionTypes = ['2'];
+const membershipSupports = {
+    {% for code, config in contract_types.items() %}
+    "{{ code }}": {{ 'true' if config.supports_service_deduction else 'false' }},
+    {% endfor %}
+};
 const PERMANENT_CODE = '1';
 
 function toggleLeaveFields() {
@@ -849,11 +846,8 @@ function toggleLeaveFields() {
     const selectedType = typeSelect.value;
     const isPermanent = selectedType === PERMANENT_CODE;
 
-    document.querySelectorAll('.leave-editable').forEach(el => {
-        el.style.display = editableTypes.includes(selectedType) ? 'block' : 'none';
-    });
     document.querySelectorAll('.deduction-field').forEach(el => {
-        el.style.display = deductionTypes.includes(selectedType) ? 'block' : 'none';
+        el.style.display = membershipSupports[selectedType] ? 'block' : 'none';
     });
     document.querySelectorAll('.non-permanent-stored').forEach(el => {
         el.style.display = isPermanent ? 'none' : 'block';

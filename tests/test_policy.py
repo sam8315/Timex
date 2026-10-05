@@ -244,15 +244,12 @@ def test_employment_save_persists(client, db, make_user):
     _as_super(client, make_user)
     resp = client.post(
         "/admin/policies/employment/save",
-        data={"annual_1": "33", "annual_2": "34", "annual_3": "30",
-              "annual_4": "30", "annual_5": "30",
-              "region_applies_1": "on", "region_applies_3": "on"},
+        data={"region_applies_1": "on", "region_applies_3": "on"},
         follow_redirects=False,
     )
     assert resp.status_code == 302
     db.expire_all()
-    assert _param(db, "annual_leave_dept_1").parameter_value == "33"
-    assert _param(db, "annual_leave_dept_2").parameter_value == "34"
+    # annual_leave_dept دیگر از این فرم نوشته نمی‌شود؛ فقط region_applies
     assert _param(db, "region_applies_dept_1").parameter_value == "true"
     # unchecked boxes are stored as false
     assert _param(db, "region_applies_dept_2").parameter_value == "false"

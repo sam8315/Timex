@@ -25,15 +25,34 @@ from models.hourly_mission import HourlyMissionPolicy
 router = APIRouter()
 templates = Jinja2Templates(directory=Path(__file__).parent.parent / "templates")
 
-# انواع عضویت (مطابق کدهای دپارتمان Employee)
+# Fallback انواع عضویت (تا قبل از seed؛ منبع اصلی = membership_types)
 DEPT_TYPES = [
     ('1', 'رسمی'),
     ('2', 'وظیفه'),
     ('3', 'خریدخدمت'),
     ('4', 'قراردادی'),
     ('5', 'پزشکی'),
+    ('6', 'سایر / متفرقه'),
+    ('7', 'قرارداد با بیمه‌ها'),
 ]
 DEPT_TYPES_DICT = dict(DEPT_TYPES)
+
+
+def _dept_types(db) -> list:
+    """انواع عضویت از DB؛ در صورت خالی بودن seed، fallback."""
+    try:
+        from web.services.membership_service import list_membership_types
+        # Policy admin lists need all known membership codes (incl. inactive)
+        rows = list_membership_types(db, active_only=False)
+        if rows:
+            return [(r.code, r.name) for r in rows]
+    except Exception:
+        pass
+    return list(DEPT_TYPES)
+
+
+def _dept_types_dict(db) -> dict:
+    return dict(_dept_types(db))
 
 # مقدار پیش‌فرض مرخصی استحقاقی بر اساس نوع عضویت
 # (استعلاجی دستی توسط مدیر ارشد شارژ می‌شود و اینجا مدیریت نمی‌شود)
@@ -199,9 +218,11 @@ async def admin_policies_leave(
         global_bb = 15
     method_pv = _get_param(db, policy.id, 'region_change_method')
 
+    dept_types = _dept_types(db)
+
     # سقف انتقال به‌ازای هر گروه (خالی/none = بدون محدودیت)
     carry_rows = []
-    for code, name in DEPT_TYPES:
+    for code, name in dept_types:
         cf_pv = _get_param(db, policy.id, f'carry_forward_dept_{code}')
         if cf_pv is not None and cf_pv.parameter_value is not None:
             raw = str(cf_pv.parameter_value).strip().lower()
@@ -218,7 +239,7 @@ async def admin_policies_leave(
 
     # بازخرید غیررسمی (بدون ردیف رسمی — رسمی در کارت ماده ۱۱)
     buyback_rows = []
-    for code, name in DEPT_TYPES:
+    for code, name in dept_types:
         if code == '1':
             continue
         dept_pv = _get_param(db, policy.id, f'buyback_dept_{code}')
@@ -306,21 +327,17 @@ async def admin_policies_leave(
         'modern_from_year': _era_display('buyback_era_modern_from_year', '1399'),
     }
 
-    # مرخصی استحقاقی پیش‌فرض بر اساس نوع عضویت + پرچم اعمال قوانین منطقه
-    # (ویرایش مقادیر منطقه فقط در صفحه مدیریت مناطق انجام می‌شود)
+    # annual_leave_base از Membership Rule (فقط نمایش)؛ region_applies در Policy
+    from web.services.membership_service import resolve_annual_leave_base
     employment_rows = []
-    for code, name in DEPT_TYPES:
-        a_pv = _get_param(db, policy.id, f'annual_leave_dept_{code}')
+    for code, name in dept_types:
         r_pv = _get_param(db, policy.id, f'region_applies_dept_{code}')
-        try:
-            annual = int(float(a_pv.parameter_value)) if a_pv else DEPT_DEFAULT_ANNUAL
-        except (TypeError, ValueError):
-            annual = DEPT_DEFAULT_ANNUAL
-        # پیش‌فرض: قوانین منطقه اعمال می‌شود (حفظ رفتار فعلی)
+        annual = resolve_annual_leave_base(db, code)
         region_applies = (r_pv.parameter_value != 'false') if r_pv else True
         employment_rows.append({
             'code': code, 'name': name, 'annual': annual,
             'region_applies': region_applies,
+            'annual_readonly': True,
         })
 
     return templates.TemplateResponse(request, "admin/policy_leave.html", {
@@ -342,11 +359,6 @@ async def admin_policies_leave(
 @router.post("/admin/policies/carry-forward/save")
 async def admin_policies_carry_forward_save(
     request: Request,
-    cf_1: str = Form(""),
-    cf_2: str = Form(""),
-    cf_3: str = Form(""),
-    cf_4: str = Form(""),
-    cf_5: str = Form(""),
     pro_rata_method: str = Form("true"),
     db: Session = Depends(get_db),
     user: User = Depends(require_super_admin)
@@ -356,7 +368,7 @@ async def admin_policies_carry_forward_save(
         return RedirectResponse(url="/admin/", status_code=302)
 
     policy = _get_leave_policy(db)
-    raw_by_dept = {'1': cf_1, '2': cf_2, '3': cf_3, '4': cf_4, '5': cf_5}
+    form = await request.form()
 
     def _normalize(raw: str) -> str:
         text = (raw or "").strip().lower()
@@ -367,8 +379,8 @@ async def admin_policies_carry_forward_save(
         except (TypeError, ValueError):
             return 'none'
 
-    for code, name in DEPT_TYPES:
-        value = _normalize(raw_by_dept[code])
+    for code, name in _dept_types(db):
+        value = _normalize(str(form.get(f'cf_{code}', '')))
         _set_param(
             db, policy, f'carry_forward_dept_{code}', value,
             notes=f'سقف انتقال مرخصی نوع عضویت {name} (none=بدون محدودیت)',
@@ -390,10 +402,6 @@ async def admin_policies_carry_forward_save(
 @router.post("/admin/policies/buyback/save")
 async def admin_policies_buyback_save(
     request: Request,
-    bb_2: str = Form(""),
-    bb_3: str = Form(""),
-    bb_4: str = Form(""),
-    bb_5: str = Form(""),
     db: Session = Depends(get_db),
     user: User = Depends(require_super_admin)
 ):
@@ -402,7 +410,7 @@ async def admin_policies_buyback_save(
         return RedirectResponse(url="/admin/", status_code=302)
 
     policy = _get_leave_policy(db)
-    raw_by_dept = {'2': bb_2, '3': bb_3, '4': bb_4, '5': bb_5}
+    form = await request.form()
 
     def _normalize(raw: str) -> str:
         text = (raw or "").strip().lower()
@@ -413,10 +421,10 @@ async def admin_policies_buyback_save(
         except (TypeError, ValueError):
             return 'none'
 
-    for code, name in DEPT_TYPES:
+    for code, name in _dept_types(db):
         if code == '1':
             continue
-        value = _normalize(raw_by_dept[code])
+        value = _normalize(str(form.get(f'bb_{code}', '')))
         _set_param(
             db, policy, f'buyback_dept_{code}', value,
             notes=f'سقف بازخرید نوع عضویت {name} (none=همه ذخیره قابل‌بازخرید)',
@@ -624,38 +632,18 @@ async def admin_policies_buyback_eras_save(
 @router.post("/admin/policies/employment/save")
 async def admin_policies_employment_save(
     request: Request,
-    annual_1: int = Form(30),
-    annual_2: int = Form(30),
-    annual_3: int = Form(30),
-    annual_4: int = Form(30),
-    annual_5: int = Form(30),
-    region_applies_1: str = Form("off"),
-    region_applies_2: str = Form("off"),
-    region_applies_3: str = Form("off"),
-    region_applies_4: str = Form("off"),
-    region_applies_5: str = Form("off"),
     db: Session = Depends(get_db),
     user: User = Depends(require_super_admin)
 ):
-    """Save default annual leave per employment type + region-applicability flag"""
+    """Save region-applicability flags only; annual_leave_base owned by Membership Rules."""
     if not has_permission(db, user, 'manage_users'):
         return RedirectResponse(url="/admin/", status_code=302)
 
     policy = _get_leave_policy(db)
-    dept_values = {
-        '1': (annual_1, region_applies_1),
-        '2': (annual_2, region_applies_2),
-        '3': (annual_3, region_applies_3),
-        '4': (annual_4, region_applies_4),
-        '5': (annual_5, region_applies_5),
-    }
-    for code, name in DEPT_TYPES:
-        annual, applies_raw = dept_values[code]
-        annual = max(0, min(100, annual))
+    form = await request.form()
+    for code, name in _dept_types(db):
+        applies_raw = form.get(f'region_applies_{code}', 'off')
         applies = 'true' if applies_raw in ('on', 'true', '1') else 'false'
-        _set_param(db, policy, f'annual_leave_dept_{code}', str(annual),
-                   notes=f'مرخصی استحقاقی پیش‌فرض نوع عضویت {name}',
-                   changed_by=user.user_id)
         _set_param(db, policy, f'region_applies_dept_{code}', applies,
                    notes=f'اعمال قوانین منطقه برای نوع عضویت {name}',
                    changed_by=user.user_id)
@@ -983,7 +971,7 @@ async def admin_policies_attendance(
     ).order_by(AttendancePolicy.employment_type_code, AttendancePolicy.effective_from_date.desc()).all()
 
     # ساخت دیکشنری سیاست‌ها به تفکیک employment_type
-    policies_by_type = {code: [] for code, _ in DEPT_TYPES}
+    policies_by_type = {code: [] for code, _ in _dept_types(db)}
     for p in policies:
         if p.user_id:
             # Employee Override - در بخش جداگانه نمایش داده می‌شود
@@ -1031,7 +1019,7 @@ async def admin_policies_attendance(
         "user": user,
         "is_admin": True,
         "is_super_admin": True,
-        "dept_types": DEPT_TYPES,
+        "dept_types": _dept_types(db),
         "policies_by_type": policies_by_type,
         "overrides": override_list,
     })
@@ -1060,7 +1048,7 @@ async def admin_policies_attendance_add(
         "user": user,
         "is_admin": True,
         "is_super_admin": True,
-        "dept_types": DEPT_TYPES,
+        "dept_types": _dept_types(db),
         "policy": None,  # Add mode
         "schedule": None,
         "employees": [{"user_id": e.user_id, "full_name": e.full_name} for e in employees],
@@ -1113,7 +1101,7 @@ async def admin_policies_attendance_save(
 
     try:
         # Validation: employment_type_code
-        valid_codes = [code for code, _ in DEPT_TYPES]
+        valid_codes = [code for code, _ in _dept_types(db)]
         if employment_type_code not in valid_codes:
             raise ValueError("نوع عضویت نامعتبر است")
 
@@ -1313,7 +1301,7 @@ async def admin_policies_attendance_edit(
         "user": user,
         "is_admin": True,
         "is_super_admin": True,
-        "dept_types": DEPT_TYPES,
+        "dept_types": _dept_types(db),
         "policy": policy,
         "schedule": schedule,
         "effective_from_j": effective_from_j,
@@ -1373,7 +1361,7 @@ async def admin_policies_attendance_update(
 
     try:
         # Validation: employment_type_code
-        valid_codes = [code for code, _ in DEPT_TYPES]
+        valid_codes = [code for code, _ in _dept_types(db)]
         if employment_type_code not in valid_codes:
             raise ValueError("نوع عضویت نامعتبر است")
 
@@ -1606,14 +1594,14 @@ async def admin_policies_hourly_leave(
         HourlyLeavePolicy.effective_from_date.desc()
     ).all()
 
-    policies_by_type = {code: [] for code, _ in DEPT_TYPES}
+    policies_by_type = {code: [] for code, _ in _dept_types(db)}
     overrides_list = []
 
     for p in policies_raw:
         entry = {
             'id': p.id,
             'employment_type_code': p.employment_type_code,
-            'employment_type_name': DEPT_TYPES_DICT.get(p.employment_type_code, p.employment_type_code),
+            'employment_type_name': _dept_types_dict(db).get(p.employment_type_code, p.employment_type_code),
             'from_date': jdatetime.date.fromgregorian(date=p.effective_from_date).strftime('%Y/%m/%d') if p.effective_from_date else '',
             'to_date': jdatetime.date.fromgregorian(date=p.effective_to_date).strftime('%Y/%m/%d') if p.effective_to_date else 'نامحدود',
             'hourly_leave_entitled': p.hourly_leave_entitled,
@@ -1637,7 +1625,7 @@ async def admin_policies_hourly_leave(
         "user": user,
         "is_admin": True,
         "is_super_admin": True,
-        "dept_types": DEPT_TYPES,
+        "dept_types": _dept_types(db),
         "policies_by_type": policies_by_type,
         "overrides": overrides_list,
     })
@@ -1661,8 +1649,8 @@ async def admin_policies_hourly_leave_new(
         "user": user,
         "is_admin": True,
         "is_super_admin": True,
-        "dept_types": DEPT_TYPES,
-        "dept_types_dict": DEPT_TYPES_DICT,
+        "dept_types": _dept_types(db),
+        "dept_types_dict": _dept_types_dict(db),
         "policy": None,
         "employees": [{"user_id": e.user_id, "full_name": e.full_name} for e in employees],
         "form_action": "/admin/policies/hourly-leave/save",
@@ -1695,7 +1683,7 @@ async def admin_policies_hourly_leave_save(
     try:
         from datetime import date as date_class
 
-        valid_codes = [code for code, _ in DEPT_TYPES]
+        valid_codes = [code for code, _ in _dept_types(db)]
         if employment_type_code not in valid_codes:
             raise ValueError("نوع عضویت نامعتبر است")
 
@@ -1829,8 +1817,8 @@ async def admin_policies_hourly_leave_edit(
         "user": user,
         "is_admin": True,
         "is_super_admin": True,
-        "dept_types": DEPT_TYPES,
-        "dept_types_dict": DEPT_TYPES_DICT,
+        "dept_types": _dept_types(db),
+        "dept_types_dict": _dept_types_dict(db),
         "policy": policy,
         "employees": [{"user_id": e.user_id, "full_name": e.full_name} for e in employees],
         "form_action": f"/admin/policies/hourly-leave/{policy_id}/update",
@@ -1871,7 +1859,7 @@ async def admin_policies_hourly_leave_update(
     try:
         from datetime import date as date_class
 
-        valid_codes = [code for code, _ in DEPT_TYPES]
+        valid_codes = [code for code, _ in _dept_types(db)]
         if employment_type_code not in valid_codes:
             raise ValueError("نوع عضویت نامعتبر است")
 
@@ -2012,14 +2000,14 @@ async def admin_policies_hourly_mission(
         HourlyMissionPolicy.effective_from_date.desc()
     ).all()
 
-    policies_by_type = {code: [] for code, _ in DEPT_TYPES}
+    policies_by_type = {code: [] for code, _ in _dept_types(db)}
     overrides_list = []
 
     for p in policies_raw:
         entry = {
             'id': p.id,
             'employment_type_code': p.employment_type_code,
-            'employment_type_name': DEPT_TYPES_DICT.get(p.employment_type_code, p.employment_type_code),
+            'employment_type_name': _dept_types_dict(db).get(p.employment_type_code, p.employment_type_code),
             'from_date': jdatetime.date.fromgregorian(date=p.effective_from_date).strftime('%Y/%m/%d') if p.effective_from_date else '',
             'to_date': jdatetime.date.fromgregorian(date=p.effective_to_date).strftime('%Y/%m/%d') if p.effective_to_date else 'نامحدود',
             'enabled': p.enabled,
@@ -2040,7 +2028,7 @@ async def admin_policies_hourly_mission(
         "user": user,
         "is_admin": True,
         "is_super_admin": True,
-        "dept_types": DEPT_TYPES,
+        "dept_types": _dept_types(db),
         "policies_by_type": policies_by_type,
         "overrides": overrides_list,
     })
@@ -2064,8 +2052,8 @@ async def admin_policies_hourly_mission_new(
         "user": user,
         "is_admin": True,
         "is_super_admin": True,
-        "dept_types": DEPT_TYPES,
-        "dept_types_dict": DEPT_TYPES_DICT,
+        "dept_types": _dept_types(db),
+        "dept_types_dict": _dept_types_dict(db),
         "policy": None,
         "employees": [{"user_id": e.user_id, "full_name": e.full_name} for e in employees],
         "form_action": "/admin/policies/hourly-mission/save",
@@ -2095,7 +2083,7 @@ async def admin_policies_hourly_mission_save(
     try:
         from datetime import date as date_class
 
-        valid_codes = [code for code, _ in DEPT_TYPES]
+        valid_codes = [code for code, _ in _dept_types(db)]
         if employment_type_code not in valid_codes:
             raise ValueError("نوع عضویت نامعتبر است")
 
@@ -2216,8 +2204,8 @@ async def admin_policies_hourly_mission_edit(
         "user": user,
         "is_admin": True,
         "is_super_admin": True,
-        "dept_types": DEPT_TYPES,
-        "dept_types_dict": DEPT_TYPES_DICT,
+        "dept_types": _dept_types(db),
+        "dept_types_dict": _dept_types_dict(db),
         "policy": policy,
         "employees": [{"user_id": e.user_id, "full_name": e.full_name} for e in employees],
         "form_action": f"/admin/policies/hourly-mission/{policy_id}/update",
@@ -2255,7 +2243,7 @@ async def admin_policies_hourly_mission_update(
     try:
         from datetime import date as date_class
 
-        valid_codes = [code for code, _ in DEPT_TYPES]
+        valid_codes = [code for code, _ in _dept_types(db)]
         if employment_type_code not in valid_codes:
             raise ValueError("نوع عضویت نامعتبر است")
 

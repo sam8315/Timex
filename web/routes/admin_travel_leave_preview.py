@@ -36,7 +36,7 @@ async def admin_travel_leave_preview(
         from_g = from_j.togregorian()
 
         policy, contract, employee = resolve_policy(db, target_user_id, from_g)
-        membership_code = resolve_membership_code(employee, contract)
+        membership_code = resolve_membership_code(employee, contract, db=db)
 
         if not employee:
             return {"success": False, "message": "اطلاعات کارمند برای کاربر یافت نشد", "travel_days": 0}

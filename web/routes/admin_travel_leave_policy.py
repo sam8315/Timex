@@ -6,11 +6,11 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from models.contract import CONTRACT_TYPES
 from models.travel_leave_policy import TravelLeavePolicy
 from models.travel_leave_policy_rules import TravelLeavePolicyRule, TravelLeaveQuotaSetting
 from web.dependencies import get_db, require_super_admin
 from web.permissions import has_permission
+from web.services.membership_service import membership_types_as_dict
 from models.user import User
 
 router = APIRouter()
@@ -40,7 +40,8 @@ async def admin_travel_leave_policy(request: Request, db: Session = Depends(get_
         return denied
 
     rows = []
-    for code, info in CONTRACT_TYPES.items():
+    membership_types = membership_types_as_dict(db, active_only=False)
+    for code, info in membership_types.items():
         policy = db.query(TravelLeavePolicy).filter(TravelLeavePolicy.contract_type_code == code).first()
         if not policy:
             policy = TravelLeavePolicy(contract_type_code=code, is_enabled=False, distance_method="geographic")
@@ -80,7 +81,8 @@ async def save_travel_leave_policy(
     denied = _guard(db, user)
     if denied:
         return denied
-    if contract_type_code not in CONTRACT_TYPES or distance_method not in DISTANCE_METHODS:
+    membership_types = membership_types_as_dict(db, active_only=False)
+    if contract_type_code not in membership_types or distance_method not in DISTANCE_METHODS:
         return _redirect("error")
 
     policy = db.query(TravelLeavePolicy).filter(TravelLeavePolicy.contract_type_code == contract_type_code).first()
