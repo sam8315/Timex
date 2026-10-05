@@ -198,6 +198,7 @@ def resolve_annual_leave_context_for_contract(
         membership_code=membership_code,
         annual_days=annual_days,
         coverage=CoverageInterval(start=seg_start, end=seg_end),
+        charge_mode=msem.charge_mode(db, membership_code),
     )
 
 

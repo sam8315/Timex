@@ -1,6 +1,7 @@
 # Annual Leave Entitlement — Target Business Specification
 
-**Status:** Phase 1 Pure Engine + Phase 2 read-only Resolver documented; Target Rules not enforced by production
+**Status:** Phases 1–5 delivered for Current Behavior central path. Target Rule
+mismatches (register §5) remain **not activated** until an explicit approved phase.
 
 **Baseline reference (Phase 1 engine):** `164d130cab635741f5f8b9c80164501b312b731b`
 
@@ -11,7 +12,8 @@
 **Distinction:**
 
 - **Current Behavior** → locked by characterization tests (`tests/characterization/test_current_*`)
-- **Phase 2 Resolver** → builds `AnnualLeaveContext` from DB with Current Behavior compatibility (`tests/resolver/`); not production-wired
+- **Phase 2 Resolver** → builds `AnnualLeaveContext` from DB; wired via cutover engine/shadow
+- **Phase 5 default path** → `TIMEX_AL_ENTITLEMENT_PATH` unset ⇒ `engine` (fail-closed parity)
 - **Target Rule** → documented here; skipped in `tests/spec/` until a later approved phase
 
 This document is the Layer 2 specification for the Central Annual Leave Entitlement Engine. Target Rules must not change Current Behavior until an explicit cutover phase.
@@ -169,7 +171,9 @@ Updated for Membership Foundation baseline (`f3d490a` / Phase 2):
 | Behavior profiles (coverage/charge) | `web/services/membership_semantics.py` + `MembershipType.behavior_profile` |
 | Service deduction on contract | `Contract.service_deduction_days` (+ `models/service_adjustment.py` exists but is not the entitlement coverage source) |
 | Membership identity / rules | `models/membership_type.py`, `models/membership_type_rule.py` |
-| Phase 2 DB → Context Resolver | `web/services/leave_entitlement_resolver.py` (read-only; not production-wired) |
+| Phase 2 DB → Context Resolver | `web/services/leave_entitlement_resolver.py` (read-only; cutover engine/shadow) |
+| Cutover / Shadow / Engine path | `web/services/leave_entitlement_cutover.py` + `TIMEX_AL_ENTITLEMENT_PATH` |
+| Ops read-only shadow diagnostic | `tools/shadow_parity_diagnostic.py` |
 
 ---
 
@@ -344,14 +348,51 @@ Same as Phase 3: contractual base 26, contractual region default false, union
 overlap, mid-year Policy/Region slicing, Service Duration, Start-Date Policy,
 Bomi/Non-Bomi, Membership Settlement, new storage, new buyback — **not activated**.
 
-### Phase 5+
+### Phase 5 (engine promotion + central formula — delivered)
 
-- Optional controlled `engine` path activation (manual promotion after evidence)
-- Additional consumers (Permanent History, retroactive unification)
-- Settlement Layer
+**Phase 5 default = engine** (when `TIMEX_AL_ENTITLEMENT_PATH` is unset)
+
+**Rollback:** `TIMEX_AL_ENTITLEMENT_PATH=legacy` or `shadow` + restart service
+
+(No migration / data rewrite / Contract snapshot rewrite.)
+
+Delivered:
+
+- Code default path promoted to `engine` with fail-closed parity vs legacy
+- Pure Engine branching by `AnnualLeaveContext.charge_mode` (not membership hard-codes)
+- Resolver sets `charge_mode` from `membership_semantics.charge_mode`
+- `charge_amount_for_segment` delegates raw math to Pure Engine (single formula source)
+- Permanent History continues live-annual Current Behavior; raw math via Engine delegate
+- Contract charge / edit / remove already go through `calculate_prorated_leave_by_year` → cutover
+- Ops diagnostic (read-only): `tools/shadow_parity_diagnostic.py`
+- Shadow remains available for observation; not required for default path
+
+Promotion evidence (Development diagnostic, Production skipped by ops decision):
+
+```text
+Membership 1: 2/2 OK
+Membership 2: 0 contracts
+Membership 3: 2/2 OK
+Membership 4: 36/36 OK
+Total: 40/40 OK; A–H = 0
+```
+
+**Still not activated (Target Rule / future phases — no invented business rules):**
+
+- Contractual base 26 / contractual `apply_region` default false
+- Union / unique covered days for overlaps
+- Mid-year Policy / Region slicing
+- Permanent mid-year end prorata (Target vs Current ignore end)
+- ServiceDurationPolicy / StartDatePolicy / Bomi-NonBomi models
+- Membership Change Settlement Policy
+- Settlement consolidation (buyback / CF Gregorian paths)
+- Full legacy path deletion
+
+### Phase 6+
+
+- Activate Target Rule defaults only after owner-approved Policy data changes
+- Settlement Layer completion (Membership Change Settlement)
 - Service Duration / Start-Date / Bomi / Unit history models (when designed)
-- Membership Change Settlement
-- Align defaults (contractual 26, contractual `apply_region` false)
 - Mid-year Policy/Region slicing
 - Union coverage
-- Legacy path deprecation
+- Legacy path deprecation after sustained engine stability

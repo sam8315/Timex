@@ -1473,67 +1473,8 @@ async def register_leave_for_user(
         )
 
 
-@router.get("/leave-requests/travel-preview")
-async def admin_travel_leave_preview(
-    target_user_id: str = Query(...),
-    from_date: str = Query(...),
-    destination_city_id: int = Query(...),
-    user: User = Depends(require_admin),
-    db: Session = Depends(get_db),
-):
-    """پیش‌نمایش مشاوره‌ای مرخصی توراهی برای ثبت توسط مدیر (محاسبه مجدد سمت سرور)."""
-    enforce_permission(db, user, 'approve_leave')
-    try:
-        from_j = jdatetime.datetime.strptime(from_date.strip(), "%Y/%m/%d").date()
-        from_g = from_j.togregorian()
-
-        esl = resolve_effective_service_location(db, target_user_id, from_g)
-        if not esl:
-            return {"success": False, "message": "محل خدمت مؤثر در تاریخ شروع یافت نشد"}
-
-        origin_city = db.query(City).filter(City.id == esl.city_id).first()
-        if not origin_city:
-            return {"success": False, "message": "شهر محل خدمت یافت نشد"}
-
-        dest_city = validate_destination_city(db, destination_city_id)
-        if not dest_city:
-            return {"success": False, "message": "شهر مقصد نامعتبر است"}
-
-        distance_km = round(calculate_distance_km(
-            (origin_city.latitude, origin_city.longitude),
-            (dest_city.latitude, dest_city.longitude),
-        ), 2)
-
-        rules = db.query(TravelLeavePolicyRule).filter(
-            TravelLeavePolicyRule.is_active == 1
-        ).all()
-        travel_days, _ = calculate_travel_days(distance_km, rules)
-
-        jalali_year = jdatetime.date.fromgregorian(date=from_g).year
-        allowed, used, max_allowed = check_quota(db, target_user_id, jalali_year)
-
-        return {
-            "success": True,
-            "origin_city": origin_city.name,
-            "destination_city": dest_city.name,
-            "destination_province": dest_city.province or "",
-            "distance_km": distance_km,
-            "travel_days": travel_days,
-            "eligible": travel_days > 0,
-            "message": (
-                f"فاصله {distance_km} کیلومتر — {travel_days} روز توراهی"
-                if travel_days > 0 else
-                (f"فاصله {distance_km} کیلومتر است. مرخصی توراهی برای این مسیر قابل استفاده نیست (کمتر از ۲۰۰ کیلومتر)."
-                 if distance_km < 200 else
-                 f"فاصله {distance_km} کیلومتر — مرخصی توراهی برای این مسیر قابل استفاده نیست (خارج از محدوده مجاز).")
-            ),
-            "quota_used": used,
-            "quota_max": max_allowed,
-            "quota_allowed": allowed,
-            "jalali_year": jalali_year,
-        }
-    except Exception as e:
-        return {"success": False, "message": str(e)}
+# Travel Leave admin preview lives in web.routes.admin_travel_leave_preview
+# (policy-aware). Do not re-declare /leave-requests/travel-preview here.
 
 
 # ============================================

@@ -2142,6 +2142,7 @@ async def admin_view_profile(
         "inactive_linked": inactive_linked,
         "address_history": address_history,
         "history_cities": history_cities,
+        "history_truncated": history_truncated,
         "target_bank_accounts": target_bank_accounts,
         "banks": banks,
         "active_bank_ids": active_bank_ids,

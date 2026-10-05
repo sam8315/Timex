@@ -1,7 +1,7 @@
 """
-Phase 3: leave_service.calculate_prorated_leave_by_year cutover paths.
+Phase 3/5: leave_service.calculate_prorated_leave_by_year cutover paths.
 
-Default TIMEX_AL_ENTITLEMENT_PATH=legacy preserves Current Behavior.
+Phase 5 default TIMEX_AL_ENTITLEMENT_PATH=engine (fail-closed parity).
 """
 from __future__ import annotations
 
@@ -13,9 +13,11 @@ from models.leave_balance import LeaveBalance
 from models.leave_transaction import LeaveTransaction
 from models.leave_glossary import TX_CHARGE
 from web.services.leave_entitlement_cutover import (
+    PATH_ENGINE,
     EntitlementParityError,
     entitlement_via_resolver_engine,
     entitlements_match,
+    get_entitlement_path,
     resolve_prorated_entitlement,
 )
 from web.services.leave_entitlement_service import (
@@ -268,6 +270,11 @@ def test_invalid_path_falls_back_to_legacy(db, make_user, monkeypatch):
     out = calculate_prorated_leave_by_year(c, db=db, annual_override=30)
     legacy = calculate_entitlement_by_year(db, c, annual_override=30)
     assert out == legacy
+
+
+def test_default_path_is_engine_when_env_unset(monkeypatch):
+    monkeypatch.delenv('TIMEX_AL_ENTITLEMENT_PATH', raising=False)
+    assert get_entitlement_path() == PATH_ENGINE
 
 
 def test_snapshot_override_used_not_live_base(db, make_user, path_engine):

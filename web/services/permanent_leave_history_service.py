@@ -26,7 +26,7 @@ from models.leave_glossary import (
     TX_USE,
 )
 from web.services.leave_entitlement_service import (
-    charge_amount_for_segment,
+    charge_amount_for_segment,  # delegates to Pure Engine (live annual history path)
     jalali_year_bounds_g,
     resolve_annual_leave_days,
     resolve_max_buyback,

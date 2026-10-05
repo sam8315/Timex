@@ -5,16 +5,16 @@ Wires Resolver → AnnualLeaveContext → Pure Engine into leave_service
 ``calculate_prorated_leave_by_year`` without changing mutation semantics.
 
 Paths (env ``TIMEX_AL_ENTITLEMENT_PATH``):
-  legacy — Current Behavior (default; Phase 4 default remains legacy)
+  engine — Resolver+Engine; fail-closed parity vs legacy (Phase 5 default)
   shadow — dual-run; always return legacy; classify/log/metrics (no fail)
-  engine — Resolver+Engine; fail-closed parity vs legacy before return
-            (activation is Phase 5+; not promoted by Phase 4)
+  legacy — Current Behavior formula path (rollback / explicit opt-in)
 
 Annual source for engine/shadow compare path: snapshot
 (``annual_override`` / ``contract.annual_leave_days``).
 
 Phase 4 shadow metrics are in-process only (not global across workers).
 Production evidence aggregation must use structured logs.
+Rollback: set TIMEX_AL_ENTITLEMENT_PATH=legacy (or shadow) and restart.
 """
 from __future__ import annotations
 
@@ -139,7 +139,13 @@ def _bump_metric(name: str, delta: int = 1) -> None:
 
 
 def get_entitlement_path() -> str:
-    raw = (os.getenv('TIMEX_AL_ENTITLEMENT_PATH') or PATH_LEGACY).strip().lower()
+    """
+    Entitlement cutover path.
+
+    Phase 5 default is ``engine`` when env is unset.
+    Invalid values fall back to ``legacy`` (safe rollback semantics).
+    """
+    raw = (os.getenv('TIMEX_AL_ENTITLEMENT_PATH') or PATH_ENGINE).strip().lower()
     if raw not in _VALID_PATHS:
         logger.warning(
             'invalid TIMEX_AL_ENTITLEMENT_PATH=%r; using %s',

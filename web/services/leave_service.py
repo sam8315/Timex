@@ -53,9 +53,9 @@ def calculate_prorated_leave_by_year(
     اگر db داده شود از سیاست عضویت/منطقه خوانده می‌شود؛
     در غیر این صورت از annual_leave_days روی قرارداد (یا annual_override).
 
-    Phase 3: when db is set, path is selected by TIMEX_AL_ENTITLEMENT_PATH
-    (legacy|shadow|engine) via leave_entitlement_cutover. Mutation callers
-    (charge/update/remove) are unchanged.
+    Phase 5: when db is set, path is selected by TIMEX_AL_ENTITLEMENT_PATH
+    (engine default | shadow | legacy) via leave_entitlement_cutover.
+    Mutation callers (charge/update/remove) are unchanged.
     """
     if db is not None:
         from web.services.leave_entitlement_cutover import resolve_prorated_entitlement

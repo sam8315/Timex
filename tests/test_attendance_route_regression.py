@@ -501,8 +501,11 @@ def test_group_schedule_changes_required_not_actual(db, client, make_user,
     assert rb['duty'] == format_hours_hhmm(31 * 480 / 60)
     assert ra['duty'] != format_hours_hhmm(31 * 440 / 60)  # نه fallback قدیمی
 
-    # Balance = Actual − Required (برای هر فرد با موظفی خودش)
-    assert ra['balance'] == pytest.approx(ra['actual'] - 31 * 360 / 60)
+    # Balance = Actual − Required − late/early.
+    # Punches 08:00–17:00 vs A policy 07:00–13:00 → 60m late × 4 days.
+    assert ra['balance'] == pytest.approx(
+        ra['actual'] - 31 * 360 / 60 - (4 * 60 / 60.0)
+    )
     assert rb['balance'] == pytest.approx(rb['actual'] - 31 * 480 / 60)
 
 

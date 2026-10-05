@@ -27,7 +27,8 @@ from .test_attendance_route_regression import (
 from .test_monthly_full_central_engine import _make_report
 
 # baseline اندازه‌گیری‌شده در Phase 8 (اگر این عدد تغییر کرد باید بدانیم)
-MEASURED_QUERY_COUNT = 100
+# Pinned after 2026-10 measurement on work (was 100; +1 SELECT shape observed).
+MEASURED_QUERY_COUNT = 101
 MONTH_DAYS = (G_END - G_START).days + 1
 
 

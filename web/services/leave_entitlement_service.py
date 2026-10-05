@@ -484,19 +484,12 @@ def charge_amount_for_segment(
     seg_end: Optional[date],
     db: Optional[Session] = None,
 ) -> float:
-    """محاسبه مقدار شارژ AL برای یک سگمنت سال — از charge_mode Semantics."""
-    year_days = get_jalali_year_days(year_j)
-    y_start, y_end = jalali_year_bounds_g(year_j)
+    """
+    مقدار شارژ AL برای یک سگمنت سال.
 
-    if seg_end is None:
-        seg_end = y_end
-
-    start = max(seg_start, y_start)
-    end = min(seg_end, y_end)
-    if end < start:
-        return 0.0
-
-    duration = (end - start).days + 1
+    Charge mode از Membership Semantics؛ فرمول خام از Pure Engine
+    (تک منبع محاسبه — بدون duplicate formula).
+    """
     if db is not None:
         mode = msem.charge_mode(db, membership_code)
     else:
@@ -510,15 +503,20 @@ def charge_amount_for_segment(
         else:
             mode = msem.CHARGE_PRORATE
 
-    if mode == msem.CHARGE_PERMANENT:
-        if start <= y_start and end >= y_end:
-            return float(annual_days)
-        return float(annual_days) * (duration / year_days)
+    from web.services.leave_entitlement_engine.engine import (
+        build_context_for_segment,
+        compute_annual_entitlement,
+    )
 
-    # physician و prorate: تناسب مدت (رفتار فعلی حفظ)
-    if duration >= year_days:
-        return float(annual_days)
-    return float(annual_days) * (duration / year_days)
+    ctx = build_context_for_segment(
+        membership_code=str(membership_code),
+        annual_days=float(annual_days),
+        year_j=year_j,
+        seg_start=seg_start,
+        seg_end=seg_end,
+        charge_mode=mode,
+    )
+    return float(compute_annual_entitlement(ctx).raw_amount)
 
 
 def calculate_entitlement_by_year(
