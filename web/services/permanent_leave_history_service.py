@@ -48,6 +48,19 @@ def _history_desc(kind: str, year_j: int) -> str:
     return f"{HISTORY_PREFIX}{kind} سال {year_j}"
 
 
+def _resolve_permanent_code(db: Session) -> str:
+    """
+    کد عضویت با behavior_profile=permanent برای مسیر تاریخچه.
+    الگوی Membership Foundation (هم‌خوان با build_year_plan).
+    """
+    permanent_code = "1"
+    for mt_code in ("1",):
+        if msem.is_permanent(db, mt_code):
+            permanent_code = mt_code
+            break
+    return permanent_code
+
+
 def build_year_plan(
     db: Session,
     *,
@@ -63,11 +76,7 @@ def build_year_plan(
     if not region_code:
         region_code = resolve_region_code_from_service_location(db, user_id)
     # تاریخچه فقط برای profile=permanent معنا دارد؛ code از caller/contract می‌آید
-    permanent_code = "1"
-    for mt_code in ("1",):
-        if msem.is_permanent(db, mt_code):
-            permanent_code = mt_code
-            break
+    permanent_code = _resolve_permanent_code(db)
     annual = float(resolve_annual_leave_days(db, permanent_code, region_code=region_code))
 
     rows = []
@@ -172,7 +181,7 @@ def apply_permanent_history(
     اعمال تاریخچه برای سال‌های قبل از سال جاری.
     Returns: {years: [...], stored_cw, buyback, errors}
     """
-    if contract.contract_type_code != MEMBERSHIP_PERMANENT:
+    if not msem.is_permanent(db, contract.contract_type_code):
         raise ValueError("تاریخچه فقط برای عضویت رسمی است")
 
     clear_permanent_history(db, contract)
@@ -181,9 +190,10 @@ def apply_permanent_history(
     plan = build_year_plan(
         db, user_id=contract.user_id, start_date=contract.start_date, region_code=region_code
     )
-    cf_cap = resolve_max_carry_forward(db, MEMBERSHIP_PERMANENT)
+    membership_code = contract.contract_type_code
+    cf_cap = resolve_max_carry_forward(db, membership_code)
     buyback_cap = resolve_max_buyback(
-        db, MEMBERSHIP_PERMANENT, user_id=contract.user_id, region_code=region_code
+        db, membership_code, user_id=contract.user_id, region_code=region_code
     )
 
     stored = 0
@@ -320,9 +330,10 @@ def preview_history_summary(
     plan = build_year_plan(
         db, user_id=user_id, start_date=start_date, region_code=region_code
     )
-    cf_cap = resolve_max_carry_forward(db, MEMBERSHIP_PERMANENT)
+    membership_code = _resolve_permanent_code(db)
+    cf_cap = resolve_max_carry_forward(db, membership_code)
     buyback_cap = resolve_max_buyback(
-        db, MEMBERSHIP_PERMANENT, user_id=user_id, region_code=region_code
+        db, membership_code, user_id=user_id, region_code=region_code
     )
     stored = 0
     years = []
