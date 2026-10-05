@@ -119,11 +119,37 @@ def clear_user_contracts(db, user_id):
     db.commit()
 
 
+def set_active_membership_annual_base(db, membership_code: str, annual_leave_base: int) -> None:
+    """
+    Characterization-only: set MembershipTypeRule.annual_leave_base for seeded rules.
+
+    Baseline 164d130 Current Behavior: when a membership rule exists,
+    resolve_annual_leave_days uses this base (not PolicyValue annual_leave_dept_*).
+    """
+    from models.membership_type_rule import MembershipTypeRule
+    from web.services.membership_service import get_effective_rule
+
+    rule = get_effective_rule(db, membership_code)
+    if rule is None:
+        raise AssertionError(
+            f"No effective MembershipTypeRule for code={membership_code!r}; "
+            "test DB should seed membership foundation."
+        )
+    rule.annual_leave_base = max(0, int(annual_leave_base))
+    # Keep other active rows for this code consistent for characterization isolation.
+    db.query(MembershipTypeRule).filter(
+        MembershipTypeRule.membership_type_code == membership_code,
+        MembershipTypeRule.status == 'active',
+    ).update({'annual_leave_base': max(0, int(annual_leave_base))})
+    db.commit()
+
+
 # Re-export calendar helpers used by Current Behavior tests
 __all__ = [
     'FIXED_LEAP_YEAR_J',
     'FIXED_NON_LEAP_YEAR_J',
     'seed_leave_policy',
+    'set_active_membership_annual_base',
     'make_contract',
     'clear_user_contracts',
     'get_jalali_year_days',

@@ -1,5 +1,8 @@
 """
-Current Behavior — region / policy annual resolve.
+Current Behavior — region / membership annual resolve (baseline 164d130).
+
+With Membership Foundation seeded, resolve_annual_leave_days uses
+MembershipTypeRule.annual_leave_base (+ region), not PolicyValue annual_leave_dept_*.
 
 Does NOT assert Target Rule default apply_region=false for contractual (mismatch #2).
 """
@@ -81,13 +84,33 @@ def test_current_region_scoped_policy_override(db, make_user):
 
 
 def test_current_missing_region_row_keeps_dept_base(db, make_user):
-    """Current Behavior: unknown region_code → keep dept annual (no region row)."""
+    """
+    Current Behavior (Membership-aware baseline 164d130):
+
+    When membership rules are seeded, unknown region_code keeps
+    MembershipTypeRule.annual_leave_base (not PolicyValue annual_leave_dept_*).
+    Missing Region row → return membership base unchanged.
+    """
+    from tests.characterization.conftest import set_active_membership_annual_base
+
     make_user(department='1')
-    seed_leave_policy(db, {'1': 33}, region_applies={'1': True})
+    set_active_membership_annual_base(db, '1', 33)
+    # PolicyValue dept seed is ignored while membership rules exist; kept for realism.
+    seed_leave_policy(db, {'1': 99}, region_applies={'1': True})
     assert resolve_annual_leave_days(db, '1', region_code='DOES_NOT_EXIST') == 33
 
 
 def test_current_zero_annual_base_with_region_off(db, make_user):
+    """
+    Current Behavior (Membership-aware baseline 164d130):
+
+    With region_applies false, resolve returns MembershipTypeRule.annual_leave_base.
+    Zero base is set on the membership rule (PolicyValue annual_leave_dept is not
+    the source of truth when rules are seeded).
+    """
+    from tests.characterization.conftest import set_active_membership_annual_base
+
     make_user(department='4')
-    seed_leave_policy(db, {'4': 0}, region_applies={'4': False})
+    set_active_membership_annual_base(db, '4', 0)
+    seed_leave_policy(db, {'4': 99}, region_applies={'4': False})
     assert resolve_annual_leave_days(db, '4', region_code='NORMAL') == 0
