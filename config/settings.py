@@ -33,3 +33,7 @@ MYSQL_DB = os.getenv("MYSQL_DB", "")
 # تنظیمات برنامه
 APP_NAME = "سیستم مدیریت حضور و غیاب"
 APP_VERSION = "1.1.0"
+
+# Phase 3 AL entitlement cutover path for leave_service.calculate_prorated_leave_by_year:
+# legacy (default) | shadow | engine
+AL_ENTITLEMENT_PATH = os.getenv("TIMEX_AL_ENTITLEMENT_PATH", "legacy").strip().lower()

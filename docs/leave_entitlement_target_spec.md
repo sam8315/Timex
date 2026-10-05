@@ -182,18 +182,29 @@ Updated for Membership Foundation baseline (`f3d490a` / Phase 2):
 - Independent Pure Engine package with raw parity to `charge_amount_for_segment`
 - No production wiring / refactor / migration / data rewrite
 
-### Phase 2 (Resolver — no production cutover)
+### Phase 2 (Resolver — delivered)
 
 - Read-only Resolver: DB facts → `AnnualLeaveContext` → Pure Engine
 - Current Behavior compatible coverage / annual / region precedence
 - Deterministic `year_j` + required `as_of_date` (does not copy `date.today()` year coupling)
 - Tests under `tests/resolver/`
-- **Not in Phase 2:** production wiring into `admin_contracts` / `charge_leave_for_new_contract`, Mutation Layer cutover, Target Rule defaults, mid-year Policy/Region slices, union coverage, Service Duration / Start-Date / Bomi, Membership Change Settlement, Permanent History rebuild
 
-### Phase 3+
+### Phase 3 (first production cutover — contract charge calc only)
 
-- Resolver production wiring
-- Mutation Layer cutover
+- Controlled wire of `leave_service.calculate_prorated_leave_by_year` via
+  `web/services/leave_entitlement_cutover.py`
+- Env switch `TIMEX_AL_ENTITLEMENT_PATH`: `legacy` (default) | `shadow` | `engine`
+- Engine path uses **snapshot** annual (`annual_override` / `Contract.annual_leave_days`)
+- Mutation layer (`round` + LeaveBalance + LeaveTransaction) unchanged
+- Fail-closed parity in `engine` mode; `shadow` mutates via legacy and logs diffs
+- Rollback: set `TIMEX_AL_ENTITLEMENT_PATH=legacy` (no data rewrite)
+- **Not in Phase 3:** Permanent History, Target Rule defaults (26 / apply_region false),
+  mid-year Policy/Region slices, union coverage, Service Duration / Start-Date / Bomi,
+  Membership Change Settlement, admin live-snapshot resolve changes, legacy deletion
+
+### Phase 4+
+
+- Additional consumers (Permanent History, retroactive unification)
 - Settlement Layer
 - Service Duration / Start-Date / Bomi / Unit history models (when designed)
 - Membership Change Settlement
