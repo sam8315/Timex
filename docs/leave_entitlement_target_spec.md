@@ -1,14 +1,20 @@
 # Annual Leave Entitlement — Target Business Specification
 
-**Status:** Phase 1 documentation only (not enforced by production code)  
-**Baseline reference:** `164d130cab635741f5f8b9c80164501b312b731b`  
-**Branch context:** `work`  
+**Status:** Phase 1 Pure Engine + Phase 2 read-only Resolver documented; Target Rules not enforced by production
+
+**Baseline reference (Phase 1 engine):** `164d130cab635741f5f8b9c80164501b312b731b`
+
+**Membership-aware characterization baseline:** `f3d490a881e098b0c6eccf7935243f2bd0964115`
+
+**Branch context:** `work`
+
 **Distinction:**
 
 - **Current Behavior** → locked by characterization tests (`tests/characterization/test_current_*`)
-- **Target Rule** → documented here only; not asserted as green CI expectations in Phase 1
+- **Phase 2 Resolver** → builds `AnnualLeaveContext` from DB with Current Behavior compatibility (`tests/resolver/`); not production-wired
+- **Target Rule** → documented here; skipped in `tests/spec/` until a later approved phase
 
-This document is the Layer 2 specification for the future Central Annual Leave Entitlement Engine. It must not be used to change Current Behavior in Phase 1.
+This document is the Layer 2 specification for the Central Annual Leave Entitlement Engine. Target Rules must not change Current Behavior until an explicit cutover phase.
 
 ---
 
@@ -155,27 +161,36 @@ Format: `Current Behavior → Target Rule → Future Change`
 
 ## 6. Repository mapping note
 
-These names from earlier design discussions **do not exist** in the current repository and must not be invented in Phase 1:
+Updated for Membership Foundation baseline (`f3d490a` / Phase 2):
 
-| Absent name | Actual current location |
+| Concept | Actual current location |
 |---|---|
-| `membership_service.py` | membership helpers in `leave_entitlement_service.py` |
-| `membership_semantics.py` | `models/leave_glossary.py` + `CONTRACT_TYPES` |
-| `service_adjustment_service.py` / `service_adjustment.py` | `Contract.service_deduction_days` |
-| `membership_type.py` / `membership_type_rule.py` | `CONTRACT_TYPES` + PolicyValue keys |
+| Membership CRUD / effective rules | `web/services/membership_service.py` |
+| Behavior profiles (coverage/charge) | `web/services/membership_semantics.py` + `MembershipType.behavior_profile` |
+| Service deduction on contract | `Contract.service_deduction_days` (+ `models/service_adjustment.py` exists but is not the entitlement coverage source) |
+| Membership identity / rules | `models/membership_type.py`, `models/membership_type_rule.py` |
+| Phase 2 DB → Context Resolver | `web/services/leave_entitlement_resolver.py` (read-only; not production-wired) |
 
 ---
 
 ## 7. Phase boundaries
 
-### Phase 1 (this delivery)
+### Phase 1 (delivered)
 
 - Characterize Current Behavior
 - Document Target Rules (this file)
 - Independent Pure Engine package with raw parity to `charge_amount_for_segment`
 - No production wiring / refactor / migration / data rewrite
 
-### Phase 2+
+### Phase 2 (Resolver — no production cutover)
+
+- Read-only Resolver: DB facts → `AnnualLeaveContext` → Pure Engine
+- Current Behavior compatible coverage / annual / region precedence
+- Deterministic `year_j` + required `as_of_date` (does not copy `date.today()` year coupling)
+- Tests under `tests/resolver/`
+- **Not in Phase 2:** production wiring into `admin_contracts` / `charge_leave_for_new_contract`, Mutation Layer cutover, Target Rule defaults, mid-year Policy/Region slices, union coverage, Service Duration / Start-Date / Bomi, Membership Change Settlement, Permanent History rebuild
+
+### Phase 3+
 
 - Resolver production wiring
 - Mutation Layer cutover
