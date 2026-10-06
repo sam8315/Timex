@@ -28,6 +28,7 @@ from web.services.membership_retroactive_service import (
 from web.services.membership_service import (
     MembershipError,
     activate_membership,
+    apply_conscript_leave_start_basis_change,
     count_business_dependencies,
     create_membership_type,
     create_rule_snapshot,
@@ -367,6 +368,48 @@ async def edit_membership_rule(
         db.commit()
         return RedirectResponse(
             url=build_redirect_url(referer, "success", "Rule آینده به‌روز شد"),
+            status_code=302,
+        )
+    except (MembershipError, ValueError) as e:
+        db.rollback()
+        return RedirectResponse(
+            url=build_redirect_url(referer, "error", str(e)),
+            status_code=302,
+        )
+
+
+@router.post("/membership-types/{code}/leave-start-basis")
+async def update_leave_start_basis(
+    request: Request,
+    code: str,
+    leave_start_date_basis: str = Form("dispatch"),
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Edit active conscript leave_start_date_basis and recalculate all contracts."""
+    enforce_permission(db, user, "manage_membership_rules")
+    referer = request.headers.get("referer", f"/admin/membership-types/{code}")
+    try:
+        result = apply_conscript_leave_start_basis_change(
+            db,
+            code,
+            leave_start_date_basis,
+            actor=user.user_id,
+        )
+        db.commit()
+        if not result.get("changed"):
+            msg = "مبنای شروع مرخصی تغییری نکرد"
+        else:
+            label = LEAVE_START_BASIS_LABELS.get(
+                result["new_basis"], result["new_basis"]
+            )
+            msg = (
+                f"مبنای شروع مرخصی به «{label}» تغییر کرد؛ "
+                f"{result['contracts_adjusted']} از "
+                f"{result['contracts_total']} قرارداد تعدیل شد"
+            )
+        return RedirectResponse(
+            url=build_redirect_url(referer, "success", msg),
             status_code=302,
         )
     except (MembershipError, ValueError) as e:

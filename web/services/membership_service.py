@@ -541,6 +541,117 @@ def delete_scheduled_rule(db: Session, rule_id: int) -> None:
     refresh_rule_lifecycle_statuses(db, code)
 
 
+def apply_conscript_leave_start_basis_change(
+    db: Session,
+    membership_code: str,
+    new_basis: str,
+    *,
+    actor: Optional[str] = None,
+) -> dict:
+    """
+    Edit leave_start_date_basis on the effective conscript rule and immediately
+    recalculate AL for all contracts of that membership.
+
+    Snapshot old proration before mutating the rule so old/new diffs are real.
+    Does not rewrite Contract.annual_leave_days. Caller commits.
+    """
+    from models.membership_type_rule import (
+        LEAVE_START_BASIS_CHOICES,
+        LEAVE_START_DISPATCH,
+    )
+    from web.services import membership_semantics as msem
+    from web.services.leave_service import (
+        apply_al_proration_diff,
+        calculate_prorated_leave_by_year,
+    )
+
+    code = str(membership_code or "").strip()
+    if not msem.is_conscript(db, code):
+        raise MembershipError("مبنای شروع مرخصی فقط برای عضویت وظیفه قابل ویرایش است")
+
+    basis = (new_basis or LEAVE_START_DISPATCH).strip()
+    if basis not in LEAVE_START_BASIS_CHOICES:
+        raise MembershipError("مبنای شروع مرخصی نامعتبر است")
+
+    rule = get_effective_rule(db, code)
+    if rule is None:
+        raise MembershipError("Rule مؤثر برای این عضویت یافت نشد")
+
+    old_basis = msem.normalize_leave_start_basis(
+        getattr(rule, "leave_start_date_basis", None)
+    )
+    if old_basis == basis:
+        return {
+            "membership_type_code": code,
+            "rule_id": rule.id,
+            "old_basis": old_basis,
+            "new_basis": basis,
+            "changed": False,
+            "contracts_total": 0,
+            "contracts_adjusted": 0,
+            "actor": actor,
+        }
+
+    contracts = (
+        db.query(Contract)
+        .filter(Contract.contract_type_code == code)
+        .order_by(Contract.id.asc())
+        .all()
+    )
+
+    old_by_contract: Dict[int, dict] = {}
+    for contract in contracts:
+        employee = (
+            db.query(Employee)
+            .filter(Employee.user_id == contract.user_id)
+            .first()
+        )
+        old_by_contract[contract.id] = calculate_prorated_leave_by_year(
+            contract,
+            db=db,
+            employee=employee,
+            annual_override=contract.annual_leave_days,
+        )
+
+    rule.leave_start_date_basis = basis
+    db.flush()
+
+    adjusted = 0
+    for contract in contracts:
+        employee = (
+            db.query(Employee)
+            .filter(Employee.user_id == contract.user_id)
+            .first()
+        )
+        new_prorated = calculate_prorated_leave_by_year(
+            contract,
+            db=db,
+            employee=employee,
+            annual_override=contract.annual_leave_days,
+        )
+        changes = apply_al_proration_diff(
+            db,
+            contract,
+            old_by_contract[contract.id],
+            new_prorated,
+            description_prefix="تعدیل استحقاق بابت تغییر مبنای شروع مرخصی",
+        )
+        if changes:
+            adjusted += 1
+
+    db.flush()
+    return {
+        "membership_type_code": code,
+        "rule_id": rule.id,
+        "old_basis": old_basis,
+        "new_basis": basis,
+        "changed": True,
+        "contracts_total": len(contracts),
+        "contracts_adjusted": adjusted,
+        "actor": actor,
+    }
+
+
 def deactivate_membership(db: Session, code: str) -> MembershipType:
     mt = get_membership_type(db, code)
     if not mt:

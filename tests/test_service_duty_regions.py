@@ -317,3 +317,81 @@ class TestLeaveStartDateBasis:
                 form=form,
                 start_date=dispatch,
             )
+
+    def test_apply_basis_change_recalculates_balances(
+        self, db, make_user, duty_region
+    ):
+        from models.leave_balance import LeaveBalance
+        from web.services import membership_semantics as msem
+        from web.services.leave_entitlement_service import (
+            split_contract_coverage_by_year,
+        )
+        from web.services.membership_service import (
+            apply_conscript_leave_start_basis_change,
+        )
+
+        self._set_basis(db, "dispatch")
+        user = make_user(role="user")
+        dispatch = jdatetime.date(1404, 1, 1).togregorian()
+        unit = jdatetime.date(1404, 4, 1).togregorian()
+        c = Contract(
+            user_id=user["user_id"],
+            contract_type_code="2",
+            start_date=dispatch,
+            dispatch_date=dispatch,
+            unit_entry_date=unit,
+            service_duty_region_code=duty_region.code,
+            is_native=False,
+            annual_leave_days=30,
+        )
+        db.add(c)
+        db.flush()
+        apply_end_date_to_contract(db, c)
+        db.commit()
+
+        charged = charge_leave_for_new_contract(db, c)
+        assert charged
+        annual_before = c.annual_leave_days
+        bal_before = {
+            (b.year, b.leave_type): b.balance
+            for b in db.query(LeaveBalance)
+            .filter(LeaveBalance.user_id == c.user_id)
+            .all()
+        }
+        assert bal_before
+
+        result = apply_conscript_leave_start_basis_change(
+            db, "2", "unit_entry", actor="test"
+        )
+        db.commit()
+
+        assert result["changed"] is True
+        assert result["contracts_total"] >= 1
+        assert result["new_basis"] == "unit_entry"
+        db.refresh(c)
+        assert c.annual_leave_days == annual_before
+        assert msem.resolve_conscript_leave_start(db, c) == unit
+        segs = split_contract_coverage_by_year(c, db=db)
+        assert segs
+        assert segs[0][1] == unit
+
+        bal_after = {
+            (b.year, b.leave_type): b.balance
+            for b in db.query(LeaveBalance)
+            .filter(LeaveBalance.user_id == c.user_id)
+            .all()
+        }
+        assert bal_after != bal_before
+        assert result["contracts_adjusted"] >= 1
+
+    def test_apply_basis_change_noop_same_value(self, db):
+        from web.services.membership_service import (
+            apply_conscript_leave_start_basis_change,
+        )
+
+        self._set_basis(db, "dispatch")
+        result = apply_conscript_leave_start_basis_change(
+            db, "2", "dispatch", actor="test"
+        )
+        assert result["changed"] is False
+        assert result["contracts_adjusted"] == 0

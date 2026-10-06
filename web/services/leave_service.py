@@ -144,6 +144,80 @@ def charge_leave_for_new_contract(db: Session, contract: Contract) -> dict:
     return charged
 
 
+def apply_al_proration_diff(
+    db: Session,
+    contract: Contract,
+    old_prorated: dict,
+    new_prorated: dict,
+    *,
+    description_prefix: Optional[str] = None,
+    skip_year_fn=None,
+) -> dict:
+    """
+    Apply AL balance/transaction diffs between two prorated-by-year maps.
+
+    ``skip_year_fn(year_j, leave_type) -> bool`` may skip a cell (e.g. permanent
+    end-date-only edits in ``update_leave_for_contract``).
+    """
+    all_years = set(list(old_prorated.keys()) + list(new_prorated.keys()))
+    changes = {}
+    prefix = description_prefix or (
+        f"مرخصی قرارداد {contract.contract_type_name}"
+    )
+
+    for year_j in all_years:
+        old_leaves = old_prorated.get(year_j, {'AL': 0, 'SL': 0})
+        new_leaves = new_prorated.get(year_j, {'AL': 0, 'SL': 0})
+
+        for leave_type in ['AL']:
+            if skip_year_fn is not None and skip_year_fn(year_j, leave_type):
+                continue
+
+            old_val = round(old_leaves.get(leave_type, 0))
+            new_val = round(new_leaves.get(leave_type, 0))
+            diff = new_val - old_val
+            if diff == 0:
+                continue
+
+            balance = db.query(LeaveBalance).filter(
+                and_(
+                    LeaveBalance.user_id == contract.user_id,
+                    LeaveBalance.year == year_j,
+                    LeaveBalance.leave_type == leave_type,
+                )
+            ).first()
+
+            if balance:
+                balance.balance += diff
+                if balance.balance < 0:
+                    balance.balance = 0
+            elif diff > 0:
+                balance = LeaveBalance(
+                    user_id=contract.user_id,
+                    year=year_j,
+                    leave_type=leave_type,
+                    balance=diff,
+                )
+                db.add(balance)
+
+            tx_type = TX_CHARGE if diff > 0 else TX_DEDUCT
+            tx_desc = (
+                f"{'افزایش' if diff > 0 else 'کسر'} {prefix} - سال {year_j}"
+            )
+            db.add(LeaveTransaction(
+                user_id=contract.user_id,
+                year=year_j,
+                leave_type=leave_type,
+                amount=abs(diff),
+                transaction_type=tx_type,
+                description=tx_desc,
+                reference_id=contract.id,
+            ))
+            changes.setdefault(year_j, {})[leave_type] = diff
+
+    return changes
+
+
 def update_leave_for_contract(
     db: Session,
     contract: Contract,
@@ -180,68 +254,25 @@ def update_leave_for_contract(
     logger.info(f"🔄 Old prorated: {old_prorated}")
     logger.info(f"🔄 New prorated: {new_prorated}")
 
-    all_years = set(list(old_prorated.keys()) + list(new_prorated.keys()))
-    changes = {}
+    from web.services import membership_semantics as msem
 
-    for year_j in all_years:
-        old_leaves = old_prorated.get(year_j, {'AL': 0, 'SL': 0})
-        new_leaves = new_prorated.get(year_j, {'AL': 0, 'SL': 0})
+    def _skip_permanent_end_only(year_j, leave_type):
+        return (
+            msem.is_permanent(db, contract.contract_type_code)
+            and msem.is_permanent(db, old_code)
+            and leave_type == 'AL'
+            and old_start_date == contract.start_date
+            and old_annual_leave == contract.annual_leave_days
+            and old_end_date != contract.end_date
+        )
 
-        for leave_type in ['AL']:
-            # رسمی: تغییر صرفاً end_date نباید AL را عوض کند
-            from web.services import membership_semantics as msem
-            if (
-                msem.is_permanent(db, contract.contract_type_code)
-                and msem.is_permanent(db, old_code)
-                and leave_type == 'AL'
-                and old_start_date == contract.start_date
-                and old_annual_leave == contract.annual_leave_days
-                and old_end_date != contract.end_date
-            ):
-                continue
-
-            old_val = round(old_leaves.get(leave_type, 0))
-            new_val = round(new_leaves.get(leave_type, 0))
-            diff = new_val - old_val
-            if diff == 0:
-                continue
-
-            balance = db.query(LeaveBalance).filter(
-                and_(
-                    LeaveBalance.user_id == contract.user_id,
-                    LeaveBalance.year == year_j,
-                    LeaveBalance.leave_type == leave_type,
-                )
-            ).first()
-
-            if balance:
-                balance.balance += diff
-                if balance.balance < 0:
-                    balance.balance = 0
-            elif diff > 0:
-                balance = LeaveBalance(
-                    user_id=contract.user_id,
-                    year=year_j,
-                    leave_type=leave_type,
-                    balance=diff,
-                )
-                db.add(balance)
-
-            tx_type = TX_CHARGE if diff > 0 else TX_DEDUCT
-            tx_desc = (
-                f"{'افزایش' if diff > 0 else 'کسر'} مرخصی قرارداد "
-                f"{contract.contract_type_name} - سال {year_j}"
-            )
-            db.add(LeaveTransaction(
-                user_id=contract.user_id,
-                year=year_j,
-                leave_type=leave_type,
-                amount=abs(diff),
-                transaction_type=tx_type,
-                description=tx_desc,
-                reference_id=contract.id,
-            ))
-            changes.setdefault(year_j, {})[leave_type] = diff
+    changes = apply_al_proration_diff(
+        db,
+        contract,
+        old_prorated,
+        new_prorated,
+        skip_year_fn=_skip_permanent_end_only,
+    )
 
     sync_employee_department_from_active_contract(db, contract.user_id, commit=False)
     if commit:

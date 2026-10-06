@@ -127,7 +127,25 @@
                     <td>{{ '✓' if row.rule.supports_extra_service else '—' }}</td>
                     <td>{{ '✓' if row.rule.supports_positive_seniority else '—' }}</td>
                     {% if is_conscript %}
-                    <td>{{ leave_start_basis_labels.get(row.rule.leave_start_date_basis, row.rule.leave_start_date_basis) }}</td>
+                    <td>
+                        {% if can_manage_rules and row.rule.status == 'active' %}
+                        <form method="post" action="/admin/membership-types/{{ mt.code }}/leave-start-basis"
+                              class="d-flex flex-wrap align-items-center gap-1"
+                              onsubmit="return confirm('این تغییر بلافاصله استحقاق مرخصی همه افراد وظیفه را بازمحاسبه می‌کند. ادامه؟');">
+                            <select name="leave_start_date_basis" class="form-select form-select-sm" style="min-width: 10rem;">
+                                {% for key in leave_start_basis_choices %}
+                                <option value="{{ key }}"
+                                    {% if key == row.rule.leave_start_date_basis %}selected{% endif %}>
+                                    {{ leave_start_basis_labels[key] }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                            <button class="btn btn-sm btn-primary" type="submit">ذخیره</button>
+                        </form>
+                        {% else %}
+                        {{ leave_start_basis_labels.get(row.rule.leave_start_date_basis, row.rule.leave_start_date_basis) }}
+                        {% endif %}
+                    </td>
                     {% endif %}
                     <td><span class="badge bg-secondary">{{ row.rule.status }}</span></td>
                     <td class="text-end">
@@ -136,6 +154,8 @@
                               onsubmit="return confirm('حذف Rule آینده؟');">
                             <button class="btn btn-sm btn-outline-danger" type="submit">حذف</button>
                         </form>
+                        {% elif can_manage_rules and is_conscript and row.rule.status == 'active' %}
+                        <span class="text-muted small">مبنای شروع قابل ویرایش</span>
                         {% else %}
                         <span class="text-muted small">غیرقابل ویرایش مستقیم</span>
                         {% endif %}
