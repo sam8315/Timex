@@ -129,6 +129,7 @@ class TestArticle51WithFridayInBase:
         assert summary['weekly_overtime'] == pytest.approx(6.0)
         assert summary['overtime_total'] == pytest.approx(6.0)
         assert summary['friday_work_hours'] == pytest.approx(4.0)
+        assert summary['combined_total'] == pytest.approx(10.0)  # 6 + 0 + 4
         assert summary['overtime_coefficient'] == pytest.approx(1.4)
         assert summary['friday_work_coefficient'] == pytest.approx(1.96)
         assert summary['total_work_days'] == 7
@@ -166,6 +167,9 @@ class TestArticle51WithFridayInBase:
         assert summary['weekly_overtime'] == pytest.approx(expected_ot)
         assert summary['overtime_holiday_total'] == pytest.approx(
             expected_ot + 5.0
+        )
+        assert summary['combined_total'] == pytest.approx(
+            expected_ot + 5.0 + summary['friday_work_hours']
         )
         wb = days[0]['week_block']
         assert wb['holiday_work_hours'] == pytest.approx(5.0)

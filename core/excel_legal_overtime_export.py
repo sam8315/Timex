@@ -143,20 +143,16 @@ class LegalOvertimeExcelExporter(DetailedExcelExporterV2):
         entry('روزهای موظفی', summary['duty_days'])
         entry('ساعات موظفی', self._fmt_hours(summary['duty_hours']))
 
-        section('اضافه‌کار (کارکرد − جمعه − تعطیل‌کاری − Σ موظفی)')
+        section('اضافه‌کار هفتگی / تعطیل‌کاری / جمعه‌کاری')
         entry('اضافه‌کار هفتگی', self._fmt_hours(summary['weekly_overtime']))
-        entry('جمع اضافه‌کار', self._fmt_hours(summary['overtime_total']))
-
-        section('تعطیل‌کاری (از مبنای هفتگی کسر)')
         entry('ساعت تعطیل‌کاری', self._fmt_hours(summary.get('holiday_work_hours') or 0))
         entry('تعداد روز تعطیل‌کاری', summary.get('holiday_work_days', 0))
-
-        section('مجموع اضافه‌کار و تعطیل‌کاری')
-        entry('مجموع', self._fmt_hours(summary.get('overtime_holiday_total') or 0))
-
-        section('جمعه‌کاری (از مبنای هفتگی کسر)')
         entry('ساعت جمعه‌کاری', self._fmt_hours(summary['friday_work_hours']))
         entry('تعداد روز جمعه‌کاری', summary['friday_work_days'])
+        entry(
+            'مجموع',
+            self._fmt_hours(summary.get('combined_total') or 0),
+        )
 
         section('تفکیک صبح / عصر / شب')
         entry('ساعات صبح', self._fmt_hours(summary.get('total_morning') or 0))

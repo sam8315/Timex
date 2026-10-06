@@ -374,7 +374,21 @@ def format_hhmm(hours):
     return f"{sign}{h:02d}:{m:02d}"
 
 
+def format_hours_decimal(hours):
+    """نمایش ساعت به‌صورت اعشاری (مثلاً ۷:۳۰ → ۷.۵) برای پرانتز کارت‌ها."""
+    if hours is None:
+        return '-'
+    total_minutes = int(round(float(hours) * 60))
+    if total_minutes == 0:
+        return '0'
+    sign = '-' if total_minutes < 0 else ''
+    value = abs(total_minutes) / 60.0
+    text = f"{value:.2f}".rstrip('0').rstrip('.')
+    return f"{sign}{text}"
+
+
 templates.env.filters['hhmm'] = format_hhmm
+templates.env.filters['hours_decimal'] = format_hours_decimal
 
 # نام ماه‌های شمسی
 JALALI_MONTHS = {

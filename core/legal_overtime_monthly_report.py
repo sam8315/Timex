@@ -239,6 +239,12 @@ def build_legal_ot_summary(days: List[Dict], base_summary: Dict) -> Dict:
     overtime_holiday_total = _minutes_to_hours(
         _hours_to_minutes(overtime_total) + _hours_to_minutes(holiday_work_hours)
     )
+    # مجموع کارت‌های خلاصه: اضافه‌کار هفتگی + تعطیل‌کاری + جمعه‌کاری
+    combined_total = _minutes_to_hours(
+        _hours_to_minutes(overtime_total)
+        + _hours_to_minutes(holiday_work_hours)
+        + _hours_to_minutes(friday_work_hours)
+    )
 
     morning_m = sum(_hours_to_minutes(d.get('morning_hours') or 0) for d in days)
     evening_m = sum(_hours_to_minutes(d.get('evening_hours') or 0) for d in days)
@@ -269,6 +275,7 @@ def build_legal_ot_summary(days: List[Dict], base_summary: Dict) -> Dict:
         'holiday_work_hours': holiday_work_hours,
         'holiday_work_days': holiday_work_days,
         'overtime_holiday_total': overtime_holiday_total,
+        'combined_total': combined_total,
         'total_morning': total_morning,
         'total_evening': total_evening,
         'total_night': total_night,

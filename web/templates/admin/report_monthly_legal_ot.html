@@ -178,6 +178,14 @@
         unicode-bidi: isolate;
         display: inline-block;
     }
+    .pay-summary-card .decimal-paren {
+        font-size: 0.72rem;
+        font-weight: 600;
+        color: #64748b;
+        margin-inline-start: 4px;
+        direction: ltr;
+        unicode-bidi: embed;
+    }
     @media (max-width: 1200px) {
         .pay-summary-grid { grid-template-columns: repeat(3, 1fr); }
     }
@@ -762,8 +770,8 @@
             <span class="sub-value"><span class="num">{{ report.summary.duty_days }}</span> روز</span>
         </div>
         <div class="pay-summary-card">
-            <span class="label">اضافه‌کار</span>
-            <span class="main-value">{{ report.summary.overtime_total | hhmm }}</span>
+            <span class="label">اضافه‌کار هفتگی</span>
+            <span class="main-value">{{ report.summary.weekly_overtime | hhmm }}</span>
         </div>
         <div class="pay-summary-card">
             <span class="label">تعطیل‌کاری</span>
@@ -771,13 +779,13 @@
             <span class="sub-value"><span class="num">{{ report.summary.holiday_work_days }}</span> روز</span>
         </div>
         <div class="pay-summary-card">
-            <span class="label">مجموع اضافه‌کار+تعطیل‌کاری</span>
-            <span class="main-value">{{ report.summary.overtime_holiday_total | hhmm }}</span>
+            <span class="label">جمعه‌کاری</span>
+            <span class="main-value">{{ report.summary.friday_work_hours | hhmm }}<span class="decimal-paren">({{ report.summary.friday_work_hours | hours_decimal }})</span></span>
+            <span class="sub-value"><span class="num">{{ report.summary.friday_work_days }}</span> روز</span>
         </div>
         <div class="pay-summary-card">
-            <span class="label">جمعه‌کاری</span>
-            <span class="main-value">{{ report.summary.friday_work_hours | hhmm }}</span>
-            <span class="sub-value"><span class="num">{{ report.summary.friday_work_days }}</span> روز</span>
+            <span class="label">مجموع</span>
+            <span class="main-value">{{ report.summary.combined_total | hhmm }}<span class="decimal-paren">({{ report.summary.combined_total | hours_decimal }})</span></span>
         </div>
     </div>
     <div class="shift-summary-grid">

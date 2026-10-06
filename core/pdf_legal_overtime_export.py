@@ -9,6 +9,18 @@ from core.pdf_detailed_export_v2 import DetailedPDFExporterV2
 class LegalOvertimePDFExporter(DetailedPDFExporterV2):
     """PDF اختصاصی با بلوک پایین‌صفحه: کارکرد / موظفی / اضافه‌کار / جمعه."""
 
+    def _fmt_hours_decimal(self, h: float) -> str:
+        """نمایش اعشاری ساعت (مثلاً ۷:۳۰ → ۷.۵)."""
+        if h is None:
+            return '0'
+        total_minutes = int(round(float(h) * 60))
+        if total_minutes == 0:
+            return '0'
+        sign = '-' if total_minutes < 0 else ''
+        value = abs(total_minutes) / 60.0
+        text = f"{value:.2f}".rstrip('0').rstrip('.')
+        return f"{sign}{text}"
+
     def export_detailed_report(self, report: Dict, output=None):
         pdf, font_name = self._new_pdf()
         pdf.add_page()
@@ -169,8 +181,8 @@ class LegalOvertimePDFExporter(DetailedPDFExporterV2):
                     f"{self._fmt_hours(summary.get('duty_hours') or 0)}",
                 ),
                 (
-                    'اضافه‌کار',
-                    self._fmt_hours(summary.get('overtime_total') or 0),
+                    'اضافه‌کار هفتگی',
+                    self._fmt_hours(summary.get('weekly_overtime') or 0),
                 ),
             ],
             [
@@ -182,14 +194,18 @@ class LegalOvertimePDFExporter(DetailedPDFExporterV2):
                     ),
                 ),
                 (
-                    'مجموع اضافه‌کار و تعطیل‌کاری',
-                    self._fmt_hours(summary.get('overtime_holiday_total') or 0),
-                ),
-                (
                     'جمعه‌کاری',
                     (
-                        f"{self._fmt_hours(summary.get('friday_work_hours') or 0)}\n"
+                        f"{self._fmt_hours(summary.get('friday_work_hours') or 0)} "
+                        f"({self._fmt_hours_decimal(summary.get('friday_work_hours') or 0)})\n"
                         f"{summary.get('friday_work_days', 0)} روز"
+                    ),
+                ),
+                (
+                    'مجموع',
+                    (
+                        f"{self._fmt_hours(summary.get('combined_total') or 0)} "
+                        f"({self._fmt_hours_decimal(summary.get('combined_total') or 0)})"
                     ),
                 ),
             ],
