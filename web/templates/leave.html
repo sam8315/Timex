@@ -159,6 +159,18 @@
     .leave-type-UL { background: #e5e7eb; color: #374151; }
     .leave-type-CW { background: #ddd6fe; color: #5b21b6; }
     .leave-type-HL { background: #ccfbf1; color: #0f766e; }
+    /* فایرفاکس + RTL: فاصله متن از فلش select */
+    .leave-type-select {
+        min-height: 42px;
+        line-height: 1.5;
+    }
+    @supports (-moz-appearance: none) {
+        select.leave-type-select.form-select {
+            background-position: left 0.75rem center !important;
+            padding-left: 2.25rem !important;
+            padding-right: 0.75rem !important;
+        }
+    }
     .hl-time-section { display: none; background: #f0fdfa; border: 1px solid #ccfbf1; border-radius: 12px; padding: 16px; }
     .hl-time-section.visible { display: block; }
     .tl-section { display: none; background: #f0f4ff; border: 1px solid #c7d2fe; border-radius: 12px; padding: 16px; }
@@ -415,17 +427,10 @@
                 <form method="post" action="/leave/request" id="leaveForm">
                     <div class="row g-3">
                         <div class="col-12">
-                            <label class="form-label fw-bold"><i class="bi bi-tag text-primary"></i> نوع مرخصی <span class="text-danger">*</span></label>
-                            <select name="leave_type" class="form-select" required id="leaveType">
-                                {% for code, name in leave_types.items() %}
-                                <option value="{{ code }}"
-                                        data-balance="{{ balances.get(code, 0) }}"
-                                        {% if code not in ['HL'] and (balances.get(code, 0) or 0) <= 0 %}disabled{% endif %}>
-                                    {{ name }}{% if code in ['RL', 'AL', 'SL'] %} ({{ balances.get(code, 0) }} روز){% endif %}
-                                </option>
-                                {% endfor %}
-                            </select>
-                            <small class="text-muted">برای استحقاقی، سیستم منبع مصرف را مشخص می‌کند (ذخیره غیرقابل‌بازخرید ← سال جاری ← قابل‌بازخرید). مرخصی ساعتی محدودیت مانده ندارد.</small>
+                            <label class="form-label fw-bold" for="leaveType"><i class="bi bi-tag text-primary"></i> نوع مرخصی <span class="text-danger">*</span></label>
+                            {# گزینه‌ها تک‌خطی؛ فاصله/خط‌جدید داخل option در فایرفاکس متن را خراب می‌کند #}
+                            <select name="leave_type" class="form-select leave-type-select" required id="leaveType">{% for code, name in leave_types.items() %}{% set bal = balances.get(code, 0) or 0 %}<option value="{{ code }}" data-balance="{{ bal }}"{% if code != 'HL' and bal <= 0 %} disabled{% endif %}>{{ name }}{% if code in ['RL', 'AL', 'SL'] %} ({{ bal }} روز){% endif %}</option>{% endfor %}</select>
+                            <small class="text-muted d-block mt-1">برای استحقاقی، سیستم منبع مصرف را مشخص می‌کند (ذخیره غیرقابل‌بازخرید، سپس سال جاری، سپس قابل‌بازخرید). مرخصی ساعتی محدودیت مانده ندارد.</small>
                         </div>
 
                         <div class="col-md-6"><label class="form-label fw-bold" id="fromDateLabel"><i class="bi bi-calendar-event text-success"></i> از تاریخ <span class="text-danger">*</span></label><div class="date-input-wrapper"><input type="text" name="from_date_str" id="fromDate" class="form-control form-control-lg text-center" placeholder="انتخاب تاریخ" autocomplete="off" required><button type="button" class="clear-btn" onclick="clearDate('fromDate')" title="پاک کردن"><i class="bi bi-x-circle"></i></button></div></div>

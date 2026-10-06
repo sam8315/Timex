@@ -637,14 +637,20 @@
 
             [data-theme="dark"] .form-control,
             [data-theme="dark"] .form-select {
-                background: var(--bg-hover);
+                background-color: var(--bg-hover);
                 border-color: var(--border-color);
                 color: var(--text-primary);
             }
 
+            /* background shorthand فلش select را در فایرفاکس/دارک‌مود پاک می‌کرد */
+            [data-theme="dark"] .form-select {
+                background-image: var(--bs-form-select-bg-img);
+                background-repeat: no-repeat;
+            }
+
             [data-theme="dark"] .form-control:focus,
             [data-theme="dark"] .form-select:focus {
-                background: var(--bg-hover);
+                background-color: var(--bg-hover);
                 color: var(--text-primary);
             }
 
