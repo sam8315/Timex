@@ -13,6 +13,7 @@ from web.routes import admin_positions
 from web.routes import admin_employee_document_types
 from web.routes import admin_membership_types
 from web.routes import admin_service_adjustments
+from web.routes import admin_service_duty_regions
 from web.routes import admin_system
 from web.routes import admin_annual_leave
 BASE_PATH = Path(__file__).parent
@@ -94,6 +95,7 @@ app.include_router(bank_accounts.router)
 app.include_router(employee_documents.router)
 app.include_router(reports.router)
 app.include_router(admin_policy.router)
+app.include_router(admin_service_duty_regions.router)
 app.include_router(admin_travel_leave_policy.router)
 app.include_router(permissions_router)
 app.include_router(admin_user_create_router)

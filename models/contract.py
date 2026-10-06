@@ -3,7 +3,7 @@
 """
 from datetime import date, timedelta
 from typing import Optional
-from sqlalchemy import Integer, String, Date, ForeignKey, Text, CheckConstraint
+from sqlalchemy import Boolean, Integer, String, Date, ForeignKey, Text, CheckConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship, object_session
 from models.base import Base, TimestampMixin
 
@@ -39,6 +39,13 @@ class Contract(TimestampMixin, Base):
 
     # کسر خدمت (فقط وقتی Rule.supports_service_deduction)
     service_deduction_days: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    # فیلدهای خدمت وظیفه (conscript) — nullable برای سایر عضویت‌ها
+    dispatch_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    unit_entry_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    clinic_entry_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    is_native: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    service_duty_region_code: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
 
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     file_path: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
@@ -102,6 +109,9 @@ class Contract(TimestampMixin, Base):
         """تاریخ پایان واقعی با احتساب کسر خدمت"""
         if self.end_date is None:
             return None
+        # مسیر موتور جدید وظیفه: end_date از قبل مؤثر است (تعدیل‌ها اعمال شده)
+        if self.service_duty_region_code:
+            return self.end_date
         if self.service_deduction_days > 0:
             return self.end_date - timedelta(days=self.service_deduction_days)
         return self.end_date

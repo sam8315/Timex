@@ -6,7 +6,8 @@ Runtime نباید با if code == \"1\" قانون مرخصی را تشخیص �
 """
 from __future__ import annotations
 
-from typing import Optional
+from datetime import date
+from typing import Optional, TYPE_CHECKING
 
 from sqlalchemy.orm import Session
 
@@ -17,6 +18,16 @@ from models.membership_type import (
     BEHAVIOR_STANDARD_PRORATE,
     MembershipType,
 )
+from models.membership_type_rule import (
+    LEAVE_START_BASIS_CHOICES,
+    LEAVE_START_BASIS_LABELS,
+    LEAVE_START_CLINIC_ENTRY,
+    LEAVE_START_DISPATCH,
+    LEAVE_START_UNIT_ENTRY,
+)
+
+if TYPE_CHECKING:
+    from models.contract import Contract
 
 # Seed-only map for insert of legacy codes 1–7 (نه runtime lookup)
 SEED_BEHAVIOR_BY_CODE = {
@@ -45,7 +56,10 @@ def get_behavior_profile(db: Session, membership_code: str) -> str:
     row = db.query(MembershipType).filter(MembershipType.code == code).first()
     if row is not None and row.behavior_profile:
         return str(row.behavior_profile)
-    # Missing type: safe default (never invent permanent/conscript from bare code)
+    # Seed codes with NULL/empty profile (legacy DB): use seed map only for 1–7
+    if code in SEED_BEHAVIOR_BY_CODE:
+        return SEED_BEHAVIOR_BY_CODE[code]
+    # Missing / custom type without profile: safe default
     return BEHAVIOR_STANDARD_PRORATE
 
 
@@ -92,6 +106,63 @@ def default_buyback_cap(db: Session, membership_code: str) -> Optional[int]:
         return 15
     # conscript / physician / standard_prorate → unlimited (None)
     return None
+
+
+def normalize_leave_start_basis(value: Optional[str]) -> str:
+    """Validate / default leave_start_date_basis enum."""
+    v = (value or LEAVE_START_DISPATCH).strip()
+    if v not in LEAVE_START_BASIS_CHOICES:
+        return LEAVE_START_DISPATCH
+    return v
+
+
+def resolve_leave_start_basis(
+    db: Session,
+    membership_code: str,
+    *,
+    on_date: Optional[date] = None,
+) -> str:
+    """Effective rule's leave start basis; default dispatch."""
+    from web.services.membership_service import get_effective_rule
+
+    rule = get_effective_rule(db, membership_code, on_date=on_date)
+    if rule is None:
+        return LEAVE_START_DISPATCH
+    return normalize_leave_start_basis(
+        getattr(rule, "leave_start_date_basis", None)
+    )
+
+
+def resolve_conscript_leave_start(
+    db: Session,
+    contract: "Contract",
+    *,
+    on_date: Optional[date] = None,
+) -> date:
+    """
+    Coverage/charge start for conscript leave.
+
+    Non-conscript → contract.start_date.
+    Conscript → field from leave_start_date_basis, fallback dispatch → start_date.
+    """
+    code = str(contract.contract_type_code or "")
+    if not is_conscript(db, code):
+        return contract.start_date
+
+    as_of = on_date or contract.start_date or date.today()
+    basis = resolve_leave_start_basis(db, code, on_date=as_of)
+    if basis == LEAVE_START_UNIT_ENTRY:
+        chosen = contract.unit_entry_date
+    elif basis == LEAVE_START_CLINIC_ENTRY:
+        chosen = contract.clinic_entry_date
+    else:
+        chosen = contract.dispatch_date
+    return chosen or contract.dispatch_date or contract.start_date
+
+
+def leave_start_basis_label(basis: Optional[str]) -> str:
+    key = normalize_leave_start_basis(basis)
+    return LEAVE_START_BASIS_LABELS.get(key, key)
 
 
 def uses_region_buyback_eras(db: Session, membership_code: str) -> bool:

@@ -24,7 +24,7 @@ import os
 import threading
 from dataclasses import dataclass, replace
 from datetime import date
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import jdatetime
 from sqlalchemy.orm import Session
@@ -39,6 +39,7 @@ from web.services.leave_entitlement_service import (
     calculate_entitlement_by_year,
     resolve_membership_code_for_policy,
 )
+from web.services import membership_semantics as msem
 
 logger = logging.getLogger(__name__)
 
@@ -207,6 +208,25 @@ def _legacy_entitlement(
     )
 
 
+def _engine_years_for_contract(
+    db: Session,
+    contract: Contract,
+    year_j: Optional[int],
+) -> List[int]:
+    """
+    Years to resolve via engine.
+
+    Explicit ``year_j`` → single year (tests / diagnostics).
+    Otherwise follow ``split_contract_coverage_by_year`` (conscript = full period).
+    """
+    if year_j is not None:
+        return [int(year_j)]
+    from web.services.leave_entitlement_service import split_contract_coverage_by_year
+
+    years = [y for y, _s, _e in split_contract_coverage_by_year(contract, db=db)]
+    return years or [jdatetime.date.today().year]
+
+
 def _compute_engine_entitlement(
     db: Session,
     contract: Contract,
@@ -220,8 +240,10 @@ def _compute_engine_entitlement(
     Returns (entitlement_dict, meta).
     Raises _ResolverStageError or _EngineStageError for stage isolation.
     """
-    year = year_j if year_j is not None else jdatetime.date.today().year
+    years = _engine_years_for_contract(db, contract, year_j)
     as_of = contract.start_date or date.today()
+    if msem.is_conscript(db, contract.contract_type_code):
+        as_of = msem.resolve_conscript_leave_start(db, contract) or as_of
     expected_membership = resolve_membership_code_for_policy(
         contract.contract_type_code
     )
@@ -231,20 +253,38 @@ def _compute_engine_entitlement(
         else float(contract.annual_leave_days)
     )
 
-    try:
-        ctx = resolve_annual_leave_context_for_contract(
-            db,
-            contract,
-            year,
-            as_of_date=as_of,
-            annual_source='snapshot',
-        )
-    except Exception as exc:
-        raise _ResolverStageError(str(exc)) from exc
+    out: Dict[int, Dict[str, float]] = {}
+    last_ctx = None
+    total_covered = 0
+    for year in years:
+        try:
+            ctx = resolve_annual_leave_context_for_contract(
+                db,
+                contract,
+                year,
+                as_of_date=as_of,
+                annual_source='snapshot',
+            )
+        except Exception as exc:
+            raise _ResolverStageError(str(exc)) from exc
 
-    if ctx is None:
+        if ctx is None:
+            continue
+
+        try:
+            if annual_override is not None:
+                ctx = replace(ctx, annual_days=float(annual_override))
+            result = compute_annual_entitlement(ctx)
+        except Exception as exc:
+            raise _EngineStageError(str(exc)) from exc
+
+        out[year] = {'AL': float(result.raw_amount), 'SL': 0.0}
+        last_ctx = ctx
+        total_covered += int(result.covered_days)
+
+    if not out:
         meta = {
-            'year_j': year,
+            'year_j': years[0] if years else jdatetime.date.today().year,
             'membership_code': expected_membership,
             'expected_annual': expected_annual,
             'engine_annual': None,
@@ -254,24 +294,18 @@ def _compute_engine_entitlement(
         }
         return {}, meta
 
-    try:
-        if annual_override is not None:
-            ctx = replace(ctx, annual_days=float(annual_override))
-        result = compute_annual_entitlement(ctx)
-    except Exception as exc:
-        raise _EngineStageError(str(exc)) from exc
-
     meta = {
-        'year_j': year,
-        'membership_code': ctx.membership_code,
+        'year_j': years[0],
+        'years': years,
+        'membership_code': last_ctx.membership_code if last_ctx else expected_membership,
         'expected_annual': expected_annual,
-        'engine_annual': float(ctx.annual_days),
-        'covered_days': int(result.covered_days),
+        'engine_annual': float(last_ctx.annual_days) if last_ctx else expected_annual,
+        'covered_days': total_covered,
         'status': 'ok',
-        'ctx': ctx,
+        'ctx': last_ctx,
         'expected_membership': expected_membership,
     }
-    return {year: {'AL': float(result.raw_amount), 'SL': 0.0}}, meta
+    return out, meta
 
 
 def entitlement_via_resolver_engine(
@@ -285,7 +319,8 @@ def entitlement_via_resolver_engine(
     Snapshot-based Resolver → Pure Engine → same dict shape as
     ``calculate_entitlement_by_year``.
 
-    ``year_j`` defaults to current Jalali year (Current Behavior coupling).
+    When ``year_j`` is omitted, years follow coverage split
+    (conscript: full service period; others: current Jalali year).
     """
     result, _meta = _compute_engine_entitlement(
         db, contract, annual_override=annual_override, year_j=year_j

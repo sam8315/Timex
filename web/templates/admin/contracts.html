@@ -59,6 +59,19 @@
         max-width: 320px;
         flex: 1 1 240px;
     }
+    .list-cell-compact {
+        max-width: 240px;
+        margin: 0 auto;
+    }
+    .list-cell-scroll {
+        max-height: 160px;
+        overflow-y: auto;
+        text-align: center;
+    }
+    .list-cell-toggle {
+        font-size: 0.75rem;
+        text-decoration: none;
+    }
 </style>
 {% endblock %}
 {% block title %}مدیریت عضویت | پنل مدیریت{% endblock %}
@@ -122,11 +135,12 @@
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-md-2">
+            <div class="col-md-2 non-conscript-dates">
                 <label class="form-label">📅 شروع (شمسی) <span class="text-danger">*</span></label>
-                <input type="text" name="start_date_str" class="form-control jalali-date" placeholder="1405/01/01" autocomplete="off" required>
+                <input type="text" name="start_date_str" class="form-control jalali-date" id="add_start_date"
+                       placeholder="1405/01/01" autocomplete="off" required>
             </div>
-            <div class="col-md-2">
+            <div class="col-md-2 non-conscript-dates">
                 <label class="form-label">📅 پایان (شمسی)</label>
                 <input type="text" name="end_date_str" class="form-control jalali-date" id="add_end_date"
                        placeholder="رسمی: خالی=۳۰ سال" autocomplete="off">
@@ -158,15 +172,81 @@
                 </button>
             </div>
             <div class="col-md-2" id="add_history_btn_wrap" style="display:none;">
-                <button type="button" class="btn btn-primary w-100" id="openHistoryModalBtn">
-                    <i class="bi bi-clock-history"></i> ثبت با تاریخچه
+                <button type="button" class="btn btn-outline-primary w-100" id="openHistoryModalBtn"
+                        title="برای استخدام قدیمی با مصرف سال‌های قبل">
+                    <i class="bi bi-clock-history"></i> با تاریخچه
                 </button>
+            </div>
+
+            <div class="col-12 conscript-fields" style="display:none;">
+                <div class="border rounded p-3 bg-light">
+                    <div class="fw-semibold mb-2">اطلاعات خدمت وظیفه</div>
+                    <p class="small text-muted mb-2">
+                        شروع استحقاق مرخصی از پالیسی Rule عضویت وظیفه خوانده می‌شود
+                        (اعزام / ورود یگان / ورود درمانگاه). پایان خدمت از تاریخ اعزام محاسبه می‌شود.
+                    </p>
+                    <div class="row g-2">
+                        <div class="col-md-2">
+                            <label class="form-label">تاریخ اعزام <span class="text-danger">*</span></label>
+                            <input type="text" name="dispatch_date_str" id="add_dispatch"
+                                   class="form-control jalali-date conscript-end-trigger"
+                                   placeholder="1405/01/01" autocomplete="off">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">ورود به یگان</label>
+                            <input type="text" name="unit_entry_date_str" class="form-control jalali-date"
+                                   placeholder="1405/01/01" autocomplete="off">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">ورود درمانگاه</label>
+                            <input type="text" name="clinic_entry_date_str" class="form-control jalali-date"
+                                   placeholder="1405/01/01" autocomplete="off">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label d-block">بومی / غیربومی</label>
+                            <div class="form-check form-check-inline mt-1">
+                                <input class="form-check-input conscript-end-trigger" type="radio"
+                                       name="is_native" id="add_native_yes" value="1">
+                                <label class="form-check-label" for="add_native_yes">بومی</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input conscript-end-trigger" type="radio"
+                                       name="is_native" id="add_native_no" value="0" checked>
+                                <label class="form-check-label" for="add_native_no">غیربومی</label>
+                            </div>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">منطقه خدمت <span class="text-danger">*</span></label>
+                            <select name="service_duty_region_code" id="add_duty_region"
+                                    class="form-select conscript-end-trigger">
+                                <option value="">— انتخاب —</option>
+                                {% for r in duty_regions %}
+                                <option value="{{ r.code }}"
+                                        data-native-affects="{{ '1' if r.native_affects else '0' }}">
+                                    {{ r.name }}
+                                    {% if r.native_affects %}
+                                    (غیر {{ r.duration_months_non_native }} / بومی {{ r.duration_months_native }})
+                                    {% else %}
+                                    ({{ r.duration_months }} ماه)
+                                    {% endif %}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">پایان محاسبه‌شده</label>
+                            <input type="text" class="form-control" id="add_computed_end" readonly
+                                   placeholder="پس از اعزام و منطقه">
+                        </div>
+                    </div>
+                </div>
             </div>
         </form>
         <small class="text-muted d-block mt-2">
             <i class="bi bi-info-circle"></i>
             استحقاق از سیاست عضویت خوانده می‌شود؛ رسمی بدون پایان → خودکار ۳۰ سال بعد؛
-            بازه‌های هم‌پوشان مجاز نیست. برای رسمی قدیمی: «ثبت با تاریخچه» و ورود مصرف هر سال.
+            برای وظیفه: پایان از تاریخ اعزام + پالیسی منطقه محاسبه می‌شود؛
+            بازه‌های هم‌پوشان مجاز نیست. رسمی جدید: «ثبت»؛ رسمی قدیمی: «با تاریخچه».
             فایل قرارداد: PDF/JPG/PNG تا ۱۰MB.
         </small>
     </div>
@@ -394,6 +474,7 @@
                         <th class="text-center">نوع عضویت</th>
                         <th>شروع</th>
                         <th>پایان</th>
+                        <th class="text-center">تعدیل خدمت</th>
                         <th class="text-center">🏖️ مرخصی شارژ شده</th>
                         <th class="text-center">📦 ذخیره</th>
                         <th class="text-center">💵 قابل‌بازخرید</th>
@@ -411,30 +492,108 @@
                         <td class="text-center">
                             <span class="badge bg-secondary">{{ item.contract.contract_type_name }}</span>
                             {% if item.contract.service_deduction_days > 0 %}
-                            <span class="badge bg-warning text-dark" title="کسر خدمت">
+                            <span class="badge bg-warning text-dark" title="کسر خدمت (snapshot)">
                                 ⏳ {{ item.contract.service_deduction_days }} روز
                             </span>
                             {% endif %}
                         </td>
-                        <td>{{ item.start_j }}</td>
-                        <td>{{ item.end_j }}</td>
+                        <td class="text-nowrap">{{ item.start_j }}</td>
+                        <td class="text-nowrap">{{ item.end_j }}</td>
+                        <td class="text-center">
+                            {% if item.adjustments %}
+                            {% set latest_adj = item.adjustments[0] %}
+                            <div class="list-cell-compact">
+                                <button type="button"
+                                        class="btn btn-link p-0 text-decoration-none border-0"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#adjDetailModal{{ item.contract.id }}"
+                                        title="{{ latest_adj.title or latest_adj.reason or latest_adj.type_label }}">
+                                    <span class="text-nowrap">
+                                        <span class="badge bg-warning text-dark">{{ latest_adj.type_label }}</span>
+                                        <span class="badge bg-secondary">{{ latest_adj.duration_text }}</span>
+                                        <span class="badge bg-light text-muted border" dir="ltr">
+                                            {{ latest_adj.effective_date_j }}
+                                        </span>
+                                    </span>
+                                </button>
+                                {% if item.adjustments|length > 1 %}
+                                <button type="button"
+                                        class="btn btn-link btn-sm p-0 mt-1 list-cell-toggle"
+                                        data-bs-toggle="collapse"
+                                        data-bs-target="#adjList{{ item.contract.id }}"
+                                        aria-expanded="false">
+                                    +{{ item.adjustments|length - 1 }} مورد دیگر
+                                </button>
+                                <div class="collapse" id="adjList{{ item.contract.id }}">
+                                    <div class="list-cell-scroll mt-1">
+                                        {% for adj in item.adjustments[1:] %}
+                                        <button type="button"
+                                                class="btn btn-link p-0 text-decoration-none border-0 mb-1 d-block w-100"
+                                                data-bs-toggle="modal"
+                                                data-bs-target="#adjDetailModal{{ item.contract.id }}"
+                                                title="{{ adj.title or adj.reason or adj.type_label }}">
+                                            <span class="text-nowrap">
+                                                <span class="badge bg-warning text-dark">{{ adj.type_label }}</span>
+                                                <span class="badge bg-secondary">{{ adj.duration_text }}</span>
+                                                <span class="badge bg-light text-muted border" dir="ltr">
+                                                    {{ adj.effective_date_j }}
+                                                </span>
+                                            </span>
+                                        </button>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                                {% endif %}
+                            </div>
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
                         <td class="text-center">
                             {% if item.charged_by_year %}
-                            <div class="d-flex flex-column gap-1 align-items-center">
-                                {% for year_j, leaves in item.charged_by_year.items() %}
-                                <div>
-                                    <span class="badge bg-primary">{{ year_j }}</span>
-                                    {% if leaves.AL %}
-                                    <span class="badge bg-success" title="استحقاقی">🏖️ {{ leaves.AL }}</span>
+                            {% set years_sorted = item.charged_by_year|dictsort(true, by='key', reverse=true) %}
+                            {% set latest_year = years_sorted[0][0] %}
+                            {% set latest = years_sorted[0][1] %}
+                            <div class="list-cell-compact">
+                                <div class="text-nowrap">
+                                    <span class="badge bg-primary">{{ latest_year }}</span>
+                                    {% if latest.AL %}
+                                    <span class="badge bg-success" title="استحقاقی">🏖️ {{ latest.AL }}</span>
                                     {% endif %}
-                                    {% if leaves.SL %}
-                                    <span class="badge bg-info" title="استعلاجی">🏥 {{ leaves.SL }}</span>
+                                    {% if latest.SL %}
+                                    <span class="badge bg-info" title="استعلاجی">🏥 {{ latest.SL }}</span>
                                     {% endif %}
-                                    {% if leaves.CW %}
-                                    <span class="badge bg-secondary" title="ذخیره">📦 {{ leaves.CW }}</span>
+                                    {% if latest.CW %}
+                                    <span class="badge bg-secondary" title="ذخیره">📦 {{ latest.CW }}</span>
                                     {% endif %}
                                 </div>
-                                {% endfor %}
+                                {% if years_sorted|length > 1 %}
+                                <button type="button"
+                                        class="btn btn-link btn-sm p-0 mt-1 list-cell-toggle"
+                                        data-bs-toggle="collapse"
+                                        data-bs-target="#chargedYears{{ item.contract.id }}"
+                                        aria-expanded="false">
+                                    +{{ years_sorted|length - 1 }} سال دیگر
+                                </button>
+                                <div class="collapse" id="chargedYears{{ item.contract.id }}">
+                                    <div class="list-cell-scroll mt-1">
+                                        {% for year_j, leaves in years_sorted[1:] %}
+                                        <div class="text-nowrap mb-1">
+                                            <span class="badge bg-primary">{{ year_j }}</span>
+                                            {% if leaves.AL %}
+                                            <span class="badge bg-success" title="استحقاقی">🏖️ {{ leaves.AL }}</span>
+                                            {% endif %}
+                                            {% if leaves.SL %}
+                                            <span class="badge bg-info" title="استعلاجی">🏥 {{ leaves.SL }}</span>
+                                            {% endif %}
+                                            {% if leaves.CW %}
+                                            <span class="badge bg-secondary" title="ذخیره">📦 {{ leaves.CW }}</span>
+                                            {% endif %}
+                                        </div>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                                {% endif %}
                             </div>
                             {% else %}
                             <span class="text-muted">-</span>
@@ -487,19 +646,27 @@
                             {% endif %}
                         </td>
                     </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
 
-                    {% if can_edit_contracts %}
-                    <div class="modal fade" id="editModal{{ item.contract.id }}" tabindex="-1">
-                        <div class="modal-dialog modal-lg">
-                            <div class="modal-content">
-                                <form method="post" action="/admin/contracts/{{ item.contract.id }}/edit"
-                                      enctype="multipart/form-data">
-                                    <div class="modal-header">
-                                        <h5 class="modal-title">✏️ ویرایش عضویت - {{ item.full_name }}</h5>
-                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                                    </div>
-                                    <div class="modal-body">
-                                        <div class="row g-3">
+{# مودال‌ها باید بیرون جدول باشند؛ داخل tbody HTML را خراب می‌کند #}
+{% if can_edit_contracts %}
+{% for item in contracts %}
+<div class="modal fade" id="editModal{{ item.contract.id }}" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <form method="post" action="/admin/contracts/{{ item.contract.id }}/edit"
+                  enctype="multipart/form-data">
+                <div class="modal-header">
+                    <h5 class="modal-title">✏️ ویرایش عضویت - {{ item.full_name }}</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
                                             <div class="col-md-4">
                                                 <label class="form-label">📋 نوع عضویت</label>
                                                 <select name="contract_type_code" class="form-select">
@@ -519,7 +686,8 @@
                                                 <label class="form-label">📅 پایان (شمسی)</label>
                                                 <input type="text" name="end_date_str" class="form-control jalali-date"
                                                        value="{{ item.end_j if item.end_j != 'دائمی' else '' }}"
-                                                       placeholder="رسمی: خالی=۳۰ سال" autocomplete="off">
+                                                       placeholder="رسمی: خالی=۳۰ سال" autocomplete="off"
+                                                       {% if item.is_conscript %}readonly{% endif %}>
                                             </div>
                                             <div class="col-md-3">
                                                 <label class="form-label">🏖️ استحقاقی (روز)</label>
@@ -534,7 +702,64 @@
                                             <div class="col-md-2">
                                                 <label class="form-label">⏳ کسر خدمت</label>
                                                 <input type="number" name="service_deduction_days" class="form-control"
-                                                       value="{{ item.contract.service_deduction_days }}" min="0">
+                                                       value="{{ item.contract.service_deduction_days }}" min="0"
+                                                       {% if item.is_conscript %}readonly title="از تعدیل خدمت محاسبه می‌شود"{% endif %}>
+                                            </div>
+                                            <div class="col-12 edit-conscript-block"
+                                                 style="{% if not item.is_conscript %}display:none{% endif %}">
+                                                <div class="border rounded p-3 bg-light">
+                                                    <div class="fw-semibold mb-2">اطلاعات خدمت وظیفه</div>
+                                                    <div class="row g-2">
+                                                        <div class="col-md-3">
+                                                            <label class="form-label">تاریخ اعزام</label>
+                                                            <input type="text" name="dispatch_date_str"
+                                                                   class="form-control jalali-date edit-dispatch"
+                                                                   value="{{ item.dispatch_j or item.start_j }}"
+                                                                   autocomplete="off">
+                                                        </div>
+                                                        <div class="col-md-3">
+                                                            <label class="form-label">ورود به یگان</label>
+                                                            <input type="text" name="unit_entry_date_str"
+                                                                   class="form-control jalali-date"
+                                                                   value="{{ item.unit_entry_j }}"
+                                                                   autocomplete="off">
+                                                        </div>
+                                                        <div class="col-md-3">
+                                                            <label class="form-label">ورود درمانگاه</label>
+                                                            <input type="text" name="clinic_entry_date_str"
+                                                                   class="form-control jalali-date"
+                                                                   value="{{ item.clinic_entry_j }}"
+                                                                   autocomplete="off">
+                                                        </div>
+                                                        <div class="col-md-3">
+                                                            <label class="form-label d-block">بومی / غیربومی</label>
+                                                            <div class="form-check form-check-inline">
+                                                                <input class="form-check-input" type="radio"
+                                                                       name="is_native" value="1"
+                                                                       {% if item.contract.is_native %}checked{% endif %}>
+                                                                <label class="form-check-label">بومی</label>
+                                                            </div>
+                                                            <div class="form-check form-check-inline">
+                                                                <input class="form-check-input" type="radio"
+                                                                       name="is_native" value="0"
+                                                                       {% if item.contract.is_native is not sameas true %}checked{% endif %}>
+                                                                <label class="form-check-label">غیربومی</label>
+                                                            </div>
+                                                        </div>
+                                                        <div class="col-md-6">
+                                                            <label class="form-label">منطقه خدمت</label>
+                                                            <select name="service_duty_region_code" class="form-select">
+                                                                <option value="">— انتخاب —</option>
+                                                                {% for r in duty_regions %}
+                                                                <option value="{{ r.code }}"
+                                                                    {% if item.contract.service_duty_region_code == r.code %}selected{% endif %}>
+                                                                    {{ r.name }}
+                                                                </option>
+                                                                {% endfor %}
+                                                            </select>
+                                                        </div>
+                                                    </div>
+                                                </div>
                                             </div>
                                             <div class="col-md-2">
                                                 <label class="form-label">📦 ذخیره (روز)</label>
@@ -572,17 +797,47 @@
                                             </div>
                                         </div>
 
+                                        {% if item.adjustments %}
+                                        <div class="mt-3">
+                                            <h6 class="mb-2"><i class="bi bi-hourglass-split"></i> تعدیل‌های خدمت فعال</h6>
+                                            <div class="table-responsive">
+                                                <table class="table table-sm table-bordered align-middle mb-2">
+                                                    <thead class="table-light">
+                                                        <tr>
+                                                            <th>نوع</th>
+                                                            <th>مدت</th>
+                                                            <th>تاریخ مؤثر</th>
+                                                            <th>عنوان</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {% for adj in item.adjustments %}
+                                                        <tr>
+                                                            <td>{{ adj.type_label }}</td>
+                                                            <td>{{ adj.duration_text }}</td>
+                                                            <td dir="ltr">{{ adj.effective_date_j }}</td>
+                                                            <td>{{ adj.title or adj.reason or '—' }}</td>
+                                                        </tr>
+                                                        {% endfor %}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                        {% endif %}
+
                                         {% if item.contract.contract_type_code == '1' %}
-                                        <div class="mt-3 permanent-history-edit"
+                                        <details class="mt-3 permanent-history-edit border rounded p-2"
                                              data-contract-id="{{ item.contract.id }}"
                                              data-user-id="{{ item.contract.user_id }}"
                                              data-used='{{ item.history_used_json }}'>
-                                            <h6 class="mb-2"><i class="bi bi-clock-history"></i> تاریخچه مرخصی (سال‌های قبل)</h6>
-                                            <p class="small text-muted mb-2">
+                                            <summary class="fw-semibold" style="cursor:pointer;">
+                                                <i class="bi bi-clock-history"></i> تاریخچه مرخصی (سال‌های قبل)
+                                            </summary>
+                                            <p class="small text-muted mb-2 mt-2">
                                                 مصرف هر سال را ویرایش کنید؛ استحقاق از سیاست محاسبه می‌شود.
                                                 ذخیره و قابل‌بازخرید از همین تاریخچه روی سال جاری تنظیم می‌شود.
                                             </p>
-                                            <div class="table-responsive" style="max-height: 280px;">
+                                            <div class="table-responsive" style="max-height: 220px;">
                                                 <table class="table table-sm table-bordered align-middle mb-0">
                                                     <thead class="table-light sticky-top">
                                                         <tr>
@@ -599,7 +854,7 @@
                                                 <div class="col-md-4">قابل‌بازخرید: <strong class="edit-hist-bb">—</strong></div>
                                                 <div class="col-md-4 edit-hist-caps text-muted">—</div>
                                             </div>
-                                        </div>
+                                        </details>
                                         {% endif %}
 
                                         <div class="alert alert-info mt-3 mb-0">
@@ -612,21 +867,17 @@
                                             فایل جدید جایگزین فایل قبلی می‌شود (PDF/JPG/PNG تا ۱۰MB).
                                         </div>
                                     </div>
-                                    <div class="modal-footer">
-                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
-                                        <button type="submit" class="btn btn-primary">ذخیره تغییرات</button>
-                                    </div>
-                                </form>
-                            </div>
-                        </div>
-                    </div>
-                    {% endif %}
-                    {% endfor %}
-                </tbody>
-            </table>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
+                    <button type="submit" class="btn btn-primary">ذخیره تغییرات</button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
+{% endfor %}
+{% endif %}
+
 {% endif %}
 
 {% endblock %}
@@ -838,25 +1089,97 @@ const membershipSupports = {
     "{{ code }}": {{ 'true' if config.supports_service_deduction else 'false' }},
     {% endfor %}
 };
-const PERMANENT_CODE = '1';
+const membershipProfiles = {
+    {% for code, config in contract_types.items() %}
+    "{{ code }}": "{{ config.behavior_profile or ('conscript' if code == '2' else ('permanent' if code == '1' else ('physician' if code == '5' else 'standard_prorate'))) }}",
+    {% endfor %}
+};
+async function refreshComputedEnd() {
+    const dispatchEl = document.getElementById('add_dispatch');
+    const regionEl = document.getElementById('add_duty_region');
+    const outEl = document.getElementById('add_computed_end');
+    const startEl = document.getElementById('add_start_date');
+    if (!dispatchEl || !regionEl || !outEl) return;
+    const dispatch = (dispatchEl.value || '').trim();
+    const region = (regionEl.value || '').trim();
+    if (dispatch && startEl) startEl.value = dispatch;
+    if (!dispatch || !region) {
+        outEl.value = '';
+        return;
+    }
+    const nativeRadio = document.querySelector('input[name="is_native"]:checked');
+    const params = new URLSearchParams({
+        dispatch_date_str: dispatch,
+        service_duty_region_code: region,
+        is_native: nativeRadio ? nativeRadio.value : '0',
+    });
+    try {
+        const res = await fetch('/admin/contracts/preview-end-date?' + params.toString());
+        const data = await res.json();
+        outEl.value = res.ok ? (data.end_date_j || '') : (data.error || '');
+    } catch (e) {
+        outEl.value = 'خطا در محاسبه';
+    }
+}
 
 function toggleLeaveFields() {
     const typeSelect = document.getElementById('add_type');
     if (!typeSelect) return;
     const selectedType = typeSelect.value;
-    const isPermanent = selectedType === PERMANENT_CODE;
+    const isPermanent = membershipProfiles[selectedType] === 'permanent';
+    const isConscript = membershipProfiles[selectedType] === 'conscript';
 
     document.querySelectorAll('.deduction-field').forEach(el => {
-        el.style.display = membershipSupports[selectedType] ? 'block' : 'none';
+        el.style.display = (!isConscript && membershipSupports[selectedType]) ? 'block' : 'none';
     });
     document.querySelectorAll('.non-permanent-stored').forEach(el => {
-        el.style.display = isPermanent ? 'none' : 'block';
+        el.style.display = (isPermanent || isConscript) ? 'none' : 'block';
     });
+    document.querySelectorAll('.non-conscript-dates').forEach(el => {
+        el.style.display = isConscript ? 'none' : 'block';
+    });
+    document.querySelectorAll('.conscript-fields').forEach(el => {
+        el.style.display = isConscript ? 'block' : 'none';
+    });
+    const startEl = document.getElementById('add_start_date');
+    if (startEl) {
+        startEl.required = !isConscript;
+    }
+    const dispatchEl = document.getElementById('add_dispatch');
+    if (dispatchEl) {
+        dispatchEl.required = isConscript;
+    }
+    const regionEl = document.getElementById('add_duty_region');
+    if (regionEl) {
+        regionEl.required = isConscript;
+    }
+    // ثبت سریع همیشه؛ تاریخچه فقط برای رسمی قدیمی به‌صورت اختیاری
     const submitWrap = document.getElementById('add_submit_wrap');
     const histWrap = document.getElementById('add_history_btn_wrap');
-    if (submitWrap) submitWrap.style.display = isPermanent ? 'none' : 'block';
+    if (submitWrap) submitWrap.style.display = 'block';
     if (histWrap) histWrap.style.display = isPermanent ? 'block' : 'none';
+    if (isConscript) refreshComputedEnd();
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.conscript-end-trigger').forEach(el => {
+        el.addEventListener('change', refreshComputedEnd);
+        el.addEventListener('blur', refreshComputedEnd);
+    });
+    const addForm = document.getElementById('addContractForm');
+    if (addForm) {
+        addForm.addEventListener('submit', () => {
+            const typeSelect = document.getElementById('add_type');
+            if (!typeSelect || membershipProfiles[typeSelect.value] !== 'conscript') return;
+            const dispatch = document.getElementById('add_dispatch');
+            const startEl = document.getElementById('add_start_date');
+            if (dispatch && startEl && dispatch.value) {
+                startEl.value = dispatch.value;
+            }
+        });
+    }
+    toggleLeaveFields();
+});
 
 function fmtCap(v) {
     return (v === null || v === undefined) ? 'نامحدود' : String(v);
@@ -1033,15 +1356,15 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     document.querySelectorAll('.permanent-history-edit').forEach(block => {
-        const modal = block.closest('.modal');
-        if (modal) {
-            modal.addEventListener('shown.bs.modal', () => loadEditHistoryBlock(block));
-        }
         const form = block.closest('form');
+        const loadIfOpen = () => {
+            if (block.open) loadEditHistoryBlock(block);
+        };
+        block.addEventListener('toggle', loadIfOpen);
         const startInp = form?.querySelector('input[name="start_date_str"]');
         if (startInp) {
-            startInp.addEventListener('change', () => loadEditHistoryBlock(block));
-            startInp.addEventListener('blur', () => loadEditHistoryBlock(block));
+            startInp.addEventListener('change', loadIfOpen);
+            startInp.addEventListener('blur', loadIfOpen);
         }
         block.addEventListener('input', function(e) {
             if (!e.target.classList.contains('hist-used-input')) return;

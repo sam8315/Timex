@@ -86,10 +86,13 @@ def coverage_for_contract_year(
     start_g = contract.start_date
     y_start, y_end = jalali_year_bounds_g(year_j)
 
+    mode = _coverage_mode(db, code)
+
+    if mode == msem.COVERAGE_ACTUAL_END and db is not None:
+        start_g = msem.resolve_conscript_leave_start(db, contract)
+
     if start_g > y_end:
         return None
-
-    mode = _coverage_mode(db, code)
 
     if mode == msem.COVERAGE_OPEN_YEAR:
         if contract.end_date is not None and contract.end_date < y_start:

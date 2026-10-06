@@ -13,6 +13,7 @@ from models.membership_rule_change import (
     MembershipRuleChangeAudit,
 )
 from models.service_adjustment import ServiceAdjustment
+from models.service_duty_region import ServiceDutyRegion
 from models.leave_balance import LeaveBalance
 from models.leave_transaction import LeaveTransaction
 from models.leave_request import LeaveRequest
@@ -52,7 +53,7 @@ __all__ = [
     'HourlyLeavePolicy', 'HourlyLeaveResolution', 'HourlyLeaveTransaction',
     'Contract', 'MembershipType', 'MembershipTypeRule', 'ReservedMembershipCode',
     'MembershipRuleChangeRequest', 'MembershipRuleChangeAudit',
-    'ServiceAdjustment',
+    'ServiceAdjustment', 'ServiceDutyRegion',
     'LeaveBalance', 'LeaveTransaction',
     'LeaveRequest', 'LeaveCarryForwardRequest', 'LeaveBuybackQuota',
     'Holiday', 'DailyStatus',

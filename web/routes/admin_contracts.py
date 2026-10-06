@@ -52,9 +52,97 @@ from web.services.contract_file_storage import (
     resolve_contract_file_disk,
     save_contract_file as _save_contract_file,
 )
+from web.services.service_duty_region_service import (
+    list_duty_regions,
+    region_as_dict,
+)
+from web.services.service_end_date_engine import (
+    ServiceEndDateError,
+    apply_end_date_to_contract,
+    preview_end_date,
+)
+from web.services.service_adjustment_service import list_adjustments_for_contract
 
 router = APIRouter(tags=["Admin Contracts"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
+
+
+def _parse_jalali_optional(date_str: str) -> Optional[date]:
+    raw = (date_str or "").strip()
+    if not raw:
+        return None
+    return jdatetime.datetime.strptime(raw, "%Y/%m/%d").date().togregorian()
+
+
+def _parse_is_native(raw: str) -> Optional[bool]:
+    value = (raw or "").strip().lower()
+    if value in ("1", "true", "on", "yes", "native", "bomi"):
+        return True
+    if value in ("0", "false", "off", "no", "non_native", "non-bomi", "non_bomi"):
+        return False
+    return None
+
+
+def _apply_conscript_fields(
+    db: Session,
+    contract: Contract,
+    *,
+    contract_type_code: str,
+    form,
+    start_date: date,
+) -> date:
+    """
+    برای وظیفه: ذخیره فیلدهای خدمت، start=اعزام، end محاسبه‌ای.
+    برای غیر وظیفه: فیلدهای خدمت را خالی می‌کند.
+    برمی‌گرداند: start_date نهایی.
+    """
+    if not msem.is_conscript(db, contract_type_code):
+        contract.dispatch_date = None
+        contract.unit_entry_date = None
+        contract.clinic_entry_date = None
+        contract.is_native = None
+        contract.service_duty_region_code = None
+        return start_date
+
+    from models.membership_type_rule import (
+        LEAVE_START_CLINIC_ENTRY,
+        LEAVE_START_UNIT_ENTRY,
+    )
+
+    dispatch = _parse_jalali_optional(str(form.get("dispatch_date_str") or ""))
+    unit_entry = _parse_jalali_optional(str(form.get("unit_entry_date_str") or ""))
+    clinic_entry = _parse_jalali_optional(str(form.get("clinic_entry_date_str") or ""))
+    region_code = (str(form.get("service_duty_region_code") or "")).strip() or None
+    is_native = _parse_is_native(str(form.get("is_native") or ""))
+
+    if dispatch is None:
+        # سازگاری: اگر اعزام خالی بود از start استفاده کن
+        dispatch = start_date
+    if dispatch is None:
+        raise ValueError("تاریخ اعزام برای عضویت وظیفه الزامی است")
+    if not region_code:
+        raise ValueError("انتخاب منطقه خدمت برای عضویت وظیفه الزامی است")
+
+    basis = msem.resolve_leave_start_basis(
+        db, contract_type_code, on_date=dispatch
+    )
+    if basis == LEAVE_START_UNIT_ENTRY and unit_entry is None:
+        raise ValueError(
+            "طبق پالیسی عضویت، مبنای شروع مرخصی «ورود به یگان» است؛ این تاریخ الزامی است"
+        )
+    if basis == LEAVE_START_CLINIC_ENTRY and clinic_entry is None:
+        raise ValueError(
+            "طبق پالیسی عضویت، مبنای شروع مرخصی «ورود به درمانگاه» است؛ این تاریخ الزامی است"
+        )
+
+    contract.dispatch_date = dispatch
+    contract.unit_entry_date = unit_entry
+    contract.clinic_entry_date = clinic_entry
+    contract.is_native = is_native
+    contract.service_duty_region_code = region_code
+    contract.start_date = dispatch
+    apply_end_date_to_contract(db, contract)
+    return dispatch
 
 
 def build_redirect_url(referer: str, key: str, value: str) -> str:
@@ -181,12 +269,22 @@ async def contracts_page(
             buyback_current = get_buyback_quota(db, c.user_id, current_year)
             history_used = get_used_by_year_from_contract(db, c.id) if msem.is_permanent(db, c.contract_type_code) else {}
 
+            def _j(d):
+                if not d:
+                    return ""
+                return jdatetime.date.fromgregorian(date=d).strftime("%Y/%m/%d")
+
+            adjustments = list_adjustments_for_contract(db, c.id, active_only=True)
             contracts_data.append({
                 'contract': c,
                 'employee': employee,
                 'full_name': employee.full_name if employee else f"کاربر {c.user_id}",
                 'start_j': start_j.strftime('%Y/%m/%d'),
                 'end_j': end_j.strftime('%Y/%m/%d') if end_j else 'دائمی',
+                'dispatch_j': _j(c.dispatch_date),
+                'unit_entry_j': _j(c.unit_entry_date),
+                'clinic_entry_j': _j(c.clinic_entry_date),
+                'is_conscript': msem.is_conscript(db, c.contract_type_code),
                 'is_active': c.is_active,
                 'charged_by_year': get_charged_by_year(db, c.id),
                 'stored_leave_days': stored_cw_current if msem.is_permanent(db, c.contract_type_code) else stored_cw,
@@ -194,6 +292,8 @@ async def contracts_page(
                 'history_used': history_used,
                 'history_used_json': json.dumps({str(k): v for k, v in history_used.items()}),
                 'start_year': start_year,
+                'adjustments': adjustments,
+                'adjustments_count': len(adjustments),
             })
 
         if status_filter == 'active':
@@ -224,6 +324,9 @@ async def contracts_page(
         for emp in employees_for_search
     ]
 
+    duty_regions = [
+        region_as_dict(r) for r in list_duty_regions(db, active_only=True)
+    ]
     return templates.TemplateResponse(request, "admin/contracts.html", {
         "user": user,
         "contracts": contracts_data,
@@ -237,6 +340,7 @@ async def contracts_page(
         "file_filter": file_filter or "",
         "employees": employees_list,
         "contract_types": membership_types_as_dict(db, active_only=True),
+        "duty_regions": duty_regions,
         "is_admin": True,
         "membership_timeline": membership_timeline,
         "timeline_user_id": timeline_user_id,
@@ -246,6 +350,35 @@ async def contracts_page(
         "can_edit_contracts": has_permission(db, user, "edit_contracts"),
         "can_delete_contracts": has_permission(db, user, "delete_contracts"),
     })
+
+
+@router.get("/contracts/preview-end-date")
+async def contracts_preview_end_date(
+    dispatch_date_str: str = Query(...),
+    service_duty_region_code: str = Query(...),
+    is_native: Optional[str] = Query(None),
+    contract_id: Optional[int] = Query(None),
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """پیش‌نمایش تاریخ پایان خدمت وظیفه (شمسی)."""
+    enforce_permission(db, user, "view_contracts")
+    try:
+        dispatch = _parse_jalali_optional(dispatch_date_str)
+        if dispatch is None:
+            return JSONResponse({"error": "تاریخ اعزام نامعتبر است"}, status_code=400)
+        native = _parse_is_native(is_native or "")
+        end = preview_end_date(
+            db,
+            dispatch_date=dispatch,
+            region_code=service_duty_region_code.strip(),
+            is_native=native,
+            contract_id=contract_id,
+        )
+        end_j = jdatetime.date.fromgregorian(date=end).strftime("%Y/%m/%d")
+        return JSONResponse({"end_date": end.isoformat(), "end_date_j": end_j})
+    except (ServiceEndDateError, ValueError) as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
 
 
 @router.post("/contracts/add")
@@ -276,6 +409,7 @@ async def add_contract(
         if buyback_leave_days < 0:
             raise ValueError("قابل‌بازخرید نمی‌تواند منفی باشد")
 
+        form = await request.form()
         start_j = jdatetime.datetime.strptime(start_date_str.strip(), "%Y/%m/%d").date()
         start_date = start_j.togregorian()
 
@@ -286,22 +420,12 @@ async def add_contract(
 
         end_date = _ensure_permanent_end(db, contract_type_code, start_date, end_date)
 
-        if end_date and start_date >= end_date:
-            raise ValueError("تاریخ شروع باید قبل از تاریخ پایان باشد")
-
         employee = db.query(Employee).filter(Employee.user_id == user_id).first()
         if not employee:
             referer = request.headers.get("referer", "/admin/contracts")
             return RedirectResponse(
                 url=build_redirect_url(referer, "error", "کاربر یافت نشد"),
                 status_code=302
-            )
-
-        overlapping = find_overlapping_contract(db, user_id, start_date, end_date)
-        if overlapping:
-            raise ValueError(
-                f"تداخل بازه با عضویت موجود (شروع: "
-                f"{jdatetime.date.fromgregorian(date=overlapping.start_date).strftime('%Y/%m/%d')})"
             )
 
         rule = get_effective_rule(db, contract_type_code, on_date=start_date)
@@ -334,6 +458,30 @@ async def add_contract(
         db.add(new_contract)
         db.flush()
 
+        if msem.is_conscript(db, contract_type_code):
+            start_date = _apply_conscript_fields(
+                db,
+                new_contract,
+                contract_type_code=contract_type_code,
+                form=form,
+                start_date=start_date,
+            )
+            start_j = jdatetime.date.fromgregorian(date=start_date)
+            end_date = new_contract.end_date
+            service_deduction_days = new_contract.service_deduction_days
+
+        if end_date and start_date >= end_date:
+            raise ValueError("تاریخ شروع باید قبل از تاریخ پایان باشد")
+
+        overlapping = find_overlapping_contract(
+            db, user_id, start_date, end_date, exclude_id=new_contract.id
+        )
+        if overlapping:
+            raise ValueError(
+                f"تداخل بازه با عضویت موجود (شروع: "
+                f"{jdatetime.date.fromgregorian(date=overlapping.start_date).strftime('%Y/%m/%d')})"
+            )
+
         if contract_file and contract_file.filename:
             new_contract.file_path = await _save_contract_file(
                 contract_file, user_id=user_id, contract_id=new_contract.id,
@@ -344,7 +492,6 @@ async def add_contract(
 
         charged = charge_leave_for_new_contract(db, new_contract)
 
-        form = await request.form()
         used_by_year = parse_used_by_year_from_form(form)
         current_year = jdatetime.date.today().year
         needs_history = (
@@ -469,6 +616,7 @@ async def edit_contract(
         if buyback_leave_days < 0:
             raise ValueError("قابل‌بازخرید نمی‌تواند منفی باشد")
 
+        form = await request.form()
         old_annual = contract.annual_leave_days
         old_sick = contract.sick_leave_days
         old_start = contract.start_date
@@ -485,18 +633,6 @@ async def edit_contract(
             end_date = end_j.togregorian()
 
         end_date = _ensure_permanent_end(db, contract_type_code, start_date, end_date)
-
-        if end_date and start_date >= end_date:
-            raise ValueError("تاریخ شروع باید قبل از تاریخ پایان باشد")
-
-        overlapping = find_overlapping_contract(
-            db, contract.user_id, start_date, end_date, exclude_id=contract.id
-        )
-        if overlapping:
-            raise ValueError(
-                f"تداخل بازه با عضویت موجود (شروع: "
-                f"{jdatetime.date.fromgregorian(date=overlapping.start_date).strftime('%Y/%m/%d')})"
-            )
 
         membership_types = membership_types_as_dict(db, active_only=True)
         if contract_type_code not in membership_types:
@@ -528,6 +664,36 @@ async def edit_contract(
         contract.service_deduction_days = service_deduction_days
         contract.description = description.strip() or None
 
+        if msem.is_conscript(db, contract_type_code):
+            start_date = _apply_conscript_fields(
+                db,
+                contract,
+                contract_type_code=contract_type_code,
+                form=form,
+                start_date=start_date,
+            )
+            start_j = jdatetime.date.fromgregorian(date=start_date)
+            end_date = contract.end_date
+            service_deduction_days = contract.service_deduction_days
+        else:
+            contract.dispatch_date = None
+            contract.unit_entry_date = None
+            contract.clinic_entry_date = None
+            contract.is_native = None
+            contract.service_duty_region_code = None
+
+        if end_date and start_date >= end_date:
+            raise ValueError("تاریخ شروع باید قبل از تاریخ پایان باشد")
+
+        overlapping = find_overlapping_contract(
+            db, contract.user_id, start_date, end_date, exclude_id=contract.id
+        )
+        if overlapping:
+            raise ValueError(
+                f"تداخل بازه با عضویت موجود (شروع: "
+                f"{jdatetime.date.fromgregorian(date=overlapping.start_date).strftime('%Y/%m/%d')})"
+            )
+
         if contract_file and contract_file.filename:
             old_path = contract.file_path
             contract.file_path = await _save_contract_file(
@@ -552,7 +718,6 @@ async def edit_contract(
             old_type_code=old_type_code,
         )
 
-        form = await request.form()
         used_by_year = parse_used_by_year_from_form(form)
         current_year = jdatetime.date.today().year
         needs_history = (

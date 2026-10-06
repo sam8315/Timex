@@ -379,7 +379,25 @@
                 {% endif %}
             </div>
 
-            {% if active_contract.allow_service_deduction and active_contract.service_deduction_days > 0 %}
+            {% if active_contract.adjustments %}
+            <div class="col-12">
+                <div class="alert alert-white bg-opacity-10 border-0 mb-0">
+                    <div class="mb-2">
+                        <i class="bi bi-hourglass-split"></i>
+                        <strong>تعدیل‌های خدمت</strong>
+                    </div>
+                    <ul class="mb-0 ps-3">
+                        {% for adj in active_contract.adjustments %}
+                        <li>
+                            {{ adj.type_label }}: {{ adj.duration_text }}
+                            <span class="opacity-75">(از {{ adj.effective_date_j }})</span>
+                            {% if adj.title %} — {{ adj.title }}{% endif %}
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+            {% elif active_contract.allow_service_deduction and active_contract.service_deduction_days > 0 %}
             <div class="col-12">
                 <div class="alert alert-white bg-opacity-10 border-0 mb-0">
                     <i class="bi bi-info-circle"></i>
@@ -481,7 +499,23 @@
                         </div>
                         {% endif %}
 
-                        {% if c.allow_service_deduction and c.service_deduction_days > 0 %}
+                        {% if c.adjustments %}
+                        <div class="col-12">
+                            <div class="bg-light rounded p-2">
+                                <div class="small text-muted mb-1">
+                                    <i class="bi bi-hourglass-split"></i> تعدیل‌های خدمت
+                                </div>
+                                <ul class="mb-0 small ps-3">
+                                    {% for adj in c.adjustments %}
+                                    <li>
+                                        <strong>{{ adj.type_label }}</strong>: {{ adj.duration_text }}
+                                        <span class="text-muted">({{ adj.effective_date_j }})</span>
+                                    </li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                        </div>
+                        {% elif c.allow_service_deduction and c.service_deduction_days > 0 %}
                         <div class="col-12">
                             <div class="info-row bg-warning bg-opacity-10 rounded p-2">
                                 <i class="bi bi-clock-history text-warning"></i>

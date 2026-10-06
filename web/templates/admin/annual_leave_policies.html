@@ -63,6 +63,7 @@
                         <th>پایه سالانه</th>
                         <th>از تاریخ</th>
                         <th>کسر خدمت</th>
+                        <th>شروع مرخصی وظیفه</th>
                         <th>سقف ذخیره</th>
                         <th>سقف بازخرید</th>
                     </tr>
@@ -80,12 +81,17 @@
                             {% else %}—{% endif %}
                         </td>
                         <td>{% if p.supports_service_deduction %}بله{% else %}خیر{% endif %}</td>
+                        <td>
+                            {% if p.is_conscript %}
+                                {{ p.leave_start_date_basis_label }}
+                            {% else %}—{% endif %}
+                        </td>
                         <td>{{ p.storage_cap if p.storage_cap is not none else 'نامحدود' }}</td>
                         <td>{{ p.buyback_cap if p.buyback_cap is not none else 'نامحدود' }}</td>
                     </tr>
                 {% else %}
                     <tr>
-                        <td colspan="8" class="text-center text-muted py-4">سیاستی یافت نشد</td>
+                        <td colspan="9" class="text-center text-muted py-4">سیاستی یافت نشد</td>
                     </tr>
                 {% endfor %}
                 </tbody>
@@ -95,8 +101,8 @@
 
     <p class="small text-muted mt-3 mb-0">
         قواعد وابسته به مالک (هنوز بدون مقدار قانونی قطعی): مدت خدمت قانونی وظیفه، بومی/غیربومی،
-        شروع استحقاق واحد، تسویه نقدی تغییر عضویت، پایه قراردادی ۲۶، apply_region پیش‌فرض قراردادی.
-        ویرایش پایه سالانه از صفحه انواع عضویت.
+        تسویه نقدی تغییر عضویت، پایه قراردادی ۲۶، apply_region پیش‌فرض قراردادی.
+        ویرایش پایه سالانه و مبنای شروع مرخصی وظیفه از صفحه انواع عضویت.
     </p>
 </div>
 {% endblock %}

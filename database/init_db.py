@@ -42,12 +42,13 @@ def _column_ddl(column) -> str:
     return f"{dtype} NULL"
 
 
-def migrate_missing_columns() -> None:
+def migrate_missing_columns(bind_engine=None) -> None:
     """
     مقایسه ستون‌های مدل‌ها با جداول موجود در دیتابیس
     و اضافه کردن ستون‌های جدید بدون آسیب به داده‌های قبلی.
     """
-    inspector = inspect(engine)
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
     existing_tables = set(inspector.get_table_names())
 
     for table_name, table_obj in Base.metadata.tables.items():
@@ -57,7 +58,7 @@ def migrate_missing_columns() -> None:
         for column in table_obj.columns:
             if column.name not in db_columns:
                 ddl = _column_ddl(column)
-                with engine.connect() as conn:
+                with target.connect() as conn:
                     conn.execute(text(f'ALTER TABLE "{table_name}" ADD COLUMN "{column.name}" {ddl}'))
                     conn.commit()
                 logger.info(
@@ -1015,6 +1016,37 @@ def migrate_employee_document_types(bind_engine=None) -> None:
                 )
 
 
+def seed_service_duty_regions(bind_engine=None) -> None:
+    """Optional insert-only seed for conscript duty-region duration policy."""
+    from sqlalchemy.orm import sessionmaker
+    from web.services.service_duty_region_service import seed_default_duty_regions
+
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
+    if "service_duty_regions" not in set(inspector.get_table_names()):
+        return
+
+    SessionLocal = sessionmaker(bind=target, autoflush=False, autocommit=False)
+    db = SessionLocal()
+    try:
+        created = seed_default_duty_regions(db)
+        db.commit()
+        logger.info(
+            "Service duty regions seeded created=%s",
+            created,
+            extra={"event": "database.ready"},
+        )
+    except Exception:
+        db.rollback()
+        logger.exception(
+            "Failed to seed service duty regions",
+            extra={"event": "database.operation_failed"},
+        )
+        raise
+    finally:
+        db.close()
+
+
 def seed_membership_types(bind_engine=None) -> None:
     """
     Ensure the seven legacy membership types + first rules exist (idempotent).
@@ -1513,6 +1545,55 @@ def migrate_membership_foundation_hardening(bind_engine=None) -> None:
             except Exception:
                 conn.rollback()
 
+            # leave_start_date_basis (migration 015 + auto-added NULL columns)
+            try:
+                rule_cols = {
+                    row["name"] for row in inspector.get_columns("membership_type_rules")
+                }
+                if "leave_start_date_basis" not in rule_cols:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE membership_type_rules "
+                            "ADD COLUMN leave_start_date_basis VARCHAR(20)"
+                        )
+                    )
+                conn.execute(
+                    text(
+                        "UPDATE membership_type_rules "
+                        "SET leave_start_date_basis = 'dispatch' "
+                        "WHERE leave_start_date_basis IS NULL"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "ALTER TABLE membership_type_rules "
+                        "ALTER COLUMN leave_start_date_basis SET DEFAULT 'dispatch'"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "ALTER TABLE membership_type_rules "
+                        "ALTER COLUMN leave_start_date_basis SET NOT NULL"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "ALTER TABLE membership_type_rules "
+                        "DROP CONSTRAINT IF EXISTS ck_membership_rule_leave_start_basis"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "ALTER TABLE membership_type_rules "
+                        "ADD CONSTRAINT ck_membership_rule_leave_start_basis "
+                        "CHECK (leave_start_date_basis IN "
+                        "('dispatch', 'unit_entry', 'clinic_entry'))"
+                    )
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+
         if "service_adjustments" in tables:
             _ensure_fk_restrict(
                 conn,
@@ -1611,6 +1692,7 @@ def create_tables() -> None:
         # 4) Rule→PolicyValue annual mirrors  5) dual-run  6) orphan/FKs
         migrate_membership_foundation_hardening()
         seed_membership_types()
+        seed_service_duty_regions()
         align_leave_policy_membership_67()
         align_annual_leave_policy_mirrors()
         run_membership_dual_run_validation()

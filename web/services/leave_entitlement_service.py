@@ -408,21 +408,39 @@ def contract_effective_end(contract: Contract) -> Optional[date]:
     return contract.actual_end_date
 
 
+def _split_years_in_range(
+    start_g: date,
+    end_g: date,
+) -> List[Tuple[int, date, Optional[date]]]:
+    """سگمنت‌های سال شمسی از start تا end (شامل)."""
+    if end_g < start_g:
+        return []
+    start_j = jdatetime.date.fromgregorian(date=start_g)
+    end_j = jdatetime.date.fromgregorian(date=end_g)
+    segments: List[Tuple[int, date, Optional[date]]] = []
+    for year_j in range(start_j.year, end_j.year + 1):
+        y_start, y_end = jalali_year_bounds_g(year_j)
+        seg_start = max(start_g, y_start)
+        seg_end = min(end_g, y_end)
+        if seg_start <= seg_end:
+            segments.append((year_j, seg_start, seg_end))
+    return segments
+
+
 def split_contract_coverage_by_year(
     contract: Contract,
     db: Optional[Session] = None,
 ) -> List[Tuple[int, date, Optional[date]]]:
     """
-    تقسیم پوشش قرارداد برای شارژ مرخصی — فقط سال شمسی جاری.
-    پوشش از MembershipSemantics.coverage_mode گرفته می‌شود (نه code literal).
+    تقسیم پوشش قرارداد برای شارژ مرخصی.
+
+    - conscript (actual_end): همه سال‌های شمسی دوره خدمت
+    - سایر پروفایل‌ها: فقط سال شمسی جاری (رفتار قبلی)
     """
     code = contract.contract_type_code
     start_g = contract.start_date
     current_year = jdatetime.date.today().year
     y_start, y_end = jalali_year_bounds_g(current_year)
-
-    if start_g > y_end:
-        return []
 
     if db is not None:
         mode = msem.coverage_mode(db, code)
@@ -442,24 +460,27 @@ def split_contract_coverage_by_year(
         else:
             mode = msem.COVERAGE_CONTRACT_END
 
+    if mode == msem.COVERAGE_ACTUAL_END:
+        # شروع پوشش مرخصی از پالیسی leave_start_date_basis (نه لزوماً start_date)
+        if db is not None:
+            start_g = msem.resolve_conscript_leave_start(db, contract)
+        end_g = contract_effective_end(contract)
+        if end_g is None:
+            if start_g > y_end:
+                return []
+            seg_start = max(start_g, y_start)
+            return [(current_year, seg_start, y_end)]
+        return _split_years_in_range(start_g, end_g)
+
+    # سایر پروفایل‌ها: فقط سال جاری
+    if start_g > y_end:
+        return []
+
     if mode == msem.COVERAGE_OPEN_YEAR:
         if contract.end_date is not None and contract.end_date < y_start:
             return []
         seg_start = max(start_g, y_start)
         return [(current_year, seg_start, y_end)]
-
-    if mode == msem.COVERAGE_ACTUAL_END:
-        end_g = contract_effective_end(contract)
-        if end_g is None:
-            seg_start = max(start_g, y_start)
-            return [(current_year, seg_start, y_end)]
-        if end_g < start_g or end_g < y_start:
-            return []
-        seg_start = max(start_g, y_start)
-        seg_end = min(end_g, y_end)
-        if seg_start <= seg_end:
-            return [(current_year, seg_start, seg_end)]
-        return []
 
     # contract_end (standard_prorate / physician)
     end_g = contract.end_date
@@ -528,7 +549,8 @@ def calculate_entitlement_by_year(
     """
     محاسبه استحقاق قابل‌شارژ هنگام تنظیم قرارداد.
 
-    فقط AL سال شمسی جاری؛ استعلاجی (SL) هرگز شارژ نمی‌شود.
+    AL بر اساس سگمنت‌های پوشش (وظیفه: کل دوره؛ سایر: سال جاری).
+    استعلاجی (SL) هرگز شارژ نمی‌شود.
 
     Returns: {year: {'AL': float, 'SL': 0.0}}
     """

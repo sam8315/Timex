@@ -77,11 +77,27 @@
                     <input class="form-check-input" type="checkbox" name="supports_positive_seniority" value="on">
                 </div>
             </div>
+            {% if is_conscript %}
+            <div class="col-md-3">
+                <label class="form-label">مبنای شروع مرخصی</label>
+                <select name="leave_start_date_basis" class="form-select">
+                    {% for key in leave_start_basis_choices %}
+                    <option value="{{ key }}" {% if key == leave_start_default %}selected{% endif %}>
+                        {{ leave_start_basis_labels[key] }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% else %}
+            <input type="hidden" name="leave_start_date_basis" value="{{ leave_start_default }}">
+            {% endif %}
             <div class="col-md-1 d-flex align-items-end">
                 <button class="btn btn-success w-100" type="submit">ثبت</button>
             </div>
         </form>
-        <small class="text-muted">Rule گذشته/جاری مانده‌ها را silently عوض نمی‌کند؛ preview و تأیید جداگانه لازم است.</small>
+        <small class="text-muted">Rule گذشته/جاری مانده‌ها را silently عوض نمی‌کند؛ preview و تأیید جداگانه لازم است.
+            {% if is_conscript %}پایان خدمت همچنان از تاریخ اعزام محاسبه می‌شود.{% endif %}
+        </small>
     </div>
 </div>
 {% endif %}
@@ -97,6 +113,7 @@
                     <th>کسر</th>
                     <th>اضافه</th>
                     <th>سنوات</th>
+                    {% if is_conscript %}<th>شروع مرخصی</th>{% endif %}
                     <th>وضعیت</th>
                     <th></th>
                 </tr>
@@ -109,6 +126,9 @@
                     <td>{{ '✓' if row.rule.supports_service_deduction else '—' }}</td>
                     <td>{{ '✓' if row.rule.supports_extra_service else '—' }}</td>
                     <td>{{ '✓' if row.rule.supports_positive_seniority else '—' }}</td>
+                    {% if is_conscript %}
+                    <td>{{ leave_start_basis_labels.get(row.rule.leave_start_date_basis, row.rule.leave_start_date_basis) }}</td>
+                    {% endif %}
                     <td><span class="badge bg-secondary">{{ row.rule.status }}</span></td>
                     <td class="text-end">
                         {% if can_manage_rules and row.editable %}
@@ -122,7 +142,7 @@
                     </td>
                 </tr>
                 {% else %}
-                <tr><td colspan="7" class="text-center text-muted py-3">Ruleی ثبت نشده</td></tr>
+                <tr><td colspan="{% if is_conscript %}8{% else %}7{% endif %}" class="text-center text-muted py-3">Ruleی ثبت نشده</td></tr>
                 {% endfor %}
             </tbody>
         </table>

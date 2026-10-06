@@ -1,21 +1,126 @@
 """
 سرویس ثبت تعدیل خدمت — immutable + correction chain.
-موتور پایان خدمت اینجا پیاده نمی‌شود.
+پس از ثبت/اصلاح/ابطال، پایان قرارداد وظیفه بازمحاسبه می‌شود.
 """
 from __future__ import annotations
 
 from datetime import date
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
+import jdatetime
 from sqlalchemy.orm import Session
 
 from models.contract import Contract
 from models.service_adjustment import ADJUSTMENT_TYPES, ServiceAdjustment
 from web.services.membership_service import MembershipError, get_effective_rule
+from web.services import membership_semantics as msem
 
 
 class ServiceAdjustmentError(MembershipError):
     pass
+
+
+ADJUSTMENT_TYPE_LABELS = {
+    "service_deduction": "کسر خدمت",
+    "extra_service": "اضافه خدمت",
+    "positive_seniority": "سنوات مثبت",
+}
+
+
+def format_adjustment_duration(years: int, months: int, days: int) -> str:
+    parts = []
+    if years:
+        parts.append(f"{int(years)} سال")
+    if months:
+        parts.append(f"{int(months)} ماه")
+    if days:
+        parts.append(f"{int(days)} روز")
+    return " و ".join(parts) if parts else "۰ روز"
+
+
+def list_adjustments_for_contract(
+    db: Session,
+    contract_id: int,
+    *,
+    active_only: bool = True,
+) -> List[Dict[str, Any]]:
+    """لیست تعدیل‌های یک قرارداد برای نمایش UI."""
+    q = (
+        db.query(ServiceAdjustment)
+        .filter(ServiceAdjustment.contract_id == contract_id)
+        .order_by(ServiceAdjustment.effective_date.desc(), ServiceAdjustment.id.desc())
+    )
+    if active_only:
+        q = q.filter(ServiceAdjustment.status == "active")
+    rows = []
+    for adj in q.all():
+        rows.append(
+            {
+                "id": adj.id,
+                "adjustment_type": adj.adjustment_type,
+                "type_label": ADJUSTMENT_TYPE_LABELS.get(
+                    adj.adjustment_type, adj.adjustment_type
+                ),
+                "years": int(adj.years or 0),
+                "months": int(adj.months or 0),
+                "days": int(adj.days or 0),
+                "duration_text": format_adjustment_duration(
+                    adj.years or 0, adj.months or 0, adj.days or 0
+                ),
+                "effective_date": adj.effective_date,
+                "effective_date_j": jdatetime.date.fromgregorian(
+                    date=adj.effective_date
+                ).strftime("%Y/%m/%d"),
+                "title": adj.title or "",
+                "reason": adj.reason or "",
+                "status": adj.status,
+            }
+        )
+    return rows
+
+
+def _recalculate_contract_end_after_adjustment(
+    db: Session,
+    contract_id: Optional[int],
+) -> None:
+    """بازمحاسبه پایان وظیفه و همگام‌سازی شارژ مرخصی در صورت تغییر پایان."""
+    if contract_id is None:
+        return
+    contract = db.query(Contract).filter(Contract.id == contract_id).first()
+    if not contract:
+        return
+    if not msem.is_conscript(db, contract.contract_type_code):
+        return
+    if not contract.dispatch_date or not contract.service_duty_region_code:
+        return
+
+    from web.services.service_end_date_engine import (
+        ServiceEndDateError,
+        apply_end_date_to_contract,
+    )
+    from web.services.leave_service import update_leave_for_contract
+
+    old_end = contract.end_date
+    old_deduction = int(contract.service_deduction_days or 0)
+    try:
+        apply_end_date_to_contract(db, contract)
+    except ServiceEndDateError:
+        return
+
+    if old_end == contract.end_date and old_deduction == contract.service_deduction_days:
+        return
+
+    update_leave_for_contract(
+        db,
+        contract,
+        old_annual_leave=contract.annual_leave_days,
+        old_sick_leave=contract.sick_leave_days,
+        old_start_date=contract.start_date,
+        old_end_date=old_end,
+        old_deduction=old_deduction,
+        old_type_code=contract.contract_type_code,
+        commit=False,
+    )
 
 
 def resolve_contract_for_effective_date(
@@ -143,6 +248,7 @@ def create_adjustment(
     )
     db.add(row)
     db.flush()
+    _recalculate_contract_end_after_adjustment(db, resolved_contract_id)
     return row
 
 
@@ -201,6 +307,7 @@ def correct_adjustment(
     original.status = "corrected"
     db.add(correction)
     db.flush()
+    _recalculate_contract_end_after_adjustment(db, resolved_contract_id)
     return correction
 
 
@@ -220,6 +327,8 @@ def void_adjustment(
         raise ServiceAdjustmentError("رکورد تعدیل یافت نشد")
     if row.status != "active":
         raise ServiceAdjustmentError("فقط رکورد فعال قابل ابطال است")
+    contract_id = row.contract_id
     row.status = "void"
     db.flush()
+    _recalculate_contract_end_after_adjustment(db, contract_id)
     return row

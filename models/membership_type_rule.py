@@ -20,6 +20,23 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from models.base import Base, TimestampMixin
 
 
+LEAVE_START_DISPATCH = "dispatch"
+LEAVE_START_UNIT_ENTRY = "unit_entry"
+LEAVE_START_CLINIC_ENTRY = "clinic_entry"
+
+LEAVE_START_BASIS_CHOICES = (
+    LEAVE_START_DISPATCH,
+    LEAVE_START_UNIT_ENTRY,
+    LEAVE_START_CLINIC_ENTRY,
+)
+
+LEAVE_START_BASIS_LABELS = {
+    LEAVE_START_DISPATCH: "تاریخ اعزام",
+    LEAVE_START_UNIT_ENTRY: "ورود به یگان",
+    LEAVE_START_CLINIC_ENTRY: "ورود به درمانگاه",
+}
+
+
 class MembershipTypeRule(TimestampMixin, Base):
     """یک نسخه کامل از قواعد عضویت از effective_from به بعد."""
 
@@ -42,6 +59,13 @@ class MembershipTypeRule(TimestampMixin, Base):
     )
     supports_positive_seniority: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False
+    )
+    # مبنای شروع استحقاق مرخصی وظیفه: dispatch | unit_entry | clinic_entry
+    leave_start_date_basis: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default=LEAVE_START_DISPATCH,
+        server_default=LEAVE_START_DISPATCH,
     )
     # pending | scheduled | active | superseded
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
@@ -67,6 +91,11 @@ class MembershipTypeRule(TimestampMixin, Base):
         CheckConstraint(
             "status IN ('pending', 'scheduled', 'active', 'superseded')",
             name="ck_membership_rule_status",
+        ),
+        CheckConstraint(
+            "leave_start_date_basis IN "
+            "('dispatch', 'unit_entry', 'clinic_entry')",
+            name="ck_membership_rule_leave_start_basis",
         ),
     )
 

@@ -152,6 +152,12 @@ def list_membership_al_policies(db: Session) -> List[Dict[str, Any]]:
                 'supports_service_deduction': (
                     rule.supports_service_deduction if rule else False
                 ),
+                'leave_start_date_basis': (
+                    rule.leave_start_date_basis if rule else 'dispatch'
+                ),
+                'leave_start_date_basis_label': msem.leave_start_basis_label(
+                    rule.leave_start_date_basis if rule else 'dispatch'
+                ),
                 'storage_cap': resolve_storage_cap(db, mt.code),
                 'buyback_cap': resolve_buyback_cap(db, mt.code),
                 'membership_change_mode': resolve_membership_change_mode(db).value,

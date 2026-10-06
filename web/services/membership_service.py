@@ -90,6 +90,9 @@ def membership_types_as_dict(db: Session, *, active_only: bool = True) -> Dict[s
     result: Dict[str, dict] = {}
     for row in list_membership_types(db, active_only=active_only):
         rule = get_effective_rule(db, row.code)
+        profile = row.behavior_profile or SEED_BEHAVIOR_BY_CODE.get(
+            str(row.code), BEHAVIOR_STANDARD_PRORATE
+        )
         result[row.code] = {
             "name": row.name,
             "annual_leave_base": rule.annual_leave_base if rule else 0,
@@ -102,7 +105,10 @@ def membership_types_as_dict(db: Session, *, active_only: bool = True) -> Dict[s
             "supports_positive_seniority": (
                 rule.supports_positive_seniority if rule else False
             ),
-            "behavior_profile": row.behavior_profile,
+            "leave_start_date_basis": (
+                rule.leave_start_date_basis if rule else "dispatch"
+            ),
+            "behavior_profile": profile,
             "is_active": row.is_active,
             "description": row.description,
             "sort_order": row.sort_order,
@@ -388,12 +394,19 @@ def create_rule_snapshot(
     supports_service_deduction: bool,
     supports_extra_service: bool,
     supports_positive_seniority: bool,
+    leave_start_date_basis: Optional[str] = None,
     created_by: Optional[str] = None,
 ) -> MembershipTypeRule:
     """
     ایجاد Rule جدید به‌صورت snapshot کامل.
     آینده → scheduled؛ گذشته/جاری → pending (تا Confirm وارد resolve نمی‌شود).
     """
+    from models.membership_type_rule import (
+        LEAVE_START_BASIS_CHOICES,
+        LEAVE_START_DISPATCH,
+    )
+    from web.services import membership_semantics as msem
+
     mt = get_membership_type(db, membership_type_code)
     if not mt:
         raise MembershipError("نوع عضویت یافت نشد")
@@ -418,6 +431,14 @@ def create_rule_snapshot(
     else:
         status = "pending"
 
+    # فقط conscript مبنای شروع مرخصی را نگه می‌دارد؛ بقیه همیشه dispatch
+    if msem.is_conscript(db, membership_type_code):
+        basis = (leave_start_date_basis or LEAVE_START_DISPATCH).strip()
+        if basis not in LEAVE_START_BASIS_CHOICES:
+            raise MembershipError("مبنای شروع مرخصی نامعتبر است")
+    else:
+        basis = LEAVE_START_DISPATCH
+
     rule = MembershipTypeRule(
         membership_type_code=membership_type_code,
         effective_from=effective_from,
@@ -425,6 +446,7 @@ def create_rule_snapshot(
         supports_service_deduction=bool(supports_service_deduction),
         supports_extra_service=bool(supports_extra_service),
         supports_positive_seniority=bool(supports_positive_seniority),
+        leave_start_date_basis=basis,
         status=status,
         supersedes_rule_id=prev.id if prev else None,
         created_by=created_by,
@@ -447,8 +469,15 @@ def update_scheduled_rule(
     supports_service_deduction: bool,
     supports_extra_service: bool,
     supports_positive_seniority: bool,
+    leave_start_date_basis: Optional[str] = None,
     effective_from: Optional[date] = None,
 ) -> MembershipTypeRule:
+    from models.membership_type_rule import (
+        LEAVE_START_BASIS_CHOICES,
+        LEAVE_START_DISPATCH,
+    )
+    from web.services import membership_semantics as msem
+
     rule = db.query(MembershipTypeRule).filter(MembershipTypeRule.id == rule_id).first()
     if not rule:
         raise MembershipError("Rule یافت نشد")
@@ -476,6 +505,18 @@ def update_scheduled_rule(
     rule.supports_service_deduction = bool(supports_service_deduction)
     rule.supports_extra_service = bool(supports_extra_service)
     rule.supports_positive_seniority = bool(supports_positive_seniority)
+    if msem.is_conscript(db, rule.membership_type_code):
+        basis = (
+            leave_start_date_basis
+            if leave_start_date_basis is not None
+            else rule.leave_start_date_basis
+        ) or LEAVE_START_DISPATCH
+        basis = str(basis).strip()
+        if basis not in LEAVE_START_BASIS_CHOICES:
+            raise MembershipError("مبنای شروع مرخصی نامعتبر است")
+        rule.leave_start_date_basis = basis
+    else:
+        rule.leave_start_date_basis = LEAVE_START_DISPATCH
     rule.status = "scheduled"
     db.flush()
     return rule
@@ -554,6 +595,59 @@ def delete_membership(
     db.flush()
 
 
+def backfill_seed_behavior_profiles(db: Session) -> int:
+    """
+    فقط وقتی behavior_profile خالی/NULL است برای کدهای seed ۱–۷ مقدار seed را می‌نویسد.
+    پروفایل موجود را overwrite نمی‌کند.
+    """
+    filled = 0
+    for code, profile in SEED_BEHAVIOR_BY_CODE.items():
+        mt = get_membership_type(db, code)
+        if mt is None:
+            continue
+        if mt.behavior_profile:
+            continue
+        mt.behavior_profile = profile
+        filled += 1
+    if filled:
+        db.flush()
+    return filled
+
+
+def backfill_seed_rule_effective_from(db: Session) -> int:
+    """
+    اگر تنها Rule فعال seed دیرتر از قدیمی‌ترین قرارداد همان نوع باشد،
+    effective_from را به تاریخ شروع آن قرارداد عقب می‌کشد (بدون overwrite قوانین چندنسخه‌ای).
+    """
+    fixed = 0
+    for code, *_rest in SEED_MEMBERSHIPS:
+        rules = (
+            db.query(MembershipTypeRule)
+            .filter(MembershipTypeRule.membership_type_code == code)
+            .order_by(MembershipTypeRule.effective_from.asc())
+            .all()
+        )
+        if len(rules) != 1:
+            continue
+        rule = rules[0]
+        if rule.status == "pending":
+            continue
+        min_start = (
+            db.query(func.min(Contract.start_date))
+            .filter(Contract.contract_type_code == code)
+            .scalar()
+        )
+        if min_start is None:
+            continue
+        if rule.effective_from <= min_start:
+            continue
+        rule.effective_from = min_start
+        fixed += 1
+    if fixed:
+        db.flush()
+    return fixed
+
+
 def seed_default_memberships(db: Session, *, migration_date: Optional[date] = None) -> int:
     """
     Seed هفت عضویت اولیه — فقط insert برای missing type یا missing initial rule.
@@ -623,6 +717,9 @@ def seed_default_memberships(db: Session, *, migration_date: Optional[date] = No
                 )
             )
             created += 1
+    # legacy rows with NULL profile / late effective_from
+    created += backfill_seed_behavior_profiles(db)
+    created += backfill_seed_rule_effective_from(db)
     db.flush()
     return created
 
@@ -630,9 +727,13 @@ def seed_default_memberships(db: Session, *, migration_date: Optional[date] = No
 def reconcile_seed_membership_rules(db: Session) -> int:
     """
     Insert-only safety net: missing initial Rule برای کدهای seed.
-    هیچ overwrite روی Membership/Rule موجود انجام نمی‌دهد.
+    هیچ overwrite روی Membership/Rule موجود انجام نمی‌دهد
+    (به‌جز عقب‌کشیدن effective_from تنها Rule وقتی از تاریخ قراردادها دیرتر است).
     """
-    return seed_default_memberships(db)
+    n = seed_default_memberships(db)
+    n += backfill_seed_behavior_profiles(db)
+    n += backfill_seed_rule_effective_from(db)
+    return n
 
 
 def lock_codes_with_history(db: Session) -> int:

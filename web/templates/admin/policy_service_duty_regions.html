@@ -1,0 +1,238 @@
+{% extends "base.html" %}
+{% block title %}مناطق خدمت وظیفه | سیاست کلی{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4>
+        <i class="bi bi-shield-shaded text-primary"></i>
+        مناطق خدمت وظیفه (مدت خدمت)
+    </h4>
+    <a href="/admin/policies" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-right"></i> بازگشت
+    </a>
+</div>
+
+{% if request.query_params.get('success') %}
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+    عملیات با موفقیت انجام شد.
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+{% if request.query_params.get('error') %}
+<div class="alert alert-danger alert-dismissible fade show" role="alert">
+    {{ request.query_params.get('error') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<div class="alert alert-info small">
+    نام منطقه، اثر بومی/غیربومی و مدت ماه همگی قابل تعریف و ویرایش‌اند.
+    اگر بومی اثر داشته باشد دو مدت (بومی / غیربومی) وارد کنید؛ در غیر این صورت یک مدت.
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-7">
+        <div class="card shadow-sm">
+            <div class="card-header bg-white">
+                <h6 class="mb-0">لیست مناطق</h6>
+            </div>
+            <div class="card-body table-responsive">
+                <table class="table table-bordered align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>کد</th>
+                            <th>نام</th>
+                            <th>بومی؟</th>
+                            <th>مدت (ماه)</th>
+                            <th>وضعیت</th>
+                            <th>عملیات</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for r in regions %}
+                        <tr>
+                            <td><code>{{ r.code }}</code></td>
+                            <td>{{ r.name }}</td>
+                            <td>{% if r.native_affects %}بله{% else %}خیر{% endif %}</td>
+                            <td class="small">
+                                {% if r.native_affects %}
+                                    غیربومی: {{ r.duration_months_non_native }} /
+                                    بومی: {{ r.duration_months_native }}
+                                {% else %}
+                                    {{ r.duration_months }}
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if r.is_active %}
+                                <span class="badge bg-success">فعال</span>
+                                {% else %}
+                                <span class="badge bg-secondary">غیرفعال</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-nowrap">
+                                <button type="button" class="btn btn-sm btn-outline-primary"
+                                        data-bs-toggle="collapse"
+                                        data-bs-target="#edit-{{ r.code }}">
+                                    ویرایش
+                                </button>
+                                <form method="post"
+                                      action="/admin/policies/service-duty-regions/{{ r.code }}/toggle"
+                                      class="d-inline">
+                                    <button class="btn btn-sm btn-outline-secondary" type="submit">
+                                        {% if r.is_active %}غیرفعال{% else %}فعال{% endif %}
+                                    </button>
+                                </form>
+                                <form method="post"
+                                      action="/admin/policies/service-duty-regions/{{ r.code }}/delete"
+                                      class="d-inline"
+                                      onsubmit="return confirm('حذف این منطقه؟');">
+                                    <button class="btn btn-sm btn-outline-danger" type="submit">حذف</button>
+                                </form>
+                            </td>
+                        </tr>
+                        <tr class="collapse" id="edit-{{ r.code }}">
+                            <td colspan="6">
+                                <form method="post"
+                                      action="/admin/policies/service-duty-regions/{{ r.code }}/edit"
+                                      class="row g-2">
+                                    <div class="col-md-4">
+                                        <label class="form-label small">نام</label>
+                                        <input name="name" class="form-control form-control-sm"
+                                               value="{{ r.name }}" required>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small">ترتیب</label>
+                                        <input type="number" name="sort_order"
+                                               class="form-control form-control-sm"
+                                               value="{{ r.sort_order }}">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small d-block">اثر بومی</label>
+                                        <input type="checkbox" name="native_affects" value="1"
+                                               {% if r.native_affects %}checked{% endif %}
+                                               class="form-check-input native-toggle"
+                                               data-target="edit-fields-{{ r.code }}">
+                                        <input type="hidden" name="is_active"
+                                               value="{{ '1' if r.is_active else '0' }}">
+                                    </div>
+                                    <div class="col-12" id="edit-fields-{{ r.code }}">
+                                        <div class="row g-2 duration-single"
+                                             style="{% if r.native_affects %}display:none{% endif %}">
+                                            <div class="col-md-3">
+                                                <label class="form-label small">مدت (ماه)</label>
+                                                <input type="number" name="duration_months" min="1"
+                                                       class="form-control form-control-sm"
+                                                       value="{{ r.duration_months or '' }}">
+                                            </div>
+                                        </div>
+                                        <div class="row g-2 duration-native"
+                                             style="{% if not r.native_affects %}display:none{% endif %}">
+                                            <div class="col-md-3">
+                                                <label class="form-label small">ماه غیربومی</label>
+                                                <input type="number" name="duration_months_non_native" min="1"
+                                                       class="form-control form-control-sm"
+                                                       value="{{ r.duration_months_non_native or '' }}">
+                                            </div>
+                                            <div class="col-md-3">
+                                                <label class="form-label small">ماه بومی</label>
+                                                <input type="number" name="duration_months_native" min="1"
+                                                       class="form-control form-control-sm"
+                                                       value="{{ r.duration_months_native or '' }}">
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-12">
+                                        <button class="btn btn-sm btn-success" type="submit">ذخیره</button>
+                                    </div>
+                                </form>
+                            </td>
+                        </tr>
+                    {% else %}
+                        <tr>
+                            <td colspan="6" class="text-center text-muted py-4">منطقه‌ای تعریف نشده</td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-5">
+        <div class="card shadow-sm">
+            <div class="card-header bg-white">
+                <h6 class="mb-0">افزودن منطقه</h6>
+            </div>
+            <div class="card-body">
+                <form method="post" action="/admin/policies/service-duty-regions/add" class="row g-3">
+                    <div class="col-12">
+                        <label class="form-label">نام منطقه <span class="text-danger">*</span></label>
+                        <input name="name" class="form-control" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">کد (اختیاری)</label>
+                        <input name="code" class="form-control"
+                               placeholder="مثلاً NORMAL_DUTY" pattern="[A-Za-z][A-Za-z0-9_]{1,39}">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">ترتیب</label>
+                        <input type="number" name="sort_order" class="form-control" value="0">
+                    </div>
+                    <div class="col-12">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="native_affects"
+                                   value="1" id="add_native_affects">
+                            <label class="form-check-label" for="add_native_affects">
+                                بومی / غیربومی روی مدت اثر دارد
+                            </label>
+                        </div>
+                    </div>
+                    <div class="col-md-6" id="add_single_wrap">
+                        <label class="form-label">مدت (ماه)</label>
+                        <input type="number" name="duration_months" min="1" class="form-control" value="18">
+                    </div>
+                    <div class="col-md-6 d-none" id="add_non_native_wrap">
+                        <label class="form-label">ماه غیربومی</label>
+                        <input type="number" name="duration_months_non_native" min="1" class="form-control">
+                    </div>
+                    <div class="col-md-6 d-none" id="add_native_wrap">
+                        <label class="form-label">ماه بومی</label>
+                        <input type="number" name="duration_months_native" min="1" class="form-control">
+                    </div>
+                    <div class="col-12">
+                        <button type="submit" class="btn btn-success">
+                            <i class="bi bi-plus"></i> افزودن
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    function syncAdd() {
+        const on = document.getElementById('add_native_affects').checked;
+        document.getElementById('add_single_wrap').classList.toggle('d-none', on);
+        document.getElementById('add_non_native_wrap').classList.toggle('d-none', !on);
+        document.getElementById('add_native_wrap').classList.toggle('d-none', !on);
+    }
+    document.getElementById('add_native_affects').addEventListener('change', syncAdd);
+    syncAdd();
+
+    document.querySelectorAll('.native-toggle').forEach(cb => {
+        cb.addEventListener('change', () => {
+            const root = document.getElementById(cb.dataset.target);
+            if (!root) return;
+            root.querySelectorAll('.duration-single').forEach(el => {
+                el.style.display = cb.checked ? 'none' : '';
+            });
+            root.querySelectorAll('.duration-native').forEach(el => {
+                el.style.display = cb.checked ? '' : 'none';
+            });
+        });
+    });
+})();
+</script>
+{% endblock %}

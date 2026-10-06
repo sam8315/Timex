@@ -11,6 +11,7 @@ from web.dependencies import get_db, check_password_change
 from models.user import User
 from models.contract import Contract
 from web.services.contract_file_storage import resolve_contract_file_disk
+from web.services.service_adjustment_service import list_adjustments_for_contract
 
 router = APIRouter(tags=["Contract"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
@@ -83,9 +84,10 @@ async def contract_page(
             'prorated_annual_leave': c.prorated_annual_leave,
             'prorated_sick_leave': c.prorated_sick_leave,
 
-            # کسر خدمت
+            # کسر خدمت / تعدیلات
             'service_deduction_days': c.service_deduction_days,
             'allow_service_deduction': c.allow_service_deduction,
+            'adjustments': list_adjustments_for_contract(db, c.id, active_only=True),
 
             # وضعیت
             'is_active': c.is_active,

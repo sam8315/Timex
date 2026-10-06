@@ -11,10 +11,16 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from models.membership_type_rule import MembershipTypeRule
+from models.membership_type_rule import (
+    LEAVE_START_BASIS_CHOICES,
+    LEAVE_START_BASIS_LABELS,
+    LEAVE_START_DISPATCH,
+    MembershipTypeRule,
+)
 from models.user import User
 from web.dependencies import get_db, require_admin
 from web.permissions import enforce_permission, has_permission
+from web.services import membership_semantics as msem
 from web.services.membership_retroactive_service import (
     confirm_and_recalculate,
     create_preview_request,
@@ -270,6 +276,10 @@ async def membership_type_detail(
             "deps": count_business_dependencies(db, code),
             "is_admin": True,
             "can_manage_rules": has_permission(db, user, "manage_membership_rules"),
+            "is_conscript": msem.is_conscript(db, code),
+            "leave_start_basis_choices": LEAVE_START_BASIS_CHOICES,
+            "leave_start_basis_labels": LEAVE_START_BASIS_LABELS,
+            "leave_start_default": LEAVE_START_DISPATCH,
         },
     )
 
@@ -283,6 +293,7 @@ async def add_membership_rule(
     supports_service_deduction: str = Form("off"),
     supports_extra_service: str = Form("off"),
     supports_positive_seniority: str = Form("off"),
+    leave_start_date_basis: str = Form("dispatch"),
     user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
@@ -298,6 +309,7 @@ async def add_membership_rule(
             supports_service_deduction=supports_service_deduction == "on",
             supports_extra_service=supports_extra_service == "on",
             supports_positive_seniority=supports_positive_seniority == "on",
+            leave_start_date_basis=leave_start_date_basis,
             created_by=user.user_id,
         )
         db.commit()
@@ -333,6 +345,7 @@ async def edit_membership_rule(
     supports_service_deduction: str = Form("off"),
     supports_extra_service: str = Form("off"),
     supports_positive_seniority: str = Form("off"),
+    leave_start_date_basis: str = Form("dispatch"),
     effective_from_str: str = Form(""),
     user: User = Depends(require_admin),
     db: Session = Depends(get_db),
@@ -348,6 +361,7 @@ async def edit_membership_rule(
             supports_service_deduction=supports_service_deduction == "on",
             supports_extra_service=supports_extra_service == "on",
             supports_positive_seniority=supports_positive_seniority == "on",
+            leave_start_date_basis=leave_start_date_basis,
             effective_from=eff,
         )
         db.commit()

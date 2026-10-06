@@ -106,8 +106,10 @@ from database.init_db import (  # noqa: E402
     migrate_employee_position_id,
     migrate_employee_document_types,
     migrate_membership_foundation_hardening,
+    migrate_missing_columns,
     seed_membership_types,
     seed_role_permissions,
+    seed_service_duty_regions,
 )
 from sqlalchemy import text as _sql_text
 
@@ -196,9 +198,11 @@ with test_engine.connect() as _conn:
         )
 
 Base.metadata.create_all(bind=test_engine)
+migrate_missing_columns(bind_engine=test_engine)
 migrate_employee_document_types(bind_engine=test_engine)
 migrate_membership_foundation_hardening(bind_engine=test_engine)
 seed_membership_types(bind_engine=test_engine)
+seed_service_duty_regions(bind_engine=test_engine)
 seed_role_permissions(bind_engine=test_engine)
 
 with test_engine.connect() as _conn:
