@@ -32,6 +32,7 @@ from models.employee_document_type import EmployeeDocumentType
 from models.education import Education
 from models.leave_carry_forward_request import LeaveCarryForwardRequest
 from models.leave_buyback_quota import LeaveBuybackQuota
+from models.leave_settlement_cap_period import LeaveSettlementCapPeriod
 from models import leave_glossary  # noqa: F401 — domain constants
 from models.user_permission import UserPermission, UserPermissionHistory
 from models.role_permission import RolePermission, RolePermissionHistory
@@ -56,6 +57,7 @@ __all__ = [
     'ServiceAdjustment', 'ServiceDutyRegion',
     'LeaveBalance', 'LeaveTransaction',
     'LeaveRequest', 'LeaveCarryForwardRequest', 'LeaveBuybackQuota',
+    'LeaveSettlementCapPeriod',
     'Holiday', 'DailyStatus',
     'HourlyMission', 'HourlyMissionPolicy',
     'EmployeePhone', 'EmployeeAddress', 'EmployeeAddressHistory', 'Education',

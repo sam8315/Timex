@@ -12,6 +12,10 @@ from web.services.leave_settlement.membership_change import (
 )
 from web.services.leave_settlement.year_end import resolve_storage_cap
 from web.services.leave_settlement.buyback import resolve_buyback_cap
+from web.services.leave_settlement.caps import (
+    SettlementCapOverlapError,
+    resolve_settlement_caps,
+)
 
 __all__ = [
     'MEMBERSHIP_CHANGE_MODES',
@@ -19,4 +23,6 @@ __all__ = [
     'resolve_membership_change_mode',
     'resolve_storage_cap',
     'resolve_buyback_cap',
+    'resolve_settlement_caps',
+    'SettlementCapOverlapError',
 ]

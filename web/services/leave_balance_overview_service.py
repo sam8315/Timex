@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
+import jdatetime
 from sqlalchemy.orm import Session
 
 from models.contract import Contract
@@ -126,16 +127,20 @@ def build_leave_balance_list_rows(
     contract_types_map: Dict[str, dict],
     *,
     name_resolver: Optional[Callable[[str], str]] = None,
+    hide_settled_past_years: bool = True,
 ) -> List[Dict[str, Any]]:
     """
     Build display rows for /admin/leave-balances.
 
     - Non-conscript: one row per (user, year) with AL entitlement/used/remaining.
     - Conscript: one period row per user aggregating all service years.
+    - با hide_settled_past_years: سال‌های قبل که مانده AL/CW/SL/RL صفر است پنهان می‌شوند
+      (بعد از انتقال تاریخچه رسمی به ذخیره فقط پوستهٔ صفر می‌ماند).
     """
     if not grouped_balances:
         return []
 
+    current_year = jdatetime.date.today().year
     by_user: Dict[str, List[dict]] = {}
     for (_uid, _year), row in grouped_balances.items():
         uid = row['user_id']
@@ -187,7 +192,20 @@ def build_leave_balance_list_rows(
         for row in sorted(user_rows, key=lambda r: (-int(r['year']), r['user_id'])):
             year = int(row['year'])
             snap = get_user_al_year_snapshot(db, user_id, year)
-            al_remaining = int(snap['entitlement'] or 0) - int(snap['used'] or 0)
+            # مانده واقعی سطل AL
+            al_remaining = int(round(float(snap.get('al_days') or 0)))
+            cw_bal = float(row.get('CW') or 0)
+            sl_bal = float(row.get('SL') or 0)
+            rl_bal = float(row.get('RL') or 0)
+            if (
+                hide_settled_past_years
+                and year < current_year
+                and al_remaining == 0
+                and cw_bal == 0
+                and sl_bal == 0
+                and rl_bal == 0
+            ):
+                continue
             result.append(
                 {
                     'user_id': user_id,

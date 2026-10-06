@@ -40,16 +40,24 @@ from web.services.leave_service import get_user_al_year_snapshot
 router = APIRouter(tags=["Leave"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
 
-# انواع مرخصی مجاز برای درخواست
+# انواع مرخصی (نمایش/تاریخچه)
 LEAVE_TYPES = {
     'AL': 'استحقاقی',
     'SL': 'استعلاجی',
     'RL': 'تشویقی',
-    'CW': 'ذخیره سال قبل',
+    'CW': 'ذخیره سال قبل',  # فقط نمایش درخواست‌های قدیمی
     'HL': 'ساعتی',
 }
 
-CONDITIONAL_LEAVE_TYPES = {'RL', 'CW'}
+# قابل انتخاب در فرم درخواست — ذخیره جدا نیست؛ با AL مصرف می‌شود
+REQUESTABLE_LEAVE_TYPES = {
+    'AL': 'استحقاقی',
+    'SL': 'استعلاجی',
+    'RL': 'تشویقی',
+    'HL': 'ساعتی',
+}
+
+CONDITIONAL_LEAVE_TYPES = {'RL'}
 
 STATUS_NAMES = {
     'P': '⏳ در انتظار',
@@ -181,8 +189,16 @@ def build_user_leave_page_context(db: Session, user_id: str) -> dict:
         al_remaining = al_snapshot['remaining']
         cw_days = al_snapshot['cw_days']
 
+    from web.services.leave_service import get_available_leave
+    al_available = int(
+        get_available_leave(db, user_id, current_year, 'AL').get('total') or 0
+    )
+    # برای فرم: مانده استحقاقی = AL + ذخیره (منبع را سیستم مشخص می‌کند)
+    balances_display = dict(balances)
+    balances_display['AL'] = al_available
+
     available_leave_types = {}
-    for code, name in LEAVE_TYPES.items():
+    for code, name in REQUESTABLE_LEAVE_TYPES.items():
         if code in CONDITIONAL_LEAVE_TYPES:
             if balances.get(code, 0) > 0:
                 available_leave_types[code] = name
@@ -291,11 +307,12 @@ def build_user_leave_page_context(db: Session, user_id: str) -> dict:
     return {
         'today_j': today_j.strftime('%Y/%m/%d'),
         'current_year': current_year,
-        'balances': balances,
+        'balances': balances_display,
         'al_balance': balances.get('AL', 0),
         'sl_balance': balances.get('SL', 0),
         'rl_balance': balances.get('RL', 0),
         'cw_balance': balances.get('CW', 0),
+        'al_available': al_available,
         'al_entitlement': al_entitlement,
         'al_used': al_used,
         'al_remaining': al_remaining,
@@ -377,7 +394,10 @@ async def submit_leave_request(
     db: Session = Depends(get_db),
 ):
     try:
-        if leave_type not in LEAVE_TYPES:
+        # ذخیره دیگر نوع جدا نیست؛ درخواست قدیمی CW → استحقاقی
+        if leave_type == 'CW':
+            leave_type = 'AL'
+        if leave_type not in REQUESTABLE_LEAVE_TYPES:
             raise ValueError("نوع مرخصی نامعتبر است")
         from_j = jdatetime.datetime.strptime(from_date_str.strip(), "%Y/%m/%d").date()
         to_j = jdatetime.datetime.strptime(to_date_str.strip(), "%Y/%m/%d").date()

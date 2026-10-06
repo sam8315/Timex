@@ -383,7 +383,7 @@
     <span class="leave-side-chip chip-rl"><i class="bi bi-gift"></i> تشویقی: <span class="chip-value">{{ rl_balance }}</span> روز</span>
     {% endif %}
     {% if cw_balance > 0 %}
-    <span class="leave-side-chip chip-cw"><i class="bi bi-box-seam"></i> ذخیره سال قبل: <span class="chip-value">{{ cw_balance }}</span> روز</span>
+    <span class="leave-side-chip chip-cw" title="در درخواست استحقاقی به‌صورت خودکار مصرف می‌شود"><i class="bi bi-box-seam"></i> ذخیره (داخل استحقاقی): <span class="chip-value">{{ cw_balance }}</span> روز</span>
     {% endif %}
     {% if buyback_quota is defined and buyback_quota %}
     <span class="leave-side-chip"><i class="bi bi-cash-coin"></i> سهمیه بازخرید: <span class="chip-value">{{ buyback_quota }}</span> روز</span>
@@ -417,9 +417,15 @@
                         <div class="col-12">
                             <label class="form-label fw-bold"><i class="bi bi-tag text-primary"></i> نوع مرخصی <span class="text-danger">*</span></label>
                             <select name="leave_type" class="form-select" required id="leaveType">
-                                {% for code, name in leave_types.items() %}<option value="{{ code }}" data-balance="{{ balances.get(code, 0) }}" {% if code not in ['HL'] and (code not in balances or balances.get(code, 0) <= 0) %}disabled{% endif %}>{{ name }}{% if code in ['RL', 'CW', 'AL', 'SL'] %} ({{ balances.get(code, 0) }} روز){% endif %}</option>{% endfor %}
+                                {% for code, name in leave_types.items() %}
+                                <option value="{{ code }}"
+                                        data-balance="{{ balances.get(code, 0) }}"
+                                        {% if code not in ['HL'] and (balances.get(code, 0) or 0) <= 0 %}disabled{% endif %}>
+                                    {{ name }}{% if code in ['RL', 'AL', 'SL'] %} ({{ balances.get(code, 0) }} روز){% endif %}
+                                </option>
+                                {% endfor %}
                             </select>
-                            <small class="text-muted">مرخصی ساعتی محدودیت مانده ندارد</small>
+                            <small class="text-muted">برای استحقاقی، سیستم منبع مصرف را مشخص می‌کند (ذخیره غیرقابل‌بازخرید ← سال جاری ← قابل‌بازخرید). مرخصی ساعتی محدودیت مانده ندارد.</small>
                         </div>
 
                         <div class="col-md-6"><label class="form-label fw-bold" id="fromDateLabel"><i class="bi bi-calendar-event text-success"></i> از تاریخ <span class="text-danger">*</span></label><div class="date-input-wrapper"><input type="text" name="from_date_str" id="fromDate" class="form-control form-control-lg text-center" placeholder="انتخاب تاریخ" autocomplete="off" required><button type="button" class="clear-btn" onclick="clearDate('fromDate')" title="پاک کردن"><i class="bi bi-x-circle"></i></button></div></div>

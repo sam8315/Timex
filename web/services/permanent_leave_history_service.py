@@ -20,25 +20,30 @@ from models.leave_transaction import LeaveTransaction
 from models.leave_glossary import (
     LEAVE_TYPE_AL,
     LEAVE_TYPE_CW,
-    TX_CHARGE,
+    TX_ADJUST,
+    TX_BURN,
+    TX_CASH_OUT,
+    TX_CF_IN,
     TX_CF_OUT,
+    TX_CHARGE,
     TX_DEDUCT,
+    TX_IMPORT,
+    TX_REVERSE,
     TX_USE,
 )
 from web.services.leave_entitlement_service import (
     charge_amount_for_segment,  # delegates to Pure Engine (live annual history path)
     jalali_year_bounds_g,
     resolve_annual_leave_days,
-    resolve_max_buyback,
-    resolve_max_carry_forward,
     resolve_region_code_from_service_location,
 )
 from web.services import membership_semantics as msem
+from web.services.leave_settlement.caps import resolve_settlement_caps
 from web.services.leave_service import (
     get_buyback_quota,
     get_stored_leave_balance,
+    resync_approved_leave_consumption,
     set_buyback_quota_for_year,
-    set_stored_leave_for_year,
 )
 
 HISTORY_PREFIX = "تاریخچه رسمی#"
@@ -133,18 +138,68 @@ def _adjust_balance(
         )
     ).first()
     if bal:
-        bal.balance = max(0, int(bal.balance) + delta)
-    elif delta > 0:
+        # بدون clamp: clear/reapply باید CHARGE را کامل برگرداند
+        bal.balance = int(bal.balance or 0) + int(delta)
+    elif delta != 0:
         db.add(LeaveBalance(
             user_id=user_id,
             year=year,
             leave_type=leave_type,
-            balance=delta,
+            balance=int(delta),
+        ))
+
+
+def _tx_signed_delta(tx: LeaveTransaction) -> int:
+    """اثر تراکنش روی مانده همان سطل (leave_type/year)."""
+    amount = int(tx.amount or 0)
+    t = tx.transaction_type
+    if t in (TX_CHARGE, TX_CF_IN, TX_IMPORT):
+        return amount
+    if t in (TX_USE, TX_CF_OUT, TX_DEDUCT, TX_REVERSE, TX_BURN, TX_CASH_OUT):
+        return -amount
+    if t == TX_ADJUST:
+        return amount
+    return 0
+
+
+def _rebuild_balance_from_ledger(
+    db: Session,
+    *,
+    user_id: str,
+    year: int,
+    leave_type: str,
+) -> None:
+    """بازنویسی LeaveBalance از جمع تراکنش‌های باقی‌مانده."""
+    txs = (
+        db.query(LeaveTransaction)
+        .filter(
+            LeaveTransaction.user_id == user_id,
+            LeaveTransaction.year == year,
+            LeaveTransaction.leave_type == leave_type,
+        )
+        .all()
+    )
+    total = sum(_tx_signed_delta(tx) for tx in txs)
+    bal = db.query(LeaveBalance).filter(
+        and_(
+            LeaveBalance.user_id == user_id,
+            LeaveBalance.year == year,
+            LeaveBalance.leave_type == leave_type,
+        )
+    ).first()
+    if bal:
+        bal.balance = total
+    elif total != 0:
+        db.add(LeaveBalance(
+            user_id=user_id,
+            year=year,
+            leave_type=leave_type,
+            balance=total,
         ))
 
 
 def clear_permanent_history(db: Session, contract: Contract) -> None:
-    """حذف اثر تراکنش‌های تاریخچه قبلی این قرارداد و خود تراکنش‌ها."""
+    """حذف تراکنش‌های تاریخچه این قرارداد و بازسازی مانده از دفترکل باقی‌مانده."""
     txs = (
         db.query(LeaveTransaction)
         .filter(
@@ -154,19 +209,17 @@ def clear_permanent_history(db: Session, contract: Contract) -> None:
         .order_by(LeaveTransaction.id.asc())
         .all()
     )
+    touched = {(tx.year, tx.leave_type) for tx in txs}
     for tx in txs:
-        amount = int(tx.amount or 0)
-        if tx.transaction_type == TX_CHARGE:
-            _adjust_balance(
-                db, user_id=contract.user_id, year=tx.year,
-                leave_type=tx.leave_type, delta=-amount,
-            )
-        elif tx.transaction_type in (TX_USE, TX_CF_OUT, TX_DEDUCT):
-            _adjust_balance(
-                db, user_id=contract.user_id, year=tx.year,
-                leave_type=tx.leave_type, delta=amount,
-            )
         db.delete(tx)
+    db.flush()
+    for year, leave_type in touched:
+        _rebuild_balance_from_ledger(
+            db,
+            user_id=contract.user_id,
+            year=year,
+            leave_type=leave_type,
+        )
     db.flush()
 
 
@@ -191,12 +244,9 @@ def apply_permanent_history(
         db, user_id=contract.user_id, start_date=contract.start_date, region_code=region_code
     )
     membership_code = contract.contract_type_code
-    cf_cap = resolve_max_carry_forward(db, membership_code)
-    buyback_cap = resolve_max_buyback(
-        db, membership_code, user_id=contract.user_id, region_code=region_code
-    )
 
     stored = 0
+    buybackable = 0
     applied = []
     for row in plan:
         year_j = row['year']
@@ -208,6 +258,16 @@ def apply_permanent_history(
             raise ValueError(
                 f"مصرف سال {year_j} ({used}) بیشتر از استحقاق ({entitlement}) است"
             )
+
+        year_caps = resolve_settlement_caps(
+            db,
+            membership_code,
+            region_code=region_code,
+            user_id=contract.user_id,
+            year_j=year_j,
+        )
+        cf_cap = year_caps.get('storage_cap')
+        bb_cap = year_caps.get('buyback_cap')
 
         if entitlement > 0:
             _adjust_balance(
@@ -240,6 +300,8 @@ def apply_permanent_history(
             ))
 
         unused = entitlement - used
+        carry = 0
+        year_bb = 0
         if unused > 0:
             carry = unused if cf_cap is None else min(unused, int(cf_cap))
             # خروج از AL سال گذشته
@@ -257,48 +319,92 @@ def apply_permanent_history(
                 reference_id=contract.id,
             ))
             stored += carry
+            year_bb = carry if bb_cap is None else min(carry, int(bb_cap))
+            buybackable += year_bb
 
         applied.append({
             'year': year_j,
             'entitlement': entitlement,
             'used': used,
-            'carried': (entitlement - used) if cf_cap is None else min(entitlement - used, int(cf_cap or 0)),
+            'carried': carry,
+            'buybackable': year_bb,
+            'storage_cap': cf_cap,
+            'buyback_cap': bb_cap,
         })
 
     current_year = jdatetime.date.today().year
-    cw_result = set_stored_leave_for_year(
+    # CHARGE خالص تاریخچه (نه set مطلق) تا USEهای موجود در دفترکل حفظ شوند
+    if stored > 0:
+        db.add(LeaveTransaction(
+            user_id=contract.user_id,
+            year=current_year,
+            leave_type=LEAVE_TYPE_CW,
+            amount=stored,
+            transaction_type=TX_CHARGE,
+            description=(
+                f"{HISTORY_PREFIX}تنظیم ذخیره از تاریخچه قرارداد #{contract.id}"
+            ),
+            reference_id=contract.id,
+        ))
+    db.flush()
+    _rebuild_balance_from_ledger(
         db,
         user_id=contract.user_id,
         year=current_year,
-        target_days=stored,
-        reference_id=contract.id,
-        description=f"{HISTORY_PREFIX}تنظیم ذخیره از تاریخچه قرارداد #{contract.id}",
-        commit=False,
+        leave_type=LEAVE_TYPE_CW,
     )
 
-    if buyback_cap is None:
-        bb_days = stored
-    else:
-        bb_days = min(stored, int(buyback_cap))
+    current_caps = resolve_settlement_caps(
+        db,
+        membership_code,
+        region_code=region_code,
+        user_id=contract.user_id,
+        year_j=current_year,
+    )
     bb_result = set_buyback_quota_for_year(
         db,
         user_id=contract.user_id,
         year=current_year,
-        target_days=bb_days,
+        target_days=buybackable,
         source='MANUAL',
         notes=f"{HISTORY_PREFIX}از تاریخچه قرارداد #{contract.id}",
         commit=False,
     )
+
+    # درخواست‌های تأییدشده‌ای که USEشان با پاک‌سازی دفترکل از بین رفته
+    resync = resync_approved_leave_consumption(
+        db, contract.user_id, commit=False
+    )
+    db.flush()
+
+    # هم‌ترازی نهایی مانده با دفترکل
+    years_to_rebuild = {row['year'] for row in applied} | {current_year}
+    for year_j in years_to_rebuild:
+        _rebuild_balance_from_ledger(
+            db, user_id=contract.user_id, year=year_j, leave_type=LEAVE_TYPE_AL,
+        )
+    _rebuild_balance_from_ledger(
+        db, user_id=contract.user_id, year=current_year, leave_type=LEAVE_TYPE_CW,
+    )
+    for extra_lt in ('SL', 'RL'):
+        _rebuild_balance_from_ledger(
+            db, user_id=contract.user_id, year=current_year, leave_type=extra_lt,
+        )
+    db.flush()
+
+    cw_final = get_stored_leave_balance(db, contract.user_id, current_year)
 
     if commit:
         db.commit()
 
     return {
         'years': applied,
-        'stored_cw': cw_result['new'],
+        'stored_cw': cw_final,
         'buyback': bb_result['new'],
-        'carry_forward_cap': cf_cap,
-        'buyback_cap': buyback_cap,
+        'carry_forward_cap': current_caps.get('storage_cap'),
+        'buyback_cap': current_caps.get('buyback_cap'),
+        'resynced_leave_requests': resync.get('synced') or [],
+        'history_stored_cw': stored,
     }
 
 
@@ -331,11 +437,8 @@ def preview_history_summary(
         db, user_id=user_id, start_date=start_date, region_code=region_code
     )
     membership_code = _resolve_permanent_code(db)
-    cf_cap = resolve_max_carry_forward(db, membership_code)
-    buyback_cap = resolve_max_buyback(
-        db, membership_code, user_id=user_id, region_code=region_code
-    )
     stored = 0
+    buybackable = 0
     years = []
     for row in plan:
         year_j = row['year']
@@ -343,20 +446,41 @@ def preview_history_summary(
         used = int(used_by_year.get(year_j, 0) or 0)
         used = max(0, min(used, entitlement))
         unused = entitlement - used
+        year_caps = resolve_settlement_caps(
+            db,
+            membership_code,
+            region_code=region_code,
+            user_id=user_id,
+            year_j=year_j,
+        )
+        cf_cap = year_caps.get('storage_cap')
+        bb_cap = year_caps.get('buyback_cap')
         carry = unused if cf_cap is None else min(unused, int(cf_cap))
+        year_bb = carry if bb_cap is None else min(carry, int(bb_cap))
         stored += carry
+        buybackable += year_bb
         years.append({
             'year': year_j,
             'entitlement': entitlement,
             'used': used,
             'carry': carry,
+            'buybackable': year_bb,
+            'storage_cap': cf_cap,
+            'buyback_cap': bb_cap,
         })
-    bb = stored if buyback_cap is None else min(stored, int(buyback_cap))
+    current_year = jdatetime.date.today().year
+    current_caps = resolve_settlement_caps(
+        db,
+        membership_code,
+        region_code=region_code,
+        user_id=user_id,
+        year_j=current_year,
+    )
     return {
         'years': years,
         'stored_cw': stored,
-        'buyback': bb,
-        'carry_forward_cap': cf_cap,
-        'buyback_cap': buyback_cap,
+        'buyback': buybackable,
+        'carry_forward_cap': current_caps.get('storage_cap'),
+        'buyback_cap': current_caps.get('buyback_cap'),
         'region_code': region_code,
     }

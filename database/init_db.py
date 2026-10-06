@@ -1698,6 +1698,27 @@ def create_tables() -> None:
         run_membership_dual_run_validation()
         migrate_membership_contract_fk()
         seed_role_permissions()
+        try:
+            from database.engine import SessionLocal
+            from web.services.leave_settlement.caps import (
+                seed_default_settlement_cap_periods,
+            )
+
+            _seed_db = SessionLocal()
+            try:
+                n = seed_default_settlement_cap_periods(_seed_db)
+                if n:
+                    logger.info(
+                        "Seeded leave settlement cap periods",
+                        extra={"event": "database.ready", "count": n},
+                    )
+            finally:
+                _seed_db.close()
+        except Exception:
+            logger.exception(
+                "Failed to seed leave settlement cap periods",
+                extra={"event": "database.operation_failed"},
+            )
         logger.info(
             "Database tables created/verified successfully",
             extra={"event": "database.ready"},

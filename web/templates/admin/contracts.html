@@ -143,7 +143,8 @@
             <div class="col-md-2 non-conscript-dates">
                 <label class="form-label">📅 پایان (شمسی)</label>
                 <input type="text" name="end_date_str" class="form-control jalali-date" id="add_end_date"
-                       placeholder="رسمی: خالی=۳۰ سال" autocomplete="off">
+                       placeholder="رسمی: خودکار ۳۰ سال" autocomplete="off">
+                <small class="text-muted permanent-end-hint" style="display:none;">سیستمی: شروع + ۳۰ سال</small>
             </div>
             <input type="hidden" name="annual_leave_days" value="0">
             <input type="hidden" name="sick_leave_days" value="0">
@@ -244,9 +245,11 @@
         </form>
         <small class="text-muted d-block mt-2">
             <i class="bi bi-info-circle"></i>
-            استحقاق از سیاست عضویت خوانده می‌شود؛ رسمی بدون پایان → خودکار ۳۰ سال بعد؛
+            استحقاق از سیاست عضویت خوانده می‌شود؛ پایان رسمی همیشه سیستمی (شروع + ۳۰ سال)؛
             برای وظیفه: پایان از تاریخ اعزام + پالیسی منطقه محاسبه می‌شود؛
-            بازه‌های هم‌پوشان مجاز نیست. رسمی جدید: «ثبت»؛ رسمی قدیمی: «با تاریخچه».
+            بازه‌های هم‌پوشان مجاز نیست. رسمی جدید: «ثبت»؛ رسمی قدیمی: «با تاریخچه»
+            (استحقاق استفاده‌نشده هر سال طبق سقف ذخیره همان سال به مرخصی ذخیره منتقل می‌شود —
+            <a href="/admin/policies/leave">سیاست ذخیره/بازخرید بازه‌ای</a>).
             فایل قرارداد: PDF/JPG/PNG تا ۱۰MB.
         </small>
     </div>
@@ -279,7 +282,10 @@
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">پایان (شمسی)</label>
-                            <input type="text" name="end_date_str" id="hist_end" class="form-control jalali-date" placeholder="خالی=۳۰ سال" autocomplete="off">
+                            <input type="text" name="end_date_str" id="hist_end" class="form-control" readonly
+                                   placeholder="خودکار: شروع + ۳۰ سال" autocomplete="off"
+                                   title="برای رسمی توسط سیستم محاسبه می‌شود">
+                            <small class="text-muted">سیستمی: شروع + ۳۰ سال</small>
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">فایل قرارداد</label>
@@ -288,39 +294,44 @@
                         </div>
                     </div>
                     <p class="small text-muted mb-2">
-                        استحقاق هر سال از سیاست (رسمی + منطقه خدمتی فعلی) محاسبه می‌شود.
+                        استحقاق هر سال از سیاست عضویت/منطقه محاسبه می‌شود.
+                        سقف ذخیره هر سال از
+                        <a href="/admin/policies/leave" target="_blank">سیاست ذخیره/بازخرید بر اساس بازه</a>
+                        خوانده می‌شود (حداکثر انتقال همان سال).
                         فقط سال‌های قبل از سال جاری در جدول هستند؛ استحقاق سال جاری با شارژ قرارداد ثبت می‌شود.
                     </p>
                     <div class="table-responsive" style="max-height: 360px;">
                         <table class="table table-sm table-bordered align-middle mb-0">
                             <thead class="table-light sticky-top">
                                 <tr>
-                                    <th class="text-center" style="width:20%">سال</th>
-                                    <th class="text-center" style="width:40%">استحقاق (روز)</th>
-                                    <th class="text-center" style="width:40%">مصرف (روز)</th>
+                                    <th class="text-center">سال</th>
+                                    <th class="text-center">استحقاق</th>
+                                    <th class="text-center">مصرف</th>
+                                    <th class="text-center">سقف ذخیره/سال</th>
+                                    <th class="text-center">انتقال به ذخیره</th>
                                 </tr>
                             </thead>
                             <tbody id="hist_years_body">
-                                <tr><td colspan="3" class="text-center text-muted py-3">تاریخ شروع را وارد کنید</td></tr>
+                                <tr><td colspan="5" class="text-center text-muted py-3">تاریخ شروع را وارد کنید</td></tr>
                             </tbody>
                         </table>
                     </div>
                     <div class="row g-3 mt-3">
                         <div class="col-md-4">
                             <div class="border rounded p-2 bg-light">
-                                <div class="small text-muted">مانده ذخیره محاسبه‌شده (CW)</div>
+                                <div class="small text-muted">جمع ذخیره (CW)</div>
                                 <div class="fs-5" id="hist_stored_summary">0</div>
                             </div>
                         </div>
                         <div class="col-md-4">
                             <div class="border rounded p-2 bg-light">
-                                <div class="small text-muted">قابل‌بازخرید (سقف ماده ۱۱)</div>
+                                <div class="small text-muted">قابل‌بازخرید (جمع سقف هر سال)</div>
                                 <div class="fs-5" id="hist_buyback_summary">0</div>
                             </div>
                         </div>
                         <div class="col-md-4">
                             <div class="border rounded p-2 bg-light">
-                                <div class="small text-muted">سقف انتقال / بازخرید</div>
+                                <div class="small text-muted">سیاست مؤثر</div>
                                 <div class="small" id="hist_caps_summary">—</div>
                             </div>
                         </div>
@@ -684,10 +695,15 @@
                                             </div>
                                             <div class="col-md-4">
                                                 <label class="form-label">📅 پایان (شمسی)</label>
-                                                <input type="text" name="end_date_str" class="form-control jalali-date"
+                                                <input type="text" name="end_date_str" class="form-control {% if not item.is_permanent %}jalali-date{% endif %} edit-end-date"
                                                        value="{{ item.end_j if item.end_j != 'دائمی' else '' }}"
-                                                       placeholder="رسمی: خالی=۳۰ سال" autocomplete="off"
-                                                       {% if item.is_conscript %}readonly{% endif %}>
+                                                       placeholder="{% if item.is_permanent %}سیستمی: شروع + ۳۰ سال{% else %}اختیاری{% endif %}"
+                                                       autocomplete="off"
+                                                       data-permanent="{{ '1' if item.is_permanent else '0' }}"
+                                                       {% if item.is_conscript or item.is_permanent %}readonly{% endif %}>
+                                                {% if item.is_permanent %}
+                                                <small class="text-muted">سیستمی: شروع + ۳۰ سال</small>
+                                                {% endif %}
                                             </div>
                                             <div class="col-md-3">
                                                 <label class="form-label">🏖️ استحقاقی (روز)</label>
@@ -834,8 +850,8 @@
                                                 <i class="bi bi-clock-history"></i> تاریخچه مرخصی (سال‌های قبل)
                                             </summary>
                                             <p class="small text-muted mb-2 mt-2">
-                                                مصرف هر سال را ویرایش کنید؛ استحقاق از سیاست محاسبه می‌شود.
-                                                ذخیره و قابل‌بازخرید از همین تاریخچه روی سال جاری تنظیم می‌شود.
+                                                مصرف هر سال را ویرایش کنید؛ استحقاق و سقف ذخیره هر سال از سیاست محاسبه می‌شود.
+                                                جمع ذخیره و قابل‌بازخرید (سقف ذخیره/بازخرید هر سال طبق سیاست بازه‌ای) روی سال جاری تنظیم می‌شود.
                                             </p>
                                             <div class="table-responsive" style="max-height: 220px;">
                                                 <table class="table table-sm table-bordered align-middle mb-0">
@@ -844,13 +860,15 @@
                                                             <th class="text-center">سال</th>
                                                             <th class="text-center">استحقاق</th>
                                                             <th class="text-center">مصرف</th>
+                                                            <th class="text-center">سقف ذخیره/سال</th>
+                                                            <th class="text-center">انتقال</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody class="edit-hist-years"></tbody>
                                                 </table>
                                             </div>
                                             <div class="row g-2 mt-2 small">
-                                                <div class="col-md-4">ذخیره محاسبه‌شده: <strong class="edit-hist-cw">—</strong></div>
+                                                <div class="col-md-4">جمع ذخیره: <strong class="edit-hist-cw">—</strong></div>
                                                 <div class="col-md-4">قابل‌بازخرید: <strong class="edit-hist-bb">—</strong></div>
                                                 <div class="col-md-4 edit-hist-caps text-muted">—</div>
                                             </div>
@@ -1122,6 +1140,37 @@ async function refreshComputedEnd() {
     }
 }
 
+/** افزودن سال به تاریخ شمسی YYYY/MM/DD (بدون وابستگی به کتابخانه). */
+function addJalaliYears(dateStr, years) {
+    const m = String(dateStr || '').trim().match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
+    if (!m) return '';
+    const y = parseInt(m[1], 10) + years;
+    const mo = String(parseInt(m[2], 10)).padStart(2, '0');
+    const d = String(parseInt(m[3], 10)).padStart(2, '0');
+    return `${y}/${mo}/${d}`;
+}
+
+function syncPermanentEndFromStart(startEl, endEl) {
+    if (!startEl || !endEl) return;
+    const computed = addJalaliYears(startEl.value, 30);
+    if (computed) endEl.value = computed;
+}
+
+function setPermanentEndMode(endEl, enabled) {
+    if (!endEl) return;
+    endEl.readOnly = !!enabled;
+    if (enabled) {
+        endEl.classList.remove('jalali-date');
+        endEl.title = 'برای رسمی توسط سیستم محاسبه می‌شود';
+        endEl.placeholder = 'سیستمی: شروع + ۳۰ سال';
+    } else {
+        endEl.classList.add('jalali-date');
+        endEl.title = '';
+        endEl.placeholder = 'اختیاری';
+        endEl.readOnly = false;
+    }
+}
+
 function toggleLeaveFields() {
     const typeSelect = document.getElementById('add_type');
     if (!typeSelect) return;
@@ -1141,7 +1190,13 @@ function toggleLeaveFields() {
     document.querySelectorAll('.conscript-fields').forEach(el => {
         el.style.display = isConscript ? 'block' : 'none';
     });
+    document.querySelectorAll('.permanent-end-hint').forEach(el => {
+        el.style.display = isPermanent ? 'inline' : 'none';
+    });
     const startEl = document.getElementById('add_start_date');
+    const endEl = document.getElementById('add_end_date');
+    setPermanentEndMode(endEl, isPermanent);
+    if (isPermanent) syncPermanentEndFromStart(startEl, endEl);
     if (startEl) {
         startEl.required = !isConscript;
     }
@@ -1166,11 +1221,29 @@ document.addEventListener('DOMContentLoaded', () => {
         el.addEventListener('change', refreshComputedEnd);
         el.addEventListener('blur', refreshComputedEnd);
     });
+    const addStart = document.getElementById('add_start_date');
+    if (addStart) {
+        const syncAddEnd = () => {
+            const typeSelect = document.getElementById('add_type');
+            if (!typeSelect || membershipProfiles[typeSelect.value] !== 'permanent') return;
+            syncPermanentEndFromStart(addStart, document.getElementById('add_end_date'));
+        };
+        addStart.addEventListener('change', syncAddEnd);
+        addStart.addEventListener('blur', syncAddEnd);
+    }
     const addForm = document.getElementById('addContractForm');
     if (addForm) {
         addForm.addEventListener('submit', () => {
             const typeSelect = document.getElementById('add_type');
-            if (!typeSelect || membershipProfiles[typeSelect.value] !== 'conscript') return;
+            if (!typeSelect) return;
+            if (membershipProfiles[typeSelect.value] === 'permanent') {
+                syncPermanentEndFromStart(
+                    document.getElementById('add_start_date'),
+                    document.getElementById('add_end_date')
+                );
+                return;
+            }
+            if (membershipProfiles[typeSelect.value] !== 'conscript') return;
             const dispatch = document.getElementById('add_dispatch');
             const startEl = document.getElementById('add_start_date');
             if (dispatch && startEl && dispatch.value) {
@@ -1178,6 +1251,16 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+    // ویرایش: پایان رسمی همیشه از شروع + ۳۰
+    document.querySelectorAll('form[action*="/edit"]').forEach(form => {
+        const endEl = form.querySelector('.edit-end-date');
+        const startEl = form.querySelector('input[name="start_date_str"]');
+        if (!endEl || endEl.dataset.permanent !== '1' || !startEl) return;
+        const sync = () => syncPermanentEndFromStart(startEl, endEl);
+        startEl.addEventListener('change', sync);
+        startEl.addEventListener('blur', sync);
+        form.addEventListener('submit', sync);
+    });
     toggleLeaveFields();
 });
 
@@ -1185,20 +1268,33 @@ function fmtCap(v) {
     return (v === null || v === undefined) ? 'نامحدود' : String(v);
 }
 
+function yearCarryAmount(row, used) {
+    const ent = Number(row.entitlement) || 0;
+    const u = Math.max(0, Math.min(Number(used) || 0, ent));
+    const unused = ent - u;
+    const cfCap = row.storage_cap;
+    if (cfCap === null || cfCap === undefined) return unused;
+    return Math.min(unused, Number(cfCap));
+}
+
 function renderHistoryRows(tbody, years, usedMap) {
     tbody.innerHTML = '';
     if (!years || !years.length) {
-        tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-3">سال گذشته‌ای برای تاریخچه نیست (شروع از سال جاری)</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">سال گذشته‌ای برای تاریخچه نیست (شروع از سال جاری)</td></tr>';
         return;
     }
     years.forEach(row => {
         const used = (usedMap && usedMap[row.year] != null) ? usedMap[row.year] : (row.used || 0);
+        const carry = yearCarryAmount(row, used);
         const tr = document.createElement('tr');
+        tr.dataset.year = String(row.year);
         tr.innerHTML =
             `<td class="text-center">${row.year}</td>` +
             `<td class="text-center"><span class="ent-val">${row.entitlement}</span></td>` +
             `<td class="text-center"><input type="number" class="form-control form-control-sm text-center hist-used-input" ` +
-            `name="used_${row.year}" min="0" max="${row.entitlement}" value="${used}"></td>`;
+            `name="used_${row.year}" min="0" max="${row.entitlement}" value="${used}"></td>` +
+            `<td class="text-center text-muted hist-storage-cap">${fmtCap(row.storage_cap)}</td>` +
+            `<td class="text-center fw-semibold hist-carry-val">${carry}</td>`;
         tbody.appendChild(tr);
     });
 }
@@ -1222,8 +1318,9 @@ function updateSummaryEls(summary, storedEl, buybackEl, capsEl) {
     if (buybackEl) buybackEl.textContent = summary.buyback;
     if (capsEl) {
         capsEl.textContent =
-            `انتقال: ${fmtCap(summary.carry_forward_cap)} | بازخرید: ${fmtCap(summary.buyback_cap)}` +
-            (summary.region_code ? ` | منطقه: ${summary.region_code}` : '');
+            `جمع قابل‌بازخرید از سال‌ها: ${summary.buyback}` +
+            (summary.region_code ? ` | منطقه: ${summary.region_code}` : '') +
+            ' | سقف ذخیره/بازخرید در هر ردیف سال';
     }
 }
 
@@ -1236,18 +1333,35 @@ function collectUsedFromTbody(tbody) {
     return used;
 }
 
-function recomputeClientSummary(years, usedMap, cfCap, bbCap) {
+function yearBuybackAmount(row, carry) {
+    const cap = row.buyback_cap;
+    if (cap === null || cap === undefined) return carry;
+    return Math.min(carry, Number(cap));
+}
+
+function recomputeClientSummary(years, usedMap, bbCap) {
     let stored = 0;
+    let buyback = 0;
     (years || []).forEach(row => {
         const ent = Number(row.entitlement) || 0;
-        let used = Number(usedMap[row.year] || 0);
+        let used = Number(usedMap[row.year] != null ? usedMap[row.year] : (usedMap[String(row.year)] || 0));
         used = Math.max(0, Math.min(used, ent));
-        const unused = ent - used;
-        const carry = (cfCap === null || cfCap === undefined) ? unused : Math.min(unused, Number(cfCap));
+        const carry = yearCarryAmount(row, used);
+        row.carry = carry;
         stored += carry;
+        buyback += yearBuybackAmount(row, carry);
     });
-    const bb = (bbCap === null || bbCap === undefined) ? stored : Math.min(stored, Number(bbCap));
-    return { stored_cw: stored, buyback: bb, carry_forward_cap: cfCap, buyback_cap: bbCap };
+    return { stored_cw: stored, buyback: buyback, buyback_cap: bbCap };
+}
+
+function refreshCarryCells(tbody, years, usedMap) {
+    (years || []).forEach(row => {
+        const used = usedMap[row.year] != null ? usedMap[row.year] : 0;
+        const tr = tbody.querySelector(`tr[data-year="${row.year}"]`);
+        if (!tr) return;
+        const cell = tr.querySelector('.hist-carry-val');
+        if (cell) cell.textContent = String(yearCarryAmount(row, used));
+    });
 }
 
 async function loadAddHistoryTable() {
@@ -1255,21 +1369,24 @@ async function loadAddHistoryTable() {
     const startStr = document.getElementById('hist_start').value.trim();
     const tbody = document.getElementById('hist_years_body');
     if (!userId || !startStr || startStr.length < 8) {
-        tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-3">کد پرسنلی و تاریخ شروع را وارد کنید</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">کد پرسنلی و تاریخ شروع را وارد کنید</td></tr>';
         return;
     }
     try {
         const summary = await fetchHistoryPlan(userId, startStr, null);
         window._histPlanCache = summary;
         renderHistoryRows(tbody, summary.years, null);
+        const used = collectUsedFromTbody(tbody);
+        const recomputed = recomputeClientSummary(summary.years, used, summary.buyback_cap);
+        recomputed.region_code = summary.region_code;
         updateSummaryEls(
-            summary,
+            recomputed,
             document.getElementById('hist_stored_summary'),
             document.getElementById('hist_buyback_summary'),
             document.getElementById('hist_caps_summary')
         );
     } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="3" class="text-center text-danger py-3">${e.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger py-3">${e.message}</td></tr>`;
     }
 }
 
@@ -1293,8 +1410,7 @@ async function loadEditHistoryBlock(block) {
         block._planCache = summary;
         renderHistoryRows(tbody, summary.years, usedMap);
         const recomputed = recomputeClientSummary(
-            summary.years, collectUsedFromTbody(tbody),
-            summary.carry_forward_cap, summary.buyback_cap
+            summary.years, collectUsedFromTbody(tbody), summary.buyback_cap
         );
         recomputed.region_code = summary.region_code;
         updateSummaryEls(
@@ -1308,7 +1424,7 @@ async function loadEditHistoryBlock(block) {
         if (cwInp) cwInp.value = recomputed.stored_cw;
         if (bbInp) bbInp.value = recomputed.buyback;
     } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="3" class="text-center text-danger">${e.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger">${e.message}</td></tr>`;
     }
 }
 
@@ -1322,10 +1438,12 @@ document.addEventListener('DOMContentLoaded', function() {
             const selectedUid = (contractUserId && contractUserId.value) ||
                 (mainForm.querySelector('input[name="user_id"]') || {}).value || '';
             document.getElementById('hist_user_id').value = selectedUid;
-            document.getElementById('hist_start').value =
-                mainForm.querySelector('input[name="start_date_str"]').value;
-            document.getElementById('hist_end').value =
-                (mainForm.querySelector('input[name="end_date_str"]') || {}).value || '';
+            const startVal = mainForm.querySelector('input[name="start_date_str"]').value;
+            document.getElementById('hist_start').value = startVal;
+            syncPermanentEndFromStart(
+                document.getElementById('hist_start'),
+                document.getElementById('hist_end')
+            );
             const modal = new bootstrap.Modal(document.getElementById('permanentHistoryModal'));
             modal.show();
             loadAddHistoryTable();
@@ -1337,16 +1455,30 @@ document.addEventListener('DOMContentLoaded', function() {
         if (el) el.addEventListener('change', loadAddHistoryTable);
         if (el) el.addEventListener('blur', loadAddHistoryTable);
     });
+    const histStart = document.getElementById('hist_start');
+    if (histStart) {
+        const syncHistEnd = () => syncPermanentEndFromStart(
+            histStart, document.getElementById('hist_end')
+        );
+        histStart.addEventListener('change', syncHistEnd);
+        histStart.addEventListener('blur', syncHistEnd);
+    }
+    document.getElementById('permanentHistoryForm')?.addEventListener('submit', () => {
+        syncPermanentEndFromStart(
+            document.getElementById('hist_start'),
+            document.getElementById('hist_end')
+        );
+    });
 
     document.getElementById('hist_years_body')?.addEventListener('input', function(e) {
         if (!e.target.classList.contains('hist-used-input')) return;
         const cache = window._histPlanCache;
         if (!cache) return;
-        const used = collectUsedFromTbody(document.getElementById('hist_years_body'));
-        const recomputed = recomputeClientSummary(
-            cache.years, used, cache.carry_forward_cap, cache.buyback_cap
-        );
+        const tbody = document.getElementById('hist_years_body');
+        const used = collectUsedFromTbody(tbody);
+        const recomputed = recomputeClientSummary(cache.years, used, cache.buyback_cap);
         recomputed.region_code = cache.region_code;
+        refreshCarryCells(tbody, cache.years, used);
         updateSummaryEls(
             recomputed,
             document.getElementById('hist_stored_summary'),
@@ -1370,11 +1502,11 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!e.target.classList.contains('hist-used-input')) return;
             const cache = block._planCache;
             if (!cache) return;
-            const used = collectUsedFromTbody(block.querySelector('.edit-hist-years'));
-            const recomputed = recomputeClientSummary(
-                cache.years, used, cache.carry_forward_cap, cache.buyback_cap
-            );
+            const tbody = block.querySelector('.edit-hist-years');
+            const used = collectUsedFromTbody(tbody);
+            const recomputed = recomputeClientSummary(cache.years, used, cache.buyback_cap);
             recomputed.region_code = cache.region_code;
+            refreshCarryCells(tbody, cache.years, used);
             updateSummaryEls(
                 recomputed,
                 block.querySelector('.edit-hist-cw'),

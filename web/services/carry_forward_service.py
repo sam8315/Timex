@@ -255,13 +255,15 @@ def calculate_leave_ceiling(year: int, employment_type: str, grade: int = 1) -> 
 # 🆕 توابع کمکی برای calculate_carry_forward_limit
 # ============================================
 
-def _get_contract_limit_days(contracts: list, year_start_g, year_end_g, db=None) -> tuple:
+def _get_contract_limit_days(
+    contracts: list, year_start_g, year_end_g, db=None, year_j: int | None = None
+) -> tuple:
     """
     محاسبه روزهای کارکرد و سقف پایه از لیست قراردادها (+ سیاست در صورت وجود).
     Returns: (total_worked_days, base_limit, last_contract_type)
     base_limit=None یعنی بدون سقف سیاستی.
     """
-    from web.services.leave_entitlement_service import resolve_max_carry_forward
+    from web.services.leave_settlement import resolve_storage_cap
 
     total_worked_days = 0
     base_limit = 0
@@ -270,7 +272,9 @@ def _get_contract_limit_days(contracts: list, year_start_g, year_end_g, db=None)
 
     for contract in contracts:
         if db is not None:
-            policy_cap = resolve_max_carry_forward(db, contract.contract_type_code)
+            policy_cap = resolve_storage_cap(
+                db, contract.contract_type_code, year_j=year_j
+            )
             if policy_cap is None:
                 unlimited = True
                 type_limit = None
@@ -334,11 +338,11 @@ def calculate_carry_forward_limit(db: Session, user_id: str, from_year: int) -> 
 
         if _was_employee_active_in_year(db, user_id, from_year):
             # ✅ کارمند فعال بوده ولی قرارداد ثبت نشده
-            from web.services.leave_entitlement_service import resolve_max_carry_forward
+            from web.services.leave_settlement import resolve_storage_cap
             emp_code = '1' if employment_type == 'PERMANENT' else (
                 '2' if employment_type == 'CONSCRIPT' else '4'
             )
-            policy_cap = resolve_max_carry_forward(db, emp_code)
+            policy_cap = resolve_storage_cap(db, emp_code, year_j=from_year)
             return {
                 'max_days': policy_cap if policy_cap is not None else year_days,
                 'base_limit': policy_cap,
@@ -368,7 +372,7 @@ def calculate_carry_forward_limit(db: Session, user_id: str, from_year: int) -> 
 
     # محاسبه روزهای کارکرد و سقف پایه
     total_worked_days, base_limit, last_contract_type = _get_contract_limit_days(
-        contracts, year_start_g, year_end_g, db=db
+        contracts, year_start_g, year_end_g, db=db, year_j=from_year
     )
 
     # اگر در سال مورد نظر کارکردی نبود
@@ -538,13 +542,13 @@ def user_chooses_use_leave(db, user_id: str, leave_type: str = 'AL', year: int =
         remaining_days = balance.balance
 
         employee = db.query(Employee).filter(Employee.user_id == user_id).first()
-        from web.services.leave_entitlement_service import resolve_max_carry_forward
+        from web.services.leave_settlement import resolve_storage_cap
         emp_code = '1' if contract_info['employment_type'] == 'PERMANENT' else (
             '2' if contract_info['employment_type'] == 'CONSCRIPT' else '4'
         )
         if employee and getattr(employee, 'department', None):
             emp_code = str(employee.department)
-        policy_cap = resolve_max_carry_forward(db, emp_code)
+        policy_cap = resolve_storage_cap(db, emp_code, year_j=from_year)
 
         if policy_cap is None:
             max_days = remaining_days

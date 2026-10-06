@@ -2,6 +2,8 @@
 Admin panel for Global Policy Management (سیاست کلی)
 Only super_admin can access these pages.
 """
+from datetime import date
+
 from fastapi import APIRouter, Request, Depends, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -204,135 +206,21 @@ async def admin_policies_leave(
     if not has_permission(db, user, 'manage_users'):
         return RedirectResponse(url="/admin/", status_code=302)
 
-    policy = _get_leave_policy(db)
-
-    global_cf_pv = _get_param(db, policy.id, 'max_carry_forward')
-    try:
-        global_cf = int(float(global_cf_pv.parameter_value)) if global_cf_pv else 9
-    except (TypeError, ValueError):
-        global_cf = 9
-    bb_pv = _get_param(db, policy.id, 'max_buyback')
-    try:
-        global_bb = int(float(bb_pv.parameter_value)) if bb_pv else 15
-    except (TypeError, ValueError):
-        global_bb = 15
-    method_pv = _get_param(db, policy.id, 'region_change_method')
-
-    dept_types = _dept_types(db)
-
-    # سقف انتقال به‌ازای هر گروه (خالی/none = بدون محدودیت)
-    carry_rows = []
-    for code, name in dept_types:
-        cf_pv = _get_param(db, policy.id, f'carry_forward_dept_{code}')
-        if cf_pv is not None and cf_pv.parameter_value is not None:
-            raw = str(cf_pv.parameter_value).strip().lower()
-            if raw in ('', 'none', 'null', '-1', 'unlimited'):
-                limit_display = ''
-            else:
-                try:
-                    limit_display = str(int(float(cf_pv.parameter_value)))
-                except (TypeError, ValueError):
-                    limit_display = ''
-        else:
-            limit_display = str(global_cf)
-        carry_rows.append({'code': code, 'name': name, 'limit': limit_display})
-
-    # بازخرید غیررسمی (بدون ردیف رسمی — رسمی در کارت ماده ۱۱)
-    buyback_rows = []
-    for code, name in dept_types:
-        if code == '1':
-            continue
-        dept_pv = _get_param(db, policy.id, f'buyback_dept_{code}')
-        if dept_pv is not None and dept_pv.parameter_value is not None:
-            raw = str(dept_pv.parameter_value).strip().lower()
-            if raw in ('', 'none', 'null', '-1', 'unlimited'):
-                limit_display = ''
-            else:
-                try:
-                    limit_display = str(int(float(dept_pv.parameter_value)))
-                except (TypeError, ValueError):
-                    limit_display = ''
-        else:
-            limit_display = ''
-        buyback_rows.append({
-            'code': code,
-            'name': name,
-            'limit': limit_display,
-        })
-
-    # سقف بازخرید رسمی وقتی «اعمال منطقه» خاموش است
-    permanent_bb_pv = _get_param(db, policy.id, 'buyback_dept_1')
-    if permanent_bb_pv is not None and permanent_bb_pv.parameter_value is not None:
-        raw = str(permanent_bb_pv.parameter_value).strip().lower()
-        if raw in ('', 'none', 'null', '-1', 'unlimited'):
-            permanent_buyback_fallback = ''
-        else:
-            try:
-                permanent_buyback_fallback = str(int(float(permanent_bb_pv.parameter_value)))
-            except (TypeError, ValueError):
-                permanent_buyback_fallback = str(global_bb)
-    else:
-        permanent_buyback_fallback = str(global_bb)
-
-    permanent_region_applies_pv = _get_param(db, policy.id, 'region_applies_dept_1')
-    permanent_uses_article11 = (
-        permanent_region_applies_pv is None
-        or permanent_region_applies_pv.parameter_value not in ('false', '0', 'off', '')
+    from web.services.leave_entitlement_service import ARTICLE11_REGION_DISPLAY_NAMES
+    from web.services.leave_settlement.caps import (
+        list_periods,
+        seed_default_settlement_cap_periods,
     )
-
-    # ماده ۱۱: سقف بازخرید به‌ازای منطقه (از ۱۳۹۹) — چهار منطقه
-    from web.services.leave_entitlement_service import (
-        ARTICLE11_REGION_DISPLAY_NAMES,
-        DEFAULT_BUYBACK_BY_REGION,
-    )
-    regions = (
-        db.query(Region)
-        .filter(Region.is_active == True)  # noqa: E712
-        .order_by(Region.sort_order, Region.code)
-        .all()
-    )
-    buyback_region_rows = []
-    for region in regions:
-        if region.code == 'GRADE_1':
-            continue  # دیگر استفاده نمی‌شود
-        pv = _get_param(db, policy.id, 'buyback_cap', region_code=region.code)
-        if pv is not None and pv.parameter_value is not None:
-            try:
-                limit_display = str(int(float(pv.parameter_value)))
-            except (TypeError, ValueError):
-                limit_display = str(DEFAULT_BUYBACK_BY_REGION.get(region.code, 15))
-        else:
-            limit_display = str(DEFAULT_BUYBACK_BY_REGION.get(region.code, 15))
-        display_name = ARTICLE11_REGION_DISPLAY_NAMES.get(region.code, region.name)
-        buyback_region_rows.append({
-            'code': region.code,
-            'name': display_name,
-            'limit': limit_display,
-        })
-
-    def _era_display(key: str, default: str) -> str:
-        pv = _get_param(db, policy.id, key)
-        if pv is None or pv.parameter_value is None:
-            return default
-        raw = str(pv.parameter_value).strip()
-        if raw.lower() in ('none', 'null', '-1', 'unlimited'):
-            return ''
-        return raw
-
-    buyback_eras = {
-        'pre_1390_cap': _era_display('buyback_era_pre_1390_cap', ''),
-        'era_1390_1398_cap': _era_display('buyback_era_1390_1398_cap', '15'),
-        'grade4_from': _era_display('buyback_era_grade4_from', '1391/07/15'),
-        'grade4_cap': _era_display('buyback_era_grade4_cap', '25'),
-        'modern_from_year': _era_display('buyback_era_modern_from_year', '1399'),
-    }
-
-    # annual_leave_base از Membership Rule (SoT، فقط نمایش)؛ region_applies در Policy
-    # PolicyValue annual_leave_dept_* آینه سازگاری است — اینجا ویرایش نمی‌شود.
     from web.services.membership_service import resolve_annual_leave_base
     from web.services.annual_leave_policy_authority import (
         audit_annual_policy_conflicts,
     )
+
+    policy = _get_leave_policy(db)
+    seed_default_settlement_cap_periods(db, created_by=user.user_id)
+    method_pv = _get_param(db, policy.id, 'region_change_method')
+    dept_types = _dept_types(db)
+
     employment_rows = []
     conflict_by_code = {
         c.membership_code: c for c in audit_annual_policy_conflicts(db)
@@ -349,19 +237,56 @@ async def admin_policies_leave(
             'mirror_conflict': conflict.detail if conflict else None,
         })
 
+    def _jfmt(d):
+        if d is None:
+            return ''
+        return jdatetime.date.fromgregorian(date=d).strftime('%Y/%m/%d')
+
+    regions = (
+        db.query(Region)
+        .filter(Region.is_active == True)  # noqa: E712
+        .order_by(Region.sort_order, Region.code)
+        .all()
+    )
+    region_name_by_code = {
+        r.code: ARTICLE11_REGION_DISPLAY_NAMES.get(r.code, r.name)
+        for r in regions
+        if r.code != 'GRADE_1'
+    }
+    settlement_periods = []
+    for p in list_periods(db):
+        settlement_periods.append({
+            'id': p.id,
+            'membership_code': p.membership_code,
+            'membership_name': _dept_types_dict(db).get(
+                p.membership_code, p.membership_code
+            ),
+            'region_code': p.region_code or '',
+            'region_name': (
+                region_name_by_code.get(p.region_code, p.region_code)
+                if p.region_code
+                else '—'
+            ),
+            'effective_from_j': _jfmt(p.effective_from),
+            'effective_to_j': _jfmt(p.effective_to),
+            'storage_cap': '' if p.storage_cap is None else str(p.storage_cap),
+            'buyback_cap': '' if p.buyback_cap is None else str(p.buyback_cap),
+        })
+    settlement_region_options = [
+        {'code': r.code, 'name': region_name_by_code.get(r.code, r.name)}
+        for r in regions
+        if r.code != 'GRADE_1'
+    ]
+
     return templates.TemplateResponse(request, "admin/policy_leave.html", {
         "user": user,
         "is_admin": True,
         "is_super_admin": True,
-        "carry_rows": carry_rows,
-        "buyback_rows": buyback_rows,
-        "buyback_region_rows": buyback_region_rows,
-        "buyback_eras": buyback_eras,
-        "buyback_limit": bb_pv.parameter_value if bb_pv else '15',
-        "permanent_buyback_fallback": permanent_buyback_fallback,
-        "permanent_uses_article11": permanent_uses_article11,
         "pro_rata_method": (method_pv.parameter_value != 'full_year') if method_pv else True,
         "employment_rows": employment_rows,
+        "settlement_periods": settlement_periods,
+        "settlement_memberships": dept_types,
+        "settlement_regions": settlement_region_options,
     })
 
 
@@ -542,6 +467,155 @@ async def admin_policies_buyback_permanent_save(
     )
 
 
+@router.post("/admin/policies/settlement-caps/add")
+async def admin_policies_settlement_caps_add(
+    request: Request,
+    membership_code: str = Form(...),
+    region_code: str = Form(""),
+    effective_from_j: str = Form(...),
+    effective_to_j: str = Form(""),
+    storage_cap: str = Form(""),
+    buyback_cap: str = Form(""),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_super_admin),
+):
+    """افزودن بازهٔ سقف ذخیره/بازخرید تاریخ‌دار."""
+    if not has_permission(db, user, 'manage_users'):
+        return RedirectResponse(url="/admin/", status_code=302)
+
+    from urllib.parse import quote
+
+    from web.services.leave_settlement.caps import (
+        SettlementCapOverlapError,
+        create_period,
+        parse_jalali_date,
+        parse_optional_cap,
+    )
+
+    referer = request.headers.get("referer", "/admin/policies/leave")
+    try:
+        from_g = parse_jalali_date(effective_from_j)
+        if from_g is None:
+            raise ValueError("تاریخ شروع الزامی است")
+        to_g = parse_jalali_date(effective_to_j) if (effective_to_j or "").strip() else None
+        create_period(
+            db,
+            membership_code=membership_code.strip(),
+            region_code=(region_code or "").strip() or None,
+            effective_from=from_g,
+            effective_to=to_g,
+            storage_cap=parse_optional_cap(storage_cap),
+            buyback_cap=parse_optional_cap(buyback_cap),
+            created_by=user.user_id,
+        )
+    except SettlementCapOverlapError as exc:
+        return RedirectResponse(
+            url=build_redirect_url(referer, "error", quote(str(exc))),
+            status_code=302,
+        )
+    except (ValueError, TypeError) as exc:
+        return RedirectResponse(
+            url=build_redirect_url(referer, "error", quote(str(exc))),
+            status_code=302,
+        )
+    return RedirectResponse(
+        url=build_redirect_url(referer, "success", "saved"),
+        status_code=302,
+    )
+
+
+@router.post("/admin/policies/settlement-caps/{period_id}/update")
+async def admin_policies_settlement_caps_update(
+    period_id: int,
+    request: Request,
+    membership_code: str = Form(...),
+    region_code: str = Form(""),
+    effective_from_j: str = Form(...),
+    effective_to_j: str = Form(""),
+    storage_cap: str = Form(""),
+    buyback_cap: str = Form(""),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_super_admin),
+):
+    """ویرایش بازهٔ سقف ذخیره/بازخرید."""
+    if not has_permission(db, user, 'manage_users'):
+        return RedirectResponse(url="/admin/", status_code=302)
+
+    from urllib.parse import quote
+
+    from web.services.leave_settlement.caps import (
+        SettlementCapOverlapError,
+        parse_jalali_date,
+        parse_optional_cap,
+        update_period,
+    )
+
+    referer = request.headers.get("referer", "/admin/policies/leave")
+    try:
+        from_g = parse_jalali_date(effective_from_j)
+        if from_g is None:
+            raise ValueError("تاریخ شروع الزامی است")
+        to_raw = (effective_to_j or "").strip()
+        to_g = parse_jalali_date(to_raw) if to_raw else None
+        update_period(
+            db,
+            period_id,
+            membership_code=membership_code.strip(),
+            region_code=(region_code or "").strip(),
+            effective_from=from_g,
+            effective_to=to_g,
+            clear_effective_to=not to_raw,
+            storage_cap=parse_optional_cap(storage_cap),
+            buyback_cap=parse_optional_cap(buyback_cap),
+            set_region_code=True,
+            set_storage_cap=True,
+            set_buyback_cap=True,
+        )
+    except SettlementCapOverlapError as exc:
+        return RedirectResponse(
+            url=build_redirect_url(referer, "error", quote(str(exc))),
+            status_code=302,
+        )
+    except (ValueError, TypeError) as exc:
+        return RedirectResponse(
+            url=build_redirect_url(referer, "error", quote(str(exc))),
+            status_code=302,
+        )
+    return RedirectResponse(
+        url=build_redirect_url(referer, "success", "saved"),
+        status_code=302,
+    )
+
+
+@router.post("/admin/policies/settlement-caps/{period_id}/delete")
+async def admin_policies_settlement_caps_delete(
+    period_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_super_admin),
+):
+    """حذف بازهٔ سقف ذخیره/بازخرید."""
+    if not has_permission(db, user, 'manage_users'):
+        return RedirectResponse(url="/admin/", status_code=302)
+
+    from urllib.parse import quote
+
+    from web.services.leave_settlement.caps import delete_period
+
+    referer = request.headers.get("referer", "/admin/policies/leave")
+    try:
+        delete_period(db, period_id)
+    except ValueError as exc:
+        return RedirectResponse(
+            url=build_redirect_url(referer, "error", quote(str(exc))),
+            status_code=302,
+        )
+    return RedirectResponse(
+        url=build_redirect_url(referer, "success", "saved"),
+        status_code=302,
+    )
+
+
 @router.post("/admin/policies/buyback-regions/save")
 async def admin_policies_buyback_regions_save(
     request: Request,
@@ -641,10 +715,11 @@ async def admin_policies_buyback_eras_save(
 @router.post("/admin/policies/employment/save")
 async def admin_policies_employment_save(
     request: Request,
+    pro_rata_method: str = Form("true"),
     db: Session = Depends(get_db),
     user: User = Depends(require_super_admin)
 ):
-    """Save region-applicability flags only; annual_leave_base owned by Membership Rules."""
+    """Save region-applicability flags + region-change method; annual_leave_base from Rules."""
     if not has_permission(db, user, 'manage_users'):
         return RedirectResponse(url="/admin/", status_code=302)
 
@@ -656,6 +731,12 @@ async def admin_policies_employment_save(
         _set_param(db, policy, f'region_applies_dept_{code}', applies,
                    notes=f'اعمال قوانین منطقه برای نوع عضویت {name}',
                    changed_by=user.user_id)
+    method_value = 'pro_rata' if pro_rata_method == 'true' else 'full_year'
+    _set_param(
+        db, policy, 'region_change_method', method_value,
+        notes='روش اعمال تغییر منطقه وسط سال',
+        changed_by=user.user_id,
+    )
     db.commit()
 
     referer = request.headers.get("referer", "/admin/policies/leave")

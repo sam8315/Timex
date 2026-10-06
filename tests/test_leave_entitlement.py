@@ -504,6 +504,46 @@ class TestConsumeLeavePriority:
         assert al.balance == 0
         assert cw.balance == 7
 
+    def test_registered_buyback_quota_overrides_policy_cap(self, db, make_user):
+        """سهمیه ثبت‌شده (نه فقط سقف سیاست) مبنای تقسیم ذخیره است — همه عضویت‌ها."""
+        from web.services.leave_service import set_buyback_quota_for_year, get_buyback_quota
+
+        user = make_user(
+            department="1",
+            balance_al=None,
+            contract_type_code="1",
+            region_code="GRADE_2",
+        )
+        year = jdatetime.date.today().year
+        policy = _ensure_leave_policy(db)
+        _set_policy_value(db, policy.id, 'region_applies_dept_1', 'true')
+        _set_policy_value(db, policy.id, 'buyback_cap', '18', region_code='GRADE_2')
+
+        db.query(LeaveBalance).filter(LeaveBalance.user_id == user["user_id"]).delete()
+        db.add(LeaveBalance(user_id=user["user_id"], year=year, leave_type='CW', balance=100))
+        db.add(LeaveBalance(user_id=user["user_id"], year=year, leave_type='AL', balance=10))
+        set_buyback_quota_for_year(
+            db, user_id=user["user_id"], year=year, target_days=30, commit=True
+        )
+
+        avail = get_available_leave(db, user["user_id"], year, 'AL')
+        assert avail['breakdown']['CW_NON_BUYBACK'] == 70
+        assert avail['breakdown']['CW_BUYBACK'] == 30
+
+        # ۷۵ روز: ۷۰ از ذخیره غیرقابل‌بازخرید + ۵ از سال جاری
+        res = consume_leave(db, user["user_id"], year, 75, 'AL')
+        assert res['success']
+        assert res['consumed_from'].get('CW_NON_BUYBACK') == 70
+        assert res['consumed_from'].get('AL') == 5
+        assert 'CW_BUYBACK' not in res['consumed_from']
+
+        # ادامه: تمام AL سپس از قابل‌بازخرید
+        res2 = consume_leave(db, user["user_id"], year, 20, 'AL')
+        assert res2['success']
+        assert res2['consumed_from'].get('AL') == 5
+        assert res2['consumed_from'].get('CW_BUYBACK') == 15
+        assert get_buyback_quota(db, user["user_id"], year) == 15  # 30 − 15
+
 
 class TestHrImport:
     def test_hr_import_permanent_fields(self, db, make_user):

@@ -66,11 +66,12 @@
                     <label class="form-label">🏷️ نوع مرخصی <span class="text-danger">*</span></label>
                     <select name="leave_type" class="form-select" required>
                         {% for code, name in leave_types.items() %}
-                        <option value="{{ code }}" {% if leave_request.leave_type == code %}selected{% endif %}>
+                        <option value="{{ code }}" {% if (selected_leave_type or leave_request.leave_type) == code %}selected{% endif %}>
                             {{ name }}
                         </option>
                         {% endfor %}
                     </select>
+                    <small class="text-muted">استحقاقی شامل ذخیره است؛ منبع مصرف را سیستم مشخص می‌کند.</small>
                 </div>
 
                 <!-- 🆕 وضعیت -->

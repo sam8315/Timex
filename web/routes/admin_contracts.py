@@ -196,8 +196,8 @@ def get_charged_by_year(db: Session, contract_id: int) -> dict:
 
 
 def _ensure_permanent_end(db, contract_type_code: str, start_date: date, end_date: Optional[date]) -> Optional[date]:
-    """رسمی بدون پایان → شروع + ۳۰ سال."""
-    if msem.is_permanent(db, contract_type_code) and end_date is None:
+    """رسمی: پایان همیشه شروع + ۳۰ سال (ورودی کاربر نادیده گرفته می‌شود)."""
+    if msem.is_permanent(db, contract_type_code):
         return add_years(start_date, 30)
     return end_date
 
@@ -285,6 +285,7 @@ async def contracts_page(
                 'unit_entry_j': _j(c.unit_entry_date),
                 'clinic_entry_j': _j(c.clinic_entry_date),
                 'is_conscript': msem.is_conscript(db, c.contract_type_code),
+                'is_permanent': msem.is_permanent(db, c.contract_type_code),
                 'is_active': c.is_active,
                 'charged_by_year': get_charged_by_year(db, c.id),
                 'stored_leave_days': stored_cw_current if msem.is_permanent(db, c.contract_type_code) else stored_cw,
@@ -537,8 +538,6 @@ async def add_contract(
         db.commit()
         db.refresh(new_contract)
 
-        charged = charge_leave_for_new_contract(db, new_contract)
-
         used_by_year = parse_used_by_year_from_form(form)
         current_year = jdatetime.date.today().year
         needs_history = (
@@ -546,12 +545,18 @@ async def add_contract(
         )
 
         if needs_history:
+            # سال‌های قبل فقط از تاریخچه (CHARGE/CF_OUT طبق سقف ذخیره پالیسی)
+            charged = charge_leave_for_new_contract(
+                db, new_contract, years_filter={current_year}
+            )
             hist = apply_permanent_history(
                 db, new_contract, used_by_year, commit=True
             )
             charged.setdefault(current_year, {})['CW'] = hist['stored_cw']
             charged.setdefault(current_year, {})['BB'] = hist['buyback']
         else:
+            charged = charge_leave_for_new_contract(db, new_contract)
+        if not needs_history:
             start_year = jdatetime.date.fromgregorian(date=start_date).year
             if stored_leave_days > 0:
                 cw_result = set_stored_leave_for_year(
@@ -626,6 +631,12 @@ async def permanent_history_plan(
         start_date=start_date,
         used_by_year=used_by_year,
     )
+    # Ensure per-year caps are JSON-friendly for the contracts UI
+    for row in summary.get('years') or []:
+        if 'storage_cap' not in row:
+            row['storage_cap'] = summary.get('carry_forward_cap')
+        if 'buyback_cap' not in row:
+            row['buyback_cap'] = summary.get('buyback_cap')
     return JSONResponse(summary)
 
 
@@ -754,17 +765,6 @@ async def edit_contract(
 
         db.commit()
 
-        changes = update_leave_for_contract(
-            db=db,
-            contract=contract,
-            old_annual_leave=old_annual,
-            old_sick_leave=old_sick,
-            old_start_date=old_start,
-            old_end_date=old_end,
-            old_deduction=old_deduction,
-            old_type_code=old_type_code,
-        )
-
         used_by_year = parse_used_by_year_from_form(form)
         current_year = jdatetime.date.today().year
         needs_history = (
@@ -772,12 +772,35 @@ async def edit_contract(
         )
 
         if needs_history:
+            # سال‌های قبل فقط از تاریخچه؛ پروراتا فقط سال جاری را لمس کند
+            hist_years = set(range(start_j.year, current_year))
+            changes = update_leave_for_contract(
+                db=db,
+                contract=contract,
+                old_annual_leave=old_annual,
+                old_sick_leave=old_sick,
+                old_start_date=old_start,
+                old_end_date=old_end,
+                old_deduction=old_deduction,
+                old_type_code=old_type_code,
+                skip_years=hist_years,
+            )
             hist = apply_permanent_history(
                 db, contract, used_by_year, commit=True
             )
             changes.setdefault(current_year, {})['CW'] = hist['stored_cw']
             changes.setdefault(current_year, {})['BB'] = hist['buyback']
         else:
+            changes = update_leave_for_contract(
+                db=db,
+                contract=contract,
+                old_annual_leave=old_annual,
+                old_sick_leave=old_sick,
+                old_start_date=old_start,
+                old_end_date=old_end,
+                old_deduction=old_deduction,
+                old_type_code=old_type_code,
+            )
             if msem.is_permanent(db, old_type_code) or msem.is_permanent(db, contract_type_code):
                 clear_permanent_history(db, contract)
                 db.commit()
@@ -843,7 +866,7 @@ async def delete_contract(
     try:
         user_id = contract.user_id
         file_path = contract.file_path
-        if contract.msem.is_permanent(db, contract_type_code):
+        if msem.is_permanent(db, contract.contract_type_code):
             clear_permanent_history(db, contract)
             db.flush()
         removed = remove_leave_for_contract(db, contract)

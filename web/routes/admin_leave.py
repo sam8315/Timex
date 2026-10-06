@@ -52,8 +52,17 @@ LEAVE_TYPES = {
     'SL': 'استعلاجی',
     'RL': 'تشویقی',
     'UL': 'بدون حقوق',
-    'CW': 'ذخیره سال قبل',  # 🆕
-    'HL': 'ساعتی',          # 🆕 Phase 7
+    'CW': 'ذخیره سال قبل',  # فقط نمایش/فیلتر درخواست‌های قدیمی
+    'HL': 'ساعتی',
+}
+
+# فرم ثبت/ویرایش: ذخیره جدا انتخاب نمی‌شود
+REQUESTABLE_LEAVE_TYPES = {
+    'AL': 'استحقاقی',
+    'SL': 'استعلاجی',
+    'RL': 'تشویقی',
+    'UL': 'بدون حقوق',
+    'HL': 'ساعتی',
 }
 
 TRANSACTION_TYPES = {
@@ -229,6 +238,8 @@ async def leave_balances_page(
             grouped,
             contract_types_map,
             name_resolver=lambda uid: get_employee_name(db, uid),
+            # با فیلتر سال مشخص، سال‌های تسویه‌شدهٔ تاریخچه هم دیده شوند
+            hide_settled_past_years=(year_int is None),
         )
 
         # فیلتر فقط مانده منفی (بعد از ساخت ردیف‌های سالانه/دوره‌ای)
@@ -675,6 +686,10 @@ async def approve_leave_request(
 
     # بررسی مانده کافی (for non-HL types)
     year_j = jdatetime.date.fromgregorian(date=leave_req.from_date).year
+
+    # درخواست قدیمی ذخیره → همان مسیر استحقاقی (اولویت سطل‌ها)
+    if leave_req.leave_type == 'CW':
+        leave_req.leave_type = 'AL'
 
     tl_detail = None
     deduct_days = leave_req.days_count
@@ -1295,7 +1310,7 @@ async def register_leave_form(
     return templates.TemplateResponse(request, "admin/leave_register.html", {
         "user": user,
         "employees": employees_list,
-        "leave_types": LEAVE_TYPES,
+        "leave_types": REQUESTABLE_LEAVE_TYPES,
         "is_admin": True,
         "hl_granularity": hl_granularity,
         "cities": cities,
@@ -1330,8 +1345,10 @@ async def register_leave_for_user(
         if not target_employee:
             raise ValueError("کاربر مورد نظر یافت نشد")
 
-        # اعتبارسنجی نوع مرخصی
-        if leave_type not in LEAVE_TYPES:
+        # ذخیره جدا ثبت نمی‌شود → استحقاقی
+        if leave_type == 'CW':
+            leave_type = 'AL'
+        if leave_type not in REQUESTABLE_LEAVE_TYPES:
             raise ValueError("نوع مرخصی نامعتبر است")
 
         # تبدیل تاریخ‌های شمسی به میلادی
@@ -1544,14 +1561,21 @@ async def edit_leave_request_form(
             if origin_city:
                 service_origin_city = origin_city.name
 
+    edit_leave_types = dict(REQUESTABLE_LEAVE_TYPES)
+    # درخواست قدیمی ذخیره در UI به‌عنوان استحقاقی دیده/ویرایش می‌شود
+    selected_leave_type = (
+        'AL' if leave_request.leave_type == 'CW' else leave_request.leave_type
+    )
+
     return templates.TemplateResponse(request, "admin/leave_request_edit.html", {
         "user": user,
         "leave_request": leave_request,
+        "selected_leave_type": selected_leave_type,
         "from_j": from_j,
         "to_j": to_j,
         "employees": employees_list,
         "current_employee_name": current_employee.full_name if current_employee else leave_request.user_id,
-        "leave_types": LEAVE_TYPES,
+        "leave_types": edit_leave_types,
         "statuses": {
             'P': 'در انتظار بررسی',
             'A': 'تایید شده',
@@ -1613,8 +1637,9 @@ async def edit_leave_request_submit(
         if not target_employee:
             raise ValueError("کاربر مورد نظر یافت نشد")
 
-        # اعتبارسنجی نوع مرخصی
-        if leave_type not in LEAVE_TYPES:
+        if leave_type == 'CW':
+            leave_type = 'AL'
+        if leave_type not in REQUESTABLE_LEAVE_TYPES:
             raise ValueError("نوع مرخصی نامعتبر است")
 
         # تبدیل تاریخ‌های شمسی به میلادی

@@ -239,10 +239,12 @@ def resolve_max_buyback(
     user_id: Optional[str] = None,
     region_code: Optional[str] = None,
     year_j: Optional[int] = None,
+    _skip_dated_periods: bool = False,
 ) -> Optional[int]:
     """
     سقف بازخرید روز برای تقسیم منطقی CW.
 
+    - بازهٔ تاریخ‌دار (leave_settlement_cap_periods) در اولویت
     - غیررسمی با buyback_dept=none → None (همه CW قابل‌بازخرید)
     - رسمی + اعمال منطقه → ماده ۱۱/منطقه یا عصر تاریخی
     - در غیر این صورت buyback_dept یا پیش‌فرض عضویت
@@ -250,6 +252,18 @@ def resolve_max_buyback(
     policy_code = resolve_membership_code_for_policy(membership_code)
     policy = _get_leave_policy(db)
     year = year_j if year_j is not None else jdatetime.date.today().year
+
+    if not _skip_dated_periods:
+        from web.services.leave_settlement.caps import resolve_settlement_caps
+
+        return resolve_settlement_caps(
+            db,
+            policy_code,
+            region_code=region_code,
+            user_id=user_id,
+            year_j=year,
+        ).get("buyback_cap")
+
     permanent = msem.is_permanent(db, policy_code)
 
     # صریح گروه: برای غیررسمی اولویت دارد
