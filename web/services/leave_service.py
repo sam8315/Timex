@@ -523,7 +523,7 @@ def get_user_al_year_snapshot(db: Session, user_id: str, year: int) -> dict:
     """
     خلاصه استحقاق / استفاده / مانده مرخصی استحقاقی برای یک سال شمسی.
 
-    - entitlement: خالص شارژ AL (CHARGE − DEDUCT)
+    - entitlement: خالص شارژ AL (CHARGE − DEDUCT − REVERSE)
     - used: مجموع TX_USE برای AL و CW
     - remaining / cw_days: از get_available_leave
     """
@@ -532,13 +532,19 @@ def get_user_al_year_snapshot(db: Session, user_id: str, year: int) -> dict:
             LeaveTransaction.user_id == user_id,
             LeaveTransaction.year == year,
             LeaveTransaction.leave_type == 'AL',
-            LeaveTransaction.transaction_type.in_([TX_CHARGE, TX_DEDUCT]),
+            LeaveTransaction.transaction_type.in_(
+                [TX_CHARGE, TX_DEDUCT, TX_REVERSE]
+            ),
         )
     ).all()
 
     entitlement = 0
     for tx in charge_txs:
-        sign = 1 if tx.transaction_type == TX_CHARGE else -1
+        if tx.transaction_type == TX_CHARGE:
+            sign = 1
+        else:
+            # DEDUCT and REVERSE both undo entitlement
+            sign = -1
         entitlement += sign * int(tx.amount or 0)
     entitlement = max(0, entitlement)
 

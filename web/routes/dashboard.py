@@ -1,13 +1,15 @@
-"""داشبورد کاربر"""
+"""داشبورد کاربر (+ نمای ادمین از نگاه کاربر)"""
 from datetime import date, datetime, timedelta
+from typing import Any, Dict, Optional
+
 from fastapi import APIRouter, Request, Depends
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, func
 import jdatetime
-from web.dependencies import get_db, check_password_change
+from web.dependencies import get_db, check_password_change, require_admin
 from models.user import User
 from models.employee import Employee
 from models.leave_balance import LeaveBalance
@@ -16,7 +18,6 @@ from models.attendance import Attendance
 from models.daily_status import DailyStatus
 from models.contract import Contract
 
-# 🆕 همه imports مربوط به انتقال مرخصی در یک جا
 from web.services.carry_forward_service import (
     get_unused_leave_from_previous_year,
     has_carry_forward_request,
@@ -31,7 +32,6 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templa
 # موقتاً خاموش تا پایان بازسازی و تأیید دفترکل مرخصی
 CARRY_FORWARD_MODAL_ENABLED = False
 
-# دیکشنری ترجمه انواع مرخصی
 LEAVE_TYPE_NAMES = {
     'AL': 'استحقاقی',
     'SL': 'استعلاجی',
@@ -46,53 +46,47 @@ STATUS_NAMES = {
 }
 
 
-@router.get("/dashboard", response_class=HTMLResponse)
-async def dashboard(
-    request: Request,
-    user: User = Depends(check_password_change),
-    db: Session = Depends(get_db)
-):
+def build_user_dashboard_context(
+    db: Session,
+    user_id: str,
+    *,
+    request: Optional[Request] = None,
+    for_admin_view: bool = False,
+) -> Dict[str, Any]:
+    """دادهٔ داشبورد کاربر برای صفحهٔ خود کاربر یا نمای ادمین."""
     today_j = jdatetime.date.today()
     today_g = today_j.togregorian()
 
-    # اطلاعات کارمند
-    employee = db.query(Employee).filter(Employee.user_id == user.user_id).first()
+    target_user = db.query(User).filter(User.user_id == user_id).first()
+    employee = db.query(Employee).filter(Employee.user_id == user_id).first()
 
-    # وضعیت امروز
     today_status = db.query(DailyStatus).filter(
-        and_(DailyStatus.user_id == user.user_id, DailyStatus.status_date == today_g)
+        and_(DailyStatus.user_id == user_id, DailyStatus.status_date == today_g)
     ).first()
 
-    # ترددهای امروز
     today_attendance = db.query(Attendance).filter(
         and_(
-            Attendance.user_id == user.user_id,
+            Attendance.user_id == user_id,
             func.date(Attendance.timestamp) == today_g,
             Attendance.is_deleted == False
         )
     ).order_by(Attendance.timestamp).all()
 
-    # مانده مرخصی
     leave_balances = db.query(LeaveBalance).filter(
-        and_(LeaveBalance.user_id == user.user_id, LeaveBalance.year == today_j.year)
+        and_(LeaveBalance.user_id == user_id, LeaveBalance.year == today_j.year)
     ).all()
     balances_dict = {lb.leave_type: lb.balance for lb in leave_balances}
 
-    # 🆕 محاسبه مرخصی قابل استفاده (نمایش یکپارچه: استحقاقی + انتقالی)
     from web.services.leave_service import get_available_leave
-    al_available = get_available_leave(db, user.user_id, today_j.year, 'AL')
+    al_available = get_available_leave(db, user_id, today_j.year, 'AL')
     total_al_available = al_available['total']
     cw_days = al_available['breakdown'].get('CW', 0)
 
-    # ============================================
-    # 🆕 کارت یکپارچه درخواست‌های در انتظار
-    # ============================================
     pending_items = []
 
-    # ۱. درخواست‌های مرخصی در انتظار
     pending_leave_requests = db.query(LeaveRequest).filter(
         and_(
-            LeaveRequest.user_id == user.user_id,
+            LeaveRequest.user_id == user_id,
             LeaveRequest.status == 'P'
         )
     ).order_by(LeaveRequest.created_at.desc()).all()
@@ -114,10 +108,9 @@ async def dashboard(
             'detail_url': f"/leave/requests/{req.id}",
         })
 
-    # ۲. درخواست‌های بازخرید مرخصی در انتظار
     pending_cash_requests = db.query(LeaveCarryForwardRequest).filter(
         and_(
-            LeaveCarryForwardRequest.user_id == user.user_id,
+            LeaveCarryForwardRequest.user_id == user_id,
             LeaveCarryForwardRequest.status == 'P',
             LeaveCarryForwardRequest.user_choice == 'CASH'
         )
@@ -138,14 +131,10 @@ async def dashboard(
             'detail_url': f"/carry-forward/requests/{cf.id}",
         })
 
-    # مرتب‌سازی بر اساس تاریخ ثبت (جدیدترین اول)
     pending_items.sort(key=lambda x: x['created_at'] or datetime.min, reverse=True)
 
-    # ============================================
-    # درخواست‌های اخیر (همه وضعیت‌ها) - برای تاریخچه
-    # ============================================
     recent_requests_raw = db.query(LeaveRequest).filter(
-        LeaveRequest.user_id == user.user_id
+        LeaveRequest.user_id == user_id
     ).order_by(LeaveRequest.created_at.desc()).limit(5).all()
 
     recent_requests = []
@@ -164,12 +153,11 @@ async def dashboard(
             'reason': req.reason,
         })
 
-    # آمار ماه
     month_start_j = jdatetime.date(today_j.year, today_j.month, 1)
     month_start_g = month_start_j.togregorian()
     month_attendance_count = db.query(Attendance).filter(
         and_(
-            Attendance.user_id == user.user_id,
+            Attendance.user_id == user_id,
             Attendance.timestamp >= month_start_g,
             Attendance.timestamp <= today_g + timedelta(days=1),
             Attendance.is_deleted == False,
@@ -177,10 +165,9 @@ async def dashboard(
         )
     ).count()
 
-    # اطلاعات قرارداد فعال
     active_contract = db.query(Contract).filter(
         and_(
-            Contract.user_id == user.user_id,
+            Contract.user_id == user_id,
             Contract.start_date <= today_g,
             or_(
                 Contract.end_date == None,
@@ -192,13 +179,20 @@ async def dashboard(
     contract_info = None
     if active_contract:
         j_start = jdatetime.date.fromgregorian(date=active_contract.start_date)
-        j_end = jdatetime.date.fromgregorian(date=active_contract.end_date) if active_contract.end_date else None
+        j_end = (
+            jdatetime.date.fromgregorian(date=active_contract.end_date)
+            if active_contract.end_date
+            else None
+        )
 
         if active_contract.end_date:
             days_remaining = (active_contract.end_date - today_g).days
             total_days = (active_contract.end_date - active_contract.start_date).days
             elapsed_days = (today_g - active_contract.start_date).days
-            progress_percent = min(100, max(0, (elapsed_days / total_days * 100) if total_days > 0 else 0))
+            progress_percent = min(
+                100,
+                max(0, (elapsed_days / total_days * 100) if total_days > 0 else 0),
+            )
         else:
             days_remaining = None
             total_days = None
@@ -207,7 +201,11 @@ async def dashboard(
 
         contract_info = {
             'id': active_contract.id,
-            'contract_type': active_contract.contract_type_name if hasattr(active_contract, 'contract_type_name') else '-',
+            'contract_type': (
+                active_contract.contract_type_name
+                if hasattr(active_contract, 'contract_type_name')
+                else '-'
+            ),
             'start_date_j': j_start.strftime('%Y/%m/%d'),
             'end_date_j': j_end.strftime('%Y/%m/%d') if j_end else 'نامحدود',
             'days_remaining': days_remaining,
@@ -218,41 +216,55 @@ async def dashboard(
             'is_expired': days_remaining is not None and days_remaining < 0,
         }
 
-    # خواندن آخرین ورود قبلی از session
     last_login_display = None
-    previous_login_str = request.session.get('previous_login')
-    if previous_login_str:
-        try:
-            previous_login = datetime.fromisoformat(previous_login_str)
-            last_login_j = jdatetime.datetime.fromgregorian(datetime=previous_login)
-            last_login_display = last_login_j.strftime('%Y/%m/%d - %H:%M')
-        except Exception:
-            last_login_display = previous_login_str
-    else:
-        last_login_display = "اولین ورود شما"
+    if for_admin_view:
+        if target_user and target_user.last_login:
+            try:
+                last_login_j = jdatetime.datetime.fromgregorian(
+                    datetime=target_user.last_login
+                )
+                last_login_display = last_login_j.strftime('%Y/%m/%d - %H:%M')
+            except Exception:
+                last_login_display = str(target_user.last_login)
+        else:
+            last_login_display = "بدون ورود ثبت‌شده"
+    elif request is not None:
+        previous_login_str = request.session.get('previous_login')
+        if previous_login_str:
+            try:
+                previous_login = datetime.fromisoformat(previous_login_str)
+                last_login_j = jdatetime.datetime.fromgregorian(
+                    datetime=previous_login
+                )
+                last_login_display = last_login_j.strftime('%Y/%m/%d - %H:%M')
+            except Exception:
+                last_login_display = previous_login_str
+        else:
+            last_login_display = "اولین ورود شما"
 
-    # ============================================
-    # 🆕 منطق یکپارچه انتقال مرخصی (بدون کد تکراری)
-    # ============================================
-    unused_leave = get_unused_leave_from_previous_year(db, user.user_id) if CARRY_FORWARD_MODAL_ENABLED else {}
-    carry_forward_year = today_j.year - 1  # همیشه سال قبل
+    unused_leave = (
+        get_unused_leave_from_previous_year(db, user_id)
+        if CARRY_FORWARD_MODAL_ENABLED
+        else {}
+    )
+    carry_forward_year = today_j.year - 1
     show_carry_forward_modal = False
     has_pending_carry_forward = False
     carry_forward_limit = None
-    contract_analysis = None  # 🆕 تحلیل قراردادهای سال قبل
+    contract_analysis = None
 
-    if CARRY_FORWARD_MODAL_ENABLED and unused_leave:
-        # بررسی وجود درخواست قبلی (جلوگیری از نمایش مجدد مودال)
-        has_pending_carry_forward = not has_carry_forward_request(db, user.user_id, carry_forward_year)
+    if CARRY_FORWARD_MODAL_ENABLED and unused_leave and not for_admin_view:
+        has_pending_carry_forward = not has_carry_forward_request(
+            db, user_id, carry_forward_year
+        )
+        carry_forward_limit = calculate_carry_forward_limit(
+            db, user_id, carry_forward_year
+        )
+        contract_analysis = analyze_yearly_contracts(
+            db, user_id, carry_forward_year
+        )
 
-        # 🆕 محاسبه سقف بر اساس قراردادهای سال قبل (نه سال جاری)
-        carry_forward_limit = calculate_carry_forward_limit(db, user.user_id, carry_forward_year)
-
-        # 🆕 تحلیل قراردادهای سال قبل برای نمایش در مودال
-        contract_analysis = analyze_yearly_contracts(db, user.user_id, carry_forward_year)
-
-        # بررسی نمایش مودال
-        if has_pending_carry_forward:
+        if has_pending_carry_forward and request is not None:
             postponed_until = request.session.get('carry_forward_postponed_until')
             should_show = True
             if postponed_until:
@@ -262,32 +274,121 @@ async def dashboard(
                         should_show = False
                 except Exception:
                     should_show = True
-
             if should_show:
                 show_carry_forward_modal = True
 
+    display_name = None
+    if employee and getattr(employee, 'full_name', None):
+        display_name = employee.full_name
+    elif target_user:
+        display_name = target_user.name or user_id
+    else:
+        display_name = user_id
+
+    return {
+        'target_user': target_user,
+        'employee': employee,
+        'today_j': today_j,
+        'today_status': today_status,
+        'today_attendance': today_attendance,
+        'balances': balances_dict,
+        'pending_items': pending_items,
+        'pending_count': len(pending_items),
+        'recent_requests': recent_requests,
+        'month_attendance_count': month_attendance_count,
+        'contract_info': contract_info,
+        'last_login_display': last_login_display,
+        'unused_leave': unused_leave,
+        'carry_forward_year': carry_forward_year,
+        'show_carry_forward_modal': show_carry_forward_modal,
+        'has_pending_carry_forward': has_pending_carry_forward,
+        'carry_forward_limit': carry_forward_limit,
+        'contract_analysis': contract_analysis,
+        'total_al_available': total_al_available,
+        'cw_days': cw_days,
+        'target_user_id': user_id,
+        'target_display_name': display_name,
+        'viewing_as_admin': for_admin_view,
+    }
+
+
+@router.get("/dashboard", response_class=HTMLResponse)
+async def dashboard(
+    request: Request,
+    user: User = Depends(check_password_change),
+    db: Session = Depends(get_db)
+):
+    ctx = build_user_dashboard_context(
+        db, user.user_id, request=request, for_admin_view=False
+    )
     return templates.TemplateResponse(request, "dashboard.html", {
         "user": user,
-        "employee": employee,
-        "today_j": today_j,
-        "today_status": today_status,
-        "today_attendance": today_attendance,
-        "balances": balances_dict,
-        # 🆕 لیست یکپارچه درخواست‌های در انتظار
-        "pending_items": pending_items,
-        "pending_count": len(pending_items),
-        "recent_requests": recent_requests,
-        "month_attendance_count": month_attendance_count,
-        "contract_info": contract_info,
+        "employee": ctx["employee"],
+        "today_j": ctx["today_j"],
+        "today_status": ctx["today_status"],
+        "today_attendance": ctx["today_attendance"],
+        "balances": ctx["balances"],
+        "pending_items": ctx["pending_items"],
+        "pending_count": ctx["pending_count"],
+        "recent_requests": ctx["recent_requests"],
+        "month_attendance_count": ctx["month_attendance_count"],
+        "contract_info": ctx["contract_info"],
         "is_admin": user.is_admin,
-        "last_login_display": last_login_display,
-        # 🆕 متغیرهای انتقال مرخصی
-        "unused_leave": unused_leave,
-        "carry_forward_year": carry_forward_year,
-        "show_carry_forward_modal": show_carry_forward_modal,
-        "has_pending_carry_forward": has_pending_carry_forward,
-        "carry_forward_limit": carry_forward_limit,
-        "contract_analysis": contract_analysis,  # 🆕 برای نمایش در مودال
-        "total_al_available": total_al_available,
-        "cw_days": cw_days,
+        "last_login_display": ctx["last_login_display"],
+        "unused_leave": ctx["unused_leave"],
+        "carry_forward_year": ctx["carry_forward_year"],
+        "show_carry_forward_modal": ctx["show_carry_forward_modal"],
+        "has_pending_carry_forward": ctx["has_pending_carry_forward"],
+        "carry_forward_limit": ctx["carry_forward_limit"],
+        "contract_analysis": ctx["contract_analysis"],
+        "total_al_available": ctx["total_al_available"],
+        "cw_days": ctx["cw_days"],
+        "viewing_as_admin": False,
+        "target_user_id": user.user_id,
+        "target_display_name": None,
+    })
+
+
+@router.get("/admin/dashboard/user/{target_user_id}", response_class=HTMLResponse)
+async def admin_user_dashboard(
+    request: Request,
+    target_user_id: str,
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """داشبورد از نگاه کاربر (برای ادمین)."""
+    target = db.query(User).filter(User.user_id == target_user_id).first()
+    if not target:
+        return RedirectResponse(
+            url="/admin/users?error=کاربر یافت نشد",
+            status_code=302,
+        )
+    ctx = build_user_dashboard_context(
+        db, target_user_id, request=request, for_admin_view=True
+    )
+    return templates.TemplateResponse(request, "dashboard.html", {
+        "user": user,
+        "employee": ctx["employee"],
+        "today_j": ctx["today_j"],
+        "today_status": ctx["today_status"],
+        "today_attendance": ctx["today_attendance"],
+        "balances": ctx["balances"],
+        "pending_items": ctx["pending_items"],
+        "pending_count": ctx["pending_count"],
+        "recent_requests": ctx["recent_requests"],
+        "month_attendance_count": ctx["month_attendance_count"],
+        "contract_info": ctx["contract_info"],
+        "is_admin": True,
+        "last_login_display": ctx["last_login_display"],
+        "unused_leave": ctx["unused_leave"],
+        "carry_forward_year": ctx["carry_forward_year"],
+        "show_carry_forward_modal": False,
+        "has_pending_carry_forward": False,
+        "carry_forward_limit": ctx["carry_forward_limit"],
+        "contract_analysis": ctx["contract_analysis"],
+        "total_al_available": ctx["total_al_available"],
+        "cw_days": ctx["cw_days"],
+        "viewing_as_admin": True,
+        "target_user_id": target_user_id,
+        "target_display_name": ctx["target_display_name"],
     })

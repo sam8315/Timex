@@ -12,7 +12,7 @@ import jdatetime
 from typing import Optional
 
 from datetime import time as time_type
-from web.dependencies import get_db, get_current_user, check_password_change
+from web.dependencies import get_db, get_current_user, check_password_change, require_admin
 from models.user import User
 from models.employee import Employee
 from models.leave_balance import LeaveBalance
@@ -88,12 +88,98 @@ def get_user_leave_balance(db: Session, user_id: str, year: int) -> dict:
     return {b.leave_type: b.balance for b in balances}
 
 
-@router.get("/leave", response_class=HTMLResponse)
-async def leave_page(request: Request, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def build_user_leave_page_context(db: Session, user_id: str) -> dict:
+    """دادهٔ صفحه مرخصی از نگاه یک کاربر (برای خود کاربر یا ادمین)."""
+    from web.services import membership_semantics as msem
+    from web.services.leave_balance_overview_service import (
+        get_user_al_period_snapshot,
+        _years_for_user,
+    )
+    from web.services.conscript_service_context import build_conscript_service_context
+
     today_j = jdatetime.date.today()
     current_year = today_j.year
-    balances = get_user_leave_balance(db, user.user_id, current_year)
-    al_snapshot = get_user_al_year_snapshot(db, user.user_id, current_year)
+    balances = get_user_leave_balance(db, user_id, current_year)
+
+    contracts = (
+        db.query(Contract)
+        .filter(Contract.user_id == user_id)
+        .order_by(Contract.start_date.desc())
+        .all()
+    )
+    active_contract = next((c for c in contracts if c.is_active), None)
+    if active_contract is None and contracts:
+        active_contract = contracts[0]
+    membership_code = (
+        active_contract.contract_type_code if active_contract else None
+    )
+    is_conscript = bool(
+        membership_code and msem.is_conscript(db, membership_code)
+    )
+
+    al_scope = 'year'
+    period_label = f'سال {current_year}'
+    period_years = [current_year]
+    conscript_info = None
+    if is_conscript and active_contract is not None:
+        al_scope = 'period'
+        period_years = _years_for_user(
+            db, user_id, [current_year], membership_code
+        ) or [current_year]
+        al_snapshot = get_user_al_period_snapshot(db, user_id, period_years)
+        # Overview consistency: remaining = entitlement - used
+        al_entitlement = int(al_snapshot['entitlement'])
+        al_used = int(al_snapshot['used'])
+        al_remaining = al_entitlement - al_used
+        cw_days = float(al_snapshot.get('cw_days') or 0)
+        if period_years:
+            period_label = f'دوره خدمت {period_years[0]}–{period_years[-1]}'
+        else:
+            period_label = 'دوره خدمت'
+        try:
+            ctx = build_conscript_service_context(db, active_contract)
+            conscript_info = {
+                'leave_start_basis': ctx.leave_start_date_basis,
+                'leave_start_basis_label': msem.leave_start_basis_label(
+                    ctx.leave_start_date_basis
+                ),
+                'leave_start_j': (
+                    jdatetime.date.fromgregorian(
+                        date=ctx.leave_entitlement_start
+                    ).strftime('%Y/%m/%d')
+                    if ctx.leave_entitlement_start
+                    else None
+                ),
+                'dispatch_j': (
+                    jdatetime.date.fromgregorian(
+                        date=ctx.enlistment_or_start
+                    ).strftime('%Y/%m/%d')
+                    if ctx.enlistment_or_start
+                    else None
+                ),
+                'unit_entry_j': (
+                    jdatetime.date.fromgregorian(
+                        date=active_contract.unit_entry_date
+                    ).strftime('%Y/%m/%d')
+                    if active_contract.unit_entry_date
+                    else None
+                ),
+                'clinic_entry_j': (
+                    jdatetime.date.fromgregorian(
+                        date=active_contract.clinic_entry_date
+                    ).strftime('%Y/%m/%d')
+                    if active_contract.clinic_entry_date
+                    else None
+                ),
+            }
+        except Exception:
+            conscript_info = None
+    else:
+        al_snapshot = get_user_al_year_snapshot(db, user_id, current_year)
+        al_entitlement = al_snapshot['entitlement']
+        al_used = al_snapshot['used']
+        al_remaining = al_snapshot['remaining']
+        cw_days = al_snapshot['cw_days']
 
     available_leave_types = {}
     for code, name in LEAVE_TYPES.items():
@@ -104,7 +190,7 @@ async def leave_page(request: Request, user: User = Depends(get_current_user), d
             available_leave_types[code] = name
 
     recent_requests_raw = db.query(LeaveRequest).filter(
-        LeaveRequest.user_id == user.user_id
+        LeaveRequest.user_id == user_id
     ).order_by(LeaveRequest.created_at.desc()).limit(20).all()
 
     recent_requests = []
@@ -127,7 +213,11 @@ async def leave_page(request: Request, user: User = Depends(get_current_user), d
         if req.leave_type == 'HL':
             req_data['start_time'] = req.start_time.strftime('%H:%M') if req.start_time else ''
             req_data['end_time'] = req.end_time.strftime('%H:%M') if req.end_time else ''
-            req_data['minutes'] = compute_requested_minutes(req.start_time, req.end_time) if req.start_time and req.end_time else 0
+            req_data['minutes'] = (
+                compute_requested_minutes(req.start_time, req.end_time)
+                if req.start_time and req.end_time
+                else 0
+            )
         tl = getattr(req, 'travel_leave_detail', None)
         if tl:
             req_data['has_travel_leave'] = True
@@ -138,19 +228,18 @@ async def leave_page(request: Request, user: User = Depends(get_current_user), d
         recent_requests.append(req_data)
 
     pending_count = db.query(LeaveRequest).filter(
-        and_(LeaveRequest.user_id == user.user_id, LeaveRequest.status == 'P')
+        and_(LeaveRequest.user_id == user_id, LeaveRequest.status == 'P')
     ).count()
     approved_count = db.query(LeaveRequest).filter(
-        and_(LeaveRequest.user_id == user.user_id, LeaveRequest.status == 'A')
+        and_(LeaveRequest.user_id == user_id, LeaveRequest.status == 'A')
     ).count()
     rejected_count = db.query(LeaveRequest).filter(
-        and_(LeaveRequest.user_id == user.user_id, LeaveRequest.status == 'R')
+        and_(LeaveRequest.user_id == user_id, LeaveRequest.status == 'R')
     ).count()
 
-    # Resolve the effective policy using Employee (policy resolution expects Employee, not User).
     hl_granularity = 15
     hl_min_request = 15
-    employee = db.query(Employee).filter(Employee.user_id == user.user_id).first()
+    employee = db.query(Employee).filter(Employee.user_id == user_id).first()
     if employee:
         try:
             from web.services.hourly_leave_service import resolve_hourly_leave_policy
@@ -163,15 +252,13 @@ async def leave_page(request: Request, user: User = Depends(get_current_user), d
         except Exception:
             pass
 
-    # Travel Leave context
     cities = get_active_cities(db)
-    cities_list = [{'id': c.id, 'name': c.name, 'province': c.province} for c in cities]
+    cities_list = [
+        {'id': c.id, 'name': c.name, 'province': c.province} for c in cities
+    ]
 
-    # Resolve effective service location for display.
-    # This value is only a display/enablement hint; the authoritative preview resolves
-    # the service location again using the selected leave date.
     service_origin_city = None
-    esl = resolve_effective_service_location(db, user.user_id, date.today())
+    esl = resolve_effective_service_location(db, user_id, date.today())
     if esl:
         origin_city = db.query(City).filter(City.id == esl.city_id).first()
         if origin_city:
@@ -179,9 +266,7 @@ async def leave_page(request: Request, user: User = Depends(get_current_user), d
     if not service_origin_city:
         service_origin_city = "برای تاریخ انتخابی بررسی می‌شود"
 
-    # Travel Leave quota
-    today_j_year = jdatetime.date.today().year
-    tl_allowed, tl_used, tl_max = check_quota(db, user.user_id, today_j_year)
+    tl_allowed, tl_used, tl_max = check_quota(db, user_id, current_year)
 
     buyback_quota = 0
     storage_cap_label = '—'
@@ -189,41 +274,91 @@ async def leave_page(request: Request, user: User = Depends(get_current_user), d
         from web.services.annual_leave_dashboard_service import (
             build_user_annual_leave_dashboard,
         )
-        dash = build_user_annual_leave_dashboard(db, user.user_id, year_j=current_year)
+        dash = build_user_annual_leave_dashboard(db, user_id, year_j=current_year)
         buyback_quota = dash.get('buyback_quota') or 0
         cap = dash.get('storage_cap')
         storage_cap_label = 'نامحدود' if cap is None else str(cap)
     except Exception:
         pass
 
+    display_name = None
+    if employee and getattr(employee, 'full_name', None):
+        display_name = employee.full_name
+    else:
+        target_user = db.query(User).filter(User.user_id == user_id).first()
+        display_name = (target_user.name if target_user else None) or user_id
+
+    return {
+        'today_j': today_j.strftime('%Y/%m/%d'),
+        'current_year': current_year,
+        'balances': balances,
+        'al_balance': balances.get('AL', 0),
+        'sl_balance': balances.get('SL', 0),
+        'rl_balance': balances.get('RL', 0),
+        'cw_balance': balances.get('CW', 0),
+        'al_entitlement': al_entitlement,
+        'al_used': al_used,
+        'al_remaining': al_remaining,
+        'cw_days': cw_days,
+        'al_scope': al_scope,
+        'period_label': period_label,
+        'period_years': period_years,
+        'is_conscript': is_conscript,
+        'conscript_info': conscript_info,
+        'buyback_quota': buyback_quota,
+        'storage_cap_label': storage_cap_label,
+        'recent_requests': recent_requests,
+        'pending_count': pending_count,
+        'approved_count': approved_count,
+        'rejected_count': rejected_count,
+        'leave_types': available_leave_types,
+        'hl_granularity': hl_granularity,
+        'hl_min_request': hl_min_request,
+        'cities': cities_list,
+        'service_origin_city': service_origin_city,
+        'tl_quota_allowed': tl_allowed,
+        'tl_quota_used': tl_used,
+        'tl_quota_max': tl_max,
+        'target_user_id': user_id,
+        'target_display_name': display_name,
+        'employee': employee,
+    }
+
+
+@router.get("/leave", response_class=HTMLResponse)
+async def leave_page(request: Request, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    ctx = build_user_leave_page_context(db, user.user_id)
     return templates.TemplateResponse(request, "leave.html", {
         "user": user,
-        "today_j": today_j.strftime('%Y/%m/%d'),
-        "current_year": current_year,
-        "balances": balances,
-        "al_balance": balances.get('AL', 0),
-        "sl_balance": balances.get('SL', 0),
-        "rl_balance": balances.get('RL', 0),
-        "cw_balance": balances.get('CW', 0),
-        "al_entitlement": al_snapshot['entitlement'],
-        "al_used": al_snapshot['used'],
-        "al_remaining": al_snapshot['remaining'],
-        "cw_days": al_snapshot['cw_days'],
-        "buyback_quota": buyback_quota,
-        "storage_cap_label": storage_cap_label,
-        "recent_requests": recent_requests,
-        "pending_count": pending_count,
-        "approved_count": approved_count,
-        "rejected_count": rejected_count,
-        "leave_types": available_leave_types,
         "is_admin": user.is_admin,
-        "hl_granularity": hl_granularity,
-        "hl_min_request": hl_min_request,
-        "cities": cities_list,
-        "service_origin_city": service_origin_city,
-        "tl_quota_allowed": tl_allowed,
-        "tl_quota_used": tl_used,
-        "tl_quota_max": tl_max,
+        "viewing_as_admin": False,
+        **{k: v for k, v in ctx.items() if k != 'employee'},
+    })
+
+
+@router.get("/admin/leave/user/{target_user_id}", response_class=HTMLResponse)
+async def admin_user_leave_page(
+    request: Request,
+    target_user_id: str,
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """صفحه مرخصی از نگاه کاربر (فقط مشاهده برای ادمین)."""
+    from web.permissions import enforce_permission
+
+    enforce_permission(db, user, 'view_leave_balances')
+    target = db.query(User).filter(User.user_id == target_user_id).first()
+    if not target:
+        return RedirectResponse(
+            url="/admin/users?error=کاربر یافت نشد",
+            status_code=302,
+        )
+    ctx = build_user_leave_page_context(db, target_user_id)
+    return templates.TemplateResponse(request, "leave.html", {
+        "user": user,
+        "is_admin": True,
+        "viewing_as_admin": True,
+        **{k: v for k, v in ctx.items() if k != 'employee'},
     })
 
 

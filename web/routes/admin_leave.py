@@ -39,6 +39,7 @@ from models.city import City
 from models.travel_leave_policy_rules import TravelLeavePolicyRule
 from core.distance_engine import calculate_distance_km
 from web.services.leave_service import get_available_leave, consume_leave
+from web.services.leave_balance_overview_service import build_leave_balance_list_rows
 from models.leave_buyback_quota import LeaveBuybackQuota
 from models.leave_glossary import TX_BURN, TX_IMPORT, LEAVE_TYPE_CW
 import threading
@@ -84,9 +85,10 @@ def get_employee_name(db, user_id: str) -> str:
 # صفحه مانده مرخصی
 # ============================================
 def _has_negative_balance(row: dict) -> bool:
-    """🆕 بررسی داشتن مانده منفی در یک ردیف"""
+    """بررسی داشتن مانده منفی در یک ردیف (سالانه یا دوره وظیفه)."""
+    al = row.get('al_remaining', row.get('AL'))
     return (
-        (row.get('AL') is not None and row['AL'] < 0) or
+        (al is not None and al < 0) or
         (row.get('SL') is not None and row['SL'] < 0) or
         (row.get('RL') is not None and row['RL'] < 0) or
         (row.get('CW') is not None and row['CW'] < 0)
@@ -222,16 +224,17 @@ async def leave_balances_page(
                 else:
                     contract_types_map[uid] = {'code': None, 'name': 'بدون قرارداد'}
 
-        for key, row in grouped.items():
-            row['full_name'] = get_employee_name(db, row['user_id'])
-            row['contract_type'] = contract_types_map.get(row['user_id'], {'code': None, 'name': '-'})
-            balances_data.append(row)
+        balances_data = build_leave_balance_list_rows(
+            db,
+            grouped,
+            contract_types_map,
+            name_resolver=lambda uid: get_employee_name(db, uid),
+        )
 
-        # 🆕 فیلتر فقط مانده منفی (بعد از گروه‌بندی)
+        # فیلتر فقط مانده منفی (بعد از ساخت ردیف‌های سالانه/دوره‌ای)
         if negative_only:
             balances_data = [row for row in balances_data if _has_negative_balance(row)]
 
-        # 🆕 محاسبه خلاصه آمار
         summary['total'] = len(balances_data)
         summary['negative_count'] = sum(
             1 for row in balances_data if _has_negative_balance(row)

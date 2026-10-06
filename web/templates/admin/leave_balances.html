@@ -426,11 +426,13 @@
                 <thead>
                     <tr class="text-center">
                         <th style="width: 50px;">#</th>
-                        <th>سال</th>
+                        <th>سال / دوره</th>
                         <th class="text-start">کد پرسنلی</th>
                         <th class="text-start">نام کامل</th>
                         <th>نوع قرارداد</th>
-                        <th>🌴 استحقاقی</th>
+                        <th>استحقاق</th>
+                        <th>مصرف</th>
+                        <th>مانده استحقاقی</th>
                         <th>🏥 استعلاجی</th>
                         <th>🎁 تشویقی</th>
                         <th>📦 ذخیره</th>
@@ -439,8 +441,9 @@
                 </thead>
                 <tbody>
                     {% for item in balances %}
+                    {% set al_rem = item.al_remaining if item.al_remaining is defined else item.AL %}
                     {% set has_negative =
-                        (item.AL is not none and item.AL < 0) or
+                        (al_rem is not none and al_rem < 0) or
                         (item.SL is not none and item.SL < 0) or
                         (item.RL is not none and item.RL < 0) or
                         (item.CW is not none and item.CW < 0)
@@ -448,7 +451,13 @@
                     <tr class="{{ 'has-negative' if has_negative else '' }}">
                         <td class="text-center text-muted">{{ loop.index }}</td>
                         <td class="text-center">
+                            {% if item.scope == 'period' %}
+                            <span class="badge bg-warning-subtle text-dark border rounded-pill" title="تجمیع کل دوره خدمت وظیفه">
+                                {{ item.period_label or 'دوره خدمت' }}
+                            </span>
+                            {% else %}
                             <span class="badge bg-light text-dark border rounded-pill">{{ item.year }}</span>
+                            {% endif %}
                         </td>
                         <td class="text-start"><code>{{ item.user_id }}</code></td>
                         <td class="text-start">
@@ -465,11 +474,24 @@
                             {% endif %}
                         </td>
 
-                        <!-- 🌴 استحقاقی -->
                         <td class="text-center">
-                            {% if item.AL is not none %}
-                            <span class="balance-pill {% if item.AL < 0 %}balance-negative{% elif item.AL == 0 %}balance-zero{% else %}balance-positive{% endif %}">
-                                {{ item.AL }}
+                            {% if item.al_entitlement is defined and item.al_entitlement is not none %}
+                            <span class="balance-pill balance-positive">{{ item.al_entitlement }}</span>
+                            {% else %}
+                            <span class="balance-empty">—</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            {% if item.al_used is defined and item.al_used is not none %}
+                            <span class="balance-pill {% if item.al_used > 0 %}balance-zero{% else %}balance-positive{% endif %}">{{ item.al_used }}</span>
+                            {% else %}
+                            <span class="balance-empty">—</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            {% if al_rem is not none %}
+                            <span class="balance-pill {% if al_rem < 0 %}balance-negative{% elif al_rem == 0 %}balance-zero{% else %}balance-positive{% endif %}">
+                                {{ al_rem }}
                             </span>
                             {% else %}
                             <span class="balance-empty">—</span>
@@ -511,10 +533,17 @@
 
                         <!-- عملیات -->
                         <td class="text-center">
+                            {% if item.scope == 'period' %}
+                            <a href="/admin/leave-transactions?search={{ item.user_id }}&show_all=1"
+                               class="btn btn-outline-primary btn-sm rounded-pill" title="مشاهده تراکنش‌های دوره">
+                                <i class="bi bi-arrow-left-right"></i>
+                            </a>
+                            {% else %}
                             <a href="/admin/leave-transactions?search={{ item.user_id }}&year={{ item.year }}&show_all=1"
                                class="btn btn-outline-primary btn-sm rounded-pill" title="مشاهده تراکنش‌ها">
                                 <i class="bi bi-arrow-left-right"></i>
                             </a>
+                            {% endif %}
                         </td>
                     </tr>
                     {% endfor %}
@@ -543,6 +572,10 @@
                 <span class="legend-item">
                     <span class="balance-empty">—</span>
                     ثبت نشده
+                </span>
+                <span class="legend-item text-muted">
+                    <i class="bi bi-info-circle"></i>
+                    برای وظیفه: استحقاق / مصرف / مانده روی <strong>کل دوره خدمت</strong> تجمیع می‌شود.
                 </span>
             </div>
         </div>

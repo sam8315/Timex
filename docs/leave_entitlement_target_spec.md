@@ -388,7 +388,7 @@ Delivered without inventing legal thresholds:
   membership-change mode; default `keep_separate` = Current Behavior)
 - Conscript service context builder (facts from Contract/ServiceAdjustment;
   legal duration remains owner-dependent / unresolved until Policy exists)
-- Admin UI: `/admin/annual-leave/policies`, `/admin/annual-leave/employee`
+- Admin UI: `/admin/annual-leave/policies`
 - User leave page shows buyback quota + storage cap labels from central facades
 - Ops diagnostic retained: `tools/shadow_parity_diagnostic.py` (not a runtime dependency)
 

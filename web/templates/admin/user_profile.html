@@ -97,9 +97,17 @@
             <i class="bi bi-pencil"></i> ویرایش اطلاعات
         </a>
         {% endif %}
-        <a href="/admin/annual-leave/employee?target_user_id={{ target_user.user_id }}"
+        <a href="/admin/dashboard/user/{{ target_user.user_id }}"
+           class="btn btn-outline-dark btn-sm">
+            <i class="bi bi-house-door"></i> داشبورد (نمای کاربر)
+        </a>
+        <a href="/admin/leave/user/{{ target_user.user_id }}"
            class="btn btn-outline-success btn-sm">
-            <i class="bi bi-calendar2-check"></i> مرخصی استحقاقی
+            <i class="bi bi-calendar-plus"></i> مرخصی (نمای کاربر)
+        </a>
+        <a href="/admin/contracts/user/{{ target_user.user_id }}"
+           class="btn btn-outline-info btn-sm">
+            <i class="bi bi-file-earmark-text"></i> قرارداد (نمای کاربر)
         </a>
         <a href="/admin/attendance/user/{{ target_user.user_id }}" class="btn btn-outline-primary btn-sm">
             <i class="bi bi-calendar-check"></i> تردد

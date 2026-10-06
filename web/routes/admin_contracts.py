@@ -352,6 +352,53 @@ async def contracts_page(
     })
 
 
+@router.get("/contracts/user/{target_user_id}", response_class=HTMLResponse)
+async def admin_user_contract_view(
+    request: Request,
+    target_user_id: str,
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """صفحه قرارداد از نگاه کاربر (برای ادمین)."""
+    enforce_permission(db, user, "view_contracts")
+    target_user = db.query(User).filter(User.user_id == target_user_id).first()
+    if not target_user:
+        return RedirectResponse(
+            url="/admin/contracts?error=کاربر یافت نشد",
+            status_code=302,
+        )
+    target_employee = (
+        db.query(Employee).filter(Employee.user_id == target_user_id).first()
+    )
+    from web.routes.contract import build_user_contract_page_data
+
+    data = build_user_contract_page_data(
+        db,
+        target_user_id,
+        file_url_prefix="/admin/contracts",
+    )
+    display_name = (
+        target_employee.full_name
+        if target_employee
+        else (target_user.name or target_user_id)
+    )
+    return templates.TemplateResponse(
+        request,
+        "contract.html",
+        {
+            "user": user,
+            "today_j": data["today_j"],
+            "contracts": data["contracts"],
+            "active_contract": data["active_contract"],
+            "stats": data["stats"],
+            "is_admin": True,
+            "viewing_as_admin": True,
+            "target_user_id": target_user_id,
+            "target_display_name": display_name,
+        },
+    )
+
+
 @router.get("/contracts/preview-end-date")
 async def contracts_preview_end_date(
     dispatch_date_str: str = Query(...),

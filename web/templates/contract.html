@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}قراردادهای من{% endblock %}
+{% block title %}{% if viewing_as_admin %}قرارداد {{ target_display_name or target_user_id }}{% else %}قراردادهای من{% endif %}{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -217,9 +217,31 @@
 
 {% block content %}
 
+{% if viewing_as_admin %}
+<div class="alert alert-info d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <div>
+        <i class="bi bi-eye"></i>
+        در حال مشاهده صفحه قرارداد از نگاه کاربر
+        <strong>{{ target_display_name or target_user_id }}</strong>
+        <code class="ms-1">{{ target_user_id }}</code>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="/admin/profile/{{ target_user_id }}" class="btn btn-sm btn-outline-primary">پروفایل</a>
+        <a href="/admin/contracts?search={{ target_user_id }}&show_all=1" class="btn btn-sm btn-outline-secondary">مدیریت قراردادها</a>
+    </div>
+</div>
+{% endif %}
+
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
-        <h3 class="mb-1"><i class="bi bi-file-earmark-text text-primary"></i> قراردادهای من</h3>
+        <h3 class="mb-1">
+            <i class="bi bi-file-earmark-text text-primary"></i>
+            {% if viewing_as_admin %}
+            قراردادهای {{ target_display_name or target_user_id }}
+            {% else %}
+            قراردادهای من
+            {% endif %}
+        </h3>
         <small class="text-muted">
             <i class="bi bi-calendar3"></i> تاریخ امروز: <strong>{{ today_j.strftime('%Y/%m/%d') }}</strong>
         </small>
@@ -349,13 +371,50 @@
                 <hr class="border-white border-opacity-25">
             </div>
 
+            {% if active_contract.is_conscript %}
+            <div class="col-md-4">
+                <div class="info-label">🚀 تاریخ اعزام</div>
+                <div class="info-value">{{ active_contract.dispatch_j or active_contract.start_date_j }}</div>
+            </div>
+            <div class="col-md-4">
+                <div class="info-label">🏢 ورود به یگان</div>
+                <div class="info-value">{{ active_contract.unit_entry_j or '—' }}</div>
+            </div>
+            <div class="col-md-4">
+                <div class="info-label">🏥 ورود درمانگاه</div>
+                <div class="info-value">{{ active_contract.clinic_entry_j or '—' }}</div>
+            </div>
+            <div class="col-md-4">
+                <div class="info-label">📍 منطقه خدمت</div>
+                <div class="info-value">{{ active_contract.duty_region_name or active_contract.duty_region_code or '—' }}</div>
+            </div>
+            <div class="col-md-4">
+                <div class="info-label">🏠 وضعیت بومی</div>
+                <div class="info-value">{{ active_contract.native_label or '—' }}</div>
+            </div>
+            <div class="col-md-4">
+                <div class="info-label">📅 مبنای شروع مرخصی</div>
+                <div class="info-value">
+                    {{ active_contract.leave_start_basis_label or '—' }}
+                    {% if active_contract.leave_start_j %}
+                    <small class="d-block opacity-75">از {{ active_contract.leave_start_j }}</small>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+
             <!-- مرخصی استحقاقی -->
             <div class="col-md-6">
                 <div class="info-label">🌴 مرخصی استحقاقی</div>
                 <div class="info-value">
+                    {% if active_contract.is_conscript and active_contract.period_entitlement_rounded is not none %}
+                    {{ active_contract.period_entitlement_rounded }} روز
+                    <small class="d-block opacity-75">استحقاق محاسبه‌شده دوره (اسنپ‌شات پایه: {{ active_contract.annual_leave_days }})</small>
+                    {% else %}
                     {{ active_contract.prorated_annual_leave }} از {{ active_contract.annual_leave_days }} روز
+                    {% endif %}
                 </div>
-                {% if active_contract.annual_leave_days > 0 %}
+                {% if not active_contract.is_conscript and active_contract.annual_leave_days > 0 %}
                 {% set pct = (active_contract.prorated_annual_leave / active_contract.annual_leave_days * 100) %}
                 <div class="leave-progress" style="background: rgba(255,255,255,0.2);">
                     <div class="leave-progress-bar" style="width: {{ pct }}%; background: white;"></div>
@@ -465,14 +524,49 @@
                                 <small class="text-muted ms-2">پایان:</small>
                                 <strong>{{ c.end_date_j }}</strong>
                             </div>
+                            {% if c.is_conscript %}
+                            <div class="info-row">
+                                <i class="bi bi-airplane text-primary"></i>
+                                <small class="text-muted ms-2">اعزام:</small>
+                                <strong>{{ c.dispatch_j or '—' }}</strong>
+                            </div>
+                            <div class="info-row">
+                                <i class="bi bi-building text-secondary"></i>
+                                <small class="text-muted ms-2">ورود یگان:</small>
+                                <strong>{{ c.unit_entry_j or '—' }}</strong>
+                            </div>
+                            <div class="info-row">
+                                <i class="bi bi-hospital text-danger"></i>
+                                <small class="text-muted ms-2">ورود درمانگاه:</small>
+                                <strong>{{ c.clinic_entry_j or '—' }}</strong>
+                            </div>
+                            {% endif %}
                         </div>
 
                         <div class="col-md-6">
                             <div class="info-row">
                                 <i class="bi bi-sun text-info"></i>
                                 <small class="text-muted ms-2">استحقاقی:</small>
-                                <strong>{{ c.annual_leave_days }} روز</strong>
+                                <strong>
+                                    {% if c.is_conscript and c.period_entitlement_rounded is not none %}
+                                    {{ c.period_entitlement_rounded }} روز (دوره)
+                                    {% else %}
+                                    {{ c.annual_leave_days }} روز
+                                    {% endif %}
+                                </strong>
                             </div>
+                            {% if c.is_conscript %}
+                            <div class="info-row">
+                                <i class="bi bi-flag text-warning"></i>
+                                <small class="text-muted ms-2">مبنای شروع مرخصی:</small>
+                                <strong>{{ c.leave_start_basis_label or '—' }}</strong>
+                            </div>
+                            <div class="info-row">
+                                <i class="bi bi-geo-alt text-success"></i>
+                                <small class="text-muted ms-2">منطقه خدمت:</small>
+                                <strong>{{ c.duty_region_name or c.duty_region_code or '—' }}</strong>
+                            </div>
+                            {% endif %}
                             <div class="info-row">
                                 <i class="bi bi-heart-pulse text-danger"></i>
                                 <small class="text-muted ms-2">استعلاجی:</small>

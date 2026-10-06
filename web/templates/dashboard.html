@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}داشبورد{% endblock %}
+{% block title %}{% if viewing_as_admin %}داشبورد {{ target_display_name or target_user_id }}{% else %}داشبورد{% endif %}{% endblock %}
 {% block content %}
 <!-- 🆕 نمایش پیام‌ها -->
 {% set success_msg = request.query_params.get('success') %}
@@ -26,21 +26,51 @@
     <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="بستن"></button>
 </div>
 {% endif %}
+
+{% if viewing_as_admin %}
+<div class="alert alert-info d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <div>
+        <i class="bi bi-eye"></i>
+        در حال مشاهده داشبورد از نگاه کاربر
+        <strong>{{ target_display_name or target_user_id }}</strong>
+        <code class="ms-1">{{ target_user_id }}</code>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+        <a href="/admin/profile/{{ target_user_id }}" class="btn btn-sm btn-outline-primary">پروفایل</a>
+        <a href="/admin/leave/user/{{ target_user_id }}" class="btn btn-sm btn-outline-secondary">مرخصی</a>
+        <a href="/admin/contracts/user/{{ target_user_id }}" class="btn btn-sm btn-outline-secondary">قرارداد</a>
+        <a href="/admin/attendance/user/{{ target_user_id }}" class="btn btn-sm btn-outline-secondary">تردد</a>
+    </div>
+</div>
+{% endif %}
+
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
-        <h4><i class="bi bi-house-door"></i> داشبورد</h4>
-        <!-- 🆕 خوش‌آمدگویی و آخرین ورود -->
+        <h4>
+            <i class="bi bi-house-door"></i>
+            {% if viewing_as_admin %}
+            داشبورد {{ target_display_name or target_user_id }}
+            {% else %}
+            داشبورد
+            {% endif %}
+        </h4>
         <small class="text-muted">
+            {% if viewing_as_admin %}
+            کاربر: {{ target_display_name or target_user_id }}
+            {% else %}
             👋 خوش آمدید، {{ user.name }}
+            {% endif %}
             {% if last_login_display %}
-            | <i class="bi bi-clock-history"></i> ورود قبلی: {{ last_login_display }}
+            | <i class="bi bi-clock-history"></i>
+            {% if viewing_as_admin %}آخرین ورود:{% else %}ورود قبلی:{% endif %}
+            {{ last_login_display }}
             {% endif %}
         </small>
     </div>
     <span class="text-muted">{{ today_j.strftime('%Y/%m/%d') }}</span>
 </div>
 <!-- 🆕 کارت یادآوری مرخصی استفاده نشده (وقتی مودال نمایش داده نمی‌شود) -->
-{% if has_pending_carry_forward and not show_carry_forward_modal %}
+{% if has_pending_carry_forward and not show_carry_forward_modal and not viewing_as_admin %}
 <div class="alert alert-warning d-flex justify-content-between align-items-center mb-4">
     <div>
         <i class="bi bi-exclamation-triangle"></i>

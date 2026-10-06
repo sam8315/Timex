@@ -56,6 +56,5 @@ Never commits. Always `rollback()` + `close()`.
 ## Admin UI
 
 - `/admin/annual-leave/policies` — membership AL policy overview
-- `/admin/annual-leave/employee?target_user_id=...` — per-user dashboard
 
 Requires admin + `view_leave_balances` / `view_contracts` as enforced in routes.

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
-{% block title %}درخواست مرخصی | سامانه حضور و غیاب{% endblock %}
+{% block title %}{% if viewing_as_admin %}مرخصی {{ target_display_name or target_user_id }}{% else %}درخواست مرخصی{% endif %} | سامانه حضور و غیاب{% endblock %}
 
-{% block topbar_title %}درخواست مرخصی{% endblock %}
+{% block topbar_title %}{% if viewing_as_admin %}مرخصی {{ target_display_name or target_user_id }}{% else %}درخواست مرخصی{% endif %}{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -238,26 +238,63 @@
 </div>
 {% endif %}
 
+{% if viewing_as_admin %}
+<div class="alert alert-info d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <div>
+        <i class="bi bi-eye"></i>
+        در حال مشاهده صفحه مرخصی از نگاه کاربر
+        <strong>{{ target_display_name or target_user_id }}</strong>
+        <code class="ms-1">{{ target_user_id }}</code>
+        <span class="ms-2 small">(فقط مشاهده — ثبت/لغو غیرفعال است)</span>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+        <a href="/admin/profile/{{ target_user_id }}" class="btn btn-sm btn-outline-primary">پروفایل</a>
+        <a href="/admin/dashboard/user/{{ target_user_id }}" class="btn btn-sm btn-outline-secondary">داشبورد</a>
+        <a href="/admin/leave-requests?search={{ target_user_id }}&show_all=1" class="btn btn-sm btn-outline-secondary">درخواست‌ها</a>
+    </div>
+</div>
+{% endif %}
+
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
-        <h4 class="mb-1 fw-bold"><i class="bi bi-calendar-check text-primary"></i> درخواست مرخصی</h4>
-        <small class="text-muted">ثبت درخواست مرخصی و مشاهده وضعیت</small>
+        <h4 class="mb-1 fw-bold">
+            <i class="bi bi-calendar-check text-primary"></i>
+            {% if viewing_as_admin %}
+            مرخصی {{ target_display_name or target_user_id }}
+            {% else %}
+            درخواست مرخصی
+            {% endif %}
+        </h4>
+        <small class="text-muted">
+            {% if viewing_as_admin %}
+            مانده، استحقاق و تاریخچه درخواست‌ها از نگاه کاربر
+            {% else %}
+            ثبت درخواست مرخصی و مشاهده وضعیت
+            {% endif %}
+        </small>
     </div>
+    {% if viewing_as_admin %}
+    <a href="/admin/profile/{{ target_user_id }}" class="btn btn-outline-primary btn-sm rounded-pill"><i class="bi bi-arrow-right"></i> بازگشت به پروفایل</a>
+    {% else %}
     <a href="/dashboard" class="btn btn-outline-primary btn-sm rounded-pill"><i class="bi bi-arrow-right"></i> بازگشت به داشبورد</a>
+    {% endif %}
 </div>
 
-{% set show_entitlement = al_entitlement is defined and al_entitlement > 0 %}
+{% set show_entitlement = al_entitlement is defined and (al_entitlement > 0 or is_conscript) %}
+{% set scope_badge = period_label if period_label is defined else ('سال ' ~ current_year) %}
 <div class="row g-3 mb-2">
     {% if show_entitlement %}
     <div class="col-lg-4 col-md-4 col-12">
         <div class="card balance-card card-entitlement">
-            <span class="year-badge">سال {{ current_year }}</span>
+            <span class="year-badge">{{ scope_badge }}</span>
             <div class="card-body d-flex align-items-center gap-3 pt-4">
                 <div class="balance-icon"><i class="bi bi-award"></i></div>
                 <div>
                     <div class="balance-value">{{ al_entitlement }}</div>
                     <div class="balance-label">میزان استحقاق</div>
-                    <div class="balance-sub">استحقاق سال جاری (روز)</div>
+                    <div class="balance-sub">
+                        {% if is_conscript %}استحقاق کل دوره خدمت{% else %}استحقاق سال جاری (روز){% endif %}
+                    </div>
                 </div>
             </div>
         </div>
@@ -265,27 +302,31 @@
     {% endif %}
     <div class="col-lg-{% if show_entitlement %}4{% else %}6{% endif %} col-md-{% if show_entitlement %}4{% else %}6{% endif %} col-12">
         <div class="card balance-card card-used">
-            <span class="year-badge">سال {{ current_year }}</span>
+            <span class="year-badge">{{ scope_badge }}</span>
             <div class="card-body d-flex align-items-center gap-3 pt-4">
                 <div class="balance-icon"><i class="bi bi-calendar2-check"></i></div>
                 <div>
                     <div class="balance-value">{{ al_used if al_used is defined else 0 }}</div>
                     <div class="balance-label">میزان استفاده</div>
-                    <div class="balance-sub">مصرف تأییدشده سال جاری</div>
+                    <div class="balance-sub">
+                        {% if is_conscript %}مصرف تأییدشده در دوره خدمت{% else %}مصرف تأییدشده سال جاری{% endif %}
+                    </div>
                 </div>
             </div>
         </div>
     </div>
     <div class="col-lg-{% if show_entitlement %}4{% else %}6{% endif %} col-md-{% if show_entitlement %}4{% else %}6{% endif %} col-12">
         <div class="card balance-card card-remaining">
-            <span class="year-badge">سال {{ current_year }}</span>
+            <span class="year-badge">{{ scope_badge }}</span>
             <div class="card-body d-flex align-items-center gap-3 pt-4">
                 <div class="balance-icon"><i class="bi bi-wallet2"></i></div>
                 <div>
                     <div class="balance-value">{{ al_remaining if al_remaining is defined else al_balance }}</div>
                     <div class="balance-label">مانده</div>
                     <div class="balance-sub">
-                        {% if cw_days is defined and cw_days > 0 %}
+                        {% if is_conscript %}
+                        استحقاق − مصرف (دوره خدمت)
+                        {% elif cw_days is defined and cw_days > 0 %}
                         شامل {{ cw_days|int }} روز ذخیره سال قبل
                         {% else %}
                         قابل استفاده برای درخواست
@@ -296,6 +337,43 @@
         </div>
     </div>
 </div>
+{% if is_conscript and conscript_info %}
+<div class="leave-side-chips mb-3">
+    <span class="leave-side-chip">
+        <i class="bi bi-flag"></i>
+        مبنای شروع مرخصی:
+        <span class="chip-value">{{ conscript_info.leave_start_basis_label or '—' }}</span>
+    </span>
+    {% if conscript_info.leave_start_j %}
+    <span class="leave-side-chip">
+        <i class="bi bi-calendar-event"></i>
+        شروع پوشش:
+        <span class="chip-value">{{ conscript_info.leave_start_j }}</span>
+    </span>
+    {% endif %}
+    {% if conscript_info.dispatch_j %}
+    <span class="leave-side-chip">
+        <i class="bi bi-airplane"></i>
+        اعزام:
+        <span class="chip-value">{{ conscript_info.dispatch_j }}</span>
+    </span>
+    {% endif %}
+    {% if conscript_info.unit_entry_j %}
+    <span class="leave-side-chip">
+        <i class="bi bi-building"></i>
+        ورود یگان:
+        <span class="chip-value">{{ conscript_info.unit_entry_j }}</span>
+    </span>
+    {% endif %}
+    {% if conscript_info.clinic_entry_j %}
+    <span class="leave-side-chip">
+        <i class="bi bi-hospital"></i>
+        ورود درمانگاه:
+        <span class="chip-value">{{ conscript_info.clinic_entry_j }}</span>
+    </span>
+    {% endif %}
+</div>
+{% endif %}
 {% if sl_balance > 0 or rl_balance > 0 or cw_balance > 0 %}
 <div class="leave-side-chips mb-4">
     {% if sl_balance > 0 %}
@@ -326,6 +404,14 @@
                 {% if pending_count > 0 %}<span class="badge bg-warning text-dark rounded-pill"><i class="bi bi-hourglass-split"></i> {{ pending_count }} در انتظار</span>{% endif %}
             </div>
             <div class="card-body">
+                {% if viewing_as_admin %}
+                <div class="alert alert-secondary mb-0">
+                    <i class="bi bi-lock"></i>
+                    ثبت درخواست از این نما غیرفعال است. برای مدیریت درخواست‌ها از
+                    <a href="/admin/leave-requests?search={{ target_user_id }}&show_all=1">صفحه درخواست‌های ادمین</a>
+                    استفاده کنید.
+                </div>
+                {% else %}
                 <form method="post" action="/leave/request" id="leaveForm">
                     <div class="row g-3">
                         <div class="col-12">
@@ -387,6 +473,7 @@
                     </div>
                 </form>
                 <div class="alert alert-info mt-3 mb-0 small"><i class="bi bi-info-circle"></i> تعطیلات رسمی و جمعه‌ها به صورت خودکار از تعداد روزهای مرخصی کسر می‌شوند.</div>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -522,7 +609,7 @@
                             {% endif %}
                         </td>
                         <td class="text-center">
-                            {% if req.status == 'P' %}
+                            {% if req.status == 'P' and not viewing_as_admin %}
                             <form method="post" action="/leave/request/{{ req.id }}/cancel" class="d-inline" onsubmit="return confirm('آیا از لغو این درخواست مطمئن هستید؟');">
                                 <button type="submit" class="btn btn-outline-danger btn-sm" title="لغو درخواست"><i class="bi bi-x-lg"></i></button>
                             </form>
@@ -559,6 +646,7 @@
 {% endblock %}
 
 {% block extra_js %}
+{% if not viewing_as_admin %}
 <script>
 function clearDate(inputId) {
     document.getElementById(inputId).value = '';
@@ -681,4 +769,5 @@ document.addEventListener('DOMContentLoaded', function() {
     if (startTime) startTime.addEventListener('input', calculateHLDuration); if (endTime) endTime.addEventListener('input', calculateHLDuration);
 });
 </script>
+{% endif %}
 {% endblock %}
