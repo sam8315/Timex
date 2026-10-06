@@ -40,6 +40,26 @@ def current_jalali_year():
     return jdatetime.date.today().year
 
 
+@pytest.fixture(autouse=True)
+def _restore_seed_membership_annual_and_mirrors(db):
+    """Keep Rule bases + PolicyValue mirrors aligned after each characterization test."""
+    yield
+    from models.membership_type_rule import MembershipTypeRule
+    from web.services.annual_leave_policy_authority import (
+        sync_compat_policy_mirrors_from_rules,
+    )
+    from web.services.membership_service import SEED_MEMBERSHIPS
+
+    for code, _name, annual, *_rest in SEED_MEMBERSHIPS:
+        db.query(MembershipTypeRule).filter(
+            MembershipTypeRule.membership_type_code == code,
+            MembershipTypeRule.status == 'active',
+        ).update({'annual_leave_base': annual})
+    db.flush()
+    sync_compat_policy_mirrors_from_rules(db)
+    db.commit()
+
+
 def seed_leave_policy(
     db,
     dept_annual: Dict[str, int],
@@ -141,6 +161,15 @@ def set_active_membership_annual_base(db, membership_code: str, annual_leave_bas
         MembershipTypeRule.membership_type_code == membership_code,
         MembershipTypeRule.status == 'active',
     ).update({'annual_leave_base': max(0, int(annual_leave_base))})
+    db.flush()
+    # Compatibility PolicyValue mirror must track Rule (SoT).
+    from web.services.annual_leave_policy_authority import (
+        sync_compat_policy_mirrors_from_rules,
+    )
+
+    sync_compat_policy_mirrors_from_rules(
+        db, membership_codes=[str(membership_code)]
+    )
     db.commit()
 
 

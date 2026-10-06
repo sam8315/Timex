@@ -152,7 +152,7 @@ Format: `Current Behavior → Target Rule → Future Change`
 8. Conscript only `service_deduction_days` on end → ServiceDurationPolicy + StartDatePolicy + effective duration → Future: service inputs + Engine Context (no Phase 1 models)  
 9. No bomi / service-type / unit entitlement inputs → Reference-driven service context → Future: Resolver inputs; no hard-coded public thresholds  
 10. Service extra / positive seniority absent → Official: no effect; Conscript: deduction affects, extra does not → Future: explicit Context fields when models exist  
-11. Physician math = contractual; static annual 0 in `CONTRACT_TYPES` → Keep policy-driven; no Phase 1 invention → Future: only if Spec later differentiates  
+11. Physician math = contractual; static annual 0 in `CONTRACT_TYPES` / Membership seed → Keep policy-driven via `MembershipTypeRule` (SoT); PolicyValue `annual_leave_dept_5` is compatibility mirror only (aligned by `align_annual_leave_policy_mirrors`); no invented legal 30 → Future: only if Spec later differentiates physician law
 12. Types 6/7 map to dept 4 editable → Other membership defaults 0 via policy → Future: OtherMembershipDefaultPolicy  
 13. Dual buyback paths (`resolve_max_buyback` vs CF `calculate_leave_ceiling`) → Single Buyback Policy outside Engine → Future: Settlement consolidation  
 14. Some CF flows use Gregorian 365 → Uniform Jalali calendar in Settlement → Future: outside Engine  

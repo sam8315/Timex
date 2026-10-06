@@ -34,6 +34,18 @@ async def annual_leave_policies_page(
         return RedirectResponse(url='/admin?error=no_permission', status_code=302)
 
     policies = list_membership_al_policies(db)
+    from web.services.annual_leave_policy_authority import (
+        audit_annual_policy_conflicts,
+        is_engine_promotion_allowed,
+    )
+    from web.services.leave_entitlement_cutover import (
+        get_effective_entitlement_path,
+        get_entitlement_path,
+    )
+
+    conflicts = audit_annual_policy_conflicts(db)
+    env_path = get_entitlement_path()
+    effective_path = get_effective_entitlement_path(db)
     return templates.TemplateResponse(
         'admin/annual_leave_policies.html',
         {
@@ -41,7 +53,10 @@ async def annual_leave_policies_page(
             'user': user,
             'policies': policies,
             'membership_change_mode': resolve_membership_change_mode(db).value,
-            'path': get_entitlement_path_safe(),
+            'path': env_path,
+            'effective_path': effective_path,
+            'engine_promotion_allowed': is_engine_promotion_allowed(db),
+            'policy_conflicts': conflicts,
             'can_edit_membership': has_permission(db, user, 'edit_contracts'),
         },
     )

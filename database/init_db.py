@@ -1080,7 +1080,10 @@ def run_membership_dual_run_validation(bind_engine=None) -> None:
 
     Fail-closed only before the contracts→membership_types FK is added.
     After cutover (FK already present), mismatches are logged as warnings so
-    restarts are not blocked — e.g. policy annual_leave_dept_5=30 vs seed Rule=0.
+    restarts are not blocked.
+    Prefer running align_annual_leave_policy_mirrors() first so orphaned
+    PolicyValue annual_leave_dept_* mirrors (historically dept_5=30 vs Rule=0)
+    are aligned to MembershipTypeRule before this check.
     Never mutates contracts or leave balances.
     """
     from sqlalchemy.orm import sessionmaker
@@ -1141,6 +1144,64 @@ def run_membership_dual_run_validation(bind_engine=None) -> None:
             "Membership dual-run validation passed",
             extra={"event": "database.ready"},
         )
+    finally:
+        db.close()
+
+
+def align_annual_leave_policy_mirrors(bind_engine=None) -> None:
+    """
+    Sync PolicyValue annual_leave_dept_* FROM MembershipTypeRule.annual_leave_base.
+
+    Authoritative live annual = Membership Rules. PolicyValue keys are
+    compatibility mirrors only (clears physician dept_5=30 vs Rule=0 drift).
+    Never mutates contracts or leave balances.
+    """
+    from sqlalchemy.orm import sessionmaker
+    from web.services.annual_leave_policy_authority import (
+        audit_annual_policy_conflicts,
+        sync_compat_policy_mirrors_from_rules,
+    )
+
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
+    tables = set(inspector.get_table_names())
+    if "membership_type_rules" not in tables or "policy_values" not in tables:
+        return
+
+    SessionLocal = sessionmaker(bind=target, autoflush=False, autocommit=False)
+    db = SessionLocal()
+    try:
+        before = audit_annual_policy_conflicts(db)
+        changes = sync_compat_policy_mirrors_from_rules(db)
+        if changes:
+            db.commit()
+        else:
+            db.rollback()
+        after = audit_annual_policy_conflicts(db)
+        logger.info(
+            "AL policy mirrors aligned conflicts_before=%s changes=%s "
+            "conflicts_after=%s",
+            len(before),
+            len(changes),
+            len(after),
+            extra={"event": "database.ready"},
+        )
+        if after:
+            for c in after[:20]:
+                logger.warning(
+                    "AL policy mirror conflict remains code=%s kind=%s %s",
+                    c.membership_code,
+                    c.kind,
+                    c.detail,
+                    extra={"event": "database.ready"},
+                )
+    except Exception:
+        db.rollback()
+        logger.exception(
+            "AL policy mirror alignment failed",
+            extra={"event": "database.operation_failed"},
+        )
+        raise
     finally:
         db.close()
 
@@ -1547,10 +1608,11 @@ def create_tables() -> None:
         migrate_employee_document_types()
         # Membership cutover order (fail-closed before FKs):
         # 1) foundation columns/checks  2) seed insert-only  3) policy 6/7
-        # 4) dual-run  5) orphan check  6) FKs
+        # 4) Rule→PolicyValue annual mirrors  5) dual-run  6) orphan/FKs
         migrate_membership_foundation_hardening()
         seed_membership_types()
         align_leave_policy_membership_67()
+        align_annual_leave_policy_mirrors()
         run_membership_dual_run_validation()
         migrate_membership_contract_fk()
         seed_role_permissions()

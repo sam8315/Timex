@@ -188,7 +188,8 @@
                 <p class="small text-muted mb-2">
                     پایه استحقاقی از
                     <a href="/admin/membership-types">انواع عضویت</a>
-                    خوانده می‌شود (فقط‌خواندنی). اینجا فقط پرچم اعمال منطقه ذخیره می‌شود.
+                    (MembershipTypeRule — منبع حقیقت) خوانده می‌شود؛ فقط‌خواندنی.
+                    اینجا فقط پرچم اعمال منطقه ذخیره می‌شود.
                     <a href="/admin/policies/regions">مناطق</a>
                 </p>
                 <table class="table table-sm table-bordered align-middle mb-3">
@@ -201,8 +202,13 @@
                     </thead>
                     <tbody>
                         {% for dept in employment_rows %}
-                        <tr>
-                            <td>{{ dept.name }}</td>
+                        <tr{% if dept.mirror_conflict %} class="table-warning"{% endif %}>
+                            <td>
+                                {{ dept.name }}
+                                {% if dept.mirror_conflict %}
+                                <div class="small text-danger">{{ dept.mirror_conflict }}</div>
+                                {% endif %}
+                            </td>
                             <td>
                                 <span class="form-control-plaintext form-control-sm px-1">{{ dept.annual }}</span>
                             </td>

@@ -527,12 +527,38 @@ def _cleanup_users_and_adjustments(session) -> None:
     session.commit()
 
 
+def _restore_seed_membership_annual_and_mirrors(session) -> None:
+    """
+    Reset active MembershipTypeRule bases to SEED_MEMBERSHIPS and sync
+    PolicyValue annual_leave_dept_* mirrors — prevents cross-test drift
+    (e.g. conscript base left at 35).
+    """
+    try:
+        from models.membership_type_rule import MembershipTypeRule
+        from web.services.annual_leave_policy_authority import (
+            sync_compat_policy_mirrors_from_rules,
+        )
+        from web.services.membership_service import SEED_MEMBERSHIPS
+
+        for code, _name, annual, *_rest in SEED_MEMBERSHIPS:
+            session.query(MembershipTypeRule).filter(
+                MembershipTypeRule.membership_type_code == code,
+                MembershipTypeRule.status == 'active',
+            ).update({'annual_leave_base': annual})
+        session.flush()
+        sync_compat_policy_mirrors_from_rules(session)
+        session.commit()
+    except Exception:
+        session.rollback()
+
+
 @pytest.fixture(autouse=True)
 def cleanup_test_db():
     """Clean up test database before and after each test."""
     session = TestingSessionLocal()
     try:
         _cleanup_users_and_adjustments(session)
+        _restore_seed_membership_annual_and_mirrors(session)
     finally:
         session.close()
 
@@ -541,6 +567,7 @@ def cleanup_test_db():
     session = TestingSessionLocal()
     try:
         _cleanup_users_and_adjustments(session)
+        _restore_seed_membership_annual_and_mirrors(session)
     finally:
         session.close()
 

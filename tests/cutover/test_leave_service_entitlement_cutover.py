@@ -51,7 +51,11 @@ def path_engine(monkeypatch):
 
 
 def _seed_contract(db, make_user, *, type_code='4', annual=30, end_offset=None):
+    from tests.characterization.conftest import set_active_membership_annual_base
+
     user = make_user(department=type_code, region_code='NORMAL', balance_al=None)
+    # Rule is SoT; PolicyValue mirror follows via set_active_membership_annual_base.
+    set_active_membership_annual_base(db, type_code, annual)
     seed_leave_policy(db, {type_code: annual}, region_applies={type_code: False})
     year = __import__('jdatetime').date.today().year
     y_start, y_end = jalali_year_bounds_g(year)
@@ -155,7 +159,10 @@ def test_open_ended_permanent_engine_parity(db, make_user, path_engine):
 
 
 def test_conscript_deduction_engine_parity(db, make_user, path_engine):
+    from tests.characterization.conftest import set_active_membership_annual_base
+
     user = make_user(department='2', region_code='NORMAL', balance_al=None)
+    set_active_membership_annual_base(db, '2', 35)
     seed_leave_policy(db, {'2': 35}, region_applies={'2': False})
     year = __import__('jdatetime').date.today().year
     y_start, _ = jalali_year_bounds_g(year)
@@ -171,6 +178,9 @@ def test_conscript_deduction_engine_parity(db, make_user, path_engine):
     legacy = calculate_entitlement_by_year(db, c, annual_override=35)
     engine = entitlement_via_resolver_engine(db, c, annual_override=35)
     assert entitlements_match(legacy, engine)
+    assert entitlements_match(
+        legacy, resolve_prorated_entitlement(db, c, annual_override=35)
+    )
 
 
 def test_zero_entitlement_engine(db, make_user, path_engine):

@@ -140,10 +140,13 @@ def _bump_metric(name: str, delta: int = 1) -> None:
 
 def get_entitlement_path() -> str:
     """
-    Entitlement cutover path.
+    Entitlement cutover path (env only — no DB gate).
 
     Phase 5 default is ``engine`` when env is unset.
     Invalid values fall back to ``legacy`` (safe rollback semantics).
+
+    For DB-aware promotion safety (Rule↔PolicyValue mirror conflicts),
+    use ``get_effective_entitlement_path(db)``.
     """
     raw = (os.getenv('TIMEX_AL_ENTITLEMENT_PATH') or PATH_ENGINE).strip().lower()
     if raw not in _VALID_PATHS:
@@ -154,6 +157,43 @@ def get_entitlement_path() -> str:
         )
         return PATH_LEGACY
     return raw
+
+
+def get_effective_entitlement_path(db: Optional[Session] = None) -> str:
+    """
+    Env path with promotion safety gate.
+
+    If env requests ``engine`` but annual policy mirror conflicts remain
+    (e.g. physician Rule base 0 vs orphaned annual_leave_dept_5=30),
+    downgrade to ``shadow`` so Production never mutates via engine while
+    live policy sources diverge.
+    """
+    path = get_entitlement_path()
+    if path != PATH_ENGINE or db is None:
+        return path
+    try:
+        from web.services.annual_leave_policy_authority import (
+            engine_promotion_blockers,
+        )
+
+        blockers = engine_promotion_blockers(db)
+    except Exception:
+        logger.exception(
+            'al_entitlement_cutover promotion_gate_error; downgrading '
+            'engine→shadow'
+        )
+        return PATH_SHADOW
+    if blockers:
+        try:
+            logger.warning(
+                'al_entitlement_cutover engine_promotion_blocked '
+                'downgrade=shadow blockers=%s',
+                '; '.join(blockers[:10]),
+            )
+        except Exception:
+            pass
+        return PATH_SHADOW
+    return PATH_ENGINE
 
 
 def _legacy_entitlement(
@@ -672,7 +712,7 @@ def resolve_prorated_entitlement(
 
     Never mutates LeaveBalance / LeaveTransaction.
     """
-    path = get_entitlement_path()
+    path = get_effective_entitlement_path(db)
 
     if path == PATH_LEGACY:
         return _legacy_entitlement(db, contract, employee, annual_override)
@@ -684,7 +724,7 @@ def resolve_prorated_entitlement(
             db, contract, legacy, annual_override=annual_override
         )
 
-    # engine (Phase 3 fail-closed; not auto-promoted by Phase 4)
+    # engine (fail-closed parity; blocked while Rule↔mirror conflicts exist)
     try:
         new = entitlement_via_resolver_engine(
             db, contract, annual_override=annual_override

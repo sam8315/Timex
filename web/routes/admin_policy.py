@@ -327,17 +327,26 @@ async def admin_policies_leave(
         'modern_from_year': _era_display('buyback_era_modern_from_year', '1399'),
     }
 
-    # annual_leave_base از Membership Rule (فقط نمایش)؛ region_applies در Policy
+    # annual_leave_base از Membership Rule (SoT، فقط نمایش)؛ region_applies در Policy
+    # PolicyValue annual_leave_dept_* آینه سازگاری است — اینجا ویرایش نمی‌شود.
     from web.services.membership_service import resolve_annual_leave_base
+    from web.services.annual_leave_policy_authority import (
+        audit_annual_policy_conflicts,
+    )
     employment_rows = []
+    conflict_by_code = {
+        c.membership_code: c for c in audit_annual_policy_conflicts(db)
+    }
     for code, name in dept_types:
         r_pv = _get_param(db, policy.id, f'region_applies_dept_{code}')
         annual = resolve_annual_leave_base(db, code)
         region_applies = (r_pv.parameter_value != 'false') if r_pv else True
+        conflict = conflict_by_code.get(str(code))
         employment_rows.append({
             'code': code, 'name': name, 'annual': annual,
             'region_applies': region_applies,
             'annual_readonly': True,
+            'mirror_conflict': conflict.detail if conflict else None,
         })
 
     return templates.TemplateResponse(request, "admin/policy_leave.html", {

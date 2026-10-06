@@ -257,6 +257,31 @@ def run(codes: List[str], limit_per_code: Optional[int] = None) -> int:
 
             print()
 
+        print('========== POLICY AUTHORITY ==========')
+        try:
+            from web.services.annual_leave_policy_authority import (
+                audit_annual_policy_conflicts,
+                is_engine_promotion_allowed,
+                physician_live_annual_base,
+            )
+
+            print(f'physician_live_rule_base={physician_live_annual_base(db)}')
+            print(
+                f'engine_promotion_allowed='
+                f'{is_engine_promotion_allowed(db)}'
+            )
+            for c in audit_annual_policy_conflicts(db, membership_codes=codes):
+                print(
+                    f'policy_conflict code={c.membership_code} '
+                    f'kind={c.kind} rule_base={c.rule_base} '
+                    f'mirror={c.mirror_annual} detail={c.detail}'
+                )
+                exit_code = 1
+        except Exception as exc:
+            print(f'policy_authority_ERROR={type(exc).__name__}:{exc}')
+            exit_code = 1
+        print()
+
         print('========== SUMMARY ==========')
         for code in codes:
             s = by_membership[code]
@@ -299,8 +324,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         '--codes',
-        default='1,2,3,4',
-        help='Comma-separated membership codes (default: 1,2,3,4)',
+        default='1,2,3,4,5',
+        help='Comma-separated membership codes (default: 1,2,3,4,5)',
     )
     parser.add_argument(
         '--limit-per-code',

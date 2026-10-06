@@ -34,6 +34,8 @@ SEED_MEMBERSHIPS: Tuple[Tuple[str, str, int, bool, bool, bool, int], ...] = (
     ("2", "وظیفه", 30, True, True, False, 2),
     ("3", "خریدخدمت", 30, False, False, False, 3),
     ("4", "قراردادی", 30, False, False, False, 4),
+    # Physician seed base 0 = Foundation/Target Spec default (policy-driven SoT).
+    # Not a legal invention of "no leave"; Admin Membership Rules own the live value.
     ("5", "پزشکی", 0, False, False, False, 5),
     ("6", "سایر / متفرقه", 0, False, False, False, 6),
     ("7", "قرارداد با بیمه‌ها", 0, False, False, False, 7),
@@ -179,6 +181,14 @@ def activate_pending_rule(db: Session, rule_id: int) -> MembershipTypeRule:
     rule.status = "active"
     db.flush()
     refresh_rule_lifecycle_statuses(db, rule.membership_type_code)
+    # Keep PolicyValue annual_leave_dept_* as compatibility mirror of Rule.
+    from web.services.annual_leave_policy_authority import (
+        sync_compat_policy_mirrors_from_rules,
+    )
+
+    sync_compat_policy_mirrors_from_rules(
+        db, membership_codes=[rule.membership_type_code]
+    )
     return rule
 
 

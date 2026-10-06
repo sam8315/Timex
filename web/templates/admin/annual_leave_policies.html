@@ -8,8 +8,13 @@
         <div>
             <h1 class="h4 mb-1">سیاست‌های مرخصی استحقاقی</h1>
             <p class="text-muted small mb-0">
-                منبع داده: قواعد عضویت (MembershipTypeRule) + Settlement facades.
-                مسیر محاسبه فعال: <code>{{ path }}</code>
+                منبع حقیقت پایه سالانه (live):
+                <strong>MembershipTypeRule.annual_leave_base</strong>
+                — PolicyValue <code>annual_leave_dept_*</code> فقط آینه سازگاری است.
+                مسیر env: <code>{{ path }}</code>
+                {% if effective_path and effective_path != path %}
+                · مسیر مؤثر: <code>{{ effective_path }}</code>
+                {% endif %}
             </p>
         </div>
         <div class="d-flex gap-2">
@@ -18,10 +23,33 @@
         </div>
     </div>
 
+    {% if policy_conflicts %}
+    <div class="alert alert-warning py-2 small">
+        تعارض آینه PolicyValue با قاعده عضویت — Promotion به
+        <code>engine</code> مسدود است تا هم‌تراز شود:
+        <ul class="mb-0 mt-1">
+            {% for c in policy_conflicts %}
+            <li>
+                کد <code>{{ c.membership_code }}</code>:
+                Rule={{ c.rule_base }}
+                {% if c.mirror_annual is not none %}· mirror={{ c.mirror_annual }}{% endif %}
+                ({{ c.kind }})
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% elif engine_promotion_allowed %}
+    <div class="alert alert-success py-2 small">
+        تعارض Rule↔mirror وجود ندارد — از نظر سیاست سالانه، Promotion به
+        <code>engine</code> مجاز است (parity شارژ را جداگانه با diagnostic تأیید کنید).
+    </div>
+    {% endif %}
+
     <div class="alert alert-info py-2 small">
         حالت تسویه تغییر عضویت (قابل تنظیم در Policy؛ پیش‌فرض رفتار فعلی):
         <strong>{{ membership_change_mode }}</strong>
         — بدون اختراع قانون انتقال/بازخرید جدید.
+        پایه پزشک (کد ۵) از قاعده عضویت خوانده می‌شود؛ مقدار در UI سخت‌کد نیست.
     </div>
 
     <div class="card border-0 shadow-sm">
