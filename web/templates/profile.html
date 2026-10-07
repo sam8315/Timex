@@ -540,6 +540,129 @@
     </div>
 </div>
 
+    <!-- بستگان من -->
+<div class="card mb-4">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h6 class="mb-0"><i class="bi bi-people"></i> بستگان من</h6>
+        <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#addRelativeModal">
+            <i class="bi bi-plus-circle"></i> افزودن فرد وابسته
+        </button>
+    </div>
+    <div class="card-body">
+        <p class="small text-muted mb-3">
+            پس از ثبت یا ویرایش، اطلاعات برای تأیید واحد مربوطه ارسال می‌شود.
+        </p>
+        {% if relatives_error %}
+        <div class="alert alert-danger">
+            <i class="bi bi-exclamation-triangle"></i> {{ relatives_error }}
+        </div>
+        {% endif %}
+        {% if relatives %}
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>نام</th>
+                        <th>نسبت</th>
+                        <th class="text-center">تأیید</th>
+                        <th class="text-center">عملیات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for rel in relatives %}
+                    <tr>
+                        <td>
+                            <strong>{{ rel.full_name }}</strong>
+                            {% if rel.national_code %}
+                            <div class="small text-muted" dir="ltr">{{ rel.national_code }}</div>
+                            {% endif %}
+                        </td>
+                        <td>{{ rel.relationship_type_name }}</td>
+                        <td class="text-center">
+                            {% if rel.status == 'VERIFIED' %}
+                            <span class="badge bg-success">تأیید شده</span>
+                            {% elif rel.status == 'REJECTED' %}
+                            <span class="badge bg-danger">رد شده</span>
+                            {% if rel.rejection_reason %}
+                            <div class="small text-muted mt-1">{{ rel.rejection_reason }}</div>
+                            {% endif %}
+                            {% else %}
+                            <span class="badge bg-warning text-dark">در انتظار تأیید</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            <div class="btn-group btn-group-sm">
+                                <button type="button" class="btn btn-outline-secondary" title="ویرایش"
+                                        data-bs-toggle="modal" data-bs-target="#editRelativeModal-{{ rel.id }}">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                {% if rel.status != 'VERIFIED' %}
+                                <form method="post" action="/profile/relatives/{{ rel.id }}/delete" class="d-inline"
+                                      onsubmit="return confirm('این فرد وابسته حذف شود؟');">
+                                    <button type="submit" class="btn btn-outline-danger" title="حذف">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-4">
+            <i class="bi bi-people display-6 text-muted"></i>
+            <p class="text-muted mt-2 mb-0">هنوز فرد وابسته‌ای ثبت نکرده‌اید</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="modal fade" id="addRelativeModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form method="post" action="/profile/relatives/add">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-plus-circle"></i> افزودن فرد وابسته</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    {% set rel = None %}
+                    {% include "partials/relative_form_fields.html" %}
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
+                    <button type="submit" class="btn btn-success">ثبت</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% for rel in relatives %}
+<div class="modal fade" id="editRelativeModal-{{ rel.id }}" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form method="post" action="/profile/relatives/{{ rel.id }}/update">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-pencil"></i> ویرایش {{ rel.full_name }}</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    {% include "partials/relative_form_fields.html" %}
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
+                    <button type="submit" class="btn btn-primary">ذخیره</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endfor %}
+
     <!-- 🆕 مودال افزودن آدرس -->
     <div class="modal fade" id="addAddressModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
@@ -1185,6 +1308,7 @@ function startOtpTimer() {
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="/static/js/address_map.js"></script>
 <script src="/static/js/bank_fields.js"></script>
+<script src="/static/js/relative_form.js"></script>
 <script>
 // ============================================
 // 🗺️ انتخاب موقعیت آدرس روی نقشه

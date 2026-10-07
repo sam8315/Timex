@@ -176,6 +176,44 @@ async def profile_page(
         acc.card_masked = _mask_tail(acc.card_number)
         acc.sheba_masked = _mask_tail(acc.sheba)
 
+    from models.employee_relative import (
+        EMPLOYMENT_STATUSES,
+        INSURANCE_STATUSES,
+        RELATIONSHIP_TYPES,
+        RELATIVE_GENDERS,
+        RELATIVE_MARITAL_STATUSES,
+        RELATIVE_STATUSES,
+    )
+    from web.services.employee_relative_service import list_relatives
+
+    relatives_error = None
+    try:
+        relatives = list_relatives(db, user.user_id)
+        for rel in relatives:
+            for attr, src in (
+                ("birth_date_j", "birth_date"),
+                ("marriage_date_j", "marriage_date"),
+                ("divorce_date_j", "divorce_date"),
+                ("death_date_j", "death_date"),
+                ("study_start_date_j", "study_start_date"),
+                ("study_end_date_j", "study_end_date"),
+                ("disability_start_date_j", "disability_start_date"),
+                ("disability_end_date_j", "disability_end_date"),
+            ):
+                raw = getattr(rel, src, None)
+                try:
+                    setattr(
+                        rel,
+                        attr,
+                        jdatetime.date.fromgregorian(date=raw).strftime("%Y/%m/%d")
+                        if raw else "",
+                    )
+                except Exception:
+                    setattr(rel, attr, "")
+    except Exception:
+        relatives = []
+        relatives_error = "خطا در بارگذاری بستگان"
+
     return templates.TemplateResponse(request, "profile.html", {
         "user": user,
         "employee": employee,
@@ -198,6 +236,14 @@ async def profile_page(
         "banks": banks,
         "active_bank_ids": active_bank_ids,
         "bank_accounts_error": bank_accounts_error,
+        "relatives": relatives,
+        "relatives_error": relatives_error,
+        "relationship_types": RELATIONSHIP_TYPES,
+        "relative_genders": RELATIVE_GENDERS,
+        "relative_marital_statuses": RELATIVE_MARITAL_STATUSES,
+        "relative_employment_statuses": EMPLOYMENT_STATUSES,
+        "relative_insurance_statuses": INSURANCE_STATUSES,
+        "relative_statuses": RELATIVE_STATUSES,
     })
 
 

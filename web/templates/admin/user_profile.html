@@ -1049,6 +1049,199 @@
     </div>
 </div>
 
+    {% if can_view_employee_relatives or can_manage_employee_relatives or can_verify_employee_relatives %}
+    <!-- بستگان -->
+    <div class="card mb-4">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+            <h6 class="mb-0"><i class="bi bi-people"></i> بستگان</h6>
+            {% if can_manage_employee_relatives %}
+            <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#adminAddRelativeModal">
+                <i class="bi bi-plus-circle"></i> افزودن فرد وابسته
+            </button>
+            {% endif %}
+        </div>
+        <div class="card-body">
+            {% if employee_relatives_error %}
+            <div class="alert alert-danger">
+                <i class="bi bi-exclamation-triangle"></i> {{ employee_relatives_error }}
+            </div>
+            {% endif %}
+            {% if target_employee_relatives %}
+            <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>نام</th>
+                            <th>نسبت</th>
+                            <th class="text-center">کد ملی</th>
+                            <th class="text-center">تاریخ تولد</th>
+                            <th class="text-center">تأیید</th>
+                            <th>وضعیت‌ها</th>
+                            {% if can_manage_employee_relatives or can_verify_employee_relatives %}
+                            <th class="text-center">عملیات</th>
+                            {% endif %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for rel in target_employee_relatives %}
+                        <tr>
+                            <td>
+                                <strong>{{ rel.full_name }}</strong>
+                                {% if rel.gender %}
+                                <span class="badge bg-secondary ms-1">{{ rel.gender_name }}</span>
+                                {% endif %}
+                                {% if rel.death_date %}
+                                <span class="badge bg-dark ms-1">فوت</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ rel.relationship_type_name }}</td>
+                            <td class="text-center" dir="ltr">{{ rel.national_code or '—' }}</td>
+                            <td class="text-center" dir="ltr">{{ rel.birth_date_j or '—' }}</td>
+                            <td class="text-center">
+                                {% if rel.status == 'VERIFIED' %}
+                                <span class="badge bg-success">تأیید شده</span>
+                                {% elif rel.status == 'REJECTED' %}
+                                <span class="badge bg-danger">رد شده</span>
+                                {% else %}
+                                <span class="badge bg-warning text-dark">در انتظار</span>
+                                {% endif %}
+                            </td>
+                            <td class="small">
+                                <span class="badge bg-light text-dark border">تأهل: {{ rel.marital_status_name }}</span>
+                                {% if rel.is_studying is sameas true %}
+                                <span class="badge bg-info text-dark">محصل</span>
+                                {% endif %}
+                                {% if rel.employment_status %}
+                                <span class="badge bg-light text-dark border">{{ rel.employment_status_name }}</span>
+                                {% endif %}
+                                {% if rel.insurance_status %}
+                                <span class="badge bg-light text-dark border">{{ rel.insurance_status_name }}</span>
+                                {% endif %}
+                                {% if rel.is_disabled is sameas true %}
+                                <span class="badge bg-warning text-dark">ازکارافتاده</span>
+                                {% endif %}
+                            </td>
+                            {% if can_manage_employee_relatives or can_verify_employee_relatives %}
+                            <td class="text-center">
+                                <div class="btn-group btn-group-sm">
+                                    {% if can_manage_employee_relatives %}
+                                    <button type="button" class="btn btn-outline-secondary" title="ویرایش"
+                                            data-bs-toggle="modal" data-bs-target="#adminEditRelativeModal-{{ rel.id }}">
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+                                    <form method="post" action="/admin/profile/{{ target_user.user_id }}/relatives/{{ rel.id }}/delete" class="d-inline"
+                                          onsubmit="return confirm('این فرد وابسته از لیست فعال حذف می‌شود (حذف نرم). ادامه می‌دهید؟');">
+                                        <button type="submit" class="btn btn-outline-danger" title="حذف از لیست فعال">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </form>
+                                    {% endif %}
+                                    {% if can_verify_employee_relatives and rel.status != 'VERIFIED' %}
+                                    <form method="post" action="/admin/profile/{{ target_user.user_id }}/relatives/{{ rel.id }}/verify" class="d-inline">
+                                        <button type="submit" class="btn btn-outline-success" title="تأیید">
+                                            <i class="bi bi-check-lg"></i>
+                                        </button>
+                                    </form>
+                                    {% endif %}
+                                    {% if can_verify_employee_relatives and rel.status != 'REJECTED' %}
+                                    <button type="button" class="btn btn-outline-warning" title="رد"
+                                            data-bs-toggle="modal" data-bs-target="#adminRejectRelativeModal-{{ rel.id }}">
+                                        <i class="bi bi-x-lg"></i>
+                                    </button>
+                                    {% endif %}
+                                </div>
+                            </td>
+                            {% endif %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-4">
+                <i class="bi bi-people display-6 text-muted"></i>
+                <p class="text-muted mt-2 mb-0">هیچ فرد وابسته‌ای برای این کارمند ثبت نشده است</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if can_manage_employee_relatives %}
+    <div class="modal fade" id="adminAddRelativeModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <form method="post" action="/admin/profile/{{ target_user.user_id }}/relatives/add">
+                    <div class="modal-header">
+                        <h5 class="modal-title"><i class="bi bi-plus-circle"></i> افزودن فرد وابسته</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        {% set rel = None %}
+                        {% include "partials/relative_form_fields.html" %}
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
+                        <button type="submit" class="btn btn-success">
+                            <i class="bi bi-plus-circle"></i> افزودن
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    {% for rel in target_employee_relatives %}
+    <div class="modal fade" id="adminEditRelativeModal-{{ rel.id }}" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <form method="post" action="/admin/profile/{{ target_user.user_id }}/relatives/{{ rel.id }}/update">
+                    <div class="modal-header">
+                        <h5 class="modal-title"><i class="bi bi-pencil"></i> ویرایش {{ rel.full_name }}</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        {% include "partials/relative_form_fields.html" %}
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-lg"></i> ذخیره
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+    {% endif %}
+
+    {% if can_verify_employee_relatives %}
+    {% for rel in target_employee_relatives %}
+    <div class="modal fade" id="adminRejectRelativeModal-{{ rel.id }}" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form method="post" action="/admin/profile/{{ target_user.user_id }}/relatives/{{ rel.id }}/reject">
+                    <div class="modal-header">
+                        <h5 class="modal-title"><i class="bi bi-x-circle"></i> رد {{ rel.full_name }}</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <label class="form-label">دلیل رد <span class="text-danger">*</span></label>
+                        <textarea name="rejection_reason" class="form-control" rows="3" required
+                                  maxlength="2000">{{ rel.rejection_reason or '' }}</textarea>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
+                        <button type="submit" class="btn btn-warning">رد کردن</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+    {% endif %}
+    {% endif %}
+
     {% if can_view_employee_documents or can_manage_employee_documents %}
     <!-- پرونده پرسنلی / مدارک -->
     <div class="card mb-4">
@@ -1736,6 +1929,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="/static/js/address_map.js"></script>
 <script src="/static/js/bank_fields.js"></script>
+<script src="/static/js/relative_form.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     if (!window.TimexAddressMap) return;

@@ -49,6 +49,21 @@ ALL_PERMISSIONS = {
         'admin': True,
         'super_admin': True,
     },
+    'view_employee_relatives': {
+        'label': 'مشاهده بستگان کارمند',
+        'admin': True,
+        'super_admin': True,
+    },
+    'manage_employee_relatives': {
+        'label': 'مدیریت بستگان کارمند',
+        'admin': True,
+        'super_admin': True,
+    },
+    'verify_employee_relatives': {
+        'label': 'تأیید/رد بستگان کارمند',
+        'admin': True,
+        'super_admin': True,
+    },
     'manage_membership_types': {
         'label': 'مدیریت انواع عضویت',
         'admin': False,

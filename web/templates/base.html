@@ -1276,9 +1276,19 @@
                 var $el = $(this);
                 if ($el.data('jalali-init')) return;  // جلوگیری از مقداردهی تکراری
                 $el.data('jalali-init', true);
+                // data-jalali-initial="false" → فقط اگر value موجود باشد مقداردهی شود
+                // (جلوگیری از پر شدن خودکار با «امروز» برای فیلدهای اختیاری)
+                var attrInitial = $el.attr('data-jalali-initial');
+                var hasValue = !!String($el.val() || '').trim();
+                var useInitial;
+                if (attrInitial === 'false' || attrInitial === '0') {
+                    useInitial = hasValue;
+                } else {
+                    useInitial = true;
+                }
                 $el.pDatepicker({
                     format: 'YYYY/MM/DD',
-                    initialValue: true,
+                    initialValue: useInitial,
                     initialValueType: 'persian',
                     persianDigit: false,
                     autoClose: true,

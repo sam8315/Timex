@@ -1,0 +1,156 @@
+{# Shared relative form fields (admin + self-service). Expects `rel` or None. #}
+<div class="row g-3 relative-form-root">
+    <div class="col-md-4">
+        <label class="form-label">نام <span class="text-danger">*</span></label>
+        <input type="text" name="first_name" class="form-control" required maxlength="100"
+               value="{{ rel.first_name if rel else '' }}">
+    </div>
+    <div class="col-md-4">
+        <label class="form-label">نام خانوادگی <span class="text-danger">*</span></label>
+        <input type="text" name="last_name" class="form-control" required maxlength="100"
+               value="{{ rel.last_name if rel else '' }}">
+    </div>
+    <div class="col-md-4">
+        <label class="form-label">نام پدر</label>
+        <input type="text" name="father_name" class="form-control" maxlength="100"
+               value="{{ rel.father_name if rel and rel.father_name else '' }}">
+    </div>
+    <div class="col-md-4">
+        <label class="form-label">نوع نسبت <span class="text-danger">*</span></label>
+        <select name="relationship_type" class="form-select" required>
+            {% for code, label in relationship_types.items() %}
+            <option value="{{ code }}" {% if rel and rel.relationship_type == code %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-md-4">
+        <label class="form-label">کد ملی</label>
+        <input type="text" name="national_code" class="form-control" dir="ltr" maxlength="10" inputmode="numeric"
+               value="{{ rel.national_code if rel and rel.national_code else '' }}">
+    </div>
+    <div class="col-md-4">
+        <label class="form-label">تاریخ تولد</label>
+        <input type="text" name="birth_date" class="form-control jalali-date" dir="ltr"
+               data-jalali-initial="false"
+               placeholder="1400/01/01" pattern="[0-9]{4}/[0-9]{2}/[0-9]{2}"
+               value="{{ rel.birth_date_j if rel else '' }}">
+    </div>
+    <div class="col-md-4">
+        <label class="form-label">جنسیت</label>
+        <select name="gender" class="form-select">
+            <option value="">نامشخص</option>
+            {% for code, label in relative_genders.items() %}
+            <option value="{{ code }}" {% if rel and rel.gender == code %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-md-4">
+        <label class="form-label">وضعیت تأهل</label>
+        <select name="marital_status" class="form-select relative-marital-status">
+            <option value="">نامشخص</option>
+            {% for code, label in relative_marital_statuses.items() %}
+            <option value="{{ code }}" {% if rel and rel.marital_status == code %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-md-4 relative-dep-marriage">
+        <label class="form-label">تاریخ ازدواج</label>
+        <input type="text" name="marriage_date" class="form-control jalali-date" dir="ltr"
+               data-jalali-initial="false"
+               placeholder="1400/01/01" pattern="[0-9]{4}/[0-9]{2}/[0-9]{2}"
+               value="{{ rel.marriage_date_j if rel else '' }}">
+    </div>
+    <div class="col-md-4 relative-dep-divorce">
+        <label class="form-label">تاریخ طلاق</label>
+        <input type="text" name="divorce_date" class="form-control jalali-date" dir="ltr"
+               data-jalali-initial="false"
+               placeholder="1400/01/01" pattern="[0-9]{4}/[0-9]{2}/[0-9]{2}"
+               value="{{ rel.divorce_date_j if rel else '' }}">
+    </div>
+
+    <div class="col-12">
+        <div class="form-check">
+            <input class="form-check-input relative-deceased-toggle" type="checkbox" value="1"
+                   id="relDeceased{{ rel.id if rel else 'new' }}"
+                   {% if rel and rel.death_date %}checked{% endif %}>
+            <label class="form-check-label" for="relDeceased{{ rel.id if rel else 'new' }}">فوت شده</label>
+        </div>
+    </div>
+    <div class="col-md-4 relative-dep-death">
+        <label class="form-label">تاریخ فوت</label>
+        <input type="text" name="death_date" class="form-control jalali-date" dir="ltr"
+               data-jalali-initial="false"
+               placeholder="1400/01/01" pattern="[0-9]{4}/[0-9]{2}/[0-9]{2}"
+               value="{{ rel.death_date_j if rel else '' }}">
+    </div>
+
+    <div class="col-md-4">
+        <label class="form-label">در حال تحصیل</label>
+        <select name="is_studying" class="form-select relative-studying-select">
+            <option value="" {% if not rel or rel.is_studying is none %}selected{% endif %}>نامشخص</option>
+            <option value="true" {% if rel and rel.is_studying is sameas true %}selected{% endif %}>بله</option>
+            <option value="false" {% if rel and rel.is_studying is sameas false %}selected{% endif %}>خیر</option>
+        </select>
+    </div>
+    <div class="col-md-4 relative-dep-study">
+        <label class="form-label">شروع تحصیل</label>
+        <input type="text" name="study_start_date" class="form-control jalali-date" dir="ltr"
+               data-jalali-initial="false"
+               placeholder="1400/01/01" pattern="[0-9]{4}/[0-9]{2}/[0-9]{2}"
+               value="{{ rel.study_start_date_j if rel else '' }}">
+    </div>
+    <div class="col-md-4 relative-dep-study">
+        <label class="form-label">پایان تحصیل</label>
+        <input type="text" name="study_end_date" class="form-control jalali-date" dir="ltr"
+               data-jalali-initial="false"
+               placeholder="1400/01/01" pattern="[0-9]{4}/[0-9]{2}/[0-9]{2}"
+               value="{{ rel.study_end_date_j if rel else '' }}">
+    </div>
+
+    <div class="col-md-4">
+        <label class="form-label">وضعیت اشتغال</label>
+        <select name="employment_status" class="form-select">
+            <option value="">نامشخص</option>
+            {% for code, label in relative_employment_statuses.items() %}
+            <option value="{{ code }}" {% if rel and rel.employment_status == code %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-md-4">
+        <label class="form-label">وضعیت بیمه</label>
+        <select name="insurance_status" class="form-select">
+            <option value="">نامشخص</option>
+            {% for code, label in relative_insurance_statuses.items() %}
+            <option value="{{ code }}" {% if rel and rel.insurance_status == code %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="col-md-4">
+        <label class="form-label">ازکارافتادگی</label>
+        <select name="is_disabled" class="form-select relative-disabled-select">
+            <option value="" {% if not rel or rel.is_disabled is none %}selected{% endif %}>نامشخص</option>
+            <option value="true" {% if rel and rel.is_disabled is sameas true %}selected{% endif %}>بله</option>
+            <option value="false" {% if rel and rel.is_disabled is sameas false %}selected{% endif %}>خیر</option>
+        </select>
+    </div>
+    <div class="col-md-4 relative-dep-disability">
+        <label class="form-label">شروع ازکارافتادگی</label>
+        <input type="text" name="disability_start_date" class="form-control jalali-date" dir="ltr"
+               data-jalali-initial="false"
+               placeholder="1400/01/01" pattern="[0-9]{4}/[0-9]{2}/[0-9]{2}"
+               value="{{ rel.disability_start_date_j if rel else '' }}">
+    </div>
+    <div class="col-md-4 relative-dep-disability">
+        <label class="form-label">پایان ازکارافتادگی</label>
+        <input type="text" name="disability_end_date" class="form-control jalali-date" dir="ltr"
+               data-jalali-initial="false"
+               placeholder="1400/01/01" pattern="[0-9]{4}/[0-9]{2}/[0-9]{2}"
+               value="{{ rel.disability_end_date_j if rel else '' }}">
+    </div>
+
+    <div class="col-12">
+        <label class="form-label">توضیحات</label>
+        <textarea name="notes" class="form-control" rows="2">{{ rel.notes if rel and rel.notes else '' }}</textarea>
+    </div>
+</div>

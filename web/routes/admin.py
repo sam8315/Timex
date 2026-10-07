@@ -2012,17 +2012,59 @@ async def admin_view_profile(
 
     # پرونده پرسنلی / مدارک
     from models.employee_document import DOCUMENT_STATUSES
+    from models.employee_relative import (
+        EMPLOYMENT_STATUSES,
+        INSURANCE_STATUSES,
+        RELATIONSHIP_TYPES,
+        RELATIVE_GENDERS,
+        RELATIVE_MARITAL_STATUSES,
+        RELATIVE_STATUSES,
+    )
     from web.services.employee_document_service import (
         list_active_document_types,
         list_documents as list_employee_documents,
     )
+    from web.services.employee_relative_service import list_relatives
 
     can_view_employee_documents = has_permission(db, user, "view_employee_documents")
     can_manage_employee_documents = has_permission(db, user, "manage_employee_documents")
     can_verify_employee_documents = has_permission(db, user, "verify_employee_documents")
+    can_view_employee_relatives = has_permission(db, user, "view_employee_relatives")
+    can_manage_employee_relatives = has_permission(db, user, "manage_employee_relatives")
+    can_verify_employee_relatives = has_permission(db, user, "verify_employee_relatives")
     employee_documents_error = None
     target_employee_documents = []
     active_document_types = list_active_document_types(db)
+    employee_relatives_error = None
+    target_employee_relatives = []
+    if can_view_employee_relatives or can_manage_employee_relatives:
+        try:
+            target_employee_relatives = list_relatives(db, target_user_id)
+            for rel in target_employee_relatives:
+                for attr, src in (
+                    ("birth_date_j", "birth_date"),
+                    ("marriage_date_j", "marriage_date"),
+                    ("divorce_date_j", "divorce_date"),
+                    ("death_date_j", "death_date"),
+                    ("study_start_date_j", "study_start_date"),
+                    ("study_end_date_j", "study_end_date"),
+                    ("disability_start_date_j", "disability_start_date"),
+                    ("disability_end_date_j", "disability_end_date"),
+                ):
+                    raw = getattr(rel, src, None)
+                    try:
+                        setattr(
+                            rel,
+                            attr,
+                            jdatetime.date.fromgregorian(date=raw).strftime("%Y/%m/%d")
+                            if raw else "",
+                        )
+                    except Exception:
+                        setattr(rel, attr, "")
+        except Exception as e:
+            logger.exception("Failed to load relatives for %s", target_user_id)
+            target_employee_relatives = []
+            employee_relatives_error = f"خطا در بارگذاری بستگان: {e}"
     if can_view_employee_documents or can_manage_employee_documents:
         try:
             target_employee_documents = list_employee_documents(db, target_user_id)
@@ -2154,6 +2196,17 @@ async def admin_view_profile(
         "can_view_employee_documents": can_view_employee_documents,
         "can_manage_employee_documents": can_manage_employee_documents,
         "can_verify_employee_documents": can_verify_employee_documents,
+        "target_employee_relatives": target_employee_relatives,
+        "employee_relatives_error": employee_relatives_error,
+        "can_view_employee_relatives": can_view_employee_relatives,
+        "can_manage_employee_relatives": can_manage_employee_relatives,
+        "can_verify_employee_relatives": can_verify_employee_relatives,
+        "relationship_types": RELATIONSHIP_TYPES,
+        "relative_genders": RELATIVE_GENDERS,
+        "relative_marital_statuses": RELATIVE_MARITAL_STATUSES,
+        "relative_employment_statuses": EMPLOYMENT_STATUSES,
+        "relative_insurance_statuses": INSURANCE_STATUSES,
+        "relative_statuses": RELATIVE_STATUSES,
         "membership_timeline": membership_timeline,
         "service_region_code": service_region_code,
         "service_region_name": service_region_name,

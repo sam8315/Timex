@@ -733,6 +733,60 @@ def seed_service_health(bind_engine=None) -> None:
         )
 
 
+def migrate_employee_relative_verification(bind_engine=None) -> None:
+    """
+    Idempotent add of verification columns on employee_relatives
+    (status / submitted_by / verified_* / rejection_reason).
+    Existing rows without status become VERIFIED.
+    """
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
+    if "employee_relatives" not in inspector.get_table_names():
+        return
+
+    with target.begin() as conn:
+        columns = {row["name"] for row in inspect(target).get_columns("employee_relatives")}
+        for name, ddl in (
+            ("status", "VARCHAR(20)"),
+            ("submitted_by", "VARCHAR(50)"),
+            ("verified_by", "VARCHAR(50)"),
+            ("verified_at", "TIMESTAMPTZ"),
+            ("rejection_reason", "TEXT"),
+        ):
+            if name not in columns:
+                conn.execute(text(
+                    f'ALTER TABLE "employee_relatives" ADD COLUMN "{name}" {ddl}'
+                ))
+                logger.info(
+                    "Column added table=employee_relatives column=%s",
+                    name,
+                    extra={"event": "database.ready"},
+                )
+
+        conn.execute(text(
+            "UPDATE employee_relatives SET status = 'VERIFIED' WHERE status IS NULL"
+        ))
+        conn.execute(text(
+            "ALTER TABLE employee_relatives ALTER COLUMN status SET DEFAULT 'PENDING'"
+        ))
+        conn.execute(text(
+            "ALTER TABLE employee_relatives ALTER COLUMN status SET NOT NULL"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_employee_relatives_status "
+            "ON employee_relatives (status)"
+        ))
+        conn.execute(text(
+            "ALTER TABLE employee_relatives "
+            "DROP CONSTRAINT IF EXISTS ck_employee_relative_status"
+        ))
+        conn.execute(text(
+            "ALTER TABLE employee_relatives "
+            "ADD CONSTRAINT ck_employee_relative_status "
+            "CHECK (status IN ('PENDING', 'VERIFIED', 'REJECTED'))"
+        ))
+
+
 def seed_employee_document_types(bind_engine=None) -> None:
     """
     Ensure the eight legacy employee document types exist (idempotent).
@@ -1687,6 +1741,7 @@ def create_tables() -> None:
         seed_banks()
         seed_service_health()
         migrate_employee_document_types()
+        migrate_employee_relative_verification()
         # Membership cutover order (fail-closed before FKs):
         # 1) foundation columns/checks  2) seed insert-only  3) policy 6/7
         # 4) Rule→PolicyValue annual mirrors  5) dual-run  6) orphan/FKs

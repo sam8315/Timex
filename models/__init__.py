@@ -29,6 +29,7 @@ from models.bank import Bank
 from models.employee_bank_account import EmployeeBankAccount
 from models.employee_document import EmployeeDocument
 from models.employee_document_type import EmployeeDocumentType
+from models.employee_relative import EmployeeRelative
 from models.education import Education
 from models.leave_carry_forward_request import LeaveCarryForwardRequest
 from models.leave_buyback_quota import LeaveBuybackQuota
@@ -68,6 +69,7 @@ __all__ = [
     'City', 'EmployeeServiceLocation', 'TravelLeaveDetail', 'TravelLeavePolicy',
     'TravelLeavePolicyRule', 'TravelLeaveQuotaSetting',
     'Bank', 'EmployeeBankAccount', 'EmployeeDocument', 'EmployeeDocumentType',
+    'EmployeeRelative',
     'PasswordResetRequest',
     'ServiceHealth',
 ]
