@@ -77,10 +77,13 @@ def build_user_dashboard_context(
     ).all()
     balances_dict = {lb.leave_type: lb.balance for lb in leave_balances}
 
-    from web.services.leave_service import get_available_leave
-    al_available = get_available_leave(db, user_id, today_j.year, 'AL')
-    total_al_available = al_available['total']
-    cw_days = al_available['breakdown'].get('CW', 0)
+    # همان منطق صفحه مرخصی (وظیفه=دوره خدمت، بقیه=سال جاری+ذخیره)
+    from web.services.leave_balance_overview_service import (
+        resolve_user_al_availability,
+    )
+    al_avail = resolve_user_al_availability(db, user_id, year_j=today_j.year)
+    total_al_available = al_avail['total']
+    cw_days = al_avail.get('cw_days') or 0
 
     pending_items = []
 

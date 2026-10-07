@@ -704,8 +704,12 @@ async def approve_leave_request(
                 0,
                 leave_req.days_count - tl_detail.final_travel_days
             )
-        available = get_available_leave(db, leave_req.user_id, year_j, 'AL')
-        current_balance = available['total']
+        from web.services.leave_balance_overview_service import (
+            resolve_user_al_availability,
+        )
+        current_balance = resolve_user_al_availability(
+            db, leave_req.user_id, year_j=year_j
+        )['total']
     else:
         balance = db.query(LeaveBalance).filter(
             LeaveBalance.user_id == leave_req.user_id,

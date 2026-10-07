@@ -679,9 +679,10 @@ def consume_leave(
     """
     مصرف مرخصی استحقاقی برای همه عضویت‌ها:
     1) ذخیره − قابل‌بازخرید (اگر > ۰)
-    2) استحقاقی سال جاری
+    2) استحقاقی همان سال
     3) ذخیره قابل‌بازخرید
 
+    برای وظیفه: پس از سال درخواست، از سایر سال‌های دوره خدمت (قدیم‌تر اول) هم کسر می‌شود.
     سایر انواع: فقط از همان leave_type.
     """
     remaining = float(days_needed)
@@ -693,6 +694,7 @@ def consume_leave(
         amount: float,
         description: str,
         *,
+        year_j: int,
         allow_neg: bool = False,
         bucket_key: Optional[str] = None,
     ) -> float:
@@ -705,7 +707,7 @@ def consume_leave(
             use = remaining
             bal = LeaveBalance(
                 user_id=user_id,
-                year=year,
+                year=year_j,
                 leave_type=lt,
                 balance=-use,
             )
@@ -716,7 +718,7 @@ def consume_leave(
                 consumed_from[bucket_key] = consumed_from.get(bucket_key, 0) + use
             db.add(LeaveTransaction(
                 user_id=user_id,
-                year=year,
+                year=year_j,
                 leave_type=lt,
                 amount=use,
                 transaction_type=TX_USE,
@@ -741,7 +743,7 @@ def consume_leave(
             consumed_from[bucket_key] = consumed_from.get(bucket_key, 0) + use
         db.add(LeaveTransaction(
             user_id=user_id,
-            year=year,
+            year=year_j,
             leave_type=lt,
             amount=use,
             transaction_type=TX_USE,
@@ -750,53 +752,54 @@ def consume_leave(
         ))
         return use
 
-    if leave_type == 'AL':
+    def _consume_al_year(year_j: int, *, allow_neg: bool = False) -> None:
+        nonlocal remaining
+        if remaining <= 0:
+            return
         cw = db.query(LeaveBalance).filter(
             and_(
                 LeaveBalance.user_id == user_id,
-                LeaveBalance.year == year,
+                LeaveBalance.year == year_j,
                 LeaveBalance.leave_type == 'CW',
             )
         ).first()
         cw_days = float(cw.balance) if cw and cw.balance > 0 else 0.0
-        buyback_limit = resolve_cw_buyback_limit(db, user_id, year)
+        buyback_limit = resolve_cw_buyback_limit(db, user_id, year_j)
         buckets = split_cw_buckets(cw_days, buyback_limit)
 
-        # 1) ذخیره غیرقابل‌بازخرید = CW − قابل‌بازخرید
         if buckets['non_buyback'] > 0 and remaining > 0:
             _use_from_balance(
                 cw,
                 'CW',
                 buckets['non_buyback'],
-                "مصرف ذخیره غیرقابل‌بازخرید (اولویت ۱)",
+                f"مصرف ذخیره غیرقابل‌بازخرید سال {year_j} (اولویت ۱)",
+                year_j=year_j,
                 bucket_key='CW_NON_BUYBACK',
             )
 
-        # 2) استحقاقی سال جاری
         if remaining > 0:
             main = db.query(LeaveBalance).filter(
                 and_(
                     LeaveBalance.user_id == user_id,
-                    LeaveBalance.year == year,
+                    LeaveBalance.year == year_j,
                     LeaveBalance.leave_type == 'AL',
                 )
             ).first()
-            if main or allow_negative:
+            if main or allow_neg:
                 _use_from_balance(
                     main,
                     'AL',
                     remaining,
-                    f"مصرف مرخصی {LEAVE_TYPE_NAMES.get('AL', 'AL')} (اولویت ۲)",
-                    allow_neg=allow_negative,
+                    f"مصرف مرخصی {LEAVE_TYPE_NAMES.get('AL', 'AL')} سال {year_j} (اولویت ۲)",
+                    year_j=year_j,
+                    allow_neg=allow_neg,
                 )
 
-        # 3) ذخیره قابل‌بازخرید
-        used_buyback = 0.0
         if remaining > 0:
             cw = db.query(LeaveBalance).filter(
                 and_(
                     LeaveBalance.user_id == user_id,
-                    LeaveBalance.year == year,
+                    LeaveBalance.year == year_j,
                     LeaveBalance.leave_type == 'CW',
                 )
             ).first()
@@ -808,16 +811,44 @@ def consume_leave(
                     cw,
                     'CW',
                     bb_avail,
-                    "مصرف ذخیره قابل‌بازخرید (اولویت ۳)",
+                    f"مصرف ذخیره قابل‌بازخرید سال {year_j} (اولویت ۳)",
+                    year_j=year_j,
                     bucket_key='CW_BUYBACK',
                 )
                 _reduce_buyback_after_consume(
                     db,
                     user_id,
-                    year,
+                    year_j,
                     used_buyback,
                     prior_limit=buyback_limit,
                 )
+
+    if leave_type == 'AL':
+        years_to_try = [int(year)]
+        try:
+            from web.services.leave_balance_overview_service import (
+                resolve_user_al_availability,
+            )
+            avail_info = resolve_user_al_availability(db, user_id, year_j=year)
+            if avail_info.get('is_conscript'):
+                period_years = [
+                    int(y) for y in (avail_info.get('years') or []) if y is not None
+                ]
+                # سال درخواست اول، سپس سال‌های قدیم‌تر دوره
+                others = sorted(
+                    (y for y in period_years if y != int(year)),
+                    reverse=False,
+                )
+                years_to_try = [int(year)] + others
+        except Exception:
+            years_to_try = [int(year)]
+
+        for idx, year_j in enumerate(years_to_try):
+            # مانده منفی فقط روی آخرین سال مجاز است
+            allow_neg = bool(allow_negative and idx == len(years_to_try) - 1)
+            _consume_al_year(year_j, allow_neg=allow_neg)
+            if remaining <= 0:
+                break
     else:
         main = db.query(LeaveBalance).filter(
             and_(
@@ -832,6 +863,7 @@ def consume_leave(
                 leave_type,
                 remaining,
                 f"مصرف مرخصی {LEAVE_TYPE_NAMES.get(leave_type, leave_type)}",
+                year_j=year,
                 allow_neg=allow_negative,
             )
 

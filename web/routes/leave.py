@@ -189,11 +189,14 @@ def build_user_leave_page_context(db: Session, user_id: str) -> dict:
         al_remaining = al_snapshot['remaining']
         cw_days = al_snapshot['cw_days']
 
-    from web.services.leave_service import get_available_leave
-    al_available = int(
-        get_available_leave(db, user_id, current_year, 'AL').get('total') or 0
+    from web.services.leave_balance_overview_service import (
+        resolve_user_al_availability,
     )
-    # برای فرم: مانده استحقاقی = AL + ذخیره (منبع را سیستم مشخص می‌کند)
+    al_avail_info = resolve_user_al_availability(
+        db, user_id, year_j=current_year
+    )
+    al_available = int(al_avail_info.get('total') or 0)
+    # برای فرم: مانده استحقاقی قابل‌درخواست (هم‌تراز داشبورد / کارت مانده)
     balances_display = dict(balances)
     balances_display['AL'] = al_available
 
@@ -433,9 +436,11 @@ async def submit_leave_request(
             if days_count <= 0:
                 raise ValueError("در بازه انتخابی، هیچ روز کاری وجود ندارد (همه تعطیل هستند)")
             if leave_type == 'AL':
-                from web.services.leave_service import get_available_leave
-                current_balance = get_available_leave(
-                    db, user.user_id, from_j.year, 'AL'
+                from web.services.leave_balance_overview_service import (
+                    resolve_user_al_availability,
+                )
+                current_balance = resolve_user_al_availability(
+                    db, user.user_id, year_j=from_j.year
                 )['total']
             else:
                 balance = db.query(LeaveBalance).filter(and_(

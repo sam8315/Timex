@@ -17,6 +17,60 @@ from web.services import membership_semantics as msem
 from web.services.leave_service import get_user_al_year_snapshot
 
 
+def resolve_user_al_availability(
+    db: Session,
+    user_id: str,
+    *,
+    year_j: Optional[int] = None,
+) -> Dict[str, Any]:
+    """
+    ماندهٔ قابل‌نمایش/قابل‌درخواست استحقاقی — یک منبع برای داشبورد و صفحه مرخصی.
+
+    - وظیفه: تجمیع دوره خدمت (همه سال‌های پوشش)
+    - سایر عضویت‌ها: سال جاری (AL + ذخیره)
+    """
+    from web.services import membership_semantics as msem
+    from web.services.leave_entitlement_service import resolve_membership_for_user
+    from web.services.leave_service import get_available_leave
+
+    year = int(year_j if year_j is not None else jdatetime.date.today().year)
+    membership = resolve_membership_for_user(db, user_id)
+
+    if membership and msem.is_conscript(db, membership):
+        years = _years_for_user(db, user_id, [year], membership) or [year]
+        snap = get_user_al_period_snapshot(db, user_id, years)
+        # همان عدد کارت «مانده» در صفحه مرخصی وظیفه
+        display_total = max(0, int(snap['entitlement']) - int(snap['used']))
+        return {
+            'total': float(display_total),
+            'cw_days': float(snap.get('cw_days') or 0),
+            'al_days': float(snap.get('al_days') or 0),
+            'entitlement': int(snap['entitlement']),
+            'used': int(snap['used']),
+            'remaining': display_total,
+            'scope': 'period',
+            'years': list(snap.get('years') or years),
+            'membership_code': membership,
+            'is_conscript': True,
+        }
+
+    avail = get_available_leave(db, user_id, year, 'AL')
+    breakdown = avail.get('breakdown') or {}
+    total = float(avail.get('total') or 0)
+    return {
+        'total': total,
+        'cw_days': float(breakdown.get('CW') or 0),
+        'al_days': float(breakdown.get('AL') or 0),
+        'entitlement': None,
+        'used': None,
+        'remaining': total,
+        'scope': 'year',
+        'years': [year],
+        'membership_code': membership,
+        'is_conscript': False,
+    }
+
+
 def get_user_al_period_snapshot(
     db: Session,
     user_id: str,

@@ -11,6 +11,7 @@ from models.leave_transaction import LeaveTransaction
 from web.services.leave_balance_overview_service import (
     build_leave_balance_list_rows,
     get_user_al_period_snapshot,
+    resolve_user_al_availability,
 )
 from web.services.leave_service import get_user_al_year_snapshot
 
@@ -180,3 +181,10 @@ class TestConscriptPeriodRows:
 
         db.refresh(c)
         assert c.annual_leave_days == annual_before
+
+        # داشبورد و صفحه مرخصی باید یک عدد ببینند (مانده دوره)
+        avail = resolve_user_al_availability(db, uid, year_j=y2)
+        assert avail["is_conscript"] is True
+        assert avail["scope"] == "period"
+        assert avail["total"] == period["remaining"]
+        assert avail["total"] == row["al_remaining"]
