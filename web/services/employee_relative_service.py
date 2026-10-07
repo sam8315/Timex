@@ -23,6 +23,7 @@ from models.employee_relative import (
     RELATIVE_STATUSES,
     EmployeeRelative,
 )
+from models.employee_relative_history import EmployeeRelativeHistory
 from models.user import User
 
 _UNSET = object()
@@ -282,6 +283,60 @@ def _reset_verification(relative: EmployeeRelative) -> None:
     relative.rejection_reason = None
 
 
+_SNAPSHOT_FIELDS = (
+    "first_name",
+    "last_name",
+    "father_name",
+    "national_code",
+    "birth_date",
+    "gender",
+    "relationship_type",
+    "marital_status",
+    "marriage_date",
+    "divorce_date",
+    "death_date",
+    "is_studying",
+    "study_start_date",
+    "study_end_date",
+    "employment_status",
+    "insurance_status",
+    "is_disabled",
+    "disability_start_date",
+    "disability_end_date",
+    "notes",
+    "status",
+    "rejection_reason",
+)
+
+
+def _relative_snapshot(relative: EmployeeRelative) -> dict:
+    return {field: getattr(relative, field) for field in _SNAPSHOT_FIELDS}
+
+
+def record_relative_history(
+    db: Session,
+    relative: EmployeeRelative,
+    action: str,
+    *,
+    changed_by: Optional[str] = None,
+    detail: Optional[str] = None,
+    snapshot: Optional[dict] = None,
+) -> None:
+    """افزودن ردیف تاریخچه بدون commit (هم‌تراکنش با تغییر اصلی)."""
+    snap = snapshot if snapshot is not None else _relative_snapshot(relative)
+    db.add(
+        EmployeeRelativeHistory(
+            relative_id=relative.id,
+            user_id=relative.user_id,
+            action=action,
+            changed_by_user_id=changed_by,
+            changed_at=_now(),
+            detail=detail,
+            **snap,
+        )
+    )
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -421,6 +476,9 @@ def create_relative(
     db.add(relative)
     try:
         db.flush()
+        record_relative_history(
+            db, relative, "CREATE", changed_by=created_by or submitted_by
+        )
         db.commit()
     except IntegrityError:
         db.rollback()
@@ -462,6 +520,7 @@ def update_relative(
     disability_end_date=_UNSET,
     notes=_UNSET,
     reset_verification: bool = False,
+    changed_by: Optional[str] = None,
 ) -> EmployeeRelative:
     """ویرایش فرد وابسته.
 
@@ -470,6 +529,7 @@ def update_relative(
     """
     _validate_user_exists(db, user_id)
     relative = _get_for_user(db, user_id, relative_id)
+    old_snapshot = _relative_snapshot(relative)
 
     if first_name is not _UNSET:
         relative.first_name = _validate_required_text(first_name, "نام", 100)
@@ -539,6 +599,15 @@ def update_relative(
     if reset_verification and relative.status in ("VERIFIED", "REJECTED"):
         _reset_verification(relative)
 
+    if _relative_snapshot(relative) != old_snapshot:
+        record_relative_history(
+            db,
+            relative,
+            "UPDATE",
+            changed_by=changed_by,
+            snapshot=old_snapshot,
+        )
+
     try:
         db.commit()
     except IntegrityError:
@@ -565,8 +634,16 @@ def soft_delete_relative(
         raise EmployeeRelativeServiceError(
             "فرد وابسته تأییدشده قابل حذف توسط کارمند نیست"
         )
+    old_snapshot = _relative_snapshot(relative)
     relative.deleted_at = _now()
     relative.deleted_by = deleted_by
+    record_relative_history(
+        db,
+        relative,
+        "DELETE",
+        changed_by=deleted_by,
+        snapshot=old_snapshot,
+    )
     db.commit()
     db.refresh(relative)
     return relative
@@ -585,6 +662,7 @@ def verify_relative(
     relative.verified_by = verified_by
     relative.verified_at = _now()
     relative.rejection_reason = None
+    record_relative_history(db, relative, "VERIFY", changed_by=verified_by)
     db.commit()
     db.refresh(relative)
     return relative
@@ -605,6 +683,13 @@ def reject_relative(
     relative.verified_by = rejected_by
     relative.verified_at = _now()
     relative.rejection_reason = reason_text
+    record_relative_history(
+        db,
+        relative,
+        "REJECT",
+        changed_by=rejected_by,
+        detail=reason_text,
+    )
     db.commit()
     db.refresh(relative)
     return relative
@@ -630,6 +715,15 @@ def expire_ended_studies(
     if not rows:
         return 0
     for relative in rows:
+        before = _relative_snapshot(relative)
+        record_relative_history(
+            db,
+            relative,
+            "STUDY_EXPIRE",
+            changed_by=None,
+            snapshot=before,
+            detail="انقضای خودکار وضعیت تحصیل",
+        )
         relative.is_studying = False
     db.commit()
     logger.info(

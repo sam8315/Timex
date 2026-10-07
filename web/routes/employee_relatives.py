@@ -244,6 +244,7 @@ async def self_update_relative(
             user_id=user.user_id,
             relative_id=relative_id,
             reset_verification=True,
+            changed_by=user.user_id,
             **kwargs,
         )
         return _redirect(
@@ -381,6 +382,7 @@ async def admin_update_relative(
             user_id=target_user_id,
             relative_id=relative_id,
             reset_verification=False,
+            changed_by=user.user_id,
             **kwargs,
         )
         return _redirect(f"{base}?success={quote('اطلاعات فرد وابسته به‌روزرسانی شد')}")

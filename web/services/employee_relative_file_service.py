@@ -11,6 +11,7 @@ from models.employee_relative_file import EmployeeRelativeFile
 from web.services.employee_relative_service import (
     EmployeeRelativeServiceError,
     get_relative,
+    record_relative_history,
 )
 from web.services.file_storage import (
     CATEGORY_CONFIGS,
@@ -138,6 +139,14 @@ def add_file(
     )
     db.add(row)
     _maybe_reset_verification(relative, reset_verification=reset_verification)
+    db.flush()
+    record_relative_history(
+        db,
+        relative,
+        "FILE_ADD",
+        changed_by=uploaded_by,
+        detail=f"file_id={row.id}; {row.original_filename}",
+    )
 
     try:
         db.commit()
@@ -165,9 +174,17 @@ def soft_delete_file(
         raise EmployeeRelativeServiceError("فایل متعلق به این فرد وابسته نیست")
 
     storage_key = row.storage_key
+    filename = row.original_filename
     row.deleted_at = _now()
     row.deleted_by = deleted_by
     _maybe_reset_verification(relative, reset_verification=reset_verification)
+    record_relative_history(
+        db,
+        relative,
+        "FILE_DELETE",
+        changed_by=deleted_by,
+        detail=f"file_id={file_id}; {filename}",
+    )
 
     try:
         db.commit()

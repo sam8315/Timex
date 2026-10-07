@@ -1299,6 +1299,77 @@
     {% endfor %}
     {% endif %}
 
+    {% if can_view_employee_relatives or can_manage_employee_relatives %}
+    <!-- تاریخچه تغییرات بستگان (فقط خواندنی) -->
+    <div class="card mb-4">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+            <h6 class="mb-0"><i class="bi bi-clock-history"></i> سابقه تغییرات بستگان</h6>
+            <span class="badge bg-secondary">فقط خواندنی</span>
+        </div>
+        <div class="card-body">
+            {% if relative_history %}
+            {% if relative_history_truncated %}
+            <div class="alert alert-info py-2">
+                <small><i class="bi bi-info-circle"></i> فقط ۵۰ مورد اخیر نمایش داده می‌شود.</small>
+            </div>
+            {% endif %}
+            <div class="list-group">
+                {% for h in relative_history %}
+                <div class="list-group-item">
+                    <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+                        <div>
+                            {% if h.action == 'CREATE' %}<span class="badge bg-success">ایجاد</span>
+                            {% elif h.action == 'UPDATE' %}<span class="badge bg-warning text-dark">ویرایش</span>
+                            {% elif h.action == 'DELETE' %}<span class="badge bg-danger">حذف</span>
+                            {% elif h.action == 'VERIFY' %}<span class="badge bg-success">تأیید</span>
+                            {% elif h.action == 'REJECT' %}<span class="badge bg-danger">رد</span>
+                            {% elif h.action == 'STUDY_EXPIRE' %}<span class="badge bg-secondary">انقضای تحصیل</span>
+                            {% elif h.action == 'FILE_ADD' %}<span class="badge bg-info text-dark">افزودن فایل</span>
+                            {% elif h.action == 'FILE_DELETE' %}<span class="badge bg-info text-dark">حذف فایل</span>
+                            {% else %}<span class="badge bg-light text-dark border">{{ h.action_name }}</span>{% endif %}
+                            <strong class="ms-1">{{ h.full_name }}</strong>
+                            {% if h.relationship_type %}
+                            <span class="badge bg-light text-dark border ms-1">
+                                {{ relationship_types.get(h.relationship_type, h.relationship_type) }}
+                            </span>
+                            {% endif %}
+                            <small class="text-muted ms-2">
+                                <i class="bi bi-clock"></i> {{ h.changed_at_j or '-' }}
+                            </small>
+                        </div>
+                        <small class="text-muted">
+                            <i class="bi bi-person"></i>
+                            انجام‌دهنده: {{ h.changed_by_user_id or 'سیستم' }}
+                        </small>
+                    </div>
+                    <div class="small mt-1">
+                        {% if h.status == 'VERIFIED' %}<span class="badge bg-success">تأیید شده</span>
+                        {% elif h.status == 'REJECTED' %}<span class="badge bg-danger">رد شده</span>
+                        {% elif h.status == 'PENDING' %}<span class="badge bg-warning text-dark">در انتظار</span>
+                        {% endif %}
+                        {% if h.is_studying is sameas true %}
+                        <span class="badge bg-info text-dark">محصل</span>
+                        {% endif %}
+                        {% if h.national_code %}
+                        <span class="text-muted ms-1" dir="ltr">{{ h.national_code }}</span>
+                        {% endif %}
+                    </div>
+                    {% if h.detail %}
+                    <div class="small text-muted mt-1 text-break">{{ h.detail }}</div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="text-center py-4">
+                <i class="bi bi-clock-history display-6 text-muted"></i>
+                <p class="text-muted mt-2 mb-0">سابقه‌ای برای بستگان ثبت نشده است</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
     {% if can_view_employee_documents or can_manage_employee_documents %}
     <!-- پرونده پرسنلی / مدارک -->
     <div class="card mb-4">

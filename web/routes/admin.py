@@ -2110,6 +2110,40 @@ async def admin_view_profile(
             logger.exception("Failed to load relatives for %s", target_user_id)
             target_employee_relatives = []
             employee_relatives_error = f"خطا در بارگذاری بستگان: {e}"
+
+    from models.employee_relative_history import EmployeeRelativeHistory
+
+    relative_history = []
+    relative_history_truncated = False
+    if can_view_employee_relatives or can_manage_employee_relatives:
+        try:
+            fetched_rel_hist = (
+                db.query(EmployeeRelativeHistory)
+                .filter(EmployeeRelativeHistory.user_id == target_user_id)
+                .order_by(
+                    EmployeeRelativeHistory.changed_at.desc(),
+                    EmployeeRelativeHistory.id.desc(),
+                )
+                .limit(51)
+                .all()
+            )
+            if len(fetched_rel_hist) > 50:
+                relative_history_truncated = True
+                fetched_rel_hist = fetched_rel_hist[:50]
+            for entry in fetched_rel_hist:
+                try:
+                    entry.changed_at_j = jdatetime.datetime.fromgregorian(
+                        datetime=entry.changed_at
+                    ).strftime("%Y/%m/%d %H:%M")
+                except Exception:
+                    entry.changed_at_j = "-"
+            relative_history = fetched_rel_hist
+        except Exception:
+            logger.exception(
+                "Failed to load relative history for %s", target_user_id
+            )
+            relative_history = []
+
     if can_view_employee_documents or can_manage_employee_documents:
         try:
             target_employee_documents = list_employee_documents(db, target_user_id)
@@ -2243,6 +2277,8 @@ async def admin_view_profile(
         "can_verify_employee_documents": can_verify_employee_documents,
         "target_employee_relatives": target_employee_relatives,
         "employee_relatives_error": employee_relatives_error,
+        "relative_history": relative_history,
+        "relative_history_truncated": relative_history_truncated,
         "can_view_employee_relatives": can_view_employee_relatives,
         "can_manage_employee_relatives": can_manage_employee_relatives,
         "can_verify_employee_relatives": can_verify_employee_relatives,

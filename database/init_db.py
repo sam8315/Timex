@@ -733,6 +733,75 @@ def seed_service_health(bind_engine=None) -> None:
         )
 
 
+def migrate_employee_relative_history(bind_engine=None) -> None:
+    """Idempotent create of employee_relative_history table."""
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
+    if "employee_relative_history" in inspector.get_table_names():
+        return
+
+    with target.begin() as conn:
+        conn.execute(text(
+            """
+            CREATE TABLE employee_relative_history (
+                id SERIAL PRIMARY KEY,
+                relative_id INTEGER NOT NULL,
+                user_id VARCHAR(50) NOT NULL,
+                action VARCHAR(20) NOT NULL,
+                changed_by_user_id VARCHAR(50),
+                changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                detail TEXT,
+                first_name VARCHAR(100),
+                last_name VARCHAR(100),
+                father_name VARCHAR(100),
+                national_code VARCHAR(10),
+                birth_date DATE,
+                gender VARCHAR(1),
+                relationship_type VARCHAR(20),
+                marital_status VARCHAR(1),
+                marriage_date DATE,
+                divorce_date DATE,
+                death_date DATE,
+                is_studying BOOLEAN,
+                study_start_date DATE,
+                study_end_date DATE,
+                employment_status VARCHAR(20),
+                insurance_status VARCHAR(20),
+                is_disabled BOOLEAN,
+                disability_start_date DATE,
+                disability_end_date DATE,
+                notes TEXT,
+                status VARCHAR(20),
+                rejection_reason TEXT,
+                CONSTRAINT ck_employee_relative_history_action CHECK (action IN (
+                    'CREATE', 'UPDATE', 'DELETE', 'VERIFY', 'REJECT',
+                    'STUDY_EXPIRE', 'FILE_ADD', 'FILE_DELETE'
+                ))
+            )
+            """
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_employee_relative_history_relative_id "
+            "ON employee_relative_history (relative_id)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_employee_relative_history_user_id "
+            "ON employee_relative_history (user_id)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_employee_relative_history_action "
+            "ON employee_relative_history (action)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_employee_relative_history_changed_at "
+            "ON employee_relative_history (changed_at DESC)"
+        ))
+        logger.info(
+            "Table created table=employee_relative_history",
+            extra={"event": "database.ready"},
+        )
+
+
 def migrate_employee_relative_files(bind_engine=None) -> None:
     """Idempotent create of employee_relative_files table."""
     target = bind_engine if bind_engine is not None else engine
@@ -1786,6 +1855,7 @@ def create_tables() -> None:
         migrate_employee_document_types()
         migrate_employee_relative_verification()
         migrate_employee_relative_files()
+        migrate_employee_relative_history()
         # Membership cutover order (fail-closed before FKs):
         # 1) foundation columns/checks  2) seed insert-only  3) policy 6/7
         # 4) Rule→PolicyValue annual mirrors  5) dual-run  6) orphan/FKs
