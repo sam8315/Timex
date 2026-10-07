@@ -1075,6 +1075,7 @@
                             <th>نسبت</th>
                             <th class="text-center">کد ملی</th>
                             <th class="text-center">تاریخ تولد</th>
+                            <th class="text-center">فایل‌ها</th>
                             <th class="text-center">تأیید</th>
                             <th>وضعیت‌ها</th>
                             {% if can_manage_employee_relatives or can_verify_employee_relatives %}
@@ -1097,6 +1098,13 @@
                             <td>{{ rel.relationship_type_name }}</td>
                             <td class="text-center" dir="ltr">{{ rel.national_code or '—' }}</td>
                             <td class="text-center" dir="ltr">{{ rel.birth_date_j or '—' }}</td>
+                            <td class="text-center">
+                                <button type="button" class="btn btn-outline-primary btn-sm"
+                                        data-bs-toggle="modal" data-bs-target="#adminRelativeFilesModal-{{ rel.id }}">
+                                    <i class="bi bi-paperclip"></i>
+                                    {{ rel.file_rows|length if rel.file_rows is defined else 0 }}
+                                </button>
+                            </td>
                             <td class="text-center">
                                 {% if rel.status == 'VERIFIED' %}
                                 <span class="badge bg-success">تأیید شده</span>
@@ -1240,6 +1248,55 @@
     </div>
     {% endfor %}
     {% endif %}
+
+    {% for rel in target_employee_relatives %}
+    <div class="modal fade" id="adminRelativeFilesModal-{{ rel.id }}" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-paperclip"></i> فایل‌های {{ rel.full_name }}</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    {% if rel.file_rows %}
+                    <ul class="list-group mb-3">
+                        {% for f in rel.file_rows %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <a href="/employee-relatives/files/{{ f.id }}/file" target="_blank" class="text-decoration-none">
+                                <i class="bi bi-file-earmark"></i> {{ f.original_filename }}
+                            </a>
+                            {% if can_manage_employee_relatives %}
+                            <form method="post"
+                                  action="/admin/profile/{{ target_user.user_id }}/relatives/{{ rel.id }}/files/{{ f.id }}/delete"
+                                  class="d-inline"
+                                  onsubmit="return confirm('این فایل حذف شود؟');">
+                                <button type="submit" class="btn btn-outline-danger btn-sm" title="حذف">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </form>
+                            {% endif %}
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    {% else %}
+                    <p class="text-muted small">فایلی ثبت نشده است.</p>
+                    {% endif %}
+                    {% if can_manage_employee_relatives %}
+                    <form method="post"
+                          action="/admin/profile/{{ target_user.user_id }}/relatives/{{ rel.id }}/files/add"
+                          enctype="multipart/form-data">
+                        <label class="form-label">افزودن فایل (PDF/JPG/PNG/WEBP، حداکثر ۱۰MB)</label>
+                        <div class="input-group">
+                            <input type="file" name="file" class="form-control" accept=".pdf,.jpg,.jpeg,.png,.webp" required>
+                            <button type="submit" class="btn btn-success">آپلود</button>
+                        </div>
+                    </form>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
     {% endif %}
 
     {% if can_view_employee_documents or can_manage_employee_documents %}

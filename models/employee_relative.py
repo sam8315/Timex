@@ -121,6 +121,11 @@ class EmployeeRelative(TimestampMixin, Base):
     deleted_by: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
     user = relationship("User", backref="employee_relatives")
+    files = relationship(
+        "EmployeeRelativeFile",
+        back_populates="relative",
+        cascade="all, delete-orphan",
+    )
 
     __table_args__ = (
         CheckConstraint(

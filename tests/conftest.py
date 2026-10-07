@@ -31,6 +31,8 @@ load_dotenv(ROOT / ".env")
 # Test-only cryptographic secrets; production must provide real values via the environment.
 os.environ.setdefault("WEB_SECRET_KEY", "test-web-secret-key-32-chars-minimum-0001")
 os.environ.setdefault("WEB_SESSION_MIDDLEWARE_SECRET_KEY", "test-session-secret-key-32-chars-0002")
+# Prevent lifespan from starting the study-expiry daemon against SessionLocal.
+os.environ["RELATIVE_STUDY_EXPIRY_ENABLED"] = "0"
 
 from config.settings import DB_USER, DB_PASSWORD, DB_HOST, DB_PORT
 
@@ -106,6 +108,7 @@ from database.init_db import (  # noqa: E402
     migrate_employee_position_id,
     migrate_employee_document_types,
     migrate_employee_relative_verification,
+    migrate_employee_relative_files,
     migrate_membership_foundation_hardening,
     migrate_missing_columns,
     seed_membership_types,
@@ -206,6 +209,7 @@ Base.metadata.create_all(bind=test_engine)
 migrate_missing_columns(bind_engine=test_engine)
 migrate_employee_document_types(bind_engine=test_engine)
 migrate_employee_relative_verification(bind_engine=test_engine)
+migrate_employee_relative_files(bind_engine=test_engine)
 migrate_membership_foundation_hardening(bind_engine=test_engine)
 seed_membership_types(bind_engine=test_engine)
 seed_service_duty_regions(bind_engine=test_engine)

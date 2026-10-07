@@ -6,13 +6,19 @@ from typing import Any, Dict, Optional
 from urllib.parse import quote
 
 import jdatetime
-from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
+from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from models.user import User
 from web.dependencies import get_current_user, get_db, require_admin
-from web.permissions import enforce_permission
+from web.permissions import enforce_permission, has_permission
+from web.services.employee_relative_file_service import (
+    add_file,
+    get_file,
+    resolve_file_path,
+    soft_delete_file,
+)
 from web.services.employee_relative_service import (
     EmployeeRelativeServiceError,
     create_relative,
@@ -451,3 +457,146 @@ async def admin_reject_relative(
         return _redirect(f"{base}?success={quote('فرد وابسته رد شد')}")
     except Exception as exc:
         return _service_redirect(base, exc)
+
+
+# ---------------------------------------------------------------------------
+# Files (self + admin)
+# ---------------------------------------------------------------------------
+
+async def _read_upload(upload: Optional[UploadFile]) -> tuple[bytes, str]:
+    if not upload or not upload.filename:
+        raise EmployeeRelativeServiceError("انتخاب فایل الزامی است")
+    content = await upload.read()
+    return content, upload.filename
+
+
+def _can_access_relative_file(db: Session, user: User, owner_user_id: str) -> bool:
+    if owner_user_id == user.user_id:
+        return True
+    return has_permission(db, user, "view_employee_relatives") or has_permission(
+        db, user, "manage_employee_relatives"
+    )
+
+
+@router.post("/profile/relatives/{relative_id}/files/add")
+async def self_add_relative_file(
+    relative_id: int,
+    file: UploadFile = File(...),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    base = "/profile"
+    try:
+        content, filename = await _read_upload(file)
+        add_file(
+            db,
+            user_id=user.user_id,
+            relative_id=relative_id,
+            file_bytes=content,
+            original_filename=filename,
+            uploaded_by=user.user_id,
+            reset_verification=True,
+        )
+        return _redirect(
+            f"{base}?success={quote('فایل اضافه شد (در انتظار تأیید)')}"
+        )
+    except Exception as exc:
+        return _service_redirect(base, exc)
+
+
+@router.post("/profile/relatives/{relative_id}/files/{file_id}/delete")
+async def self_delete_relative_file(
+    relative_id: int,
+    file_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    base = "/profile"
+    try:
+        soft_delete_file(
+            db,
+            user_id=user.user_id,
+            relative_id=relative_id,
+            file_id=file_id,
+            deleted_by=user.user_id,
+            reset_verification=True,
+        )
+        return _redirect(
+            f"{base}?success={quote('فایل حذف شد (در انتظار تأیید)')}"
+        )
+    except Exception as exc:
+        return _service_redirect(base, exc)
+
+
+@router.post("/admin/profile/{target_user_id}/relatives/{relative_id}/files/add")
+async def admin_add_relative_file(
+    target_user_id: str,
+    relative_id: int,
+    file: UploadFile = File(...),
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    enforce_permission(db, user, "manage_employee_relatives")
+    base = f"/admin/profile/{target_user_id}"
+    try:
+        content, filename = await _read_upload(file)
+        add_file(
+            db,
+            user_id=target_user_id,
+            relative_id=relative_id,
+            file_bytes=content,
+            original_filename=filename,
+            uploaded_by=user.user_id,
+            reset_verification=False,
+        )
+        return _redirect(f"{base}?success={quote('فایل فرد وابسته اضافه شد')}")
+    except Exception as exc:
+        return _service_redirect(base, exc)
+
+
+@router.post(
+    "/admin/profile/{target_user_id}/relatives/{relative_id}/files/{file_id}/delete"
+)
+async def admin_delete_relative_file(
+    target_user_id: str,
+    relative_id: int,
+    file_id: int,
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    enforce_permission(db, user, "manage_employee_relatives")
+    base = f"/admin/profile/{target_user_id}"
+    try:
+        soft_delete_file(
+            db,
+            user_id=target_user_id,
+            relative_id=relative_id,
+            file_id=file_id,
+            deleted_by=user.user_id,
+            reset_verification=False,
+        )
+        return _redirect(f"{base}?success={quote('فایل فرد وابسته حذف شد')}")
+    except Exception as exc:
+        return _service_redirect(base, exc)
+
+
+@router.get("/employee-relatives/files/{file_id}/file")
+async def download_relative_file(
+    file_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        row = get_file(db, file_id)
+        owner_id = row.relative.user_id if row.relative else None
+        if not owner_id or not _can_access_relative_file(db, user, owner_id):
+            return _redirect("/profile?error=" + quote("دسترسی غیرمجاز"))
+        path = resolve_file_path(row)
+        return FileResponse(
+            path,
+            filename=row.original_filename,
+            media_type=row.mime_type or "application/octet-stream",
+        )
+    except EmployeeRelativeServiceError as exc:
+        return _redirect(f"/profile?error={quote(str(exc))}")
+

@@ -1,9 +1,11 @@
 """اپلیکیشن اصلی FastAPI"""
 import os
+from contextlib import asynccontextmanager
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
-from pathlib import Path
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.responses import PlainTextResponse
 
@@ -18,9 +20,19 @@ from web.routes import admin_system
 from web.routes import admin_annual_leave
 BASE_PATH = Path(__file__).parent
 from web.config import WebConfig
+from web.jobs.relative_study_expiry import start_scheduler, stop_scheduler
 from web.routes.admin_permissions import router as permissions_router
 from web.routes.admin_user_create import router as admin_user_create_router
 from web.error_handlers import register_exception_handlers
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    start_scheduler()
+    try:
+        yield
+    finally:
+        stop_scheduler()
 
 
 class GuardedStaticFiles(StaticFiles):
@@ -52,7 +64,11 @@ class GuardedStaticFiles(StaticFiles):
         return await super().get_response(path, scope)
 
 
-app = FastAPI(title="Timex - سامانه حضور و غیاب", version="1.0.0")
+app = FastAPI(
+    title="Timex - سامانه حضور و غیاب",
+    version="1.0.0",
+    lifespan=lifespan,
+)
 app.add_middleware(
     SessionMiddleware,
     secret_key=WebConfig.SESSION_MIDDLEWARE_SECRET_KEY,

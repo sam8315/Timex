@@ -733,6 +733,49 @@ def seed_service_health(bind_engine=None) -> None:
         )
 
 
+def migrate_employee_relative_files(bind_engine=None) -> None:
+    """Idempotent create of employee_relative_files table."""
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
+    if "employee_relatives" not in inspector.get_table_names():
+        return
+    if "employee_relative_files" in inspector.get_table_names():
+        return
+
+    with target.begin() as conn:
+        conn.execute(text(
+            """
+            CREATE TABLE employee_relative_files (
+                id SERIAL PRIMARY KEY,
+                relative_id INTEGER NOT NULL
+                    REFERENCES employee_relatives (id) ON DELETE CASCADE,
+                storage_key VARCHAR(255) NOT NULL,
+                original_filename VARCHAR(255) NOT NULL,
+                mime_type VARCHAR(100),
+                size_bytes INTEGER,
+                uploaded_by VARCHAR(50),
+                uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                deleted_at TIMESTAMPTZ,
+                deleted_by VARCHAR(50),
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+            """
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_employee_relative_files_relative_id "
+            "ON employee_relative_files (relative_id)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_employee_relative_files_deleted_at "
+            "ON employee_relative_files (deleted_at)"
+        ))
+        logger.info(
+            "Table created table=employee_relative_files",
+            extra={"event": "database.ready"},
+        )
+
+
 def migrate_employee_relative_verification(bind_engine=None) -> None:
     """
     Idempotent add of verification columns on employee_relatives
@@ -1742,6 +1785,7 @@ def create_tables() -> None:
         seed_service_health()
         migrate_employee_document_types()
         migrate_employee_relative_verification()
+        migrate_employee_relative_files()
         # Membership cutover order (fail-closed before FKs):
         # 1) foundation columns/checks  2) seed insert-only  3) policy 6/7
         # 4) Rule→PolicyValue annual mirrors  5) dual-run  6) orphan/FKs

@@ -193,12 +193,17 @@ def _validate_national_code(value) -> Optional[str]:
     return text
 
 
-def _validate_date_not_future(value: Optional[date], field_label: str) -> Optional[date]:
+def _validate_optional_date(value: Optional[date], field_label: str) -> Optional[date]:
     if value is None:
         return None
     if not isinstance(value, date):
         raise EmployeeRelativeServiceError(f"{field_label} نامعتبر است")
-    if value > date.today():
+    return value
+
+
+def _validate_date_not_future(value: Optional[date], field_label: str) -> Optional[date]:
+    value = _validate_optional_date(value, field_label)
+    if value is not None and value > date.today():
         raise EmployeeRelativeServiceError(
             f"{field_label} نمی‌تواند در آینده باشد"
         )
@@ -366,7 +371,8 @@ def create_relative(
     divorce_date = _validate_date_not_future(divorce_date, "تاریخ طلاق")
     death_date = _validate_date_not_future(death_date, "تاریخ فوت")
     study_start_date = _validate_date_not_future(study_start_date, "تاریخ شروع تحصیل")
-    study_end_date = _validate_date_not_future(study_end_date, "تاریخ پایان تحصیل")
+    # پایان تحصیل می‌تواند آینده باشد (برای انقضای خودکار is_studying)
+    study_end_date = _validate_optional_date(study_end_date, "تاریخ پایان تحصیل")
     disability_start_date = _validate_date_not_future(
         disability_start_date, "تاریخ شروع ازکارافتادگی"
     )
@@ -507,7 +513,7 @@ def update_relative(
             study_start_date, "تاریخ شروع تحصیل"
         )
     if study_end_date is not _UNSET:
-        relative.study_end_date = _validate_date_not_future(
+        relative.study_end_date = _validate_optional_date(
             study_end_date, "تاریخ پایان تحصیل"
         )
     if disability_start_date is not _UNSET:
@@ -602,3 +608,33 @@ def reject_relative(
     db.commit()
     db.refresh(relative)
     return relative
+
+
+def expire_ended_studies(
+    db: Session,
+    *,
+    as_of: Optional[date] = None,
+) -> int:
+    """پایان تحصیل گذشته → فقط is_studying=False؛ بدون حذف یا تغییر تأیید."""
+    cutoff = as_of or date.today()
+    rows = (
+        db.query(EmployeeRelative)
+        .filter(
+            EmployeeRelative.deleted_at.is_(None),
+            EmployeeRelative.is_studying.is_(True),
+            EmployeeRelative.study_end_date.isnot(None),
+            EmployeeRelative.study_end_date < cutoff,
+        )
+        .all()
+    )
+    if not rows:
+        return 0
+    for relative in rows:
+        relative.is_studying = False
+    db.commit()
+    logger.info(
+        "expire_ended_studies as_of=%s updated=%s",
+        cutoff.isoformat(),
+        len(rows),
+    )
+    return len(rows)

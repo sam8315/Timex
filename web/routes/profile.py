@@ -184,6 +184,7 @@ async def profile_page(
         RELATIVE_MARITAL_STATUSES,
         RELATIVE_STATUSES,
     )
+    from web.services.employee_relative_file_service import list_files as list_relative_files
     from web.services.employee_relative_service import list_relatives
 
     relatives_error = None
@@ -210,6 +211,7 @@ async def profile_page(
                     )
                 except Exception:
                     setattr(rel, attr, "")
+            rel.file_rows = list_relative_files(db, rel.id)
     except Exception:
         relatives = []
         relatives_error = "خطا در بارگذاری بستگان"

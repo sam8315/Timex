@@ -2067,6 +2067,7 @@ async def admin_view_profile(
         list_active_document_types,
         list_documents as list_employee_documents,
     )
+    from web.services.employee_relative_file_service import list_files as list_relative_files
     from web.services.employee_relative_service import list_relatives
 
     can_view_employee_documents = has_permission(db, user, "view_employee_documents")
@@ -2104,6 +2105,7 @@ async def admin_view_profile(
                         )
                     except Exception:
                         setattr(rel, attr, "")
+                rel.file_rows = list_relative_files(db, rel.id)
         except Exception as e:
             logger.exception("Failed to load relatives for %s", target_user_id)
             target_employee_relatives = []

@@ -4,7 +4,7 @@ Logical storage keys (e.g. ``/private/contracts/<uuid>.pdf``) are stored in the
 DB. Physical files live under ``TIMEX_STORAGE_ROOT`` (default: ``<project>/storage``),
 outside the public ``/static`` mount.
 
-Categories prepared for future use: contracts, employee-documents, education, avatars.
+Categories: contracts, employee-documents, employee-relatives, education, avatars.
 This module does not implement Employee Documents workflows.
 """
 from __future__ import annotations
@@ -33,6 +33,7 @@ LEGACY_STATIC_UPLOAD_PREFIXES: dict[str, Path] = {
 CATEGORIES = (
     "contracts",
     "employee-documents",
+    "employee-relatives",
     "education",
     "avatars",
 )
@@ -58,6 +59,12 @@ CATEGORY_CONFIGS: dict[str, CategoryConfig] = {
         allowed_extensions=frozenset({".jpg", ".jpeg", ".png", ".pdf", ".webp"}),
         max_file_size=10 * 1024 * 1024,
         key_prefix="/private/employee-documents/",
+    ),
+    "employee-relatives": CategoryConfig(
+        name="employee-relatives",
+        allowed_extensions=frozenset({".jpg", ".jpeg", ".png", ".pdf", ".webp"}),
+        max_file_size=10 * 1024 * 1024,
+        key_prefix="/private/employee-relatives/",
     ),
     "education": CategoryConfig(
         name="education",
