@@ -1,0 +1,223 @@
+{% extends "base.html" %}
+{% block title %}تأیید مدارک{% endblock %}
+{% block content %}
+
+{% if request.query_params.get('success') %}
+<div class="alert alert-success alert-dismissible fade show">
+    <i class="bi bi-check-circle"></i> {{ request.query_params.get('success') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+{% if request.query_params.get('error') %}
+<div class="alert alert-danger alert-dismissible fade show">
+    <i class="bi bi-exclamation-triangle"></i> {{ request.query_params.get('error') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="mb-0">
+        <i class="bi bi-shield-check"></i> صف تأیید مدارک
+        {% if total_pending > 0 %}
+        <span class="badge bg-warning text-dark">{{ total_pending }} در انتظار</span>
+        {% endif %}
+    </h4>
+    <a href="/admin" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-right"></i> بازگشت به پنل
+    </a>
+</div>
+
+<div class="row g-3 mb-4">
+    {% if 'document' in allowed_kinds %}
+    <div class="col-md-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="text-muted small">مدارک پرسنلی</div>
+                <div class="fs-3 fw-semibold">{{ counts.document }}</div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    {% if 'relative' in allowed_kinds %}
+    <div class="col-md-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="text-muted small">بستگان</div>
+                <div class="fs-3 fw-semibold">{{ counts.relative }}</div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    {% if 'education' in allowed_kinds %}
+    <div class="col-md-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="text-muted small">مدارک تحصیلی</div>
+                <div class="fs-3 fw-semibold">{{ counts.education }}</div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" action="/admin/verifications" class="row g-3 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label">جستجوی کارمند</label>
+                <input type="text" name="search" class="form-control"
+                       value="{{ search or '' }}" placeholder="نام یا کد پرسنلی">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">نوع</label>
+                <select name="kind" class="form-select">
+                    <option value="all" {% if kind == 'all' %}selected{% endif %}>همه</option>
+                    {% if 'document' in allowed_kinds %}
+                    <option value="document" {% if kind == 'document' %}selected{% endif %}>مدارک پرسنلی</option>
+                    {% endif %}
+                    {% if 'relative' in allowed_kinds %}
+                    <option value="relative" {% if kind == 'relative' %}selected{% endif %}>بستگان</option>
+                    {% endif %}
+                    {% if 'education' in allowed_kinds %}
+                    <option value="education" {% if kind == 'education' %}selected{% endif %}>مدارک تحصیلی</option>
+                    {% endif %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="bi bi-search"></i> اعمال
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        {% if rows %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead>
+                    <tr>
+                        <th>نوع</th>
+                        <th>کارمند</th>
+                        <th>عنوان</th>
+                        <th class="text-center">تاریخ ثبت</th>
+                        <th class="text-center">جزئیات</th>
+                        <th class="text-center">عملیات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                    {% set item = row.item %}
+                    <tr>
+                        <td>
+                            <span class="badge
+                                {% if item.kind == 'document' %}bg-primary
+                                {% elif item.kind == 'relative' %}bg-info text-dark
+                                {% else %}bg-secondary{% endif %}">
+                                {{ item.kind_label }}
+                            </span>
+                        </td>
+                        <td>{{ item.employee_name }}</td>
+                        <td>
+                            <div>{{ item.title }}</div>
+                            {% if item.subtitle and item.subtitle != item.title %}
+                            <small class="text-muted">{{ item.subtitle }}</small>
+                            {% endif %}
+                        </td>
+                        <td class="text-center text-nowrap">{{ row.created_at_j }}</td>
+                        <td class="text-center">
+                            {% if item.file_url %}
+                            <a href="{{ item.file_url }}" target="_blank" class="btn btn-outline-primary btn-sm" title="مشاهده فایل">
+                                <i class="bi bi-file-earmark"></i>
+                            </a>
+                            {% endif %}
+                            <a href="{{ item.detail_url }}" class="btn btn-outline-secondary btn-sm" title="پروفایل">
+                                <i class="bi bi-person"></i>
+                            </a>
+                        </td>
+                        <td class="text-center">
+                            <div class="d-inline-flex gap-1">
+                                <form method="post" action="{{ item.verify_url }}" class="d-inline">
+                                    <input type="hidden" name="kind" value="{{ kind }}">
+                                    <input type="hidden" name="search" value="{{ search or '' }}">
+                                    <button type="submit" class="btn btn-success btn-sm" title="تأیید">
+                                        <i class="bi bi-check-lg"></i>
+                                    </button>
+                                </form>
+                                {% if item.kind == 'education' %}
+                                <form method="post" action="{{ item.reject_url }}" class="d-inline"
+                                      onsubmit="return confirm('رد = حذف مدرک تحصیلی. ادامه می‌دهید؟');">
+                                    <input type="hidden" name="kind" value="{{ kind }}">
+                                    <input type="hidden" name="search" value="{{ search or '' }}">
+                                    <button type="submit" class="btn btn-outline-danger btn-sm" title="رد (حذف)">
+                                        <i class="bi bi-x-lg"></i>
+                                    </button>
+                                </form>
+                                {% else %}
+                                <button type="button" class="btn btn-outline-danger btn-sm"
+                                        title="رد"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#rejectModal"
+                                        data-reject-url="{{ item.reject_url }}"
+                                        data-reject-title="{{ item.title }} — {{ item.employee_name }}">
+                                    <i class="bi bi-x-lg"></i>
+                                </button>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center text-muted py-5">
+            <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+            موردی در انتظار تأیید نیست.
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- مودال رد (مدارک پرسنلی / بستگان) -->
+<div class="modal fade" id="rejectModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <form method="post" id="rejectForm" class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">رد مورد</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small mb-2" id="rejectItemLabel"></p>
+                <input type="hidden" name="kind" value="{{ kind }}">
+                <input type="hidden" name="search" value="{{ search or '' }}">
+                <label class="form-label">دلیل رد <span class="text-danger">*</span></label>
+                <textarea name="rejection_reason" class="form-control" rows="3" required
+                          placeholder="دلیل رد را وارد کنید"></textarea>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
+                <button type="submit" class="btn btn-danger">ثبت رد</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+(function () {
+    var modal = document.getElementById('rejectModal');
+    if (!modal) return;
+    modal.addEventListener('show.bs.modal', function (event) {
+        var btn = event.relatedTarget;
+        if (!btn) return;
+        var form = document.getElementById('rejectForm');
+        var label = document.getElementById('rejectItemLabel');
+        form.action = btn.getAttribute('data-reject-url') || '';
+        label.textContent = btn.getAttribute('data-reject-title') || '';
+    });
+})();
+</script>
+
+{% endblock %}

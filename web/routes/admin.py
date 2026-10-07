@@ -184,11 +184,29 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templa
 
 def _admin_nav_flags(db: Session, user: User) -> dict:
     """فلگ‌های Sidebar بر اساس دسترسی مؤثر (بدون تغییر مدل Permission)."""
+    from web.services.verification_inbox_service import (
+        KIND_DOCUMENT,
+        KIND_EDUCATION,
+        KIND_RELATIVE,
+        count_pending_verifications,
+    )
+
+    verify_kinds = []
+    if has_permission(db, user, "verify_employee_documents"):
+        verify_kinds.append(KIND_DOCUMENT)
+    if has_permission(db, user, "verify_employee_relatives"):
+        verify_kinds.append(KIND_RELATIVE)
+    if has_permission(db, user, "view_dashboard"):
+        verify_kinds.append(KIND_EDUCATION)
+
     return {
         "can_view_incomplete": has_permission(db, user, "view_incomplete"),
         "can_view_contracts": has_permission(db, user, "view_contracts"),
         "can_view_system_monitoring": has_permission(
             db, user, "view_system_monitoring"
+        ),
+        "pending_verification_count": (
+            count_pending_verifications(db, verify_kinds) if verify_kinds else 0
         ),
     }
 
@@ -487,27 +505,52 @@ async def admin_dashboard(
         })
 
     # ============================================
-    # 🤖 آخرین کاربران ربات بله
+    # ✅ صف تأیید مدارک (پیش‌نمایش داشبورد)
     # ============================================
-    recent_bale_users = []
-    bale_users = db.query(BaleUser).order_by(
-        BaleUser.registered_at.desc()
-    ).limit(10).all()
+    from web.services.verification_inbox_service import (
+        KIND_DOCUMENT,
+        KIND_EDUCATION,
+        KIND_RELATIVE,
+        list_pending_items,
+    )
 
-    for bu in bale_users:
-        employee = db.query(Employee).filter(
-            Employee.user_id == bu.user_id
-        ).first()
-        reg_j = jdatetime.datetime.fromgregorian(datetime=bu.registered_at) if bu.registered_at else None
+    verify_kinds = []
+    if has_permission(db, user, "verify_employee_documents"):
+        verify_kinds.append(KIND_DOCUMENT)
+    if has_permission(db, user, "verify_employee_relatives"):
+        verify_kinds.append(KIND_RELATIVE)
+    if has_permission(db, user, "view_dashboard"):
+        verify_kinds.append(KIND_EDUCATION)
 
-        recent_bale_users.append({
-            'chat_id': bu.chat_id,
-            'user_id': bu.user_id,
-            'full_name': employee.full_name if employee else bu.user_id,
-            'phone_number': bu.phone_number or '-',
-            'is_active': bu.is_active,
-            'registered_at_j': reg_j.strftime('%Y/%m/%d') if reg_j else '-',
-        })
+    pending_verifications = []
+    if verify_kinds:
+        for it in list_pending_items(db, kinds=verify_kinds, limit=10):
+            created_j = "—"
+            if it.created_at:
+                try:
+                    if hasattr(it.created_at, "hour"):
+                        created_j = jdatetime.datetime.fromgregorian(
+                            datetime=it.created_at
+                        ).strftime("%Y/%m/%d")
+                    else:
+                        created_j = jdatetime.date.fromgregorian(
+                            date=it.created_at
+                        ).strftime("%Y/%m/%d")
+                except Exception:
+                    created_j = str(it.created_at)[:10]
+            pending_verifications.append({
+                "kind": it.kind,
+                "kind_label": it.kind_label,
+                "item_id": it.item_id,
+                "employee_name": it.employee_name,
+                "title": it.title,
+                "subtitle": it.subtitle,
+                "created_at_j": created_j,
+                "detail_url": it.detail_url,
+                "file_url": it.file_url,
+                "verify_url": it.verify_url,
+                "reject_url": it.reject_url,
+            })
 
     # ============================================
     # 🆕 ساخت لیست ترددهای ناقص هفته
@@ -568,7 +611,7 @@ async def admin_dashboard(
         "present_list": present_list,
         "no_attendance_list": no_attendance_list,  # 🆕 (جایگزین غایبین)
         "pending_list": pending_list,
-        "recent_bale_users": recent_bale_users,
+        "pending_verifications": pending_verifications,
         "week_incomplete_list": week_incomplete_list,  # 🆕 (جایگزین ترددهای ناقص)
         "week_start_j": jdatetime.date.fromgregorian(date=week_start_g).strftime('%Y/%m/%d'),  # 🆕
 

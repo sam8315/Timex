@@ -617,36 +617,83 @@
     </div>
 </div>
 
-    <!-- 🤖 آخرین کاربران ربات بله -->
+    <!-- ✅ صف تأیید مدارک -->
     <div class="col-lg-4">
         <div class="card border-0 shadow-sm">
             <div class="card-header bg-white d-flex justify-content-between align-items-center">
-                <h6 class="mb-0"><i class="bi bi-robot text-secondary"></i> آخرین کاربران ربات بله</h6>
-                <span class="badge bg-secondary">{{ recent_bale_users|length }}</span>
+                <h6 class="mb-0">
+                    <a href="/admin/verifications" class="text-decoration-none text-dark">
+                        <i class="bi bi-shield-check text-warning"></i> تأیید مدارک
+                    </a>
+                </h6>
+                <span class="badge {% if pending_verifications %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+                    {{ pending_verification_count if pending_verification_count is defined else pending_verifications|length }}
+                </span>
             </div>
             <div class="card-body p-0">
-                {% if recent_bale_users %}
+                {% if pending_verifications %}
                 <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
                     <table class="table table-hover mini-table mb-0">
                         <thead>
                             <tr>
+                                <th>نوع</th>
                                 <th>کارمند</th>
-                                <th>شماره</th>
-                                <th>ثبت‌نام</th>
-                                <th>وضعیت</th>
+                                <th>عنوان</th>
+                                <th class="text-center">عملیات</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {% for bu in recent_bale_users %}
+                            {% for v in pending_verifications %}
                             <tr>
-                                <td><strong>{{ bu.full_name }}</strong></td>
-                                <td><small>{{ bu.phone_number }}</small></td>
-                                <td><small>{{ bu.registered_at_j }}</small></td>
                                 <td>
-                                    {% if bu.is_active %}
-                                    <span class="badge bg-success bale-status">فعال</span>
+                                    <span class="badge
+                                        {% if v.kind == 'document' %}bg-primary
+                                        {% elif v.kind == 'relative' %}bg-info text-dark
+                                        {% else %}bg-secondary{% endif %}">
+                                        {{ v.kind_label }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <a href="{{ v.detail_url }}" class="text-decoration-none fw-semibold">
+                                        {{ v.employee_name }}
+                                    </a>
+                                    <div><small class="text-muted">{{ v.created_at_j }}</small></div>
+                                </td>
+                                <td>
+                                    <small>{{ v.title }}</small>
+                                    {% if v.subtitle and v.subtitle != v.title %}
+                                    <div class="text-muted" style="font-size: 0.75rem;">{{ v.subtitle }}</div>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center text-nowrap">
+                                    {% if v.file_url %}
+                                    <a href="{{ v.file_url }}" target="_blank"
+                                       class="btn btn-outline-primary btn-sm py-0 px-1" title="فایل">
+                                        <i class="bi bi-file-earmark"></i>
+                                    </a>
+                                    {% endif %}
+                                    <form method="post" action="{{ v.verify_url }}" class="d-inline">
+                                        <button type="submit" class="btn btn-success btn-sm py-0 px-1" title="تأیید">
+                                            <i class="bi bi-check-lg"></i>
+                                        </button>
+                                    </form>
+                                    {% if v.kind == 'education' %}
+                                    <form method="post" action="{{ v.reject_url }}" class="d-inline"
+                                          onsubmit="return confirm('رد = حذف مدرک تحصیلی. ادامه می‌دهید؟');">
+                                        <button type="submit" class="btn btn-outline-danger btn-sm py-0 px-1" title="رد (حذف)">
+                                            <i class="bi bi-x-lg"></i>
+                                        </button>
+                                    </form>
                                     {% else %}
-                                    <span class="badge bg-secondary bale-status">غیرفعال</span>
+                                    <button type="button"
+                                            class="btn btn-outline-danger btn-sm py-0 px-1"
+                                            title="رد"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#dashRejectModal"
+                                            data-reject-url="{{ v.reject_url }}"
+                                            data-reject-title="{{ v.title }} — {{ v.employee_name }}">
+                                        <i class="bi bi-x-lg"></i>
+                                    </button>
                                     {% endif %}
                                 </td>
                             </tr>
@@ -654,16 +701,56 @@
                         </tbody>
                     </table>
                 </div>
+                <div class="card-footer bg-white text-center py-2">
+                    <a href="/admin/verifications" class="small text-decoration-none">
+                        مشاهده همه <i class="bi bi-arrow-left"></i>
+                    </a>
+                </div>
                 {% else %}
                 <div class="text-center py-4 text-muted">
-                    <i class="bi bi-robot display-6"></i>
-                    <p class="mt-2 mb-0">کاربری ثبت‌نام نکرده است</p>
+                    <i class="bi bi-shield-check display-6"></i>
+                    <p class="mt-2 mb-0">موردی در انتظار تأیید نیست</p>
+                    <a href="/admin/verifications" class="small text-decoration-none">صف تأیید مدارک</a>
                 </div>
                 {% endif %}
             </div>
         </div>
     </div>
 </div>
+
+<!-- مودال رد از داشبورد (مدارک پرسنلی / بستگان) -->
+<div class="modal fade" id="dashRejectModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <form method="post" id="dashRejectForm" class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">رد مورد</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small mb-2" id="dashRejectItemLabel"></p>
+                <label class="form-label">دلیل رد <span class="text-danger">*</span></label>
+                <textarea name="rejection_reason" class="form-control" rows="3" required
+                          placeholder="دلیل رد را وارد کنید"></textarea>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
+                <button type="submit" class="btn btn-danger">ثبت رد</button>
+            </div>
+        </form>
+    </div>
+</div>
+<script>
+(function () {
+    var modal = document.getElementById('dashRejectModal');
+    if (!modal) return;
+    modal.addEventListener('show.bs.modal', function (event) {
+        var btn = event.relatedTarget;
+        if (!btn) return;
+        document.getElementById('dashRejectForm').action = btn.getAttribute('data-reject-url') || '';
+        document.getElementById('dashRejectItemLabel').textContent = btn.getAttribute('data-reject-title') || '';
+    });
+})();
+</script>
 
 <!-- ============================================ -->
 <!-- 🔗 اقدامات سریع -->
@@ -683,6 +770,9 @@
             </a>
             <a href="/admin/leave-requests" class="btn btn-outline-warning btn-sm">
                 <i class="bi bi-hourglass-split"></i> درخواست‌های مرخصی
+            </a>
+            <a href="/admin/verifications" class="btn btn-outline-warning btn-sm">
+                <i class="bi bi-shield-check"></i> تأیید مدارک
             </a>
             <a href="/admin/contracts" class="btn btn-outline-info btn-sm">
                 <i class="bi bi-file-earmark-text"></i> قراردادها

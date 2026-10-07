@@ -1038,7 +1038,8 @@
         </div>
 
         <!-- قراردادها و کاربران -->
-        {% set org_active = '/admin/contracts' in request.url.path or '/admin/users' in request.url.path %}
+        {% set org_active = '/admin/contracts' in request.url.path or '/admin/users' in request.url.path
+            or '/admin/verifications' in request.url.path or '/admin/education' in request.url.path %}
         <a class="sidebar-link {% if org_active %}active{% endif %}" data-bs-toggle="collapse" href="#orgMenu"
            role="button" aria-expanded="{{ 'true' if org_active else 'false' }}">
             <i class="bi bi-briefcase"></i> قراردادها و کاربران
@@ -1061,8 +1062,15 @@
                 <i class="bi bi-shield-lock"></i> مدیریت دسترسی‌ها
             </a>
             {% endif %}
-            <a href="/admin/education"
-               class="sidebar-link {% if request.url.path == '/admin/education' %}active{% endif %}">
+            <a href="/admin/verifications"
+               class="sidebar-link {% if request.url.path == '/admin/verifications' %}active{% endif %}">
+                <i class="bi bi-shield-check"></i> تأیید مدارک
+                {% if pending_verification_count is defined and pending_verification_count > 0 %}
+                <span class="badge-count">{{ pending_verification_count }}</span>
+                {% endif %}
+            </a>
+            <a href="/admin/verifications?kind=education"
+               class="sidebar-link {% if request.url.path == '/admin/verifications' and request.query_params.get('kind') == 'education' %}active{% endif %}">
                 <i class="bi bi-mortarboard"></i> مدارک تحصیلی
             </a>
         </div>
