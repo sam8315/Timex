@@ -22,6 +22,11 @@ ALL_PERMISSIONS = {
     'view_user_attendance': {'label': 'مشاهده تردد ماهانه کاربر',  'admin': True,  'super_admin': True},
     'approve_leave':        {'label': 'تأیید/رد مرخصی',           'admin': True,  'super_admin': True},
     'add_attendance':       {'label': 'افزودن رکورد تردد دستی',    'admin': False, 'super_admin': True},
+    'approve_missed_attendance': {
+        'label': 'تأیید درخواست تردد فراموش‌شده',
+        'admin': False,
+        'super_admin': True,
+    },
     'edit_attendance':      {'label': 'ویرایش رکورد تردد',         'admin': False, 'super_admin': True},
     'delete_attendance':    {'label': 'حذف رکورد تردد',            'admin': False, 'super_admin': True},
     'change_punch':         {'label': 'تغییر وضعیت ورود/خروج',     'admin': False, 'super_admin': True},
@@ -82,6 +87,11 @@ ALL_PERMISSIONS = {
     },
     'manage_payroll': {
         'label': 'مدیریت حقوق و دستمزد',
+        'admin': False,
+        'super_admin': True,
+    },
+    'approve_payroll': {
+        'label': 'تأیید حقوق',
         'admin': False,
         'super_admin': True,
     },

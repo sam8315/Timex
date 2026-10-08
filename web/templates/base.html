@@ -949,6 +949,9 @@
         <a href="/attendance" class="sidebar-link {% if request.url.path == '/attendance' %}active{% endif %}">
             <i class="bi bi-clock-history"></i> رکوردهای تردد
         </a>
+        <a href="/attendance/missed" class="sidebar-link {% if request.url.path.startswith('/attendance/missed') %}active{% endif %}">
+            <i class="bi bi-clock-history"></i> تردد فراموش‌شده
+        </a>
         <a href="/leave" class="sidebar-link {% if request.url.path.startswith('/leave') %}active{% endif %}">
             <i class="bi bi-calendar-check"></i> مرخصی‌ها
         </a>
@@ -988,8 +991,8 @@
 
         <!-- حضور و غیاب -->
         {% set att_active = '/admin/attendance' in request.url.path or '/admin/incomplete' in request.url.path or
-        '/admin/daily-status' in request.url.path %}
-        {% if 'view_all_attendance' in ep or 'view_incomplete' in ep %}
+        '/admin/daily-status' in request.url.path or '/admin/missed-attendance' in request.url.path %}
+        {% if 'view_all_attendance' in ep or 'view_incomplete' in ep or 'approve_missed_attendance' in ep %}
         <a class="sidebar-link {% if att_active %}active{% endif %}" data-bs-toggle="collapse" href="#attMenu"
            role="button" aria-expanded="{{ 'true' if att_active else 'false' }}">
             <i class="bi bi-people"></i> حضور و غیاب
@@ -1010,6 +1013,12 @@
             <a href="/admin/incomplete"
                class="sidebar-link {% if request.url.path == '/admin/incomplete' %}active{% endif %}">
                 <i class="bi bi-exclamation-triangle"></i> ترددهای ناقص
+            </a>
+            {% endif %}
+            {% if 'approve_missed_attendance' in ep %}
+            <a href="/admin/missed-attendance"
+               class="sidebar-link {% if request.url.path == '/admin/missed-attendance' %}active{% endif %}">
+                <i class="bi bi-clock-history"></i> تردد فراموش‌شده
             </a>
             {% endif %}
         </div>

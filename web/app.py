@@ -9,7 +9,7 @@ from fastapi.responses import RedirectResponse
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.responses import PlainTextResponse
 
-from web.routes import auth, dashboard, attendance, leave, admin, contract, profile, holidays, admin_contracts, admin_leave, admin_daily_status, carry_forward, education, phones, addresses, reports, admin_policy, bank_accounts, employee_documents, employee_relatives, admin_verifications
+from web.routes import auth, dashboard, attendance, leave, admin, contract, profile, holidays, admin_contracts, admin_leave, admin_daily_status, carry_forward, education, phones, addresses, reports, admin_policy, bank_accounts, employee_documents, employee_relatives, admin_verifications, missed_attendance
 from web.routes import admin_cities, admin_service_locations, admin_travel_leave_policy, travel_leave_preview, admin_travel_leave_preview
 from web.routes import admin_positions
 from web.routes import admin_employee_document_types
@@ -84,6 +84,7 @@ app.mount("/static", GuardedStaticFiles(directory=str(BASE_PATH / "static")), na
 app.include_router(auth.router)
 app.include_router(dashboard.router)
 app.include_router(attendance.router)
+app.include_router(missed_attendance.router)
 app.include_router(travel_leave_preview.router)
 
 # Authoritative admin Travel Leave preview (policy-aware).

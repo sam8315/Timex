@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}تأیید تردد فراموش‌شده | پنل مدیریت{% endblock %}
+{% block topbar_title %}تأیید تردد فراموش‌شده{% endblock %}
+
+{% block content %}
+{% if request.query_params.get('success') %}
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+    <i class="bi bi-check-circle"></i> {{ request.query_params.get('success') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+{% if request.query_params.get('error') %}
+<div class="alert alert-danger alert-dismissible fade show" role="alert">
+    <i class="bi bi-exclamation-triangle"></i> {{ request.query_params.get('error') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h6 class="mb-0"><i class="bi bi-clock-history text-warning"></i> درخواست‌های در انتظار</h6>
+        <span class="badge bg-warning text-dark">{{ pending_count }}</span>
+    </div>
+    <div class="card-body p-0">
+        {% if requests %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead>
+                <tr>
+                    <th>کارمند</th>
+                    <th>زمان</th>
+                    <th>نوع</th>
+                    <th>دلیل</th>
+                    <th>ثبت درخواست</th>
+                    <th></th>
+                </tr>
+                </thead>
+                <tbody>
+                {% for item in requests %}
+                <tr>
+                    <td>{{ item.employee_name }}</td>
+                    <td dir="ltr" class="text-end">{{ item.punch_at_j }}</td>
+                    <td>{{ item.punch_label }}</td>
+                    <td>{{ item.reason_label }}</td>
+                    <td dir="ltr" class="text-end">{{ item.created_at_j }}</td>
+                    <td class="text-end">
+                        <form method="post" action="/admin/missed-attendance/{{ item.id }}/approve" class="d-inline">
+                            <button type="submit" class="btn btn-sm btn-success">تأیید</button>
+                        </form>
+                        <form method="post" action="/admin/missed-attendance/{{ item.id }}/reject" class="d-inline-flex gap-1">
+                            <input type="text" name="rejection_reason" class="form-control form-control-sm"
+                                   placeholder="دلیل رد" style="width: 9rem;">
+                            <button type="submit" class="btn btn-sm btn-outline-danger">رد</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted p-3 mb-0">درخواست در انتظاری نیست.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

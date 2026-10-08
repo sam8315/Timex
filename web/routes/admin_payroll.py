@@ -110,6 +110,10 @@ def _can_manage(db: Session, user: User) -> bool:
     return has_permission(db, user, "manage_payroll")
 
 
+def _can_approve(db: Session, user: User) -> bool:
+    return has_permission(db, user, "approve_payroll")
+
+
 def _deny():
     return RedirectResponse(url="/admin/?error=" + quote("دسترسی ندارید"), status_code=302)
 
@@ -274,6 +278,7 @@ async def payroll_run_detail(
             "status_labels": STATUS_LABELS,
             "manuals": manuals,
             "can_manage": _can_manage(db, user),
+            "can_approve": _can_approve(db, user),
             "is_super_admin": user.role == "super_admin",
             "creator_name": names.get(run.created_by) if run.created_by else None,
             "approver_name": names.get(run.approved_by) if run.approved_by else None,
@@ -370,7 +375,7 @@ async def payroll_approve(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    if not _can_manage(db, user):
+    if not _can_approve(db, user):
         return _deny()
     try:
         run_service.approve_run(db, run_id, user.user_id)

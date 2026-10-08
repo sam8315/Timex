@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+{% block title %}تردد فراموش‌شده | سامانه حضور و غیاب{% endblock %}
+{% block topbar_title %}تردد فراموش‌شده{% endblock %}
+
+{% block content %}
+{% if request.query_params.get('success') %}
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+    <i class="bi bi-check-circle"></i> {{ request.query_params.get('success') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+{% if request.query_params.get('error') %}
+<div class="alert alert-danger alert-dismissible fade show" role="alert">
+    <i class="bi bi-exclamation-triangle"></i> {{ request.query_params.get('error') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h6 class="mb-0"><i class="bi bi-exclamation-triangle text-warning"></i> ترددهای ناقص {{ incomplete_month_label }}</h6>
+        <span class="badge bg-warning text-dark">{{ incomplete_rows|length }}</span>
+    </div>
+    <div class="card-body p-0">
+        {% if incomplete_rows %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead>
+                <tr>
+                    <th>تاریخ</th>
+                    <th>وضعیت</th>
+                    <th class="text-center">ورود</th>
+                    <th class="text-center">خروج</th>
+                    <th></th>
+                </tr>
+                </thead>
+                <tbody>
+                {% for item in incomplete_rows %}
+                <tr>
+                    <td dir="ltr" class="text-end">{{ item.date_j }}</td>
+                    <td>{{ item.type }}</td>
+                    <td class="text-center">
+                        <span class="badge bg-success">{{ item.enter_count }}</span>
+                        {% if item.first_enter != '—' %}
+                        <div class="small text-muted" dir="ltr">{{ item.first_enter }}</div>
+                        {% endif %}
+                    </td>
+                    <td class="text-center">
+                        <span class="badge bg-danger">{{ item.exit_count }}</span>
+                        {% if item.last_exit != '—' %}
+                        <div class="small text-muted" dir="ltr">{{ item.last_exit }}</div>
+                        {% endif %}
+                    </td>
+                    <td class="text-end">
+                        <button type="button"
+                                class="btn btn-sm btn-outline-primary fill-missed-form"
+                                data-date="{{ item.date_j }}"
+                                data-punch="{{ item.suggested_punch }}"
+                                title="پر کردن فرم">
+                            <i class="bi bi-magic"></i>
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted p-3 mb-0">در این ماه تردد ناقصی ندارید.</p>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-4" id="missedFormCard">
+    <div class="card-header bg-white">
+        <h6 class="mb-0"><i class="bi bi-clock-history"></i> ثبت تردد فراموش‌شده</h6>
+    </div>
+    <div class="card-body">
+        <p class="text-muted small">پس از تأیید، این تردد به‌صورت خودکار در رکوردهای شما ثبت می‌شود.</p>
+        <form method="post" action="/attendance/missed" class="row g-3" id="missedForm">
+            <div class="col-md-3">
+                <label class="form-label" for="dateStr">تاریخ</label>
+                <input type="text" class="form-control jalali-date" id="dateStr" name="date_str"
+                       dir="ltr" placeholder="1404/01/01" required autocomplete="off">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label" for="timeStr">ساعت</label>
+                <input type="text" name="time_str" id="timeStr"
+                       class="form-control text-center" placeholder="HH:MM"
+                       pattern="([01][0-9]|2[0-3]):([0-5][0-9])" inputmode="numeric"
+                       maxlength="5" dir="ltr" autocomplete="off" required data-time-input="true">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label" for="punch">نوع تردد</label>
+                <select class="form-select" id="punch" name="punch" required>
+                    <option value="0">ورود</option>
+                    <option value="1">خروج</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label" for="reasonCode">دلیل</label>
+                <select class="form-select" id="reasonCode" name="reason_code" required>
+                    {% for code, label in reason_options %}
+                    <option value="{{ code }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary w-100">ارسال</button>
+            </div>
+            <div class="col-12 d-none" id="otherWrap">
+                <label class="form-label" for="reasonText">شرح دلیل</label>
+                <textarea class="form-control" id="reasonText" name="reason_text" rows="2"
+                          maxlength="500" placeholder="دلیل را بنویسید"></textarea>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white">
+        <h6 class="mb-0">درخواست‌های من</h6>
+    </div>
+    <div class="card-body p-0">
+        {% if requests %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                <tr>
+                    <th>زمان</th>
+                    <th>نوع</th>
+                    <th>دلیل</th>
+                    <th>وضعیت</th>
+                    <th></th>
+                </tr>
+                </thead>
+                <tbody>
+                {% for item in requests %}
+                <tr>
+                    <td dir="ltr" class="text-end">{{ item.punch_at_j }}</td>
+                    <td>{{ item.punch_label }}</td>
+                    <td>{{ item.reason_label }}</td>
+                    <td>
+                        {{ item.status_name }}
+                        {% if item.status == 'R' and item.rejection_reason %}
+                        <div class="small text-muted">{{ item.rejection_reason }}</div>
+                        {% endif %}
+                    </td>
+                    <td class="text-end">
+                        {% if item.status == 'P' %}
+                        <form method="post" action="/attendance/missed/{{ item.id }}/cancel" class="d-inline">
+                            <button type="submit" class="btn btn-sm btn-outline-secondary">لغو</button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted p-3 mb-0">درخواستی ثبت نشده است.</p>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+(function () {
+    var reason = document.getElementById('reasonCode');
+    var wrap = document.getElementById('otherWrap');
+    var text = document.getElementById('reasonText');
+    function sync() {
+        var other = reason.value === 'other';
+        wrap.classList.toggle('d-none', !other);
+        text.required = other;
+        if (!other) {
+            text.value = '';
+        }
+    }
+    reason.addEventListener('change', sync);
+    sync();
+
+    function setJalaliDate(input, ymd) {
+        input.value = ymd;
+        if (!window.jQuery) {
+            return;
+        }
+        var picker = jQuery(input).data('datepicker');
+        if (!picker || typeof picker.setDate !== 'function' || !window.persianDate) {
+            return;
+        }
+        var parts = ymd.split('/').map(function (part) { return parseInt(part, 10); });
+        try {
+            picker.setDate(new persianDate(parts).valueOf());
+        } catch (err) {
+            input.value = ymd;
+        }
+    }
+
+    document.querySelectorAll('.fill-missed-form').forEach(function (button) {
+        button.addEventListener('click', function () {
+            var dateInput = document.getElementById('dateStr');
+            var timeInput = document.getElementById('timeStr');
+            var punchInput = document.getElementById('punch');
+            setJalaliDate(dateInput, button.getAttribute('data-date') || '');
+            var punch = button.getAttribute('data-punch') || '';
+            if (punch === '0' || punch === '1') {
+                punchInput.value = punch;
+            }
+            timeInput.value = '';
+            if (typeof timeInput.setCustomValidity === 'function') {
+                timeInput.setCustomValidity('');
+            }
+            document.getElementById('missedFormCard').scrollIntoView({behavior: 'smooth', block: 'start'});
+            timeInput.focus();
+        });
+    });
+})();
+</script>
+{% endblock %}

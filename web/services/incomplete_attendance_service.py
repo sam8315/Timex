@@ -133,6 +133,7 @@ def find_incomplete_attendances(
     department: Optional[str] = None,
     issue_type: Optional[str] = None,
     include_night_shift: bool = False,
+    user_id: Optional[str] = None,
 ) -> List[Dict]:
     """
     یافتن روزهای ناقص در بازه با یک bulk query و موتور مرکزی.
@@ -143,16 +144,16 @@ def find_incomplete_attendances(
     load_start, _ = day_bounds(from_date - timedelta(days=1))
     _, load_end = day_bounds(to_date + timedelta(days=1))
 
-    records = (
-        db.query(Attendance)
-        .filter(
-            Attendance.timestamp >= load_start,
-            Attendance.timestamp < load_end,
-            Attendance.is_deleted.is_(False),
-        )
-        .order_by(Attendance.user_id, Attendance.timestamp)
-        .all()
+    record_query = db.query(Attendance).filter(
+        Attendance.timestamp >= load_start,
+        Attendance.timestamp < load_end,
+        Attendance.is_deleted.is_(False),
     )
+    if user_id:
+        record_query = record_query.filter(Attendance.user_id == user_id)
+    records = record_query.order_by(
+        Attendance.user_id, Attendance.timestamp
+    ).all()
 
     by_user_day: Dict[Tuple[str, date], List[Attendance]] = defaultdict(list)
     user_ids = set()

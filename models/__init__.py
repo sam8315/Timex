@@ -4,6 +4,7 @@
 from models.base import Base
 from models.user import User
 from models.attendance import Attendance, AttendancePolicy, AttendancePolicyDay, HourlyLeavePolicy, HourlyLeaveResolution, HourlyLeaveTransaction, HourlyLeavePolicy, HourlyLeaveResolution, HourlyLeaveTransaction
+from models.missed_attendance_request import MissedAttendanceRequest
 from models.contract import Contract
 from models.membership_type import MembershipType
 from models.membership_type_rule import MembershipTypeRule
@@ -70,7 +71,8 @@ from models.payroll import (
 )
 
 __all__ = [
-    'Base', 'User', 'Attendance', 'AttendancePolicy', 'AttendancePolicyDay',
+    'Base', 'User', 'Attendance', 'MissedAttendanceRequest',
+    'AttendancePolicy', 'AttendancePolicyDay',
     'HourlyLeavePolicy', 'HourlyLeaveResolution', 'HourlyLeaveTransaction',
     'Contract', 'MembershipType', 'MembershipTypeRule', 'ReservedMembershipCode',
     'MembershipRuleChangeRequest', 'MembershipRuleChangeAudit',

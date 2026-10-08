@@ -25,17 +25,17 @@
 {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
 {% if success %}<div class="alert alert-success">{{ success }}</div>{% endif %}
 
-{% if can_manage %}
+{% if can_manage or (can_approve and run.status == 'calculated') %}
 <div class="mb-3 d-flex flex-wrap gap-2">
-    {% if run.status in ['draft', 'calculated'] %}
+    {% if can_manage and run.status in ['draft', 'calculated'] %}
     <button type="button" class="btn btn-sm {% if run.status == 'draft' %}btn-primary{% else %}btn-outline-primary{% endif %}" id="payrollCalcBtn">{% if run.status == 'draft' %}محاسبه{% else %}محاسبه مجدد{% endif %}</button>
     {% endif %}
-    {% if run.status == 'calculated' %}
+    {% if run.status == 'calculated' and can_approve %}
     <form method="post" action="/admin/payroll/runs/{{ run.id }}/approve">
         <button class="btn btn-success btn-sm">تأیید</button>
     </form>
     {% endif %}
-    {% if run.status == 'approved' %}
+    {% if can_manage and run.status == 'approved' %}
     <form method="post" action="/admin/payroll/runs/{{ run.id }}/publish">
         <button class="btn btn-warning btn-sm">انتشار برای کارکنان</button>
     </form>

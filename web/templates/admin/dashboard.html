@@ -347,6 +347,26 @@
 </div>
 {% endif %}
 
+{% if can_approve_missed_attendance %}
+<div class="row g-3 mb-4">
+    <div class="col-md-4 col-lg-3">
+        <a href="/admin/missed-attendance" class="text-decoration-none text-reset">
+            <div class="card alert-card bg-warning bg-opacity-10 h-100">
+                <div class="card-body d-flex align-items-center gap-3">
+                    <div class="alert-icon bg-warning bg-opacity-25 text-warning">
+                        <i class="bi bi-clock-history"></i>
+                    </div>
+                    <div>
+                        <div class="fw-bold">{{ pending_missed_attendance_count }}</div>
+                        <small class="text-muted">درخواست تردد فراموش‌شده</small>
+                    </div>
+                </div>
+            </div>
+        </a>
+    </div>
+</div>
+{% endif %}
+
 <!-- ============================================ -->
 <!-- ⚠️ هشدارهای فوری -->
 <!-- ============================================ -->

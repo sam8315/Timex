@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from web.dependencies import get_db, require_admin, require_permission
 from models.user import User
 from models.leave_request import LeaveRequest
+from models.missed_attendance_request import MissedAttendanceRequest
 from datetime import timedelta, date, date as date_type
 from sqlalchemy import and_, func
 import time
@@ -331,6 +332,15 @@ async def admin_dashboard(
         LeaveRequest.status == 'P'
     ).count()
 
+    can_approve_missed_attendance = has_permission(
+        db, user, "approve_missed_attendance"
+    )
+    pending_missed_attendance_count = 0
+    if can_approve_missed_attendance:
+        pending_missed_attendance_count = db.query(MissedAttendanceRequest).filter(
+            MissedAttendanceRequest.status == "P"
+        ).count()
+
     # ۶. کاربران ربات بله
     total_bale_users = db.query(BaleUser).count()
     active_bale_users = db.query(BaleUser).filter(
@@ -604,6 +614,8 @@ async def admin_dashboard(
         "no_attendance_yesterday": no_attendance_yesterday,  # 🆕 (جایگزین غایبین)
         "on_leave_today": on_leave_today,
         "pending_leave_requests": pending_leave_requests,
+        "can_approve_missed_attendance": can_approve_missed_attendance,
+        "pending_missed_attendance_count": pending_missed_attendance_count,
         "total_bale_users": total_bale_users,
         "active_bale_users": active_bale_users,
         "attendance_rate": attendance_rate,
