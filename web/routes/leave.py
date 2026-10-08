@@ -498,12 +498,13 @@ async def submit_leave_request(
         db.commit()
         type_name = LEAVE_TYPES.get(leave_type, '')
         referer = request.headers.get("referer", "/leave")
+        written_notice = " علاوه بر درخواست سیستمی، درخواست کتبی خود را به بخش اداری تحویل دهید. مرخصی پس از تأیید مدیر تأیید می‌شود."
         if leave_type == 'HL':
             minutes = compute_requested_minutes(hl_start_time, hl_end_time)
-            return RedirectResponse(url=build_redirect_url(referer, "success", f"درخواست مرخصی {type_name} ({minutes // 60}:{minutes % 60:02d} ساعت) با موفقیت ثبت شد"), status_code=302)
+            return RedirectResponse(url=build_redirect_url(referer, "success", f"درخواست مرخصی {type_name} ({minutes // 60}:{minutes % 60:02d} ساعت) با موفقیت ثبت شد.{written_notice}"), status_code=302)
 
         tl_msg = " + مرخصی توراهی" if tl_enabled else ""
-        return RedirectResponse(url=build_redirect_url(referer, "success", f"درخواست مرخصی {type_name} ({days_count} روز){tl_msg} با موفقیت ثبت شد"), status_code=302)
+        return RedirectResponse(url=build_redirect_url(referer, "success", f"درخواست مرخصی {type_name} ({days_count} روز){tl_msg} با موفقیت ثبت شد.{written_notice}"), status_code=302)
     except ValueError as e:
         return RedirectResponse(url=build_redirect_url(request.headers.get("referer", "/leave"), "error", str(e)), status_code=302)
     except Exception as e:
