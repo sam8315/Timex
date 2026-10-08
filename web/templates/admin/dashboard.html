@@ -46,6 +46,22 @@
     .row.g-3 > [class*="col-"] > .card {
         height: 100%;
     }
+    .alert-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 1rem;
+    }
+    .alert-grid > .card,
+    .alert-grid > a {
+        height: 100%;
+        min-width: 0;
+    }
+    @media (max-width: 992px) {
+        .alert-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 480px) {
+        .alert-grid { grid-template-columns: 1fr; }
+    }
     @media (max-width: 768px) {
         .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
@@ -353,33 +369,28 @@
 </div>
 {% endif %}
 
-{% if can_approve_missed_attendance %}
-<div class="row g-3 mb-4">
-    <div class="col-md-4 col-lg-3">
-        <a href="/admin/missed-attendance" class="text-decoration-none text-reset">
-            <div class="card alert-card bg-warning bg-opacity-10 h-100">
-                <div class="card-body d-flex align-items-center gap-3">
-                    <div class="alert-icon bg-warning bg-opacity-25 text-warning">
-                        <i class="bi bi-clock-history"></i>
-                    </div>
-                    <div>
-                        <div class="fw-bold">{{ pending_missed_attendance_count }}</div>
-                        <small class="text-muted">درخواست تردد فراموش‌شده</small>
-                    </div>
-                </div>
-            </div>
-        </a>
-    </div>
-</div>
-{% endif %}
-
 <!-- ============================================ -->
 <!-- ⚠️ هشدارهای فوری -->
 <!-- ============================================ -->
-{% if expiring_contracts_count > 0 or negative_balances_count > 0 or pending_carry_forward_count > 0 or week_incomplete_count > 0 %}
-<div class="row g-3 mb-4">
+{% if can_approve_missed_attendance or expiring_contracts_count > 0 or negative_balances_count > 0 or pending_carry_forward_count > 0 or week_incomplete_count > 0 %}
+<div class="alert-grid mb-4">
+    {% if can_approve_missed_attendance %}
+    <a href="/admin/missed-attendance" class="text-decoration-none text-reset">
+        <div class="card alert-card bg-warning bg-opacity-10 h-100">
+            <div class="card-body d-flex align-items-center gap-3">
+                <div class="alert-icon bg-warning bg-opacity-25 text-warning">
+                    <i class="bi bi-clock-history"></i>
+                </div>
+                <div>
+                    <div class="fw-bold">{{ pending_missed_attendance_count }}</div>
+                    <small class="text-muted">درخواست تردد فراموش‌شده</small>
+                </div>
+            </div>
+        </div>
+    </a>
+    {% endif %}
+
     {% if expiring_contracts_count > 0 %}
-    <div class="col-md-3 col-6">
         <div class="card alert-card bg-warning bg-opacity-10 h-100">
             <div class="card-body d-flex align-items-center gap-3">
                 <div class="alert-icon bg-warning bg-opacity-25 text-warning">
@@ -391,11 +402,9 @@
                 </div>
             </div>
         </div>
-    </div>
     {% endif %}
 
     {% if negative_balances_count > 0 %}
-    <div class="col-md-3 col-6">
         <div class="card alert-card bg-danger bg-opacity-10 h-100">
             <div class="card-body d-flex align-items-center gap-3">
                 <div class="alert-icon bg-danger bg-opacity-25 text-danger">
@@ -407,11 +416,9 @@
                 </div>
             </div>
         </div>
-    </div>
     {% endif %}
 
     {% if pending_carry_forward_count > 0 %}
-    <div class="col-md-3 col-6">
         <div class="card alert-card bg-info bg-opacity-10 h-100">
             <div class="card-body d-flex align-items-center gap-3">
                 <div class="alert-icon bg-info bg-opacity-25 text-info">
@@ -423,11 +430,9 @@
                 </div>
             </div>
         </div>
-    </div>
     {% endif %}
 
-{% if week_incomplete_count > 0 %}
-<div class="col-md-3 col-6">
+    {% if week_incomplete_count > 0 %}
     <div class="card alert-card bg-secondary bg-opacity-10 h-100">
         <div class="card-body d-flex align-items-center gap-3">
             <div class="alert-icon bg-secondary bg-opacity-25 text-secondary">
@@ -439,8 +444,7 @@
             </div>
         </div>
     </div>
-</div>
-{% endif %}
+    {% endif %}
 </div>
 {% endif %}
 
