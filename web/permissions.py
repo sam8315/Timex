@@ -79,6 +79,16 @@ ALL_PERMISSIONS = {
         'admin': False,
         'super_admin': True,
     },
+    'manage_payroll': {
+        'label': 'مدیریت حقوق و دستمزد',
+        'admin': False,
+        'super_admin': True,
+    },
+    'view_payroll': {
+        'label': 'مشاهده عملیات حقوق',
+        'admin': True,
+        'super_admin': True,
+    },
 }
 
 # ترکیب‌هایی که از UI قابل غیرفعال‌کردن نیستند (جلوگیری از قفل‌شدن مدیریت)

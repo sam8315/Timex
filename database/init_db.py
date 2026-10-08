@@ -1869,6 +1869,21 @@ def create_tables() -> None:
         seed_role_permissions()
         try:
             from database.engine import SessionLocal
+            from web.services.payroll.seed import ensure_payroll_defaults
+
+            _pdb = SessionLocal()
+            try:
+                ensure_payroll_defaults(_pdb)
+            finally:
+                _pdb.close()
+        except Exception as _payroll_seed_exc:
+            logger.warning(
+                "Payroll defaults seed skipped: %s",
+                _payroll_seed_exc,
+                extra={"event": "database.payroll_seed"},
+            )
+        try:
+            from database.engine import SessionLocal
             from web.services.leave_settlement.caps import (
                 seed_default_settlement_cap_periods,
             )

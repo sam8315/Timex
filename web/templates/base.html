@@ -961,6 +961,9 @@
         <a href="/employee-documents" class="sidebar-link {% if request.url.path.startswith('/employee-documents') %}active{% endif %}">
             <i class="bi bi-folder2-open"></i> مدارک پرسنلی
         </a>
+        <a href="/payroll" class="sidebar-link {% if request.url.path.startswith('/payroll') %}active{% endif %}">
+            <i class="bi bi-wallet2"></i> حقوق من
+        </a>
     </div>
 
     {% if is_admin %}
@@ -1072,6 +1075,24 @@
             <a href="/admin/verifications?kind=education"
                class="sidebar-link {% if request.url.path == '/admin/verifications' and request.query_params.get('kind') == 'education' %}active{% endif %}">
                 <i class="bi bi-mortarboard"></i> مدارک تحصیلی
+            </a>
+        </div>
+
+        <!-- عملیات حقوق -->
+        {% set pay_active = '/admin/payroll' in request.url.path %}
+        <a class="sidebar-link {% if pay_active %}active{% endif %}" data-bs-toggle="collapse" href="#payrollMenu"
+           role="button" aria-expanded="{{ 'true' if pay_active else 'false' }}">
+            <i class="bi bi-cash-stack"></i> عملیات حقوق
+            <i class="bi bi-chevron-down sidebar-toggle-icon"></i>
+        </a>
+        <div class="collapse sidebar-submenu {% if pay_active %}show{% endif %}" id="payrollMenu">
+            <a href="/admin/payroll"
+               class="sidebar-link {% if request.url.path == '/admin/payroll' %}active{% endif %}">
+                <i class="bi bi-list-ul"></i> لیست حقوق
+            </a>
+            <a href="/admin/payroll/new"
+               class="sidebar-link {% if request.url.path == '/admin/payroll/new' %}active{% endif %}">
+                <i class="bi bi-plus-circle"></i> حقوق جدید
             </a>
         </div>
 

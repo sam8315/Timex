@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}حقوق من{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4><i class="bi bi-wallet2 text-success"></i> حقوق من</h4>
+</div>
+
+{% if error %}<div class="alert alert-warning">{{ error }}</div>{% endif %}
+
+<form method="get" action="/payroll" class="row g-2 align-items-end mb-4">
+    <div class="col-auto">
+        <label class="form-label">سال</label>
+        <input type="number" name="year" class="form-control" value="{{ year_j }}">
+    </div>
+    <div class="col-auto">
+        <label class="form-label">ماه</label>
+        <select name="month" class="form-select">
+            {% for m in range(1, 13) %}
+            <option value="{{ m }}" {% if m == month_j %}selected{% endif %}>{{ m }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-auto">
+        <button class="btn btn-primary">نمایش</button>
+    </div>
+</form>
+
+{% if result %}
+<div class="card shadow-sm">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span>فیش {{ period_label }} — {{ result.employee_name }}</span>
+        <div class="d-flex gap-2">
+            <a class="btn btn-sm btn-outline-secondary" href="/payroll/payslip/{{ result.id }}">جزئیات / چاپ</a>
+            <a class="btn btn-sm btn-outline-primary" href="/payroll/payslip/{{ result.id }}/pdf">PDF</a>
+        </div>
+    </div>
+    <div class="card-body">
+        <div class="row mb-3">
+            <div class="col-md-4"><strong>ناخالص:</strong> {{ '{:,.0f}'.format(result.gross_earnings) }}</div>
+            <div class="col-md-4"><strong>کسورات:</strong> {{ '{:,.0f}'.format(result.total_deductions) }}</div>
+            <div class="col-md-4"><strong>خالص:</strong> {{ '{:,.0f}'.format(result.net_pay) }}</div>
+        </div>
+        <table class="table table-sm">
+            <thead><tr><th>شرح</th><th>نوع</th><th class="text-end">مبلغ</th></tr></thead>
+            <tbody>
+            {% for it in items %}
+                <tr>
+                    <td>{{ it.component_name }}</td>
+                    <td>{% if it.kind == 'deduction' %}کسورات{% else %}درآمد{% endif %}</td>
+                    <td class="text-end" dir="ltr">{{ '{:,.0f}'.format(it.amount) }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% else %}
+<div class="alert alert-info">برای این ماه فیش منتشرشده‌ای وجود ندارد.</div>
+{% endif %}
+{% endblock %}

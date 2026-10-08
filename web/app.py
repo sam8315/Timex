@@ -18,6 +18,7 @@ from web.routes import admin_service_adjustments
 from web.routes import admin_service_duty_regions
 from web.routes import admin_system
 from web.routes import admin_annual_leave
+from web.routes import admin_payroll, payroll
 BASE_PATH = Path(__file__).parent
 from web.config import WebConfig
 from web.jobs.relative_study_expiry import start_scheduler, stop_scheduler
@@ -113,6 +114,8 @@ app.include_router(employee_relatives.router)
 app.include_router(admin_verifications.router)
 app.include_router(reports.router)
 app.include_router(admin_policy.router)
+app.include_router(admin_payroll.router)
+app.include_router(payroll.router)
 app.include_router(admin_service_duty_regions.router)
 app.include_router(admin_travel_leave_policy.router)
 app.include_router(permissions_router)

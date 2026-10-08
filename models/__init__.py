@@ -51,6 +51,22 @@ from models.travel_leave_detail import TravelLeaveDetail
 from models.travel_leave_policy import TravelLeavePolicy
 from models.travel_leave_policy_rules import TravelLeavePolicyRule, TravelLeaveQuotaSetting
 from models.service_health import ServiceHealth
+from models.payroll import (
+    PayrollComponent,
+    PayrollAnnualLaw,
+    PayrollRateSettings,
+    PayrollAssignment,
+    PayrollPeriod,
+    PayrollRun,
+    PayrollResult,
+    PayrollResultItem,
+    PayrollManualEntry,
+    PayrollMinimumWage,
+    PayrollChildAllowancePolicy,
+    PayrollOvertimePolicy,
+    PayrollDeficitPolicy,
+    PayrollShiftPolicy,
+)
 
 __all__ = [
     'Base', 'User', 'Attendance', 'AttendancePolicy', 'AttendancePolicyDay',
@@ -74,4 +90,9 @@ __all__ = [
     'EmployeeRelative',
     'PasswordResetRequest',
     'ServiceHealth',
+    'PayrollComponent', 'PayrollAnnualLaw', 'PayrollRateSettings',
+    'PayrollAssignment', 'PayrollPeriod', 'PayrollRun',
+    'PayrollResult', 'PayrollResultItem', 'PayrollManualEntry',
+    'PayrollMinimumWage', 'PayrollChildAllowancePolicy',
+    'PayrollOvertimePolicy', 'PayrollDeficitPolicy', 'PayrollShiftPolicy',
 ]

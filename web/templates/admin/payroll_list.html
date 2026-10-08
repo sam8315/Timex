@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}لیست حقوق | عملیات حقوق{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4><i class="bi bi-cash-stack text-success"></i> لیست حقوق</h4>
+    {% if can_manage %}
+    <a href="/admin/payroll/new" class="btn btn-primary btn-sm">
+        <i class="bi bi-plus-lg"></i> حقوق جدید
+    </a>
+    {% endif %}
+</div>
+
+{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+{% if success %}<div class="alert alert-success">{{ success }}</div>{% endif %}
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>#</th>
+                        <th>دوره</th>
+                        <th>عضویت</th>
+                        <th>وضعیت</th>
+                        <th>ایجادکننده</th>
+                        <th>تأییدکننده</th>
+                        <th>تعداد فیش</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for run in runs %}
+                    <tr>
+                        <td>{{ run.id }}</td>
+                        <td>{{ run.period.year_j }}/{{ '%02d'|format(run.period.month_j) }}</td>
+                        <td>{{ run.membership_type_code or 'همه' }}</td>
+                        <td><span class="badge bg-secondary">{{ status_labels.get(run.status, run.status) }}</span></td>
+                        <td>{{ actor_names.get(run.created_by) or run.created_by or '—' }}</td>
+                        <td>{{ actor_names.get(run.approved_by) or run.approved_by or '—' }}</td>
+                        <td>{{ run.results|length }}</td>
+                        <td class="text-end">
+                            <a class="btn btn-sm btn-outline-primary" href="/admin/payroll/runs/{{ run.id }}">جزئیات</a>
+                            {% if is_super_admin %}
+                            <form method="post" action="/admin/payroll/runs/{{ run.id }}/delete" class="d-inline" onsubmit="return confirm('این لیست حقوق و فیش‌های آن حذف شود؟');">
+                                <button class="btn btn-sm btn-outline-danger">حذف</button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="8" class="text-center text-muted py-4">هنوز اجرای حقوقی ثبت نشده است.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

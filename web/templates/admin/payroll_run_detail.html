@@ -1,0 +1,295 @@
+{% extends "base.html" %}
+{% block title %}جزئیات اجرای حقوق #{{ run.id }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4>
+        اجرای شماره {{ run.id }} —
+        {{ run.period.year_j }}/{{ '%02d'|format(run.period.month_j) }}
+        <span class="badge bg-secondary">{{ status_labels.get(run.status, run.status) }}</span>
+    </h4>
+    <a href="/admin/payroll" class="btn btn-outline-secondary btn-sm">لیست</a>
+</div>
+<div class="text-muted small mb-3">
+    ایجادکننده: {{ creator_name or run.created_by or '—' }}
+    <span class="mx-2">|</span>
+    تأییدکننده: {{ approver_name or run.approved_by or '—' }}
+    <span class="mx-2">|</span>
+    آیتم‌ها:
+    {% if components_explicit %}
+        {% for c in chosen_components %}{{ c.name }}{% if not loop.last %}، {% endif %}{% endfor %}
+    {% else %}
+        همه آیتم‌های فعال
+    {% endif %}
+</div>
+
+{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+{% if success %}<div class="alert alert-success">{{ success }}</div>{% endif %}
+
+{% if can_manage %}
+<div class="mb-3 d-flex flex-wrap gap-2">
+    {% if run.status in ['draft', 'calculated'] %}
+    <button type="button" class="btn btn-sm {% if run.status == 'draft' %}btn-primary{% else %}btn-outline-primary{% endif %}" id="payrollCalcBtn">{% if run.status == 'draft' %}محاسبه{% else %}محاسبه مجدد{% endif %}</button>
+    {% endif %}
+    {% if run.status == 'calculated' %}
+    <form method="post" action="/admin/payroll/runs/{{ run.id }}/approve">
+        <button class="btn btn-success btn-sm">تأیید</button>
+    </form>
+    {% endif %}
+    {% if run.status == 'approved' %}
+    <form method="post" action="/admin/payroll/runs/{{ run.id }}/publish">
+        <button class="btn btn-warning btn-sm">انتشار برای کارکنان</button>
+    </form>
+    {% endif %}
+    {% if is_super_admin %}
+    <form method="post" action="/admin/payroll/runs/{{ run.id }}/delete" onsubmit="return confirm('این لیست حقوق و فیش‌های آن حذف شود؟');">
+        <button class="btn btn-outline-danger btn-sm">حذف لیست</button>
+    </form>
+    {% endif %}
+</div>
+{% elif is_super_admin %}
+<div class="mb-3">
+    <form method="post" action="/admin/payroll/runs/{{ run.id }}/delete" onsubmit="return confirm('این لیست حقوق و فیش‌های آن حذف شود؟');">
+        <button class="btn btn-outline-danger btn-sm">حذف لیست</button>
+    </form>
+</div>
+{% endif %}
+
+{% if can_manage and run.status in ['draft', 'calculated'] %}
+<div class="alert alert-light border small">
+    نوع نوبت هر نفر را قبل از محاسبه انتخاب کنید. تا وقتی انتخابی ذخیره نشده باشد، بدون نوبت‌کاری حساب می‌شود.
+</div>
+{% endif %}
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>کد</th>
+                        <th>نام</th>
+                        <th>عضویت</th>
+                        <th>روز پوشش</th>
+                        <th>ناخالص</th>
+                        <th>کسورات</th>
+                        <th>خالص</th>
+                        {% if can_manage and run.status in ['draft', 'calculated'] %}
+                        <th>نوع نوبت</th>
+                        {% elif run.status in ['approved', 'published'] %}
+                        <th>نوع نوبت</th>
+                        {% endif %}
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for r in roster %}
+                    <tr data-user-id="{{ r.user_id }}">
+                        <td>{{ r.user_id }}</td>
+                        <td>{{ r.name }}</td>
+                        <td>{{ r.membership or '—' }}</td>
+                        <td>{{ r.covered_days }}/{{ r.month_days }}</td>
+                        <td>{% if r.gross is not none %}{{ '{:,.0f}'.format(r.gross) }}{% else %}—{% endif %}</td>
+                        <td>{% if r.deductions is not none %}{{ '{:,.0f}'.format(r.deductions) }}{% else %}—{% endif %}</td>
+                        <td class="fw-bold">{% if r.net is not none %}{{ '{:,.0f}'.format(r.net) }}{% else %}—{% endif %}</td>
+                        {% if can_manage and run.status in ['draft', 'calculated'] %}
+                        <td style="min-width: 190px">
+                            <select class="form-select form-select-sm shift-pattern" data-user-id="{{ r.user_id }}">
+                                {% for code, label in shift_options %}
+                                <option value="{{ code }}" {% if r.pattern == code %}selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </td>
+                        {% elif run.status in ['approved', 'published'] %}
+                        <td>{{ shift_labels.get(r.pattern, r.pattern) }}</td>
+                        {% endif %}
+                        <td>
+                            {% if r.result_id %}
+                            <a class="btn btn-sm btn-outline-primary" href="/admin/payroll/payslip/{{ r.result_id }}">فیش</a>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="9" class="text-center text-muted py-4">فردی برای این دوره نیست.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<style>
+.payroll-progress-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    z-index: 1080;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+}
+.payroll-progress-card {
+    width: min(440px, 100%);
+    background: #fff;
+    border-radius: 14px;
+    padding: 22px 22px 18px;
+    box-shadow: 0 16px 40px rgba(15, 23, 42, 0.2);
+}
+.payroll-progress-track {
+    height: 14px;
+    background: #e9eef5;
+    border-radius: 999px;
+    overflow: hidden;
+}
+.payroll-progress-bar {
+    height: 100%;
+    width: 0;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #1f7a4d, #3dbe7a);
+    transition: width 0.35s ease;
+    position: relative;
+}
+.payroll-progress-bar::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.45), transparent);
+    animation: payroll-sheen 1.1s linear infinite;
+}
+@keyframes payroll-sheen {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(100%); }
+}
+tr.payroll-row-active { background: #e8f7ee !important; }
+</style>
+
+<div id="payrollProgress" class="payroll-progress-backdrop d-none" aria-live="polite">
+    <div class="payroll-progress-card">
+        <div class="fw-bold mb-1">در حال محاسبه حقوق</div>
+        <div id="payrollProgressName" class="text-muted mb-3">آماده‌سازی…</div>
+        <div class="payroll-progress-track mb-2">
+            <div id="payrollProgressBar" class="payroll-progress-bar"></div>
+        </div>
+        <div class="d-flex justify-content-between">
+            <span id="payrollProgressCount" class="small text-muted"></span>
+            <span id="payrollProgressPct" class="fw-bold">۰٪</span>
+        </div>
+        <div id="payrollProgressError" class="text-danger small mt-2 d-none"></div>
+    </div>
+</div>
+
+<script>
+(function () {
+    const runId = {{ run.id }};
+    const auto = {{ 'true' if auto_calc else 'false' }};
+    const btn = document.getElementById('payrollCalcBtn');
+    const box = document.getElementById('payrollProgress');
+    const bar = document.getElementById('payrollProgressBar');
+    const pct = document.getElementById('payrollProgressPct');
+    const nameEl = document.getElementById('payrollProgressName');
+    const countEl = document.getElementById('payrollProgressCount');
+    const errEl = document.getElementById('payrollProgressError');
+    const fa = '۰۱۲۳۴۵۶۷۸۹';
+    const faNum = (value) => String(value).replace(/\d/g, (d) => fa[d]);
+
+    function show(event) {
+        box.classList.remove('d-none');
+        const percent = Math.max(0, Math.min(100, event.percent || 0));
+        bar.style.width = percent + '%';
+        pct.textContent = faNum(percent) + '٪';
+        if (event.error) {
+            errEl.textContent = event.error;
+            errEl.classList.remove('d-none');
+            nameEl.textContent = 'محاسبه متوقف شد';
+            return;
+        }
+        if (event.done) {
+            nameEl.textContent = 'محاسبه تمام شد';
+            countEl.textContent = '';
+            return;
+        }
+        nameEl.textContent = event.name || 'کارمند';
+        countEl.textContent = 'نفر ' + faNum(event.index || 0) + ' از ' + faNum(event.total || 0);
+        document.querySelectorAll('tr.payroll-row-active').forEach((row) => row.classList.remove('payroll-row-active'));
+        const row = document.querySelector('tr[data-user-id="' + event.user_id + '"]');
+        if (row) row.classList.add('payroll-row-active');
+    }
+
+    async function saveChoices() {
+        const choices = [...document.querySelectorAll('.shift-pattern')].map((sel) => ({
+            user_id: sel.dataset.userId,
+            pattern: sel.value,
+        }));
+        if (!choices.length) return;
+        const saved = await fetch('/admin/payroll/runs/' + runId + '/shift-choices', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({choices}),
+        });
+        if (!saved.ok) {
+            let message = 'ذخیره نوع نوبت ناموفق بود';
+            try {
+                const body = await saved.json();
+                if (body.error) message = body.error;
+            } catch (err) { /* پاسخ متنی */ }
+            throw new Error(message);
+        }
+    }
+
+    async function start() {
+        if (btn) btn.disabled = true;
+        errEl.classList.add('d-none');
+        show({percent: 0, name: 'ذخیره نوع نوبت…', index: 0, total: 0, done: false});
+        let failed = false;
+        try {
+            await saveChoices();
+            show({percent: 0, name: 'آماده‌سازی…', index: 0, total: 0, done: false});
+            const response = await fetch('/admin/payroll/runs/' + runId + '/calculate-stream', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {Accept: 'text/event-stream'},
+            });
+            if (!response.ok || !response.body) {
+                show({percent: 0, error: 'شروع محاسبه ناموفق بود', done: true});
+                failed = true;
+            } else {
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                while (true) {
+                    const chunk = await reader.read();
+                    if (chunk.done) break;
+                    buffer += decoder.decode(chunk.value, {stream: true});
+                    const parts = buffer.split('\n\n');
+                    buffer = parts.pop() || '';
+                    for (const part of parts) {
+                        const line = part.split('\n').find((item) => item.startsWith('data: '));
+                        if (!line) continue;
+                        const event = JSON.parse(line.slice(6));
+                        show(event);
+                        if (event.error) failed = true;
+                    }
+                }
+            }
+        } catch (err) {
+            show({percent: 0, error: (err && err.message) || 'ارتباط با سرور قطع شد', done: true});
+            failed = true;
+        }
+        if (!failed) {
+            window.location = '/admin/payroll/runs/' + runId + '?success=' + encodeURIComponent('محاسبه انجام شد');
+        } else if (btn) {
+            btn.disabled = false;
+        }
+    }
+
+    document.querySelectorAll('.shift-pattern').forEach((sel) => {
+        sel.addEventListener('change', () => {
+            saveChoices().catch(() => {});
+        });
+    });
+    if (btn) btn.addEventListener('click', start);
+    if (auto && btn) start();
+})();
+</script>
+{% endblock %}

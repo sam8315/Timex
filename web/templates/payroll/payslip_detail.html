@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% block title %}فیش حقوقی {{ period_label }}{% endblock %}
+{% block content %}
+<style>
+@media print {
+    .app-sidebar, .navbar, .no-print, .sidebar-overlay { display: none !important; }
+    .app-main, .container, .content { margin: 0 !important; padding: 0 !important; max-width: 100% !important; }
+    body { background: #fff !important; }
+    .payslip-box { box-shadow: none !important; max-width: 100% !important; }
+}
+.payslip-box {
+    max-width: 1100px;
+    margin: 0 auto;
+    border: 2px solid #1f4e79;
+    border-radius: 12px;
+    background: #fff;
+}
+.payslip-person {
+    border: 1px solid #d5e0ea;
+    border-radius: 8px;
+    background: #f7fafc;
+    margin-bottom: 14px;
+    overflow: hidden;
+}
+.payslip-person h6 {
+    margin: 0;
+    padding: 8px 12px;
+    background: #e8eef5;
+    color: #1f4e79;
+    font-weight: 700;
+}
+.payslip-person-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px 16px;
+    padding: 12px;
+}
+.payslip-person-grid div { font-size: 0.92rem; }
+.payslip-person-grid span { color: #5c6b7a; }
+.payslip-columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+.payslip-earn, .payslip-ded {
+    border: 1px solid transparent;
+    border-radius: 8px;
+    overflow: hidden;
+}
+.payslip-earn { background: #f4fbf6; border-color: #d7eedd; }
+.payslip-ded { background: #fdf6f6; border-color: #f3d6d6; }
+.payslip-earn h6, .payslip-ded h6 {
+    margin: 0;
+    padding: 8px 12px;
+    font-weight: 700;
+}
+.payslip-earn h6 { background: #e5f6ea; color: #146c43; }
+.payslip-ded h6 { background: #fbeaea; color: #b02a37; }
+.payslip-earn table, .payslip-ded table { margin: 0; background: transparent; }
+.payslip-earn th { background: #eef8f1; }
+.payslip-ded th { background: #fdf0f0; }
+.payslip-totals {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 12px;
+}
+.payslip-total {
+    border-radius: 8px;
+    padding: 10px 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: 700;
+}
+.payslip-total-earn { background: #e5f6ea; color: #146c43; }
+.payslip-total-ded { background: #fbeaea; color: #b02a37; }
+.payslip-net {
+    margin-top: 12px;
+    border-radius: 8px;
+    padding: 12px;
+    display: flex;
+    justify-content: space-between;
+    background: #f4f7fb;
+    border: 1px solid #d9e2ec;
+    font-weight: 700;
+    font-size: 1.05rem;
+}
+.payslip-detail { color: #495057; font-size: 0.85rem; line-height: 1.7; }
+@media (max-width: 768px) {
+    .payslip-columns, .payslip-totals, .payslip-person-grid { grid-template-columns: 1fr; }
+}
+</style>
+
+<div class="d-flex justify-content-between align-items-center mb-3 no-print">
+    <a href="{{ back_url }}" class="btn btn-outline-secondary btn-sm">بازگشت</a>
+    <div class="d-flex gap-2">
+        <button class="btn btn-primary btn-sm" onclick="window.print()">چاپ</button>
+        <a class="btn btn-outline-primary btn-sm" href="{{ pdf_url }}">PDF</a>
+    </div>
+</div>
+
+<div class="card shadow-sm payslip-box">
+    <div class="card-body">
+        <h4 class="text-center mb-1">فیش حقوقی</h4>
+        <p class="text-center text-muted mb-3">دوره {{ period_label|fa_digits }}</p>
+        <section class="payslip-person">
+            <h6>مشخصات فردی</h6>
+            <div class="payslip-person-grid">
+                <div><span>نام: </span>{{ profile.name }}</div>
+                <div><span>کد پرسنلی: </span>{{ profile.user_id }}</div>
+                <div><span>کد ملی: </span>{{ profile.national_code }}</div>
+                <div><span>نام پدر: </span>{{ profile.father_name }}</div>
+                <div><span>جنسیت: </span>{{ profile.gender }}</div>
+                <div><span>تأهل: </span>{{ profile.marital }}</div>
+                <div><span>سمت: </span>{{ profile.position }}</div>
+                <div><span>تاریخ استخدام: </span>{{ profile.hire_date }}</div>
+                <div><span>عضویت: </span>{{ profile.membership }}</div>
+                <div><span>پوشش قرارداد: </span>{{ profile.covered_days }} از {{ profile.month_days }} روز</div>
+            </div>
+        </section>
+
+        <div class="payslip-columns">
+            <section class="payslip-earn">
+                <h6>درآمدها</h6>
+                <table class="table table-sm mb-0">
+                    <thead>
+                        <tr>
+                            <th>شرح</th>
+                            <th>جزئیات</th>
+                            <th class="text-end">مبلغ</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for it in items|payslip_sort if it.kind != 'deduction' %}
+                        <tr>
+                            <td>{{ it.component_name }}</td>
+                            <td class="payslip-detail">{{ it|line_detail }}</td>
+                            <td class="text-end">{{ it.amount|money_text }}</td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="3" class="text-muted text-center">درآمدی ثبت نشده</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </section>
+
+            <section class="payslip-ded">
+                <h6>کسورات</h6>
+                <table class="table table-sm mb-0">
+                    <thead>
+                        <tr>
+                            <th>شرح</th>
+                            <th>جزئیات</th>
+                            <th class="text-end">مبلغ</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for it in items|payslip_sort if it.kind == 'deduction' %}
+                        <tr>
+                            <td>{{ it.component_name }}</td>
+                            <td class="payslip-detail">{{ it|line_detail }}</td>
+                            <td class="text-end">{{ it.amount|money_text }}</td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="3" class="text-muted text-center">کسوری ثبت نشده</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </section>
+        </div>
+
+        <div class="payslip-totals">
+            <div class="payslip-total payslip-total-earn">
+                <span>جمع درآمد</span>
+                <span>{{ result.gross_earnings|money_text }}</span>
+            </div>
+            <div class="payslip-total payslip-total-ded">
+                <span>جمع کسورات</span>
+                <span>{{ result.total_deductions|money_text }}</span>
+            </div>
+        </div>
+        <div class="payslip-net">
+            <span>خالص پرداختی</span>
+            <span>{{ result.net_pay|money_text }}</span>
+        </div>
+    </div>
+</div>
+{% endblock %}

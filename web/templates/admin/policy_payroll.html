@@ -1,0 +1,1038 @@
+{% extends "base.html" %}
+{% block title %}حقوق و دستمزد | سیاست کلی{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4><i class="bi bi-wallet2 text-success"></i> سیاست حقوق و دستمزد</h4>
+    <a href="/admin/policies" class="btn btn-outline-secondary btn-sm">بازگشت</a>
+</div>
+{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+{% if success %}<div class="alert alert-success">{{ success }}</div>{% endif %}
+
+<ul class="nav nav-tabs mb-3" role="tablist">
+    <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-comp">آیتم‌ها</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-rates">بیمه/مالیات/عیدی</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-seniority">پایه سنوات سالانه</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-child">حق اولاد</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-overtime">اضافه‌کار</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-deficit">کسر کار</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-shift">نوبت‌کاری</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-assign">تخصیص مبالغ</button></li>
+</ul>
+
+<div class="tab-content">
+    <div class="tab-pane fade show active" id="tab-comp">
+        <div class="card shadow-sm mb-3">
+            <div class="card-header">افزودن آیتم</div>
+            <div class="card-body">
+                <form method="post" action="/admin/policies/payroll/components/add" class="row g-2">
+                    <div class="col-md-2"><input name="code" class="form-control" placeholder="کد" required></div>
+                    <div class="col-md-3"><input name="name" class="form-control" placeholder="نام" required></div>
+                    <div class="col-md-2">
+                        <select name="kind" class="form-select">
+                            <option value="earning">درآمد</option>
+                            <option value="deduction">کسورات</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <select name="calc_mode" class="form-select">
+                            <option value="manual">دستی</option>
+                            <option value="fixed_monthly_prorata">ثابت ماهانه</option>
+                            <option value="daily_x_covered">روزانه×پوشش</option>
+                            <option value="friday_attendance">جمعه‌کاری</option>
+                            <option value="seniority_chain">سنوات</option>
+                            <option value="policy_eidi">عیدی</option>
+                            <option value="policy_bonus">پاداش</option>
+                            <option value="child_allowance">حق اولاد</option>
+                            <option value="overtime_policy">اضافه‌کار</option>
+                            <option value="holiday_work">تعطیل‌کاری</option>
+                            <option value="work_deficit">کسر کار</option>
+                            <option value="shift_policy">نوبت‌کاری</option>
+                            <option value="percent_insurance">٪ بیمه</option>
+                            <option value="percent_tax">٪ مالیات</option>
+                        </select>
+                    </div>
+                    <div class="col-md-1"><input type="number" name="sort_order" class="form-control" value="100"></div>
+                    <div class="col-md-1 form-check pt-2">
+                        <input class="form-check-input" type="checkbox" name="subject_to_insurance" id="newIns">
+                        <label class="form-check-label" for="newIns">بیمه</label>
+                    </div>
+                    <div class="col-md-1 form-check pt-2">
+                        <input class="form-check-input" type="checkbox" name="subject_to_tax" id="newTax">
+                        <label class="form-check-label" for="newTax">مالیات</label>
+                    </div>
+                    <div class="col-12"><button class="btn btn-primary btn-sm">افزودن</button></div>
+                </form>
+            </div>
+        </div>
+        <div class="card shadow-sm">
+            <div class="table-responsive">
+                <table class="table table-sm mb-0 align-middle text-center">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="text-end">کد</th>
+                            <th class="text-end">نام</th>
+                            <th>نوع</th>
+                            <th>حالت</th>
+                            <th>بیمه</th>
+                            <th>مالیات</th>
+                            <th>ترتیب</th>
+                            <th>فعال</th>
+                            <th>عملیات</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for c in components %}
+                        <tr>
+                            <td class="text-end"><code>{{ c.code }}</code></td>
+                            <td class="text-end">{{ c.name }}</td>
+                            <td>{% if c.kind == 'deduction' %}کسورات{% else %}درآمد{% endif %}</td>
+                            <td>{{ calc_mode_labels.get(c.calc_mode, c.calc_mode) }}</td>
+                            <td>{% if c.subject_to_insurance %}بله{% else %}خیر{% endif %}</td>
+                            <td>{% if c.subject_to_tax %}بله{% else %}خیر{% endif %}</td>
+                            <td>{{ c.sort_order }}</td>
+                            <td>{% if c.is_active %}<span class="badge bg-success">فعال</span>{% else %}<span class="badge bg-secondary">غیرفعال</span>{% endif %}</td>
+                            <td class="text-nowrap">
+                                <button type="button" class="btn btn-sm btn-outline-primary"
+                                        data-bs-toggle="modal" data-bs-target="#editComp{{ c.id }}">ویرایش</button>
+                                <form method="post" action="/admin/policies/payroll/components/{{ c.id }}/delete"
+                                      class="d-inline" onsubmit="return confirm('حذف نرم این آیتم؟')">
+                                    <button class="btn btn-sm btn-outline-danger">حذف</button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% for c in components %}
+        <div class="modal fade" id="editComp{{ c.id }}" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog">
+                <form method="post" action="/admin/policies/payroll/components/{{ c.id }}/update" class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">ویرایش {{ c.name }}</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-2">
+                            <label class="form-label">کد</label>
+                            <input class="form-control" value="{{ c.code }}" disabled>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">نام</label>
+                            <input name="name" class="form-control" value="{{ c.name }}" required>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">حالت محاسبه</label>
+                            <select name="calc_mode" class="form-select">
+                                {% for code, label in calc_mode_labels.items() %}
+                                <option value="{{ code }}" {% if c.calc_mode == code %}selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">ترتیب</label>
+                            <input type="number" name="sort_order" class="form-control" value="{{ c.sort_order }}">
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="subject_to_insurance" id="ins{{ c.id }}" {% if c.subject_to_insurance %}checked{% endif %}>
+                            <label class="form-check-label" for="ins{{ c.id }}">مشمول بیمه</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="subject_to_tax" id="tax{{ c.id }}" {% if c.subject_to_tax %}checked{% endif %}>
+                            <label class="form-check-label" for="tax{{ c.id }}">مشمول مالیات</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="is_active" id="act{{ c.id }}" {% if c.is_active %}checked{% endif %}>
+                            <label class="form-check-label" for="act{{ c.id }}">فعال</label>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">انصراف</button>
+                        <button class="btn btn-primary">ذخیره</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="tab-pane fade" id="tab-rates">
+        <div class="card shadow-sm col-lg-7">
+            <div class="card-body">
+                <form method="post" action="/admin/policies/payroll/rates" class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label">٪ بیمه سهم کارمند</label>
+                        <input name="insurance_employee_pct" class="form-control" dir="ltr" value="{{ rates.insurance_employee_pct|payroll_num }}">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">٪ مالیات</label>
+                        <input name="tax_pct" class="form-control" dir="ltr" value="{{ rates.tax_pct|payroll_num }}">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">ضریب جمعه‌کاری</label>
+                        <input name="friday_coefficient" class="form-control" dir="ltr" value="{{ rates.friday_coefficient|payroll_num }}">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">ماه پرداخت عیدی</label>
+                        <input type="number" min="1" max="12" name="eidi_payment_month" class="form-control" value="{{ rates.eidi_payment_month }}">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">ضریب روز عیدی</label>
+                        <input name="eidi_day_factor" class="form-control" dir="ltr" value="{{ rates.eidi_day_factor|payroll_num }}">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">ماه پرداخت پاداش</label>
+                        <input type="number" min="1" max="12" name="bonus_payment_month" class="form-control" value="{{ rates.bonus_payment_month }}">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">ضریب روز پاداش</label>
+                        <input name="bonus_day_factor" class="form-control" dir="ltr" value="{{ rates.bonus_day_factor|payroll_num }}">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">ساعت در روز</label>
+                        <input name="hours_per_day" class="form-control" dir="ltr" value="{{ rates.hours_per_day|payroll_num }}">
+                    </div>
+                    <div class="col-12"><button class="btn btn-primary">ذخیره نرخ‌ها</button></div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="tab-pane fade" id="tab-seniority">
+        <div class="mb-3">
+            <form method="post" action="/admin/policies/payroll/annual-laws/seed-official"
+                  onsubmit="return confirm('بارگذاری/به‌روزرسانی پارامترهای رسمی بخشنامه مزد؟')">
+                <button class="btn btn-outline-success btn-sm">
+                    بارگذاری جداول رسمی پایه سنوات (۱۳۹۱–۱۴۰۵)
+                </button>
+            </form>
+            <small class="text-muted d-block mt-1">
+                بر اساس بخشنامه‌های مزد شورای عالی کار؛ نسخه <code>official</code> در Policy ذخیره می‌شود.
+            </small>
+        </div>
+        <div class="card shadow-sm mb-3">
+            <div class="card-header">افزودن / ویرایش قانون سالانه</div>
+            <div class="card-body">
+                <form method="post" action="/admin/policies/payroll/annual-laws" class="row g-2">
+                    <div class="col-md-2"><label class="form-label">سال</label><input type="number" name="year_j" class="form-control" required></div>
+                    <div class="col-md-2"><label class="form-label">سنوات جدید روزانه</label><input name="new_seniority_daily" class="form-control" dir="ltr" required></div>
+                    <div class="col-md-2"><label class="form-label">ضریب افزایش</label><input name="wage_increase_factor" class="form-control" dir="ltr" value="1.45" required></div>
+                    <div class="col-md-2"><label class="form-label">از تاریخ</label><input name="effective_from" class="form-control" placeholder="1405/01/01" required></div>
+                    <div class="col-md-2"><label class="form-label">تا تاریخ</label><input name="effective_to" class="form-control" placeholder="اختیاری"></div>
+                    <div class="col-md-1"><label class="form-label">نسخه</label><input name="version" class="form-control" value="1"></div>
+                    <div class="col-md-3"><label class="form-label">مرجع</label><input name="source_reference" class="form-control"></div>
+                    <div class="col-12"><button class="btn btn-primary btn-sm">ذخیره</button></div>
+                </form>
+            </div>
+        </div>
+        <div class="card shadow-sm">
+            <table class="table table-sm mb-0">
+                <thead class="table-light"><tr><th>سال</th><th>N</th><th>R</th><th>از</th><th>نسخه</th><th>مرجع</th><th></th></tr></thead>
+                <tbody>
+                {% for law in annual_laws %}
+                    <tr>
+                        <td>{{ law.year_j }}</td>
+                        <td dir="ltr">{{ law.new_seniority_daily|payroll_num }}</td>
+                        <td dir="ltr">{{ law.wage_increase_factor|payroll_num }}</td>
+                        <td>{{ law.effective_from|jalali }}</td>
+                        <td>{{ law.version }}</td>
+                        <td>{{ law.source_reference or '' }}</td>
+                        <td>
+                            <form method="post" action="/admin/policies/payroll/annual-laws/{{ law.id }}/delete"
+                                  onsubmit="return confirm('حذف؟')">
+                                <button class="btn btn-sm btn-outline-danger">حذف</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="7" class="text-muted text-center">قانونی ثبت نشده</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="tab-pane fade" id="tab-child">
+        <div class="card shadow-sm mb-3">
+            <div class="card-header">حداقل مزد روزانه به‌ازای سال و عضویت</div>
+            <div class="card-body">
+                <p class="small text-muted mb-2">
+                    ردیف «پیش‌فرض» برای عضویت‌هایی است که مبلغ جدا ندارند. برای یک عضویت می‌توانید مبلغ متفاوت ثبت کنید.
+                </p>
+                <form method="post" action="/admin/policies/payroll/minimum-wages" class="row g-2">
+                    <div class="col-md-2"><label class="form-label">سال</label><input type="number" name="year_j" class="form-control" required></div>
+                    <div class="col-md-3">
+                        <label class="form-label">عضویت</label>
+                        <select name="membership_type_code" class="form-select">
+                            <option value="">پیش‌فرض همه</option>
+                            {% for mt in memberships %}
+                            <option value="{{ mt.code }}">{{ mt.code }} — {{ mt.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2"><label class="form-label">مبلغ روزانه</label><input name="daily_amount" class="form-control" dir="ltr" required></div>
+                    <div class="col-md-2"><label class="form-label">از تاریخ</label><input name="effective_from" class="form-control" placeholder="1405/01/01" required></div>
+                    <div class="col-md-3"><label class="form-label">مرجع</label><input name="source_reference" class="form-control"></div>
+                    <div class="col-12"><button class="btn btn-primary btn-sm">ذخیره حداقل مزد</button></div>
+                </form>
+            </div>
+            <table class="table table-sm mb-0 align-middle">
+                <thead class="table-light"><tr><th>سال</th><th>عضویت</th><th>روزانه</th><th>از</th><th>مرجع</th><th></th></tr></thead>
+                <tbody>
+                {% for w in minimum_wages %}
+                    <tr>
+                        <td>{{ w.year_j }}</td>
+                        <td>{% if w.membership_type_code %}{{ w.membership_type_code }}{% else %}پیش‌فرض{% endif %}</td>
+                        <td dir="ltr">{{ w.daily_amount|payroll_num }}</td>
+                        <td>{{ w.effective_from|jalali }}</td>
+                        <td>{{ w.source_reference or '' }}</td>
+                        <td class="text-nowrap">
+                            <button type="button" class="btn btn-sm btn-outline-primary"
+                                    data-bs-toggle="modal" data-bs-target="#editWage{{ w.id }}">ویرایش</button>
+                            <form method="post" action="/admin/policies/payroll/minimum-wages/{{ w.id }}/delete"
+                                  class="d-inline" onsubmit="return confirm('حذف حداقل مزد؟')">
+                                <button type="submit" class="btn btn-sm btn-outline-danger">حذف</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="6" class="text-muted text-center">ثبت نشده</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% for w in minimum_wages %}
+        <div class="modal fade" id="editWage{{ w.id }}" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog">
+                <form method="post" action="/admin/policies/payroll/minimum-wages" class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">ویرایش حداقل مزد {{ w.year_j }}</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <input type="hidden" name="wage_id" value="{{ w.id }}">
+                        <div class="mb-2">
+                            <label class="form-label">سال</label>
+                            <input type="number" name="year_j" class="form-control" value="{{ w.year_j }}" required>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">عضویت</label>
+                            <select name="membership_type_code" class="form-select">
+                                <option value="" {% if not w.membership_type_code %}selected{% endif %}>پیش‌فرض همه</option>
+                                {% for mt in memberships %}
+                                <option value="{{ mt.code }}" {% if w.membership_type_code == mt.code %}selected{% endif %}>{{ mt.code }} — {{ mt.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">مبلغ روزانه</label>
+                            <input name="daily_amount" class="form-control" dir="ltr" value="{{ w.daily_amount|payroll_num }}" required>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">از تاریخ</label>
+                            <input name="effective_from" class="form-control" value="{{ w.effective_from|jalali }}" required>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">مرجع</label>
+                            <input name="source_reference" class="form-control" value="{{ w.source_reference or '' }}">
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">انصراف</button>
+                        <button type="submit" class="btn btn-primary">ذخیره</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        {% endfor %}
+        <div class="card shadow-sm mb-3">
+            <div class="card-header">سیاست حق اولاد به‌ازای عضویت</div>
+            <div class="card-body">
+                <p class="small text-muted">
+                    فرزندان از جدول بستگان خوانده می‌شوند: زنده، زیر حد سن، و بالاتر از حد سن فقط اگر اشتغال به تحصیل در همان رکورد ثبت شده باشد.
+                    مبلغ هر فرزند = ضریب × حداقل مزد روزانه همان سال و همان عضویت
+                    (اگر برای آن عضویت ثبت نشده باشد، ردیف پیش‌فرض سال استفاده می‌شود)، سپس نسبت پوشش قرارداد.
+                </p>
+                <form method="post" action="/admin/policies/payroll/child-allowance" class="row g-2">
+                    <div class="col-md-3">
+                        <label class="form-label">عضویت</label>
+                        <select name="membership_type_code" class="form-select" required>
+                            {% for mt in memberships %}
+                            <option value="{{ mt.code }}">{{ mt.code }} — {{ mt.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">حد سن</label>
+                        <input type="number" name="age_limit_years" class="form-control" value="18" required>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">ضریب مزد روزانه</label>
+                        <input name="wage_day_multiplier" class="form-control" dir="ltr" value="3" required>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">از تاریخ</label>
+                        <input name="effective_from" class="form-control" placeholder="1405/01/01" required>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">تا تاریخ</label>
+                        <input name="effective_to" class="form-control">
+                    </div>
+                    <div class="col-md-4 form-check mt-4">
+                        <input class="form-check-input" type="checkbox" name="applies_to_female" id="childFemale" checked>
+                        <label class="form-check-label" for="childFemale">شامل کارکنان زن</label>
+                    </div>
+                    <div class="col-md-4 form-check mt-4">
+                        <input class="form-check-input" type="checkbox" name="require_study_above_age" id="childStudy" checked>
+                        <label class="form-check-label" for="childStudy">بالای حد سن فقط با تحصیل</label>
+                    </div>
+                    <div class="col-md-4 form-check mt-4">
+                        <input class="form-check-input" type="checkbox" name="count_only_verified" id="childVerified">
+                        <label class="form-check-label" for="childVerified">فقط بستگان تأییدشده</label>
+                    </div>
+                    <div class="col-12"><button class="btn btn-primary btn-sm">ذخیره سیاست</button></div>
+                </form>
+            </div>
+        </div>
+        <div class="card shadow-sm">
+            <table class="table table-sm mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>عضویت</th><th>زن</th><th>حد سن</th><th>تحصیل</th><th>ضریب</th><th>از</th><th>تا</th><th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for p in child_policies %}
+                    <tr>
+                        <td>{{ p.membership_type_code }}</td>
+                        <td>{% if p.applies_to_female %}بله{% else %}خیر{% endif %}</td>
+                        <td>{{ p.age_limit_years }}</td>
+                        <td>{% if p.require_study_above_age %}بله{% else %}خیر{% endif %}</td>
+                        <td dir="ltr">{{ p.wage_day_multiplier|payroll_num }}</td>
+                        <td>{{ p.effective_from|jalali }}</td>
+                        <td>{{ p.effective_to|jalali if p.effective_to else '—' }}</td>
+                        <td class="text-nowrap">
+                            <button type="button" class="btn btn-sm btn-outline-primary"
+                                    data-bs-toggle="modal" data-bs-target="#editChild{{ p.id }}">ویرایش</button>
+                            <form method="post" action="/admin/policies/payroll/child-allowance/{{ p.id }}/delete"
+                                  class="d-inline" onsubmit="return confirm('حذف سیاست؟')">
+                                <button type="submit" class="btn btn-sm btn-outline-danger">حذف</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="8" class="text-muted text-center">سیاستی ثبت نشده</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% for p in child_policies %}
+        <div class="modal fade" id="editChild{{ p.id }}" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog">
+                <form method="post" action="/admin/policies/payroll/child-allowance" class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">ویرایش سیاست حق اولاد — عضویت {{ p.membership_type_code }}</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <input type="hidden" name="policy_id" value="{{ p.id }}">
+                        <div class="mb-2">
+                            <label class="form-label">عضویت</label>
+                            <select name="membership_type_code" class="form-select" required>
+                                {% for mt in memberships %}
+                                <option value="{{ mt.code }}" {% if mt.code == p.membership_type_code %}selected{% endif %}>{{ mt.code }} — {{ mt.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">حد سن</label>
+                            <input type="number" name="age_limit_years" class="form-control" value="{{ p.age_limit_years }}" required>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">ضریب مزد روزانه</label>
+                            <input name="wage_day_multiplier" class="form-control" dir="ltr" value="{{ p.wage_day_multiplier|payroll_num }}" required>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">از تاریخ</label>
+                            <input name="effective_from" class="form-control" value="{{ p.effective_from|jalali }}" required>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">تا تاریخ</label>
+                            <input name="effective_to" class="form-control" value="{{ p.effective_to|jalali if p.effective_to else '' }}">
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">یادداشت</label>
+                            <input name="notes" class="form-control" value="{{ p.notes or '' }}">
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="applies_to_female" id="cf{{ p.id }}" {% if p.applies_to_female %}checked{% endif %}>
+                            <label class="form-check-label" for="cf{{ p.id }}">شامل کارکنان زن</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="require_study_above_age" id="cs{{ p.id }}" {% if p.require_study_above_age %}checked{% endif %}>
+                            <label class="form-check-label" for="cs{{ p.id }}">بالای حد سن فقط با تحصیل</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="count_only_verified" id="cv{{ p.id }}" {% if p.count_only_verified %}checked{% endif %}>
+                            <label class="form-check-label" for="cv{{ p.id }}">فقط بستگان تأییدشده</label>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">انصراف</button>
+                        <button type="submit" class="btn btn-primary">ذخیره</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="tab-pane fade" id="tab-overtime">
+        <div class="alert alert-light border small">
+            ساعات اضافه‌کار و تعطیل‌کاری از گزارش اضافه‌کار قانونی همان ماه می‌آید و نرخ هر دو یکی است. جمعه‌کاری جداست.
+            مبنای مزد، جمع مبلغ ماهانه آیتم‌هایی است که اینجا انتخاب می‌کنید.
+            روش اول: آن جمع ÷ عدد ثابت. روش دوم: (آن جمع ÷ ساعت عادی ماه) × ضریب.
+        </div>
+        <div class="card shadow-sm mb-3">
+            <div class="card-header">سیاست اضافه‌کار عضویت</div>
+            <div class="card-body">
+                <form method="post" action="/admin/policies/payroll/overtime" class="row g-2">
+                    <div class="col-md-3">
+                        <label class="form-label">عضویت</label>
+                        <select name="membership_type_code" class="form-select" required>
+                            {% for mt in memberships %}
+                            <option value="{{ mt.code }}">{{ mt.code }} — {{ mt.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">روش</label>
+                        <select name="method" class="form-select">
+                            <option value="monthly_div">حقوق ماهانه ÷ عدد ثابت</option>
+                            <option value="hourly_x_factor">ساعت عادی × ضریب</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">عدد ثابت</label>
+                        <input name="divisor" class="form-control" dir="ltr" value="157" required>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">ضریب</label>
+                        <input name="premium_factor" class="form-control" dir="ltr" value="1.4" required>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">ساعت عادی ماه</label>
+                        <input name="ordinary_month_hours" class="form-control" dir="ltr" value="220" required>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">از تاریخ</label>
+                        <input name="effective_from" class="form-control" placeholder="1405/01/01" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">یادداشت</label>
+                        <input name="notes" class="form-control">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">آیتم‌های داخل مبنای اضافه‌کار</label>
+                        <div class="d-flex flex-wrap gap-3">
+                            {% for c in components if c.kind == 'earning' and c.code not in ['OVERTIME', 'HOLIDAY_WORK'] and c.is_active and not c.deleted_at %}
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="basis_codes" value="{{ c.code }}" id="ob{{ c.code }}" {% if c.code == 'DAILY_WAGE' %}checked{% endif %}>
+                                <label class="form-check-label" for="ob{{ c.code }}">{{ c.name }}</label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="col-12"><button class="btn btn-primary btn-sm">ذخیره سیاست اضافه‌کار</button></div>
+                </form>
+            </div>
+        </div>
+        <div class="card shadow-sm">
+            <table class="table table-sm mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>عضویت</th><th>روش</th><th>آیتم‌های مبنا</th><th>عدد ثابت</th><th>ضریب</th><th>ساعت عادی</th><th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for p in overtime_policies %}
+                    <tr>
+                        <td>{{ p.membership_type_code }}</td>
+                        <td>{% if p.method == 'hourly_x_factor' %}ساعت عادی × ضریب{% else %}ماهانه ÷ عدد ثابت{% endif %}</td>
+                        <td>{{ p.basis_codes or '—' }}</td>
+                        <td dir="ltr">{{ p.divisor|payroll_num }}</td>
+                        <td dir="ltr">{{ p.premium_factor|payroll_num }}</td>
+                        <td dir="ltr">{{ p.ordinary_month_hours|payroll_num }}</td>
+                        <td class="text-nowrap">
+                            <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editOt{{ p.id }}">ویرایش</button>
+                            <form method="post" action="/admin/policies/payroll/overtime/{{ p.id }}/delete" class="d-inline" onsubmit="return confirm('حذف سیاست اضافه‌کار؟')">
+                                <button type="submit" class="btn btn-sm btn-outline-danger">حذف</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="7" class="text-muted text-center">سیاستی ثبت نشده</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% for p in overtime_policies %}
+        <div class="modal fade" id="editOt{{ p.id }}" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-lg">
+                <form method="post" action="/admin/policies/payroll/overtime" class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">ویرایش اضافه‌کار — عضویت {{ p.membership_type_code }}</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <input type="hidden" name="policy_id" value="{{ p.id }}">
+                        <div class="row g-2">
+                            <div class="col-md-4">
+                                <label class="form-label">عضویت</label>
+                                <select name="membership_type_code" class="form-select" required>
+                                    {% for mt in memberships %}
+                                    <option value="{{ mt.code }}" {% if mt.code == p.membership_type_code %}selected{% endif %}>{{ mt.code }} — {{ mt.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">روش</label>
+                                <select name="method" class="form-select">
+                                    <option value="monthly_div" {% if p.method == 'monthly_div' %}selected{% endif %}>حقوق ماهانه ÷ عدد ثابت</option>
+                                    <option value="hourly_x_factor" {% if p.method == 'hourly_x_factor' %}selected{% endif %}>ساعت عادی × ضریب</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">از تاریخ</label>
+                                <input name="effective_from" class="form-control" value="{{ p.effective_from|jalali }}" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">عدد ثابت</label>
+                                <input name="divisor" class="form-control" dir="ltr" value="{{ p.divisor|payroll_num }}" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">ضریب</label>
+                                <input name="premium_factor" class="form-control" dir="ltr" value="{{ p.premium_factor|payroll_num }}" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">ساعت عادی ماه</label>
+                                <input name="ordinary_month_hours" class="form-control" dir="ltr" value="{{ p.ordinary_month_hours|payroll_num }}" required>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">آیتم‌های داخل مبنای اضافه‌کار</label>
+                                <div class="d-flex flex-wrap gap-3">
+                                    {% for c in components if c.kind == 'earning' and c.code not in ['OVERTIME', 'HOLIDAY_WORK'] and c.is_active and not c.deleted_at %}
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="basis_codes" value="{{ c.code }}" id="eob{{ p.id }}{{ c.code }}" {% if c.code in p.basis_code_list %}checked{% endif %}>
+                                        <label class="form-check-label" for="eob{{ p.id }}{{ c.code }}">{{ c.name }}</label>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">یادداشت</label>
+                                <input name="notes" class="form-control" value="{{ p.notes or '' }}">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">انصراف</button>
+                        <button type="submit" class="btn btn-primary">ذخیره</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="tab-pane fade" id="tab-deficit">
+        <div class="alert alert-light border small">
+            نرخ کسر کار برابر یک ساعت کار عادی است: جمع آیتم‌های انتخاب‌شده تقسیم بر ساعت عادی ماه.
+            برای حقوق روزانه و پایه سنوات، تعداد روز مبنا به‌جای روزهای کارکرد ماه استفاده می‌شود.
+            ساعت کسر کار از کسری گزارش اضافه‌کار قانونی همان ماه می‌آید.
+        </div>
+        <div class="card shadow-sm mb-3">
+            <div class="card-header">سیاست کسر کار عضویت</div>
+            <div class="card-body">
+                <form method="post" action="/admin/policies/payroll/deficit" class="row g-2">
+                    <div class="col-md-3">
+                        <label class="form-label">عضویت</label>
+                        <select name="membership_type_code" class="form-select" required>
+                            {% for mt in memberships %}
+                            <option value="{{ mt.code }}">{{ mt.code }} — {{ mt.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">ساعت عادی ماه</label>
+                        <input name="ordinary_month_hours" class="form-control" dir="ltr" value="220" required>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">روز مبنا</label>
+                        <input name="basis_days" class="form-control" dir="ltr" value="30" required>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">از تاریخ</label>
+                        <input name="effective_from" class="form-control" placeholder="1405/01/01" required>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">یادداشت</label>
+                        <input name="notes" class="form-control">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">آیتم‌های داخل مبنای ساعت عادی</label>
+                        <div class="d-flex flex-wrap gap-3">
+                            {% for c in components if c.kind == 'earning' and c.code not in ['OVERTIME', 'HOLIDAY_WORK'] and c.is_active and not c.deleted_at %}
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="basis_codes" value="{{ c.code }}" id="db{{ c.code }}" {% if c.code == 'DAILY_WAGE' %}checked{% endif %}>
+                                <label class="form-check-label" for="db{{ c.code }}">{{ c.name }}</label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="col-12"><button class="btn btn-primary btn-sm">ذخیره سیاست کسر کار</button></div>
+                </form>
+            </div>
+        </div>
+        <div class="card shadow-sm">
+            <table class="table table-sm mb-0 align-middle">
+                <thead class="table-light">
+                    <tr><th>عضویت</th><th>آیتم‌های مبنا</th><th>ساعت عادی ماه</th><th>روز مبنا</th><th></th></tr>
+                </thead>
+                <tbody>
+                {% for p in deficit_policies %}
+                    <tr>
+                        <td>{{ p.membership_type_code }}</td>
+                        <td>{{ p.basis_codes or '—' }}</td>
+                        <td dir="ltr">{{ p.ordinary_month_hours|payroll_num }}</td>
+                        <td dir="ltr">{{ p.basis_days|payroll_num }}</td>
+                        <td class="text-nowrap">
+                            <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editDef{{ p.id }}">ویرایش</button>
+                            <form method="post" action="/admin/policies/payroll/deficit/{{ p.id }}/delete" class="d-inline" onsubmit="return confirm('حذف سیاست کسر کار؟')">
+                                <button type="submit" class="btn btn-sm btn-outline-danger">حذف</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="5" class="text-muted text-center">سیاستی ثبت نشده</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% for p in deficit_policies %}
+        <div class="modal fade" id="editDef{{ p.id }}" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-lg">
+                <form method="post" action="/admin/policies/payroll/deficit" class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">ویرایش کسر کار — عضویت {{ p.membership_type_code }}</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <input type="hidden" name="policy_id" value="{{ p.id }}">
+                        <div class="row g-2">
+                            <div class="col-md-4">
+                                <label class="form-label">عضویت</label>
+                                <select name="membership_type_code" class="form-select" required>
+                                    {% for mt in memberships %}
+                                    <option value="{{ mt.code }}" {% if mt.code == p.membership_type_code %}selected{% endif %}>{{ mt.code }} — {{ mt.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">ساعت عادی ماه</label>
+                                <input name="ordinary_month_hours" class="form-control" dir="ltr" value="{{ p.ordinary_month_hours|payroll_num }}" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">روز مبنا</label>
+                                <input name="basis_days" class="form-control" dir="ltr" value="{{ p.basis_days|payroll_num }}" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">از تاریخ</label>
+                                <input name="effective_from" class="form-control" value="{{ p.effective_from|jalali }}" required>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">آیتم‌های داخل مبنای ساعت عادی</label>
+                                <div class="d-flex flex-wrap gap-3">
+                                    {% for c in components if c.kind == 'earning' and c.code not in ['OVERTIME', 'HOLIDAY_WORK'] and c.is_active and not c.deleted_at %}
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="basis_codes" value="{{ c.code }}" id="edb{{ p.id }}{{ c.code }}" {% if c.code in p.basis_code_list %}checked{% endif %}>
+                                        <label class="form-check-label" for="edb{{ p.id }}{{ c.code }}">{{ c.name }}</label>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">یادداشت</label>
+                                <input name="notes" class="form-control" value="{{ p.notes or '' }}">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">انصراف</button>
+                        <button type="submit" class="btn btn-primary">ذخیره</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="tab-pane fade" id="tab-shift">
+        <div class="alert alert-light border small">
+            مبلغ نوبت‌کاری برابر است با درصد ترکیب انتخاب‌شده ضربدر جمع آیتم‌های مبنا.
+            نوع نوبت هر نفر روی اجرای حقوق، قبل از محاسبه انتخاب می‌شود.
+            گزینه «صبح و شب یا عصر و شب» از درصد صبح و شب استفاده می‌کند.
+        </div>
+        <div class="card shadow-sm mb-3">
+            <div class="card-header">سیاست نوبت‌کاری عضویت</div>
+            <div class="card-body">
+                <form method="post" action="/admin/policies/payroll/shift" class="row g-2">
+                    <div class="col-md-3">
+                        <label class="form-label">عضویت</label>
+                        <select name="membership_type_code" class="form-select" required>
+                            {% for mt in memberships %}
+                            <option value="{{ mt.code }}">{{ mt.code }} — {{ mt.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">صبح و عصر ٪</label>
+                        <input name="pct_morning_evening" class="form-control" dir="ltr" value="10" required>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">صبح، عصر و شب ٪</label>
+                        <input name="pct_morning_evening_night" class="form-control" dir="ltr" value="15" required>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">صبح و شب یا عصر و شب ٪</label>
+                        <input name="pct_morning_night" class="form-control" dir="ltr" value="22.5" required>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">عصر و شب ٪</label>
+                        <input name="pct_evening_night" class="form-control" dir="ltr" value="22.5" required>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">از تاریخ</label>
+                        <input name="effective_from" class="form-control" placeholder="1405/01/01" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">یادداشت</label>
+                        <input name="notes" class="form-control">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">آیتم‌های داخل مبنا</label>
+                        <div class="d-flex flex-wrap gap-3">
+                            {% for c in components if c.kind == 'earning' and c.code != 'SHIFT' and c.is_active and not c.deleted_at %}
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="basis_codes" value="{{ c.code }}" id="sh{{ c.code }}" {% if c.code == 'DAILY_WAGE' %}checked{% endif %}>
+                                <label class="form-check-label" for="sh{{ c.code }}">{{ c.name }}</label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="col-12"><button class="btn btn-primary btn-sm">ذخیره سیاست نوبت‌کاری</button></div>
+                </form>
+            </div>
+        </div>
+        <div class="card shadow-sm">
+            <table class="table table-sm mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>عضویت</th>
+                        <th>آیتم‌های مبنا</th>
+                        <th>صبح و عصر</th>
+                        <th>صبح عصر شب</th>
+                        <th>صبح و شب یا عصر و شب</th>
+                        <th>عصر و شب</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for p in shift_policies %}
+                    <tr>
+                        <td>{{ p.membership_type_code }}</td>
+                        <td>{{ p.basis_codes or '—' }}</td>
+                        <td dir="ltr">{{ p.pct_morning_evening|payroll_num }}٪</td>
+                        <td dir="ltr">{{ p.pct_morning_evening_night|payroll_num }}٪</td>
+                        <td dir="ltr">{{ p.pct_morning_night|payroll_num }}٪</td>
+                        <td dir="ltr">{{ p.pct_evening_night|payroll_num }}٪</td>
+                        <td class="text-nowrap">
+                            <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editShift{{ p.id }}">ویرایش</button>
+                            <form method="post" action="/admin/policies/payroll/shift/{{ p.id }}/delete" class="d-inline" onsubmit="return confirm('حذف سیاست نوبت‌کاری؟')">
+                                <button type="submit" class="btn btn-sm btn-outline-danger">حذف</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="7" class="text-muted text-center">سیاستی ثبت نشده</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% for p in shift_policies %}
+        <div class="modal fade" id="editShift{{ p.id }}" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-lg">
+                <form method="post" action="/admin/policies/payroll/shift" class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">ویرایش نوبت‌کاری — عضویت {{ p.membership_type_code }}</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <input type="hidden" name="policy_id" value="{{ p.id }}">
+                        <div class="row g-2">
+                            <div class="col-md-4">
+                                <label class="form-label">عضویت</label>
+                                <select name="membership_type_code" class="form-select" required>
+                                    {% for mt in memberships %}
+                                    <option value="{{ mt.code }}" {% if mt.code == p.membership_type_code %}selected{% endif %}>{{ mt.code }} — {{ mt.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">از تاریخ</label>
+                                <input name="effective_from" class="form-control" value="{{ p.effective_from|jalali }}" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">تا تاریخ</label>
+                                <input name="effective_to" class="form-control" value="{{ p.effective_to|jalali if p.effective_to else '' }}">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">صبح و عصر ٪</label>
+                                <input name="pct_morning_evening" class="form-control" dir="ltr" value="{{ p.pct_morning_evening|payroll_num }}" required>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">صبح، عصر و شب ٪</label>
+                                <input name="pct_morning_evening_night" class="form-control" dir="ltr" value="{{ p.pct_morning_evening_night|payroll_num }}" required>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">صبح و شب یا عصر و شب ٪</label>
+                                <input name="pct_morning_night" class="form-control" dir="ltr" value="{{ p.pct_morning_night|payroll_num }}" required>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">عصر و شب ٪</label>
+                                <input name="pct_evening_night" class="form-control" dir="ltr" value="{{ p.pct_evening_night|payroll_num }}" required>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">یادداشت</label>
+                                <input name="notes" class="form-control" value="{{ p.notes or '' }}">
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">آیتم‌های داخل مبنا</label>
+                                <div class="d-flex flex-wrap gap-3">
+                                    {% for c in components if c.kind == 'earning' and c.code != 'SHIFT' and c.is_active and not c.deleted_at %}
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="basis_codes" value="{{ c.code }}" id="esh{{ p.id }}{{ c.code }}" {% if c.code in p.basis_code_list %}checked{% endif %}>
+                                        <label class="form-check-label" for="esh{{ p.id }}{{ c.code }}">{{ c.name }}</label>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">انصراف</button>
+                        <button type="submit" class="btn btn-primary">ذخیره</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="tab-pane fade" id="tab-assign">
+        <div class="card shadow-sm mb-3">
+            <div class="card-header">تخصیص مبلغ (عضویت یا فرد)</div>
+            <div class="card-body">
+                <form method="post" action="/admin/policies/payroll/assignments" class="row g-2">
+                    <div class="col-md-3">
+                        <label class="form-label">آیتم</label>
+                        <select name="component_id" class="form-select" required>
+                            {% for c in components %}
+                            <option value="{{ c.id }}">{{ c.code }} — {{ c.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">محدوده</label>
+                        <select name="scope" class="form-select" id="assignScope">
+                            <option value="membership">عضویت</option>
+                            <option value="user">فرد</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2" id="memWrap">
+                        <label class="form-label">عضویت</label>
+                        <select name="membership_type_code" class="form-select">
+                            {% for mt in memberships %}
+                            <option value="{{ mt.code }}">{{ mt.code }} — {{ mt.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2 d-none" id="userWrap">
+                        <label class="form-label">کد پرسنلی</label>
+                        <input name="user_id" class="form-control" dir="ltr">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">مبلغ</label>
+                        <input name="amount" class="form-control" dir="ltr" required>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">از تاریخ</label>
+                        <input name="effective_from" class="form-control" placeholder="1405/01/01" required>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">تا تاریخ</label>
+                        <input name="effective_to" class="form-control">
+                    </div>
+                    <div class="col-12"><button class="btn btn-primary btn-sm">افزودن</button></div>
+                </form>
+            </div>
+        </div>
+        <div class="card shadow-sm">
+            <table class="table table-sm mb-0">
+                <thead class="table-light"><tr><th>آیتم</th><th>محدوده</th><th>مبلغ</th><th>از</th><th>تا</th><th></th></tr></thead>
+                <tbody>
+                {% for a in assignments %}
+                    <tr>
+                        <td>{{ a.component.code if a.component else a.component_id }}</td>
+                        <td>{% if a.user_id %}فرد {{ a.user_id }}{% else %}عضویت {{ a.membership_type_code }}{% endif %}</td>
+                        <td dir="ltr">{{ a.amount|payroll_num }}</td>
+                        <td>{{ a.effective_from|jalali }}</td>
+                        <td>{{ a.effective_to|jalali if a.effective_to else '—' }}</td>
+                        <td>
+                            <form method="post" action="/admin/policies/payroll/assignments/{{ a.id }}/delete"
+                                  onsubmit="return confirm('حذف؟')">
+                                <button class="btn btn-sm btn-outline-danger">حذف</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="6" class="text-muted text-center">تخصیصی نیست</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+const tab = new URLSearchParams(location.search).get('tab');
+if (tab === 'child') {
+    document.querySelector('[data-bs-target="#tab-child"]')?.click();
+}
+if (tab === 'overtime') {
+    document.querySelector('[data-bs-target="#tab-overtime"]')?.click();
+}
+if (tab === 'deficit') {
+    document.querySelector('[data-bs-target="#tab-deficit"]')?.click();
+}
+if (tab === 'shift') {
+    document.querySelector('[data-bs-target="#tab-shift"]')?.click();
+}
+document.getElementById('assignScope')?.addEventListener('change', function () {
+    const isUser = this.value === 'user';
+    document.getElementById('userWrap').classList.toggle('d-none', !isUser);
+    document.getElementById('memWrap').classList.toggle('d-none', isUser);
+});
+</script>
+{% endblock %}

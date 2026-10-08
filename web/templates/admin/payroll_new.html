@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+{% block title %}حقوق جدید | عملیات حقوق{% endblock %}
+{% block content %}
+{% set months = [
+    (1, 'فروردین'), (2, 'اردیبهشت'), (3, 'خرداد'), (4, 'تیر'),
+    (5, 'مرداد'), (6, 'شهریور'), (7, 'مهر'), (8, 'آبان'),
+    (9, 'آذر'), (10, 'دی'), (11, 'بهمن'), (12, 'اسفند')
+] %}
+<div class="payroll-new">
+    <div class="d-flex justify-content-between align-items-start gap-3 mb-4">
+        <div>
+            <h4 class="mb-1"><i class="bi bi-plus-circle text-primary"></i> حقوق جدید</h4>
+            <p class="text-secondary mb-0">دوره، عضویت و آیتم‌هایی که باید در این لیست محاسبه شوند.</p>
+        </div>
+        <a href="/admin/payroll" class="btn btn-outline-secondary btn-sm">بازگشت</a>
+    </div>
+    {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+
+    <form method="post" action="/admin/payroll/new" id="payrollNewForm">
+        <div class="row g-3">
+            <div class="col-lg-5">
+                <div class="card shadow-sm h-100">
+                    <div class="card-header bg-transparent fw-semibold">دوره و محدوده</div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label class="form-label" for="yearJ">سال شمسی</label>
+                            <input id="yearJ" type="number" name="year_j" class="form-control" value="{{ default_year }}" min="1300" max="1500" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label d-block">ماه</label>
+                            <div class="month-grid">
+                                {% for num, name in months %}
+                                <label class="month-chip">
+                                    <input type="radio" name="month_j" value="{{ num }}" {% if num == default_month %}checked{% endif %} required>
+                                    <span>{{ name }}</span>
+                                </label>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label" for="membership">نوع عضویت</label>
+                            <select id="membership" name="membership_type_code" class="form-select">
+                                <option value="">همه عضویت‌ها</option>
+                                {% for mt in memberships %}
+                                <option value="{{ mt.code }}">{{ mt.code }} — {{ mt.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-0">
+                            <label class="form-label" for="notes">یادداشت</label>
+                            <textarea id="notes" name="notes" class="form-control" rows="3" placeholder="اختیاری"></textarea>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-7">
+                <div class="card shadow-sm h-100">
+                    <div class="card-header bg-transparent d-flex justify-content-between align-items-center gap-2">
+                        <span class="fw-semibold">آیتم‌های محاسبه</span>
+                        <span class="d-flex align-items-center gap-2">
+                            <span class="badge rounded-pill text-bg-light border" id="itemCount"></span>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" id="checkAllItems">همه</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" id="clearAllItems">هیچ‌کدام</button>
+                        </span>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-secondary small">فقط آیتم‌های روشن در این لیست حقوق محاسبه می‌شوند. مثلاً اگر اضافه‌کار را بردارید، در فیش نمی‌آید.</p>
+                        {% for kind, title, tone in [('earning', 'درآمدها', 'earn'), ('deduction', 'کسورات', 'deduct')] %}
+                        <section class="item-block item-block-{{ tone }}">
+                            <h6 class="item-block-title">{{ title }}</h6>
+                            <div class="item-grid">
+                                {% for c in components if c.kind == kind %}
+                                <label class="item-chip item-chip-{{ tone }}">
+                                    <input class="payroll-item" type="checkbox" name="component_codes" value="{{ c.code }}" checked>
+                                    <span>{{ c.name }}</span>
+                                </label>
+                                {% else %}
+                                <span class="text-muted small">آیتمی نیست</span>
+                                {% endfor %}
+                            </div>
+                        </section>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="d-flex justify-content-end gap-2 mt-3">
+            <a href="/admin/payroll" class="btn btn-outline-secondary">انصراف</a>
+            <button type="submit" class="btn btn-primary px-4">ایجاد لیست حقوق</button>
+        </div>
+    </form>
+</div>
+
+<style>
+.payroll-new .month-grid,
+.payroll-new .item-grid {
+    display: grid;
+    gap: 8px;
+}
+.payroll-new .month-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.payroll-new .item-grid {
+    grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+}
+.payroll-new .month-chip,
+.payroll-new .item-chip {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin: 0;
+    min-height: 42px;
+    padding: 8px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    background: var(--bg-card);
+    color: var(--text-primary);
+    cursor: pointer;
+    text-align: center;
+    transition: border-color .15s ease, background .15s ease, box-shadow .15s ease;
+}
+.payroll-new .month-chip input,
+.payroll-new .item-chip input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+.payroll-new .month-chip:has(input:checked),
+.payroll-new .item-chip-earn:has(input:checked) {
+    border-color: #1f7a4d;
+    background: #e8f7ee;
+    box-shadow: inset 0 0 0 1px #1f7a4d;
+    font-weight: 600;
+}
+.payroll-new .item-chip-deduct:has(input:checked) {
+    border-color: #a33b3b;
+    background: #fdecec;
+    box-shadow: inset 0 0 0 1px #a33b3b;
+    font-weight: 600;
+}
+.payroll-new .month-chip:hover,
+.payroll-new .item-chip:hover {
+    border-color: #8aa4c8;
+}
+.payroll-new .item-block + .item-block {
+    margin-top: 18px;
+}
+.payroll-new .item-block-title {
+    margin-bottom: 8px;
+    font-size: .92rem;
+}
+.payroll-new .item-block-earn .item-block-title { color: #1f7a4d; }
+.payroll-new .item-block-deduct .item-block-title { color: #a33b3b; }
+[data-theme="dark"] .payroll-new .month-chip:has(input:checked),
+[data-theme="dark"] .payroll-new .item-chip-earn:has(input:checked) {
+    background: rgba(61, 190, 122, .18);
+    color: #d9f5e6;
+}
+[data-theme="dark"] .payroll-new .item-chip-deduct:has(input:checked) {
+    background: rgba(220, 90, 90, .18);
+    color: #ffd9d9;
+}
+@media (max-width: 576px) {
+    .payroll-new .month-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+</style>
+<script>
+(function () {
+    const boxes = () => [...document.querySelectorAll('.payroll-item')];
+    const count = document.getElementById('itemCount');
+    function faNum(value) {
+        return String(value).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d]);
+    }
+    function refresh() {
+        const selected = boxes().filter((box) => box.checked).length;
+        if (count) count.textContent = faNum(selected) + ' انتخاب‌شده';
+    }
+    document.getElementById('checkAllItems')?.addEventListener('click', () => {
+        boxes().forEach((box) => { box.checked = true; });
+        refresh();
+    });
+    document.getElementById('clearAllItems')?.addEventListener('click', () => {
+        boxes().forEach((box) => { box.checked = false; });
+        refresh();
+    });
+    boxes().forEach((box) => box.addEventListener('change', refresh));
+    refresh();
+})();
+</script>
+{% endblock %}
