@@ -2,12 +2,11 @@
 from urllib.parse import quote
 
 from fastapi import APIRouter, Request, Depends, Form, Query, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
 from sqlalchemy.orm import Session
 from web.dependencies import get_db, require_super_admin
-from web.config import WebConfig
 from models.user import User
 from models.employee import Employee
 from models.user_permission import UserPermission
@@ -22,6 +21,12 @@ from web.permissions import (
     set_role_permission,
     set_user_permission,
     remove_user_permission,
+    list_role_options,
+    role_label_map,
+    create_role,
+    update_role,
+    delete_role,
+    role_exists,
 )
 from web.session import make_csrf_token, check_csrf_token
 import jdatetime
@@ -31,17 +36,13 @@ router = APIRouter(tags=["Admin Permissions"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
 
 
-# ── نقش‌ها: کد از منبع واقعی (WebConfig)؛ برچسب = همان برچسب‌های نمایشیِ موجود در UI ──
-VALID_ROLES = (
-    WebConfig.ROLE_USER,
-    WebConfig.ROLE_ADMIN,
-    WebConfig.ROLE_SUPER_ADMIN,
-)
-ROLE_CATALOG = [
-    {"code": WebConfig.ROLE_ADMIN, "label": "مدیر"},
-    {"code": WebConfig.ROLE_USER, "label": "کاربر"},
-    {"code": WebConfig.ROLE_SUPER_ADMIN, "label": "مدیر ارشد"},
-]
+def _wants_json(request: Request) -> bool:
+    return "application/json" in request.headers.get("accept", "")
+
+
+# ── نقش‌ها از جدول roles؛ سه نقش سیستمی در نبود جدول fallback می‌شوند ──
+def _role_catalog(db):
+    return list_role_options(db)
 
 
 @router.get("/admin/permissions", response_class=HTMLResponse)
@@ -67,13 +68,23 @@ async def admin_permissions_page(
     """
     from sqlalchemy import or_
 
+    role_catalog = _role_catalog(db)
+    valid_roles = {item["code"] for item in role_catalog}
+    from sqlalchemy import func
+    count_map = {
+        code: count
+        for code, count in db.query(User.role, func.count(User.id)).group_by(User.role).all()
+    }
+    for item in role_catalog:
+        item["user_count"] = count_map.get(item["code"], 0)
+
     # ---- اعتبارسنجی پرامترهای اختیاری (مقادیر نامعتبر → صادقانه نادیده/گزارش) ----
     permission_error = False
     if permission and permission not in ALL_PERMISSIONS:
         permission_error = True
         permission = None
     role_error = False
-    if role and role not in VALID_ROLES:
+    if role and role not in valid_roles:
         role_error = True
         role = None
     if state not in ("allowed", "denied"):
@@ -101,13 +112,21 @@ async def admin_permissions_page(
     )
 
     # ── نمای Role-Centric: پیش‌فرض نقش از DB (قابل‌ویرایش) ──
-    role_selected = active_tab == 'roles' and role in VALID_ROLES
+    role_selected = active_tab == 'roles' and role in valid_roles
     role_label = ""
     role_perms = []
     role_counts = None
     role_history_list = []
+    role_is_system = False
+    role_description = ""
+    role_user_count = 0
     if role_selected:
-        role_label = next((r["label"] for r in ROLE_CATALOG if r["code"] == role), role)
+        selected_meta = next((r for r in role_catalog if r["code"] == role), None)
+        if selected_meta:
+            role_is_system = bool(selected_meta["is_system"])
+            role_description = selected_meta.get("description") or ""
+            role_user_count = selected_meta.get("user_count") or 0
+        role_label = next((r["label"] for r in role_catalog if r["code"] == role), role)
         role_map = get_role_permission_map(db, role)
         for code, info in ALL_PERMISSIONS.items():
             active = role_map.get(code, False)
@@ -309,13 +328,16 @@ async def admin_permissions_page(
         "only_override": only_override,
         "perm_counts": perm_counts,
         # ── نمای Role-Centric ──
-        "all_roles": ROLE_CATALOG,
+        "all_roles": role_catalog,
         "role_selected": role_selected,
         "role_label": role_label,
         "role_perms": role_perms,
         "role_counts": role_counts,
         "role_error": role_error,
         "role_history_list": role_history_list,
+        "role_is_system": role_is_system,
+        "role_description": role_description,
+        "role_user_count": role_user_count,
     })
 
 
@@ -345,9 +367,28 @@ async def toggle_role_permission(
         )
         msg = "پیش‌فرض نقش غیرفعال شد" if ok else (err or "عملیات ناموفق")
     else:
+        ok = False
         msg = "عملیات نامعتبر"
 
-    redirect_role = role if role in VALID_ROLES else ""
+    if _wants_json(request):
+        role_map = get_role_permission_map(db, role) if role_exists(db, role) else {}
+        granted = sum(1 for value in role_map.values() if value)
+        return JSONResponse({
+            "ok": ok,
+            "message": msg,
+            "permission": permission,
+            "permission_label": ALL_PERMISSIONS.get(permission, {}).get("label", permission),
+            "active": bool(role_map.get(permission, False)),
+            "locked": is_role_default_locked(role, permission),
+            "granted": granted,
+            "not_granted": max(len(ALL_PERMISSIONS) - granted, 0),
+            "action": action if ok else "",
+            "reason": reason,
+            "created_by": user.user_id,
+            "created_at_j": jdatetime.datetime.now().strftime("%Y/%m/%d %H:%M"),
+        })
+
+    redirect_role = role if role_exists(db, role) else ""
     return RedirectResponse(
         url=(
             f"/admin/permissions?tab=roles&role={quote(redirect_role)}"
@@ -355,6 +396,75 @@ async def toggle_role_permission(
         ),
         status_code=302,
     )
+
+
+def _roles_redirect(role: str, msg: str, *, error: bool = False) -> RedirectResponse:
+    key = "err" if error else "msg"
+    role_q = f"&role={quote(role)}" if role else ""
+    return RedirectResponse(
+        url=f"/admin/permissions?tab=roles{role_q}&{key}={quote(msg)}",
+        status_code=302,
+    )
+
+
+@router.post("/admin/permissions/roles/create")
+async def create_role_action(
+    request: Request,
+    label: str = Form(...),
+    code: str = Form(...),
+    description: str = Form(""),
+    copy_from: str = Form("user"),
+    csrf_token: str = Form(""),
+    user: User = Depends(require_super_admin),
+    db: Session = Depends(get_db),
+):
+    if not check_csrf_token(csrf_token, user.user_id):
+        raise HTTPException(status_code=403, detail="توکن امنیتی نامعتبر")
+    ok, err = create_role(
+        db,
+        code=code,
+        label=label,
+        description=description,
+        copy_from=copy_from,
+        created_by=user.user_id,
+    )
+    if not ok:
+        return _roles_redirect("", err, error=True)
+    return _roles_redirect(code.strip().lower(), "نقش جدید ساخته شد")
+
+
+@router.post("/admin/permissions/roles/update")
+async def update_role_action(
+    request: Request,
+    role: str = Form(...),
+    label: str = Form(...),
+    description: str = Form(""),
+    csrf_token: str = Form(""),
+    user: User = Depends(require_super_admin),
+    db: Session = Depends(get_db),
+):
+    if not check_csrf_token(csrf_token, user.user_id):
+        raise HTTPException(status_code=403, detail="توکن امنیتی نامعتبر")
+    ok, err = update_role(db, role, label, description)
+    if not ok:
+        return _roles_redirect(role, err, error=True)
+    return _roles_redirect(role, "نقش ویرایش شد")
+
+
+@router.post("/admin/permissions/roles/delete")
+async def delete_role_action(
+    request: Request,
+    role: str = Form(...),
+    csrf_token: str = Form(""),
+    user: User = Depends(require_super_admin),
+    db: Session = Depends(get_db),
+):
+    if not check_csrf_token(csrf_token, user.user_id):
+        raise HTTPException(status_code=403, detail="توکن امنیتی نامعتبر")
+    ok, err = delete_role(db, role)
+    if not ok:
+        return _roles_redirect(role, err, error=True)
+    return _roles_redirect("", "نقش حذف شد")
 
 
 @router.get("/admin/permissions/{target_user_id}", response_class=HTMLResponse)
@@ -433,6 +543,7 @@ async def admin_user_permissions(
         "csrf_token": make_csrf_token(user.user_id),
         "is_admin": True,
         "is_super_admin": True,
+        "role_labels": role_label_map(db),
     })
 
 
@@ -463,6 +574,47 @@ async def toggle_permission(
         msg = "دسترسی سلب شد"
     else:
         msg = "عملیات نامعتبر"
+
+    if _wants_json(request):
+        target = db.query(User).filter(User.user_id == target_user_id).first()
+        role_map = get_role_permission_map(db, (target.role if target else None) or "user")
+        override = db.query(UserPermission).filter(
+            UserPermission.user_id == target_user_id,
+            UserPermission.permission == permission,
+        ).first() if permission in ALL_PERMISSIONS else None
+        role_default = bool(role_map.get(permission, False))
+        if override:
+            source = "grant" if override.granted else "revoke"
+            is_active = bool(override.granted)
+            shown_reason = override.reason or ""
+        else:
+            source = "role"
+            is_active = role_default
+            shown_reason = ""
+        effective = get_effective_permissions(db, target) if target else set()
+        overrides = db.query(UserPermission).filter(
+            UserPermission.user_id == target_user_id
+        ).all() if target else []
+        granted_n = sum(1 for row in overrides if row.granted)
+        revoked_n = sum(1 for row in overrides if not row.granted)
+        return JSONResponse({
+            "ok": permission in ALL_PERMISSIONS and action in ("grant", "revoke", "reset"),
+            "message": msg,
+            "permission": permission,
+            "permission_label": ALL_PERMISSIONS.get(permission, {}).get("label", permission),
+            "is_active": is_active,
+            "source": source,
+            "role_default": role_default,
+            "reason": shown_reason,
+            "effective_count": len(effective),
+            "override_count": len(overrides),
+            "granted_count": granted_n,
+            "revoked_count": revoked_n,
+            "role_count": len(ALL_PERMISSIONS) - len(overrides),
+            "action": action if permission in ALL_PERMISSIONS else "",
+            "created_by": user.user_id,
+            "created_at_j": jdatetime.datetime.now().strftime("%Y/%m/%d %H:%M"),
+        })
 
     referer = request.headers.get("referer", f"/admin/permissions/{target_user_id}")
     sep = "&" if "?" in referer else "?"

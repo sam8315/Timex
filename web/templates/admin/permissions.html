@@ -266,13 +266,9 @@
                             <td><code dir="ltr">{{ item.user.user_id }}</code></td>
                             <td class="fw-medium">{{ item.employee.full_name if item.employee else '-' }}</td>
                             <td>
-                                {% if item.user.role == 'super_admin' %}
-                                <span class="badge bg-danger"><i class="bi bi-shield-lock"></i> مدیر ارشد</span>
-                                {% elif item.user.role == 'admin' %}
-                                <span class="badge bg-primary"><i class="bi bi-shield"></i> مدیر</span>
-                                {% else %}
-                                <span class="badge bg-secondary"><i class="bi bi-person"></i> کاربر</span>
-                                {% endif %}
+                                {% set role_ns = namespace(label=item.user.role) %}
+                                {% for r in all_roles if r.code == item.user.role %}{% set role_ns.label = r.label %}{% endfor %}
+                                <span class="badge bg-light text-dark border">{{ role_ns.label }}</span>
                             </td>
                             <td class="text-center">
                                 {% set c = item.effective_perms_count %}
@@ -379,8 +375,10 @@
                         <div class="d-flex align-items-center gap-2 small text-muted">
                             <code dir="ltr">{{ permission }}</code>
                             {% if role_default_self is not none %}
+                            {% set self_role = namespace(label=user.role) %}
+                            {% for r in all_roles if r.code == user.role %}{% set self_role.label = r.label %}{% endfor %}
                             <span class="text-nowrap">
-                                پیش‌فرض نقش <strong>{{ 'مدیر ارشد' if user.role == 'super_admin' else 'مدیر' if user.role == 'admin' else 'کاربر' }}</strong>:
+                                پیش‌فرض نقش <strong>{{ self_role.label }}</strong>:
                                 {% if role_default_self %}
                                 <span class="badge bg-success"><i class="bi bi-check-circle"></i> مجاز</span>
                                 {% else %}
@@ -452,9 +450,9 @@
                         <label class="form-label small fw-bold mb-1" for="permRole">نقش</label>
                         <select id="permRole" name="role" class="form-select form-select-sm" aria-label="فیلتر نقش">
                             <option value="">همه نقش‌ها</option>
-                            <option value="user"{% if selected_role == 'user' %} selected{% endif %}>کاربر</option>
-                            <option value="admin"{% if selected_role == 'admin' %} selected{% endif %}>مدیر</option>
-                            <option value="super_admin"{% if selected_role == 'super_admin' %} selected{% endif %}>مدیر ارشد</option>
+                            {% for r in all_roles %}
+                            <option value="{{ r.code }}"{% if selected_role == r.code %} selected{% endif %}>{{ r.label }}</option>
+                            {% endfor %}
                         </select>
                     </div>
                     <div class="col-md-3">
@@ -514,13 +512,9 @@
                             </td>
                             <td data-label="کد پرسنلی"><code dir="ltr">{{ item.user.user_id }}</code></td>
                             <td data-label="نقش">
-                                {% if item.user.role == 'super_admin' %}
-                                <span class="badge bg-danger"><i class="bi bi-shield-lock"></i> مدیر ارشد</span>
-                                {% elif item.user.role == 'admin' %}
-                                <span class="badge bg-primary"><i class="bi bi-shield"></i> مدیر</span>
-                                {% else %}
-                                <span class="badge bg-secondary"><i class="bi bi-person"></i> کاربر</span>
-                                {% endif %}
+                                {% set role_ns = namespace(label=item.user.role) %}
+                                {% for r in all_roles if r.code == item.user.role %}{% set role_ns.label = r.label %}{% endfor %}
+                                <span class="badge bg-light text-dark border">{{ role_ns.label }}</span>
                             </td>
                             <td data-label="وضعیت مؤثر" class="text-center">
                                 {% if item.perm_active %}
@@ -587,6 +581,12 @@
         <span>{{ request.query_params.get('msg') }}</span>
     </div>
     {% endif %}
+    {% if request.query_params.get('err') %}
+    <div class="alert alert-danger d-flex align-items-center gap-2 fade show" role="alert">
+        <i class="bi bi-exclamation-circle"></i>
+        <span>{{ request.query_params.get('err') }}</span>
+    </div>
+    {% endif %}
 
     <form method="get" action="/admin/permissions" id="roleForm">
         <input type="hidden" name="tab" value="roles">
@@ -618,6 +618,43 @@
         </div>
     </form>
 
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white">
+            <strong><i class="bi bi-plus-circle"></i> نقش جدید</strong>
+        </div>
+        <div class="card-body">
+            <form method="post" action="/admin/permissions/roles/create" class="row g-2 align-items-end">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <div class="col-md-3">
+                    <label class="form-label small fw-bold" for="newRoleLabel">برچسب</label>
+                    <input id="newRoleLabel" name="label" class="form-control" maxlength="100" required placeholder="مثلاً کارشناس منابع انسانی">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small fw-bold" for="newRoleCode">کد</label>
+                    <input id="newRoleCode" name="code" class="form-control" dir="ltr" maxlength="50" required
+                           pattern="[a-z][a-z0-9_]*" placeholder="hr_officer">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small fw-bold" for="newRoleCopy">کپی دسترسی از</label>
+                    <select id="newRoleCopy" name="copy_from" class="form-select">
+                        {% for r in all_roles %}
+                        <option value="{{ r.code }}"{% if r.code == 'user' %} selected{% endif %}>{{ r.label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small fw-bold" for="newRoleDesc">توضیح</label>
+                    <input id="newRoleDesc" name="description" class="form-control" maxlength="500">
+                </div>
+                <div class="col-12">
+                    <button type="submit" class="btn btn-success rounded-pill px-4">
+                        <i class="bi bi-plus-lg"></i> ساخت نقش
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     {% if role_selected %}
     <!-- ── اطلاعات نقش انتخاب‌شده ── -->
     <div class="card border-0 shadow-sm mb-4">
@@ -627,8 +664,33 @@
                 <h5 class="fw-bold mb-0">{{ role_label }}</h5>
                 <div class="d-flex align-items-center gap-2 small text-muted">
                     <code dir="ltr">{{ selected_role }}</code>
-                    <span class="text-nowrap">دسترسی‌های پیش‌فرض این نقش</span>
+                    {% if role_is_system %}
+                    <span class="badge bg-secondary">سیستمی</span>
+                    {% endif %}
+                    <span class="text-nowrap">{{ role_user_count }} کاربر</span>
                 </div>
+                {% if role_description %}
+                <div class="small text-muted mt-1">{{ role_description }}</div>
+                {% endif %}
+            </div>
+            <div class="ms-auto d-flex flex-wrap gap-2">
+                <form method="post" action="/admin/permissions/roles/update" class="d-flex flex-wrap gap-2 align-items-center">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="role" value="{{ selected_role }}">
+                    <input name="label" class="form-control form-control-sm" style="min-width: 160px;" maxlength="100" required value="{{ role_label }}" aria-label="برچسب نقش">
+                    <input name="description" class="form-control form-control-sm" style="min-width: 180px;" maxlength="500" value="{{ role_description }}" placeholder="توضیح" aria-label="توضیح نقش">
+                    <button type="submit" class="btn btn-sm btn-outline-primary rounded-pill">ذخیره</button>
+                </form>
+                {% if not role_is_system %}
+                <form method="post" action="/admin/permissions/roles/delete"
+                      onsubmit="return confirm('این نقش حذف شود؟');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="role" value="{{ selected_role }}">
+                    <button type="submit" class="btn btn-sm btn-outline-danger rounded-pill" {% if role_user_count %}disabled title="ابتدا کاربران را به نقش دیگری منتقل کنید"{% endif %}>
+                        حذف
+                    </button>
+                </form>
+                {% endif %}
             </div>
         </div>
         <div class="card-body border-top pt-3">
@@ -704,7 +766,7 @@
                                 <span class="badge bg-secondary ms-1">قفل</span>
                                 {% endif %}
                             </td>
-                            <td data-label="وضعیت" class="text-center">
+                            <td data-label="وضعیت" class="text-center" data-role-state>
                                 {% if rp.active %}
                                 <span class="state-badge badge-allowed"><i class="bi bi-check-circle"></i> فعال</span>
                                 {% else %}
@@ -713,7 +775,7 @@
                             </td>
                             <td data-label="عملیات" class="text-center">
                                 <form method="post" action="/admin/permissions/roles/toggle"
-                                      class="d-inline-flex flex-wrap gap-1 align-items-center justify-content-center">
+                                      class="role-perm-toggle d-inline-flex flex-wrap gap-1 align-items-center justify-content-center">
                                     <input type="hidden" name="role" value="{{ selected_role }}">
                                     <input type="hidden" name="permission" value="{{ rp.code }}">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -742,13 +804,15 @@
         </div>
     </div>
 
-    {% if role_history_list %}
-    <div class="card border-0 shadow-sm">
+    <div class="card border-0 shadow-sm" id="roleHistoryCard">
         <div class="card-header bg-white">
             <small class="text-muted"><i class="bi bi-clock-history"></i> تاریخچه تغییرات پیش‌فرض نقش</small>
         </div>
         <div class="card-body p-0">
-            <div class="table-responsive">
+            <p id="roleHistoryEmpty" class="text-muted small text-center py-4 mb-0 {% if role_history_list %}d-none{% endif %}">
+                هنوز تغییری ثبت نشده است
+            </p>
+            <div class="table-responsive {% if not role_history_list %}d-none{% endif %}" id="roleHistoryTableWrap">
                 <table class="table table-sm align-middle mb-0">
                     <thead class="table-light">
                         <tr>
@@ -759,7 +823,7 @@
                             <th>توسط</th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody id="roleHistoryBody">
                         {% for h in role_history_list %}
                         <tr>
                             <td>{{ h.created_at_j }}</td>
@@ -780,7 +844,15 @@
             </div>
         </div>
     </div>
-    {% endif %}
+
+    <div class="toast-container position-fixed bottom-0 start-0 p-3" style="z-index: 1080;">
+        <div id="rolePermToast" class="toast align-items-center border-0" role="status" aria-live="polite" aria-atomic="true">
+            <div class="d-flex">
+                <div id="rolePermToastBody" class="toast-body"></div>
+                <button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast" aria-label="بستن"></button>
+            </div>
+        </div>
+    </div>
     {% endif %}
 </div>
 {% endif %}
@@ -876,6 +948,143 @@
         if (rLock) { ev.preventDefault(); return; }
         rLock = true;
         rlock();
+    });
+})();
+</script>
+<script>
+(function () {
+    'use strict';
+    var forms = document.querySelectorAll('form.role-perm-toggle');
+    if (!forms.length) { return; }
+
+    function toast(message, ok) {
+        var el = document.getElementById('rolePermToast');
+        var body = document.getElementById('rolePermToastBody');
+        if (!el || !body || typeof bootstrap === 'undefined') { return; }
+        el.classList.remove('text-bg-success', 'text-bg-danger');
+        el.classList.add(ok ? 'text-bg-success' : 'text-bg-danger');
+        body.textContent = message;
+        bootstrap.Toast.getOrCreateInstance(el, { delay: 2500 }).show();
+    }
+
+    var allowedBadge = 'state-badge' + ' badge-allowed';
+    var deniedBadge = 'state-badge' + ' badge-denied';
+
+    function paintRow(row, active, locked) {
+        var state = row.querySelector('[data-role-state]');
+        if (state) {
+            state.textContent = '';
+            var span = document.createElement('span');
+            span.className = active ? allowedBadge : deniedBadge;
+            var icon = document.createElement('i');
+            icon.className = active ? 'bi bi-check-circle' : 'bi bi-x-circle';
+            span.appendChild(icon);
+            span.appendChild(document.createTextNode(active ? ' فعال' : ' غیرفعال'));
+            state.appendChild(span);
+        }
+        var btn = row.querySelector('button[type="submit"]');
+        if (!btn) { return; }
+        if (active) {
+            btn.value = 'disable';
+            btn.className = 'btn btn-sm btn-outline-danger';
+            btn.innerHTML = '<i class="bi bi-x-circle"></i> غیرفعال';
+            btn.disabled = !!locked;
+            btn.title = locked ? 'این پیش‌فرض قفل است' : '';
+        } else {
+            btn.value = 'enable';
+            btn.className = 'btn btn-sm btn-outline-success';
+            btn.innerHTML = '<i class="bi bi-check-circle"></i> فعال';
+            btn.disabled = false;
+            btn.title = '';
+        }
+    }
+
+    function paintCounts(data) {
+        var labels = document.querySelectorAll('#pane-roles small.text-muted');
+        for (var i = 0; i < labels.length; i++) {
+            var label = labels[i].textContent.trim();
+            var num = labels[i].previousElementSibling;
+            if (!num) { continue; }
+            if (label === 'فعال از نقش') { num.textContent = data.granted; }
+            if (label === 'غیرفعال') { num.textContent = data.not_granted; }
+        }
+    }
+
+    function prependHistory(data) {
+        var body = document.getElementById('roleHistoryBody');
+        var empty = document.getElementById('roleHistoryEmpty');
+        var wrap = document.getElementById('roleHistoryTableWrap');
+        if (!body) { return; }
+        var tr = document.createElement('tr');
+        function td(text, className) {
+            var cell = document.createElement('td');
+            if (className) { cell.className = className; }
+            cell.textContent = text || '—';
+            return cell;
+        }
+        tr.appendChild(td(data.created_at_j || ''));
+        var name = document.createElement('td');
+        name.appendChild(document.createTextNode((data.permission_label || '') + ' '));
+        var code = document.createElement('code');
+        code.dir = 'ltr';
+        code.className = 'small';
+        code.textContent = data.permission || '';
+        name.appendChild(code);
+        tr.appendChild(name);
+        var actionCell = document.createElement('td');
+        var badge = document.createElement('span');
+        badge.className = data.action === 'enable' ? allowedBadge : deniedBadge;
+        badge.textContent = data.action === 'enable' ? 'فعال‌سازی' : 'غیرفعال‌سازی';
+        actionCell.appendChild(badge);
+        tr.appendChild(actionCell);
+        tr.appendChild(td(data.reason || '—', 'text-muted small'));
+        var who = document.createElement('td');
+        var whoCode = document.createElement('code');
+        whoCode.dir = 'ltr';
+        whoCode.textContent = data.created_by || '—';
+        who.appendChild(whoCode);
+        tr.appendChild(who);
+        body.insertBefore(tr, body.firstChild);
+        if (empty) { empty.classList.add('d-none'); }
+        if (wrap) { wrap.classList.remove('d-none'); }
+    }
+
+    document.addEventListener('submit', function (event) {
+        var form = event.target;
+        if (!form || !form.classList || !form.classList.contains('role-perm-toggle')) { return; }
+        event.preventDefault();
+        var submitter = event.submitter;
+        if (!submitter || submitter.disabled) { return; }
+        var row = form.closest('tr');
+        var fd = new FormData(form);
+        fd.set('action', submitter.value);
+        submitter.disabled = true;
+        fetch(form.getAttribute('action'), {
+            method: 'POST',
+            body: fd,
+            headers: { 'Accept': 'application/json' },
+            credentials: 'same-origin'
+        }).then(function (resp) {
+            return resp.json().then(function (data) {
+                return { okHttp: resp.ok, data: data };
+            }).catch(function () {
+                return { okHttp: false, data: { ok: false, message: 'تغییر ذخیره نشد' } };
+            });
+        }).then(function (result) {
+            var data = result.data || {};
+            if (!result.okHttp || !data.ok) {
+                toast(data.message || data.detail || 'تغییر ذخیره نشد', false);
+                submitter.disabled = false;
+                return;
+            }
+            if (row) { paintRow(row, !!data.active, !!data.locked); }
+            paintCounts(data);
+            prependHistory(data);
+            toast(data.message, true);
+        }).catch(function () {
+            toast('تغییر ذخیره نشد', false);
+            submitter.disabled = false;
+        });
     });
 })();
 </script>

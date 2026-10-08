@@ -114,6 +114,8 @@ from database.init_db import (  # noqa: E402
     migrate_missing_columns,
     seed_membership_types,
     seed_role_permissions,
+    seed_roles,
+    migrate_users_role_length,
     seed_service_duty_regions,
 )
 from sqlalchemy import text as _sql_text
@@ -208,6 +210,8 @@ with test_engine.connect() as _conn:
 
 Base.metadata.create_all(bind=test_engine)
 migrate_missing_columns(bind_engine=test_engine)
+migrate_users_role_length(bind_engine=test_engine)
+seed_roles(bind_engine=test_engine)
 migrate_employee_document_types(bind_engine=test_engine)
 migrate_employee_relative_verification(bind_engine=test_engine)
 migrate_employee_relative_files(bind_engine=test_engine)
@@ -489,6 +493,34 @@ def db():
         session.close()
 
 
+def _reset_custom_roles(session) -> None:
+    """Drop roles created by tests and ensure the three system roles exist."""
+    from models.role import Role
+    from models.role_permission import RolePermission
+    from web.permissions import SYSTEM_ROLE_SEED
+
+    custom_codes = [
+        row.code
+        for row in session.query(Role).filter(Role.is_system == False).all()
+    ]
+    if custom_codes:
+        session.query(RolePermission).filter(
+            RolePermission.role.in_(custom_codes)
+        ).delete(synchronize_session=False)
+        session.query(Role).filter(Role.code.in_(custom_codes)).delete(
+            synchronize_session=False
+        )
+    existing = {row[0] for row in session.query(Role.code).all()}
+    for code, label, description in SYSTEM_ROLE_SEED:
+        if code not in existing:
+            session.add(Role(
+                code=code,
+                label=label,
+                description=description,
+                is_system=True,
+            ))
+
+
 def _reset_role_permissions(session) -> None:
     """Restore role defaults to catalog seed and clear role history."""
     from models.role_permission import RolePermission, RolePermissionHistory
@@ -539,6 +571,7 @@ def _cleanup_users_and_adjustments(session) -> None:
     session.query(EmployeePhone).delete()
     session.query(Employee).delete()
     session.query(User).delete()
+    _reset_custom_roles(session)
     _reset_role_permissions(session)
     session.commit()
 

@@ -61,6 +61,8 @@ def _resolve_current_user(request: Request):
                 Employee.user_id == user.user_id
             ).first()
             user.display_name = emp.full_name if emp else (user.name or "کاربر")
+            from web.permissions import get_effective_permissions
+            user.effective_permissions = get_effective_permissions(db, user)
             return user, bool(user.is_admin), bool(user.is_super_admin)
         finally:
             db.close()

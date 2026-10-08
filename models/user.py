@@ -25,7 +25,7 @@ class User(TimestampMixin, Base):
     # ============================================
     password_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    role: Mapped[str] = mapped_column(String(20), default='user', nullable=False)  # user/admin/super_admin
+    role: Mapped[str] = mapped_column(String(50), default='user', nullable=False)
     web_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     last_login: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     failed_attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
@@ -43,11 +43,20 @@ class User(TimestampMixin, Base):
 
     @property
     def is_admin(self) -> bool:
-        return self.role in ('admin', 'super_admin')
+        """ورود به بخش مدیریت: حداقل یک دسترسی مؤثر.
+
+        اگر دسترسی‌ها هنوز روی شیء بار نشده باشند (مثلاً آبجکت خام در تست)،
+        نقش‌های سیستمی مدیر و مدیر ارشد مثل قبل پنل را می‌بینند.
+        """
+        perms = getattr(self, "effective_permissions", None)
+        if perms is not None:
+            return bool(perms)
+        return self.role in ("admin", "super_admin")
 
     @property
     def is_super_admin(self) -> bool:
-        return self.role == 'super_admin'
+        """نشان نقش سیستمی مدیر ارشد. گیت صفحه نیست."""
+        return self.role == "super_admin"
 
     @property
     def is_locked(self) -> bool:

@@ -15,7 +15,9 @@
         <strong>{{ p.label }}</strong>
         <div><small class="text-muted" dir="ltr">{{ p.code }}</small></div>
         {% if p.override and p.override.reason %}
-        <div class="mt-1"><small class="text-muted"><i class="bi bi-chat-left-text"></i> {{ p.override.reason }}</small></div>
+        <div class="mt-1 perm-reason-note"><small class="text-muted"><i class="bi bi-chat-left-text"></i> {{ p.override.reason }}</small></div>
+        {% else %}
+        <div class="mt-1 perm-reason-note d-none"></div>
         {% endif %}
     </td>
     <td data-label="پیش‌فرض نقش">
@@ -25,7 +27,7 @@
         <span class="state-badge badge-role"><i class="bi bi-x-circle"></i> غیرمجاز — از نقش</span>
         {% endif %}
     </td>
-    <td data-label="Override کاربر">
+    <td data-label="Override کاربر" data-perm-override>
         {% if p.source == 'grant' %}
         <span class="state-badge badge-granted"><i class="bi bi-plus-circle"></i> اعطا شده</span>
         {% elif p.source == 'revoke' %}
@@ -34,14 +36,14 @@
         <span class="text-muted">ندارد</span>
         {% endif %}
     </td>
-    <td data-label="دسترسی مؤثر">
+    <td data-label="دسترسی مؤثر" data-perm-effective>
         {% if p.is_active %}
         <span class="state-badge badge-allowed"><i class="bi bi-check-circle"></i> مجاز</span>
         {% else %}
         <span class="state-badge badge-denied"><i class="bi bi-x-circle"></i> غیرمجاز</span>
         {% endif %}
     </td>
-    <td data-label="منبع">
+    <td data-label="منبع" data-perm-source>
         {% if p.source == 'role' %}
         <span class="source-tag"><i class="bi bi-person-badge"></i> نقش</span>
         {% else %}
@@ -201,6 +203,7 @@
     ('عضویت', ['manage_membership_types', 'manage_membership_rules', 'manage_service_adjustments']),
     ('مدارک پرسنلی', ['view_employee_documents', 'manage_employee_documents', 'verify_employee_documents', 'manage_employee_document_types']),
     ('تنظیمات', ['reset_password', 'upload_photo', 'edit_profile']),
+    ('دسترسی و سیاست', ['manage_permissions', 'manage_policies', 'adjust_leave_balance']),
     ('داشبورد', ['view_dashboard']),
 ] %}
 {% set _flat = namespace(codes=[]) %}
@@ -215,13 +218,11 @@
             <div class="d-flex align-items-center gap-2 flex-wrap text-muted small">
                 <span class="d-inline-flex align-items-center gap-1">
                     <i class="bi bi-shield"></i> نقش:
-                    {% if target_user.role == 'super_admin' %}<span class="badge bg-danger"><i class="bi bi-shield-lock"></i> مدیر ارشد</span>
-                    {% elif target_user.role == 'admin' %}<span class="badge bg-primary"><i class="bi bi-shield"></i> مدیر</span>
-                    {% else %}<span class="badge bg-secondary"><i class="bi bi-person"></i> کاربر</span>{% endif %}
+                    <span class="badge bg-light text-dark border">{{ role_labels.get(target_user.role, target_user.role) }}</span>
                 </span>
                 <span><code dir="ltr">{{ target_user.user_id }}</code></span>
                 <span class="d-inline-flex align-items-center gap-1">
-                    <i class="bi bi-check2-circle"></i> {{ effective_count }} از {{ permissions_list|length }} دسترسی فعال
+                    <i class="bi bi-check2-circle"></i> <span id="permEffectiveSummary">{{ effective_count }}</span> از {{ permissions_list|length }} دسترسی فعال
                 </span>
             </div>
         </div>
@@ -239,23 +240,23 @@
     <div class="card-body py-3">
         <div class="row g-3 text-center">
             <div class="col-6 col-md">
-                <div class="fs-4 fw-bold">{{ effective_count }}</div>
+                <div class="fs-4 fw-bold" id="permEffectiveCount">{{ effective_count }}</div>
                 <small class="text-muted">از {{ ov.total }} دسترسی مؤثر</small>
             </div>
             <div class="col-6 col-md">
-                <div class="fs-4 fw-bold">{{ ov.role }}</div>
+                <div class="fs-4 fw-bold" id="permRoleCount">{{ ov.role }}</div>
                 <small class="text-muted">پیش‌فرض نقش</small>
             </div>
             <div class="col-6 col-md">
-                <div class="fs-4 fw-bold">{{ ov.override }}</div>
+                <div class="fs-4 fw-bold" id="permOverrideCount">{{ ov.override }}</div>
                 <small class="text-muted">Override اختصاصی</small>
             </div>
             <div class="col-6 col-md">
-                <div class="fs-4 fw-bold text-success">{{ ov.granted }}</div>
+                <div class="fs-4 fw-bold text-success" id="permGrantedCount">{{ ov.granted }}</div>
                 <small class="text-muted">اعطا شده</small>
             </div>
             <div class="col-6 col-md">
-                <div class="fs-4 fw-bold text-danger">{{ ov.revoked }}</div>
+                <div class="fs-4 fw-bold text-danger" id="permRevokedCount">{{ ov.revoked }}</div>
                 <small class="text-muted">سلب شده</small>
             </div>
         </div>
@@ -375,8 +376,7 @@
                 {% endif %}
             </div>
             <div class="card-body p-0">
-                {% if history_list %}
-                <ul class="list-group list-group-flush" style="max-height: 540px; overflow-y: auto;">
+                <ul id="permHistoryList" class="list-group list-group-flush{% if not history_list %} d-none{% endif %}" style="max-height: 540px; overflow-y: auto;">
                     {% for h in history_list[:20] %}
                     <li class="list-group-item border-0 border-bottom">
                         <div class="d-flex justify-content-between align-items-start gap-2">
@@ -410,12 +410,10 @@
                     </li>
                     {% endfor %}
                 </ul>
-                {% else %}
-                <div class="text-center py-5 text-muted">
+                <div id="permHistoryEmpty" class="text-center py-5 text-muted{% if history_list %} d-none{% endif %}">
                     <i class="bi bi-inbox display-6" aria-hidden="true"></i>
                     <p class="mt-2 mb-0">تغییری ثبت نشده است</p>
                 </div>
-                {% endif %}
             </div>
         </div>
     </div>
@@ -529,6 +527,122 @@
         lastFocus = null;
     }
 
+    function setCount(id, value) {
+        var el = document.getElementById(id);
+        if (el) { el.textContent = value; }
+    }
+
+    function applyUserRow(form, data) {
+        var row = form.closest('tr');
+        if (!row) { return; }
+        var ov = row.querySelector('[data-perm-override]');
+        if (ov) {
+            if (data.source === 'grant') {
+                ov.innerHTML = '<span class="state-badge badge-granted"><i class="bi bi-plus-circle"></i> اعطا شده</span>';
+            } else if (data.source === 'revoke') {
+                ov.innerHTML = '<span class="state-badge badge-revoked"><i class="bi bi-x-circle"></i> سلب شده</span>';
+            } else {
+                ov.innerHTML = '<span class="text-muted">ندارد</span>';
+            }
+        }
+        var eff = row.querySelector('[data-perm-effective]');
+        if (eff) {
+            eff.innerHTML = data.is_active
+                ? '<span class="state-badge badge-allowed"><i class="bi bi-check-circle"></i> مجاز</span>'
+                : '<span class="state-badge badge-denied"><i class="bi bi-x-circle"></i> غیرمجاز</span>';
+        }
+        var src = row.querySelector('[data-perm-source]');
+        if (src) {
+            src.innerHTML = data.source === 'role'
+                ? '<span class="source-tag"><i class="bi bi-person-badge"></i> نقش</span>'
+                : '<span class="source-tag source-override"><i class="bi bi-sliders"></i> Override کاربر</span>';
+        }
+        var note = row.querySelector('.perm-reason-note');
+        if (note) {
+            note.textContent = '';
+            if (data.reason) {
+                note.classList.remove('d-none');
+                var small = document.createElement('small');
+                small.className = 'text-muted';
+                var icon = document.createElement('i');
+                icon.className = 'bi bi-chat-left-text';
+                small.appendChild(icon);
+                small.appendChild(document.createTextNode(' ' + data.reason));
+                note.appendChild(small);
+            } else {
+                note.classList.add('d-none');
+            }
+        }
+        var reasonInput = form.querySelector('input[name="reason"]');
+        if (reasonInput) { reasonInput.value = data.reason || ''; }
+        setBusy(form, false);
+        form.querySelectorAll('button.perm-btn').forEach(function (b) {
+            var act = b.getAttribute('data-action');
+            if (act === 'grant') { b.disabled = data.source === 'grant'; }
+            else if (act === 'revoke') { b.disabled = data.source === 'revoke'; }
+            else if (act === 'reset') { b.disabled = data.source === 'role'; }
+        });
+    }
+
+    function prependUserHistory(data) {
+        var list = document.getElementById('permHistoryList');
+        var empty = document.getElementById('permHistoryEmpty');
+        if (!list || !data.action) { return; }
+        var li = document.createElement('li');
+        li.className = 'list-group-item border-0 border-bottom';
+        var top = document.createElement('div');
+        top.className = 'd-flex justify-content-between align-items-start gap-2';
+        var left = document.createElement('div');
+        left.className = 'd-flex gap-2 align-items-center';
+        var iconWrap = document.createElement('span');
+        var icon = document.createElement('i');
+        if (data.action === 'reset') {
+            iconWrap.className = 'hist-icon hist-reset';
+            icon.className = 'bi bi-arrow-counterclockwise';
+        } else if (data.source === 'grant') {
+            iconWrap.className = 'hist-icon hist-grant';
+            icon.className = 'bi bi-plus-circle';
+        } else {
+            iconWrap.className = 'hist-icon hist-revoke';
+            icon.className = 'bi bi-x-circle';
+        }
+        iconWrap.appendChild(icon);
+        var text = document.createElement('div');
+        var title = document.createElement('strong');
+        title.className = 'd-block small';
+        title.textContent = data.permission_label || data.permission || '';
+        var badge = document.createElement('span');
+        if (data.action === 'reset') {
+            badge.className = 'badge text-bg-warning';
+            badge.textContent = 'بازنشانی';
+        } else if (data.source === 'grant') {
+            badge.className = 'badge text-bg-success';
+            badge.textContent = 'اعطا';
+        } else {
+            badge.className = 'badge text-bg-danger';
+            badge.textContent = 'سلب';
+        }
+        text.appendChild(title);
+        text.appendChild(badge);
+        left.appendChild(iconWrap);
+        left.appendChild(text);
+        var when = document.createElement('small');
+        when.className = 'text-muted text-nowrap';
+        when.textContent = data.created_at_j || '';
+        top.appendChild(left);
+        top.appendChild(when);
+        li.appendChild(top);
+        if (data.reason) {
+            var reason = document.createElement('small');
+            reason.className = 'text-muted d-block mt-1';
+            reason.textContent = data.reason;
+            li.appendChild(reason);
+        }
+        list.insertBefore(li, list.firstChild);
+        list.classList.remove('d-none');
+        if (empty) { empty.classList.add('d-none'); }
+    }
+
     function doSubmit() {
         var req = pending;
         if (!req) { return; }
@@ -540,28 +654,35 @@
             method: 'POST',
             body: fd,
             headers: { 'Accept': 'application/json' },
-            redirect: 'manual',
             credentials: 'same-origin'
         }).then(function (resp) {
-            if (resp.type === 'opaqueredirect' || (resp.status >= 200 && resp.status < 400)) {
-                showPermToast(fill(successMsgs[req.action] || '', req.permLabel, TARGET_NAME), 'ok');
-                return true;
-            }
             return resp.json().then(function (data) {
-                var d = (data && data.detail) || '';
-                showPermToast(d ? ('تغییر دسترسی انجام نشد. ' + d) : 'تغییر دسترسی انجام نشد. لطفاً دوباره تلاش کنید.', 'error');
-                return false;
+                data = data || {};
+                if (!resp.ok) {
+                    data.ok = false;
+                    data.message = data.message || data.detail || '';
+                }
+                return data;
             }).catch(function () {
-                showPermToast('تغییر دسترسی انجام نشد. لطفاً دوباره تلاش کنید.', 'error');
-                return false;
+                return { ok: false, message: '' };
             });
-        }).then(function (ok) {
+        }).then(function (data) {
             if (modal) { modal.hide(); }
-            if (ok) {
-                setTimeout(function () { window.location.reload(); }, 700);
-            } else {
+            if (!data.ok) {
+                var d = data.message || '';
+                showPermToast(d ? ('تغییر دسترسی انجام نشد. ' + d) : 'تغییر دسترسی انجام نشد. لطفاً دوباره تلاش کنید.', 'error');
                 setBusy(req.form, false);
                 restoreFocus();
+            } else {
+                applyUserRow(req.form, data);
+                setCount('permEffectiveCount', data.effective_count);
+                setCount('permEffectiveSummary', data.effective_count);
+                setCount('permOverrideCount', data.override_count);
+                setCount('permGrantedCount', data.granted_count);
+                setCount('permRevokedCount', data.revoked_count);
+                setCount('permRoleCount', data.role_count);
+                prependUserHistory(data);
+                showPermToast(fill(successMsgs[req.action] || data.message || '', req.permLabel, TARGET_NAME), 'ok');
             }
             pending = null;
         }).catch(function () {

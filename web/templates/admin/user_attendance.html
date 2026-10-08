@@ -154,6 +154,8 @@
 {% block topbar_title %}تردد {{ target_employee.full_name if target_employee else target_user_id }}{% endblock %}
 
 {% block content %}
+{% set ep = user.effective_permissions if user and user.effective_permissions is not none else [] %}
+{% set can_att = 'add_attendance' in ep or 'edit_attendance' in ep or 'change_punch' in ep or 'delete_attendance' in ep %}
 
 <!-- Header -->
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
@@ -565,7 +567,7 @@
                         <th>تردد</th>
                         <th class="text-center">وضعیت</th>
                         <th class="text-center">جزئیات</th>
-                        {% if is_super_admin %}
+                        {% if can_att %}
                         <th class="text-center">عملیات</th>
                         {% endif %}
                     </tr>
@@ -637,7 +639,7 @@
                             <span class="text-muted">-</span>
                             {% endif %}
                         </td>
-                        {% if is_super_admin %}
+                        {% if can_att %}
                         <td class="text-center">
                             <div class="btn-group btn-group-sm" role="group">
                                 <button class="btn btn-outline-success"
@@ -663,7 +665,7 @@
 
                     {% if day.records | length > 0 %}
                     <tr>
-                        <td colspan="{% if is_super_admin %}11{% else %}10{% endif %}" class="p-0">
+                        <td colspan="{% if can_att %}11{% else %}10{% endif %}" class="p-0">
                             <div class="collapse" id="details-{{ day.date.strftime('%Y%m%d') }}">
                                 <div class="card card-body bg-light border-0 py-2">
                                     <table class="table table-sm table-bordered mb-0">
@@ -673,7 +675,7 @@
                                                 <th class="text-center">ساعت</th>
                                                 <th class="text-center">نوع</th>
                                                 <th class="text-center">منبع</th>
-                                                {% if is_super_admin %}
+                                                {% if can_att %}
                                                 <th class="text-center">عملیات</th>
                                                 {% endif %}
                                             </tr>
@@ -701,7 +703,7 @@
                                                     {% elif rec.source == 'M' %}✋ دستی
                                                     {% else %}❓{% endif %}
                                                 </td>
-                                                {% if is_super_admin %}
+                                                {% if can_att %}
                                                 <td class="text-center">
                                                     <div class="btn-group btn-group-sm" role="group">
                                                         <form method="post" action="/admin/attendance/edit/change-punch" class="d-inline"
@@ -767,7 +769,7 @@
             <span class="badge bg-info">🟡 جمعه‌کاری</span>
             <span class="badge bg-danger">🔴 تعطیل‌کاری</span>
         </div>
-        {% if is_super_admin %}
+        {% if can_att %}
         <hr class="my-2">
         <div class="d-flex flex-wrap gap-2 small text-muted align-items-center">
             <strong class="me-1">🔧 عملیات مدیر ارشد:</strong>
@@ -783,7 +785,7 @@
 <!-- ============================================ -->
 <!-- 🆕 مودال افزودن رکورد (فقط مدیر ارشد)       -->
 <!-- ============================================ -->
-{% if is_super_admin %}
+{% if can_att %}
 <div class="modal fade" id="addRecordModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">

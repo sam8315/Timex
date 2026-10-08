@@ -5,7 +5,7 @@ from fastapi.templating import Jinja2Templates
 from pathlib import Path
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from web.dependencies import get_db, require_super_admin
+from web.dependencies import get_db, require_permission
 from models.user import User
 from models.employee import Employee
 from models.position import Position
@@ -33,7 +33,7 @@ def _active_positions(db):
 @router.get("/admin/users/create", response_class=HTMLResponse)
 async def create_user_form(
     request: Request,
-    user: User = Depends(require_super_admin),
+    user: User = Depends(require_permission("manage_users")),
     db: Session = Depends(get_db),
 ):
     """نمایش فرم ایجاد کاربر + کارمند (فقط سوپرادمین)."""
@@ -67,7 +67,7 @@ async def create_user_submit(
     notes: str = Form(""),
     is_active: str = Form("on"),
     csrf_token: str = Form(""),
-    cur_user: User = Depends(require_super_admin),
+    cur_user: User = Depends(require_permission("manage_users")),
     db: Session = Depends(get_db),
 ):
     """ایجاد ترکیبی User + Employee در یک تراکنش اتمیک."""

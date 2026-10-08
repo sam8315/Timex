@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from models.travel_leave_policy import TravelLeavePolicy
 from models.travel_leave_policy_rules import TravelLeavePolicyRule, TravelLeaveQuotaSetting
-from web.dependencies import get_db, require_super_admin
+from web.dependencies import get_db, require_permission
 from web.permissions import has_permission
 from web.services.membership_service import membership_types_as_dict
 from models.user import User
@@ -34,7 +34,7 @@ def _redirect(status: str):
 
 
 @router.get("/admin/policies/travel-leave", response_class=HTMLResponse)
-async def admin_travel_leave_policy(request: Request, db: Session = Depends(get_db), user: User = Depends(require_super_admin)):
+async def admin_travel_leave_policy(request: Request, db: Session = Depends(get_db), user: User = Depends(require_permission("manage_policies"))):
     denied = _guard(db, user)
     if denied:
         return denied
@@ -76,7 +76,7 @@ async def save_travel_leave_policy(
     single_quota: int = Form(3),
     married_quota: int = Form(3),
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin),
+    user: User = Depends(require_permission("manage_policies")),
 ):
     denied = _guard(db, user)
     if denied:
@@ -125,7 +125,7 @@ async def add_travel_leave_rule(
     travel_days: int = Form(...),
     description: str = Form(""),
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin),
+    user: User = Depends(require_permission("manage_policies")),
 ):
     denied = _guard(db, user)
     if denied:
@@ -158,7 +158,7 @@ async def delete_travel_leave_rule(
     request: Request,
     rule_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin),
+    user: User = Depends(require_permission("manage_policies")),
 ):
     denied = _guard(db, user)
     if denied:

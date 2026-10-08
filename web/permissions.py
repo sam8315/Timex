@@ -4,6 +4,7 @@
 پیش‌فرض نقش از جدول role_permissions خوانده می‌شود (قابل‌ویرایش از UI).
 ALL_PERMISSIONS کاتالوگ کد/برچسب و seed اولیه است.
 """
+import re
 from datetime import datetime
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -89,12 +90,28 @@ ALL_PERMISSIONS = {
         'admin': True,
         'super_admin': True,
     },
+    'manage_permissions': {
+        'label': 'مدیریت دسترسی‌ها و نقش‌ها',
+        'admin': False,
+        'super_admin': True,
+    },
+    'manage_policies': {
+        'label': 'مدیریت سیاست‌ها',
+        'admin': False,
+        'super_admin': True,
+    },
+    'adjust_leave_balance': {
+        'label': 'تنظیم دستی مانده مرخصی',
+        'admin': False,
+        'super_admin': True,
+    },
 }
 
 # ترکیب‌هایی که از UI قابل غیرفعال‌کردن نیستند (جلوگیری از قفل‌شدن مدیریت)
 LOCKED_ROLE_DEFAULTS = {
     ('super_admin', 'manage_users'),
     ('super_admin', 'change_role'),
+    ('super_admin', 'manage_permissions'),
 }
 
 KNOWN_ROLES = ('user', 'admin', 'super_admin')
@@ -343,7 +360,7 @@ def set_role_permission(
     تنظیم پیش‌فرض دسترسی یک نقش.
     برمی‌گرداند: (موفقیت، پیام خطا/خالی)
     """
-    if role not in KNOWN_ROLES:
+    if not role_exists(db, role):
         return False, "نقش نامعتبر"
     if permission not in ALL_PERMISSIONS:
         return False, "دسترسی نامعتبر"
@@ -374,5 +391,174 @@ def set_role_permission(
 
     action = 'enable' if granted else 'disable'
     _log_role_history(db, role, permission, action, granted, reason, created_by)
+    db.commit()
+    return True, ""
+
+
+ROLE_CODE_RE = re.compile(r"^[a-z][a-z0-9_]{0,49}$")
+
+SYSTEM_ROLE_SEED = (
+    ("user", "کاربر", "نقش پایهٔ کارکنان"),
+    ("admin", "مدیر", "نقش مدیریتی سیستمی"),
+    ("super_admin", "مدیر ارشد", "نقش سیستمی با دسترسی کامل پیش‌فرض"),
+)
+
+
+def role_exists(db: Session, role: str) -> bool:
+    """نقش در جدول roles هست، یا هنوز جدول ساخته نشده و کد سیستمی است."""
+    from models.role import Role
+
+    code = (role or "").strip()
+    if not code:
+        return False
+    try:
+        found = db.query(Role.id).filter(Role.code == code).first()
+    except Exception:
+        return code in KNOWN_ROLES
+    if found:
+        return True
+    try:
+        has_any = db.query(Role.id).first()
+    except Exception:
+        return code in KNOWN_ROLES
+    if has_any is None:
+        return code in KNOWN_ROLES
+    return False
+
+
+def list_role_options(db: Session) -> list[dict]:
+    """کاتالوگ نقش برای فرم‌ها. اگر جدول خالی باشد سه نقش سیستمی برمی‌گردد."""
+    from models.role import Role
+
+    try:
+        rows = db.query(Role).order_by(Role.is_system.desc(), Role.label.asc()).all()
+    except Exception:
+        rows = []
+    if not rows:
+        return [
+            {
+                "code": code,
+                "label": label,
+                "description": description,
+                "is_system": True,
+            }
+            for code, label, description in SYSTEM_ROLE_SEED
+        ]
+    return [
+        {
+            "code": row.code,
+            "label": row.label,
+            "description": row.description or "",
+            "is_system": bool(row.is_system),
+        }
+        for row in rows
+    ]
+
+
+def role_label_map(db: Session) -> dict[str, str]:
+    return {item["code"]: item["label"] for item in list_role_options(db)}
+
+
+def _validate_role_code(code: str) -> str:
+    code = (code or "").strip().lower()
+    if not ROLE_CODE_RE.match(code):
+        raise ValueError("کد نقش فقط حروف کوچک انگلیسی، رقم و _ است و باید با حرف شروع شود")
+    return code
+
+
+def _validate_role_label(label: str) -> str:
+    label = (label or "").strip()
+    if not label or len(label) > 100:
+        raise ValueError("برچسب نقش الزامی است و حداکثر ۱۰۰ نویسه دارد")
+    return label
+
+
+def create_role(
+    db: Session,
+    code: str,
+    label: str,
+    description: str = "",
+    copy_from: str = "user",
+    created_by: str = "",
+) -> tuple[bool, str]:
+    """ساخت نقش و کپی پیش‌فرض دسترسی‌ها از یک نقش موجود."""
+    from models.role import Role
+
+    try:
+        code = _validate_role_code(code)
+        label = _validate_role_label(label)
+    except ValueError as exc:
+        return False, str(exc)
+
+    description = (description or "").strip()
+    if len(description) > 500:
+        return False, "توضیح نقش حداکثر ۵۰۰ نویسه است"
+
+    if db.query(Role.id).filter(Role.code == code).first():
+        return False, "این کد نقش قبلاً ثبت شده است"
+
+    source = (copy_from or "user").strip() or "user"
+    if not role_exists(db, source):
+        return False, "نقش مبدأ برای کپی دسترسی معتبر نیست"
+
+    db.add(Role(
+        code=code,
+        label=label,
+        description=description or None,
+        is_system=False,
+    ))
+    source_map = get_role_permission_map(db, source)
+    for permission, granted in source_map.items():
+        db.add(RolePermission(
+            role=code,
+            permission=permission,
+            granted=bool(granted),
+            reason=f"کپی از {source}",
+            updated_by=created_by or None,
+        ))
+    db.commit()
+    return True, ""
+
+
+def update_role(
+    db: Session,
+    code: str,
+    label: str,
+    description: str = "",
+) -> tuple[bool, str]:
+    """ویرایش برچسب و توضیح. کد نقش ثابت می‌ماند."""
+    from models.role import Role
+
+    role = db.query(Role).filter(Role.code == (code or "").strip()).first()
+    if not role:
+        return False, "نقش یافت نشد"
+    try:
+        role.label = _validate_role_label(label)
+    except ValueError as exc:
+        return False, str(exc)
+    description = (description or "").strip()
+    if len(description) > 500:
+        return False, "توضیح نقش حداکثر ۵۰۰ نویسه است"
+    role.description = description or None
+    db.commit()
+    return True, ""
+
+
+def delete_role(db: Session, code: str) -> tuple[bool, str]:
+    """حذف نقش غیرسیستمی که هیچ کاربری ندارد، همراه با پیش‌فرض دسترسی‌هایش."""
+    from models.role import Role
+    from models.user import User
+
+    code = (code or "").strip()
+    role = db.query(Role).filter(Role.code == code).first()
+    if not role:
+        return False, "نقش یافت نشد"
+    if role.is_system:
+        return False, "نقش سیستمی قابل حذف نیست"
+    assigned = db.query(User.id).filter(User.role == code).count()
+    if assigned:
+        return False, f"این نقش به {assigned} کاربر اختصاص دارد و قابل حذف نیست"
+    db.query(RolePermission).filter(RolePermission.role == code).delete()
+    db.delete(role)
     db.commit()
     return True, ""

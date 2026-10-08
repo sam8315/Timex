@@ -5,7 +5,7 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h4><i class="bi bi-people"></i> مدیریت کاربران</h4>
     <div class="d-flex gap-2">
-        {% if is_super_admin %}
+        {% if user and 'manage_users' in user.effective_permissions %}
         <a href="/admin/users/create" class="btn btn-success btn-sm">
             <i class="bi bi-person-plus"></i> کاربر جدید
         </a>
@@ -65,9 +65,9 @@
                     <label class="form-label"><i class="bi bi-shield"></i> نقش</label>
                     <select name="role" class="form-select">
                         <option value="">همه</option>
-                        <option value="user" {% if role == 'user' %}selected{% endif %}>کاربر</option>
-                        <option value="admin" {% if role == 'admin' %}selected{% endif %}>مدیر</option>
-                        <option value="super_admin" {% if role == 'super_admin' %}selected{% endif %}>مدیر ارشد</option>
+                        {% for r in role_options|default([]) %}
+                        <option value="{{ r.code }}" {% if role == r.code %}selected{% endif %}>{{ r.label }}</option>
+                        {% endfor %}
                     </select>
                 </div>
 
@@ -258,13 +258,9 @@
                         </td>
                         <td>{{ item.employee.position_name if item.employee and item.employee.position_name else '—' }}</td>
                         <td class="text-center">
-                            {% if item.web_user.role == 'super_admin' %}
-                            <span class="badge bg-danger"><i class="bi bi-shield-fill"></i> مدیر ارشد</span>
-                            {% elif item.web_user.role == 'admin' %}
-                            <span class="badge bg-warning text-dark"><i class="bi bi-shield"></i> مدیر</span>
-                            {% else %}
-                            <span class="badge bg-secondary"><i class="bi bi-person"></i> کاربر</span>
-                            {% endif %}
+                            {% set role_ns = namespace(label=item.web_user.role) %}
+                            {% for r in role_options|default([]) if r.code == item.web_user.role %}{% set role_ns.label = r.label %}{% endfor %}
+                            <span class="badge bg-light text-dark border">{{ role_ns.label }}</span>
                         </td>
                         <td class="text-center">
                             {% if item.employee and item.employee.is_active %}
@@ -300,7 +296,7 @@
                                    class="btn btn-outline-success" title="تردد">
                                     <i class="bi bi-calendar-check"></i>
                                 </a>
-                                {% if is_super_admin %}
+                                {% if user and 'edit_profile' in user.effective_permissions %}
                                 <a href="/admin/profile/{{ item.web_user.user_id }}/edit"
                                    class="btn btn-outline-warning" title="ویرایش">
                                     <i class="bi bi-pencil"></i>

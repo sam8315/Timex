@@ -92,7 +92,7 @@
         <small class="text-muted">({{ target_user.user_id }})</small>
     </h4>
     <div>
-        {% if is_super_admin and employee %}
+        {% if user and 'edit_profile' in user.effective_permissions and employee %}
         <a href="/admin/profile/{{ target_user.user_id }}/edit" class="btn btn-warning btn-sm">
             <i class="bi bi-pencil"></i> ویرایش اطلاعات
         </a>
@@ -153,13 +153,9 @@
                     </div>
                 </div>
                 <div class="mb-2 d-flex gap-2">
-                    {% if target_user.role == 'super_admin' %}
-                    <span class="badge bg-danger px-3 py-2"><i class="bi bi-shield-fill"></i> مدیر ارشد</span>
-                    {% elif target_user.role == 'admin' %}
-                    <span class="badge bg-warning text-dark px-3 py-2"><i class="bi bi-shield"></i> مدیر</span>
-                    {% else %}
-                    <span class="badge bg-secondary px-3 py-2"><i class="bi bi-person"></i> کاربر</span>
-                    {% endif %}
+                    {% set role_ns = namespace(label=target_user.role) %}
+                    {% for r in role_options|default([]) if r.code == target_user.role %}{% set role_ns.label = r.label %}{% endfor %}
+                    <span class="badge bg-light text-dark border px-3 py-2"><i class="bi bi-person-badge"></i> {{ role_ns.label }}</span>
 
                     {% if target_user.web_enabled %}
                     <span class="badge bg-success px-3 py-2"><i class="bi bi-globe"></i> وب فعال</span>
@@ -375,12 +371,14 @@
     <div class="col-md-6">
         <div class="card h-100 border-dark">
             <div class="card-header bg-dark text-white">
-                <h6><i class="bi bi-tools"></i> عملیات مدیریتی (مدیر ارشد)</h6>
+                <h6><i class="bi bi-tools"></i> عملیات مدیریتی</h6>
             </div>
             <div class="card-body">
-                {% if is_super_admin %}
+                {% set ep = user.effective_permissions if user and user.effective_permissions is not none else [] %}
+                {% if 'upload_photo' in ep or 'edit_profile' in ep or 'reset_password' in ep or 'change_role' in ep or 'toggle_web' in ep %}
                 <div class="d-grid gap-2">
                                         <!-- 🆕 آپلود عکس پروفایل -->
+                    {% if 'upload_photo' in ep %}
                     <form method="post" action="/admin/profile/{{ target_user.user_id }}/upload-photo"
                           enctype="multipart/form-data" class="mb-2">
                         <div class="input-group">
@@ -404,12 +402,16 @@
                         </button>
                     </form>
                     {% endif %}
+                    {% endif %}
                     <!-- ویرایش -->
+                    {% if 'edit_profile' in ep %}
                     <a href="/admin/profile/{{ target_user.user_id }}/edit" class="btn btn-warning">
                         <i class="bi bi-pencil"></i> ویرایش اطلاعات کارمند
                     </a>
+                    {% endif %}
 
                     <!-- ریست رمز -->
+                    {% if 'reset_password' in ep %}
                     {% if employee and employee.national_code %}
                     <form method="post" action="/admin/users/{{ target_user.user_id }}/reset-password"
                           onsubmit="return confirm('آیا مطمئن هستید؟ رمز عبور به کد ملی ({{ employee.national_code }}) ریست می‌شود.');">
@@ -429,8 +431,10 @@
                         </small>
                     </div>
                     {% endif %}
+                    {% endif %}
 
                     <!-- تغییر نقش -->
+                    {% if 'change_role' in ep %}
                     <form method="post" action="/admin/users/{{ target_user.user_id }}/change-role"
                           {% if target_user.user_id == user.user_id %}
                           style="display: none;"
@@ -439,9 +443,9 @@
                           {% endif %}>
                         <div class="input-group">
                             <select name="new_role" class="form-select">
-                                <option value="user" {% if target_user.role == 'user' %}selected{% endif %}>کاربر عادی</option>
-                                <option value="admin" {% if target_user.role == 'admin' %}selected{% endif %}>مدیر</option>
-                                <option value="super_admin" {% if target_user.role == 'super_admin' %}selected{% endif %}>مدیر ارشد</option>
+                                {% for r in role_options|default([]) %}
+                                <option value="{{ r.code }}" {% if target_user.role == r.code %}selected{% endif %}>{{ r.label }}</option>
+                                {% endfor %}
                             </select>
                             <button type="submit" class="btn btn-primary">
                                 <i class="bi bi-shield-check"></i> تغییر نقش
@@ -454,8 +458,10 @@
     <small><i class="bi bi-info-circle"></i> امکان تغییر نقش خود وجود ندارد</small>
 </div>
 {% endif %}
+                    {% endif %}
 
                     <!-- فعال/غیرفعال وب -->
+                    {% if 'toggle_web' in ep %}
                     <form method="post" action="/admin/users/{{ target_user.user_id }}/toggle-web">
                         <button type="submit" class="btn {% if target_user.web_enabled %}btn-danger{% else %}btn-success{% endif %} w-100"
                                 {% if target_user.user_id == user.user_id %}disabled{% endif %}>
@@ -466,6 +472,7 @@
                             {% endif %}
                         </button>
                     </form>
+                    {% endif %}
                 </div>
 
                 {% if target_user.last_login %}
@@ -479,7 +486,7 @@
                 {% else %}
                 <div class="alert alert-secondary mb-0">
                     <i class="bi bi-info-circle"></i>
-                    این بخش فقط برای مدیر ارشد قابل دسترسی است.
+                    این بخش برای دسترسی‌های مدیریتی شما باز نیست.
                 </div>
                 {% endif %}
             </div>
@@ -2046,7 +2053,7 @@
 <div class="alert alert-warning">
     <i class="bi bi-exclamation-triangle"></i>
     اطلاعات تکمیلی این کاربر ثبت نشده است.
-    {% if is_super_admin %}
+    {% if user and 'edit_profile' in user.effective_permissions %}
     <a href="/admin/profile/{{ target_user.user_id }}/edit" class="alert-link">ایجاد اطلاعات</a>
     {% endif %}
 </div>

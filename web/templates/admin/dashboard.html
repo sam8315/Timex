@@ -156,7 +156,7 @@
             — آخرین اجرا: {{ test_status.ran_at_j }})
         </span>
     </div>
-    {% if user and user.is_super_admin %}
+    {% if user and 'manage_users' in user.effective_permissions %}
     <form method="post" action="/admin/tests/run" class="d-inline m-0">
         <button type="submit" class="btn btn-outline-success btn-sm">
             <i class="bi bi-arrow-repeat"></i> اجرای مجدد
@@ -172,7 +172,7 @@
             <strong>وضعیت تست‌ها: {{ test_status.failed + test_status.errors }} ناموفق از {{ test_status.total }}</strong>
             <span class="text-muted small">(آخرین اجرا: {{ test_status.ran_at_j }})</span>
         </div>
-        {% if user and user.is_super_admin %}
+        {% if user and 'manage_users' in user.effective_permissions %}
         <form method="post" action="/admin/tests/run" class="d-inline m-0">
             <button type="submit" class="btn btn-outline-danger btn-sm">
                 <i class="bi bi-arrow-repeat"></i> اجرای مجدد
@@ -206,7 +206,7 @@
         <strong>وضعیت تست‌ها:</strong>
         <span class="text-muted small">تست‌های خودکار هنوز روی این سرور اجرا نشده‌اند. برای اجرا از دکمه «اجرای تست‌ها» استفاده کنید.</span>
     </div>
-    {% if user and user.is_super_admin %}
+    {% if user and 'manage_users' in user.effective_permissions %}
     <form method="post" action="/admin/tests/run" class="d-inline m-0">
         <button type="submit" class="btn btn-outline-primary btn-sm">
             <i class="bi bi-play-fill"></i> اجرای تست‌ها

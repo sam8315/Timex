@@ -38,6 +38,7 @@ from models.leave_buyback_quota import LeaveBuybackQuota
 from models.leave_settlement_cap_period import LeaveSettlementCapPeriod
 from models import leave_glossary  # noqa: F401 — domain constants
 from models.user_permission import UserPermission, UserPermissionHistory
+from models.role import Role
 from models.role_permission import RolePermission, RolePermissionHistory
 from models.bale_user import BaleUser
 from models.password_reset import PasswordResetRequest
@@ -81,7 +82,7 @@ __all__ = [
     'HourlyMission', 'HourlyMissionPolicy',
     'EmployeePhone', 'EmployeeAddress', 'EmployeeAddressHistory', 'Education',
     'UserPermission', 'UserPermissionHistory',
-    'RolePermission', 'RolePermissionHistory', 'BaleUser',
+    'Role', 'RolePermission', 'RolePermissionHistory', 'BaleUser',
     'Employee', 'Position', 'Region', 'Policy', 'PolicyValue', 'PolicyAuditLog',
     'EmployeeRegion',
     'City', 'EmployeeServiceLocation', 'TravelLeaveDetail', 'TravelLeavePolicy',

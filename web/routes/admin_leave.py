@@ -12,8 +12,8 @@ from datetime import time
 import jdatetime
 from typing import Optional, List
 
-from web.dependencies import get_db, require_admin, require_super_admin
-from web.permissions import enforce_permission
+from web.dependencies import get_db, require_admin, require_permission
+from web.permissions import enforce_permission, has_permission
 from models.user import User
 from models.employee import Employee
 from models.leave_balance import LeaveBalance
@@ -390,11 +390,11 @@ async def adjust_balance(
     leave_type: str = Form(...),
     amount: int = Form(...),
     description: str = Form(""),
-    user: User = Depends(require_super_admin),
+    user: User = Depends(require_permission("adjust_leave_balance")),
     db: Session = Depends(get_db)
 ):
     """تنظیم دستی مانده مرخصی + ثبت تراکنش"""
-    enforce_permission(db, user, 'view_leave_balances')
+    enforce_permission(db, user, 'adjust_leave_balance')
     if amount == 0:
         referer = request.headers.get("referer", "/admin/leave-balances")
         return RedirectResponse(
@@ -572,7 +572,7 @@ async def leave_requests_page(
     # 🆕 جزئیات درخواست نیازمند تاییدیه مانده منفی (فقط مدیر ارشد)
     confirm_negative_request = None
     confirm_id = request.query_params.get("confirm_negative")
-    if confirm_id and user.is_super_admin:
+    if confirm_id and has_permission(db, user, "adjust_leave_balance"):
         try:
             target = db.query(LeaveRequest).filter(
                 LeaveRequest.id == int(confirm_id),
@@ -721,9 +721,9 @@ async def approve_leave_request(
     forced_negative = False
     if current_balance < deduct_days:
         # مدیر ارشد می‌تواند با مانده منفی تایید کند (با تاییدیه جداگانه)
-        if user.is_super_admin and allow_negative in ("on", "true", "1"):
+        if has_permission(db, user, "adjust_leave_balance") and allow_negative in ("on", "true", "1"):
             forced_negative = True
-        elif user.is_super_admin:
+        elif has_permission(db, user, "adjust_leave_balance"):
             referer = request.headers.get("referer", "/admin/leave-requests")
             url = build_redirect_url(
                 referer, "error",
@@ -1046,7 +1046,7 @@ async def import_previous_leave_page(
     db: Session = Depends(get_db)
 ):
     """صفحه وارد کردن مرخصی ذخیره سال قبل"""
-    enforce_permission(db, user, 'view_leave_balances')
+    enforce_permission(db, user, 'manage_policies')
     return templates.TemplateResponse(request, "admin/import_previous_leave.html", {
         "user": user,
         "is_admin": True,
@@ -1064,7 +1064,7 @@ async def import_previous_leave(
     db: Session = Depends(get_db)
 ):
     """پردازش وارد کردن مرخصی ذخیره / مهاجرت HR"""
-    enforce_permission(db, user, 'view_leave_balances')
+    enforce_permission(db, user, 'manage_policies')
     from web.services.hr_leave_import_service import import_hr_opening_line
 
     results = []
@@ -1228,7 +1228,7 @@ async def import_previous_leave_results(
     db: Session = Depends(get_db)
 ):
     """نمایش نتایج وارد کردن"""
-    enforce_permission(db, user, 'view_leave_balances')
+    enforce_permission(db, user, 'manage_policies')
     results = request.session.get('import_results', [])
     summary = request.session.get('import_summary', {})
 

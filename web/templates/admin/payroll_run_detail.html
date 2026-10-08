@@ -40,13 +40,13 @@
         <button class="btn btn-warning btn-sm">انتشار برای کارکنان</button>
     </form>
     {% endif %}
-    {% if is_super_admin %}
+    {% if user and 'manage_payroll' in user.effective_permissions %}
     <form method="post" action="/admin/payroll/runs/{{ run.id }}/delete" onsubmit="return confirm('این لیست حقوق و فیش‌های آن حذف شود؟');">
         <button class="btn btn-outline-danger btn-sm">حذف لیست</button>
     </form>
     {% endif %}
 </div>
-{% elif is_super_admin %}
+{% elif user and 'manage_payroll' in user.effective_permissions %}
 <div class="mb-3">
     <form method="post" action="/admin/payroll/runs/{{ run.id }}/delete" onsubmit="return confirm('این لیست حقوق و فیش‌های آن حذف شود؟');">
         <button class="btn btn-outline-danger btn-sm">حذف لیست</button>

@@ -360,3 +360,28 @@ def test_toggle_accepts_valid_csrf_and_writes_history(client, db, make_user):
     history = get_permission_history(db, target["user_id"])
     assert history and history[0].action == "revoke"
     assert history[0].reason == "تست"
+
+
+def test_toggle_json_updates_without_redirect(client, db, make_user):
+    target = make_user(role="admin")
+    super_user = make_user(role="super_admin")
+    login_as(client, super_user["national_code"])
+    page = client.get(f"/admin/permissions/{target['user_id']}")
+    token = _csrf_from_html(page.text)
+    resp = client.post(
+        f"/admin/permissions/{target['user_id']}/toggle",
+        data={
+            "permission": "view_reports",
+            "action": "revoke",
+            "reason": "بدون رفرش",
+            "csrf_token": token,
+        },
+        headers={"Accept": "application/json"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 200
+    assert "location" not in {k.lower() for k in resp.headers}
+    body = resp.json()
+    assert body["ok"] is True
+    assert body["source"] == "revoke"
+    assert body["is_active"] is False

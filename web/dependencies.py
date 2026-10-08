@@ -86,23 +86,35 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
         ).first()
         # ذخیره نام کامل به صورت ویژگی پویا
         user.display_name = employee.full_name if employee else (user.name or 'کاربر')
+        from web.permissions import get_effective_permissions
+        user.effective_permissions = get_effective_permissions(db, user)
 
     return user
 
 
 def require_admin(request: Request, db: Session = Depends(get_db)) -> User:
-    """اجبار به نقش مدیر"""
+    """ورود به بخش مدیریت: کاربر حداقل یک دسترسی مؤثر داشته باشد."""
     user = get_current_user(request, db)
-    if not user.is_admin:
+    if not user.effective_permissions:
         raise HTTPException(status_code=403, detail="دسترسی غیرمجاز")
     return user
 
+
+def require_permission(permission: str):
+    """گیت یک دسترسی مشخص از کاتالوگ."""
+    def _require(request: Request, db: Session = Depends(get_db)) -> User:
+        from web.permissions import enforce_permission
+
+        user = get_current_user(request, db)
+        enforce_permission(db, user, permission)
+        return user
+
+    return _require
+
+
 def require_super_admin(request: Request, db: Session = Depends(get_db)) -> User:
-    """اجبار به نقش مدیر ارشد"""
-    user = get_current_user(request, db)
-    if not user.is_super_admin:
-        raise HTTPException(status_code=403, detail="دسترسی غیرمجاز - فقط مدیر ارشد")
-    return user
+    """سازگاری: مدیریت دسترسی‌ها. گیت نام نقش نیست."""
+    return require_permission("manage_permissions")(request, db)
 
 
 def check_password_change(request: Request, user: User = Depends(get_current_user)):

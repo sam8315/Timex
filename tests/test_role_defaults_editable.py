@@ -110,6 +110,33 @@ def test_role_toggle_ui_disables_admin_monitoring(client, db, make_user):
     assert denied.status_code == 403
 
 
+def test_role_toggle_json_does_not_redirect(client, db, make_user):
+    super_u = make_user(role="super_admin")
+    login_as(client, super_u["national_code"])
+    page = client.get(
+        "/admin/permissions?tab=roles&role=admin", headers=HTML_ACCEPT
+    )
+    token = _csrf_from_html(page.text)
+    resp = client.post(
+        "/admin/permissions/roles/toggle",
+        data={
+            "role": "admin",
+            "permission": "view_system_monitoring",
+            "action": "disable",
+            "reason": "بدون رفرش",
+            "csrf_token": token,
+        },
+        headers={"Accept": "application/json"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 200
+    assert "location" not in {k.lower() for k in resp.headers}
+    body = resp.json()
+    assert body["ok"] is True
+    assert body["active"] is False
+    assert body["permission"] == "view_system_monitoring"
+
+
 def test_role_toggle_rejects_missing_csrf(client, db, make_user):
     super_u = make_user(role="super_admin")
     login_as(client, super_u["national_code"])

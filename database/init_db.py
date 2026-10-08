@@ -1782,6 +1782,54 @@ def migrate_service_adjustment_employee_fk_restrict(bind_engine=None) -> None:
     migrate_membership_foundation_hardening(bind_engine=bind_engine)
 
 
+def migrate_users_role_length(bind_engine=None) -> None:
+    """Widen users.role so custom role codes up to 50 characters fit."""
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
+    if "users" not in inspector.get_table_names():
+        return
+    columns = {row["name"]: row for row in inspector.get_columns("users")}
+    role_col = columns.get("role")
+    if not role_col:
+        return
+    length = getattr(role_col["type"], "length", None)
+    if length is not None and length >= 50:
+        return
+    with target.begin() as conn:
+        conn.execute(text('ALTER TABLE users ALTER COLUMN role TYPE VARCHAR(50)'))
+    logger.info(
+        "Column widened table=users column=role",
+        extra={"event": "database.ready"},
+    )
+
+
+def seed_roles(bind_engine=None) -> None:
+    """Insert the three system roles. Never overwrites an edited label."""
+    from web.permissions import SYSTEM_ROLE_SEED
+
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
+    if "roles" not in inspector.get_table_names():
+        return
+    with target.begin() as conn:
+        for code, label, description in SYSTEM_ROLE_SEED:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO roles (
+                        code, label, description, is_system, created_at, updated_at
+                    )
+                    VALUES (
+                        :code, :label, :description, TRUE, NOW(), NOW()
+                    )
+                    ON CONFLICT (code) DO NOTHING
+                    """
+                ),
+                {"code": code, "label": label, "description": description},
+            )
+    logger.info("System roles seeded", extra={"event": "database.ready"})
+
+
 def seed_role_permissions(bind_engine=None) -> None:
     """
     Seed missing role_permissions rows from ALL_PERMISSIONS catalog (idempotent).
@@ -1840,6 +1888,7 @@ def create_tables() -> None:
         # اول جداول جدید، بعد ستون‌های جدید روی جداول موجود
         Base.metadata.create_all(bind=engine)
         migrate_missing_columns()
+        migrate_users_role_length()
         migrate_city_region_code()
         migrate_employee_position_id()
         migrate_employee_address_city_id()
@@ -1866,6 +1915,7 @@ def create_tables() -> None:
         align_annual_leave_policy_mirrors()
         run_membership_dual_run_validation()
         migrate_membership_contract_fk()
+        seed_roles()
         seed_role_permissions()
         try:
             from database.engine import SessionLocal

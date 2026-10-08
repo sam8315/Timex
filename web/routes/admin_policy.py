@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from typing import Optional, List
 import re
 import jdatetime
-from web.dependencies import get_db, require_super_admin
+from web.dependencies import get_db, require_permission
 from web.permissions import has_permission
 from web.services.notification_service import is_sms_enabled, set_sms_enabled
 from models.user import User
@@ -144,7 +144,7 @@ def _set_param(db: Session, policy: Policy, key: str, value: str,
 async def admin_policies(
     request: Request,
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin)
+    user: User = Depends(require_permission("manage_policies"))
 ):
     """Main policy list page (shows all policy categories)"""
     if not has_permission(db, user, 'manage_users'):
@@ -162,7 +162,7 @@ async def admin_policies(
 async def admin_policies_sms(
     request: Request,
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin)
+    user: User = Depends(require_permission("manage_policies"))
 ):
     """SMS notification settings page"""
     if not has_permission(db, user, 'manage_users'):
@@ -181,7 +181,7 @@ async def admin_policies_sms_save(
     request: Request,
     enabled: str = Form("true"),
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin)
+    user: User = Depends(require_permission("manage_policies"))
 ):
     """Enable/disable leave SMS notifications"""
     if not has_permission(db, user, 'manage_users'):
@@ -200,7 +200,7 @@ async def admin_policies_sms_save(
 async def admin_policies_leave(
     request: Request,
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin)
+    user: User = Depends(require_permission("manage_policies"))
 ):
     """Leave policy management page"""
     if not has_permission(db, user, 'manage_users'):
@@ -295,7 +295,7 @@ async def admin_policies_carry_forward_save(
     request: Request,
     pro_rata_method: str = Form("true"),
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin)
+    user: User = Depends(require_permission("manage_policies"))
 ):
     """Save per-department carry-forward limits (empty = unlimited) + region-change method"""
     if not has_permission(db, user, 'manage_users'):
@@ -337,7 +337,7 @@ async def admin_policies_carry_forward_save(
 async def admin_policies_buyback_save(
     request: Request,
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin)
+    user: User = Depends(require_permission("manage_policies"))
 ):
     """Save non-permanent buyback caps (empty = unlimited). Official is saved elsewhere."""
     if not has_permission(db, user, 'manage_users'):
@@ -383,7 +383,7 @@ async def admin_policies_buyback_permanent_save(
     grade4_cap: str = Form("25"),
     modern_from_year: str = Form("1399"),
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin),
+    user: User = Depends(require_permission("manage_policies")),
 ):
     """ذخیره یکجای قوانین بازخرید رسمی: سقف مناطق + عصرها + سقف بدون‌منطقه."""
     if not has_permission(db, user, 'manage_users'):
@@ -477,7 +477,7 @@ async def admin_policies_settlement_caps_add(
     storage_cap: str = Form(""),
     buyback_cap: str = Form(""),
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin),
+    user: User = Depends(require_permission("manage_policies")),
 ):
     """افزودن بازهٔ سقف ذخیره/بازخرید تاریخ‌دار."""
     if not has_permission(db, user, 'manage_users'):
@@ -535,7 +535,7 @@ async def admin_policies_settlement_caps_update(
     storage_cap: str = Form(""),
     buyback_cap: str = Form(""),
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin),
+    user: User = Depends(require_permission("manage_policies")),
 ):
     """ویرایش بازهٔ سقف ذخیره/بازخرید."""
     if not has_permission(db, user, 'manage_users'):
@@ -592,7 +592,7 @@ async def admin_policies_settlement_caps_delete(
     period_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin),
+    user: User = Depends(require_permission("manage_policies")),
 ):
     """حذف بازهٔ سقف ذخیره/بازخرید."""
     if not has_permission(db, user, 'manage_users'):
@@ -620,7 +620,7 @@ async def admin_policies_settlement_caps_delete(
 async def admin_policies_buyback_regions_save(
     request: Request,
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin),
+    user: User = Depends(require_permission("manage_policies")),
 ):
     """Save Article 11 regional buyback caps (from 1399). Kept for compatibility."""
     if not has_permission(db, user, 'manage_users'):
@@ -663,7 +663,7 @@ async def admin_policies_buyback_eras_save(
     grade4_cap: str = Form("25"),
     modern_from_year: str = Form("1399"),
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin),
+    user: User = Depends(require_permission("manage_policies")),
 ):
     """Save Article 11/1 historical buyback eras."""
     if not has_permission(db, user, 'manage_users'):
@@ -717,7 +717,7 @@ async def admin_policies_employment_save(
     request: Request,
     pro_rata_method: str = Form("true"),
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin)
+    user: User = Depends(require_permission("manage_policies"))
 ):
     """Save region-applicability flags + region-change method; annual_leave_base from Rules."""
     if not has_permission(db, user, 'manage_users'):
@@ -752,7 +752,7 @@ async def admin_policies_regions_update(
     region_code: str,
     annual_leave_days: int = Form(...),
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin)
+    user: User = Depends(require_permission("manage_policies"))
 ):
     """Update region annual leave days (regions table + policy_values)"""
     if not has_permission(db, user, 'manage_users'):
@@ -794,7 +794,7 @@ async def admin_policies_regions_edit(
     sort_order: int = Form(0),
     annual_leave_days: int = Form(30),
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin)
+    user: User = Depends(require_permission("manage_policies"))
 ):
     """Full edit of a service region (name, description, order, leave days)"""
     if not has_permission(db, user, 'manage_users'):
@@ -862,7 +862,7 @@ async def admin_policies_regions_add(
     annual_leave_days: int = Form(30),
     sort_order: int = Form(0),
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin)
+    user: User = Depends(require_permission("manage_policies"))
 ):
     """Create a new service region"""
     if not has_permission(db, user, 'manage_users'):
@@ -921,7 +921,7 @@ async def admin_policies_regions_delete(
     request: Request,
     region_code: str,
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin)
+    user: User = Depends(require_permission("manage_policies"))
 ):
     """Delete a service region (blocked if employees are assigned or protected)"""
     if not has_permission(db, user, 'manage_users'):
@@ -974,7 +974,7 @@ async def admin_policies_regions_toggle(
     request: Request,
     region_code: str,
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin)
+    user: User = Depends(require_permission("manage_policies"))
 ):
     """Activate/deactivate a service region"""
     if not has_permission(db, user, 'manage_users'):
@@ -1010,7 +1010,7 @@ async def admin_policies_regions_toggle(
 async def admin_policies_regions(
     request: Request,
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin)
+    user: User = Depends(require_permission("manage_policies"))
 ):
     """Region management page"""
     if not has_permission(db, user, 'manage_users'):
@@ -1049,7 +1049,7 @@ async def admin_policies_regions(
 async def admin_policies_attendance(
     request: Request,
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin)
+    user: User = Depends(require_permission("manage_policies"))
 ):
     """صفحه مدیریت سیاست‌های حضور و غیاب"""
     if not has_permission(db, user, 'manage_users'):
@@ -1123,7 +1123,7 @@ async def admin_policies_attendance(
 async def admin_policies_attendance_add(
     request: Request,
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin)
+    user: User = Depends(require_permission("manage_policies"))
 ):
     """صفحه افزودن سیاست حضور و غیاب جدید"""
     if not has_permission(db, user, 'manage_users'):
@@ -1183,7 +1183,7 @@ async def admin_policies_attendance_save(
     wd6_start: str = Form(""),
     wd6_end: str = Form(""),
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin)
+    user: User = Depends(require_permission("manage_policies"))
 ):
     """ذخیره سیاست حضور و غیاب جدید"""
     if not has_permission(db, user, 'manage_users'):
@@ -1347,7 +1347,7 @@ async def admin_policies_attendance_edit(
     request: Request,
     policy_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin)
+    user: User = Depends(require_permission("manage_policies"))
 ):
     """صفحه ویرایش سیاست حضور و غیاب"""
     if not has_permission(db, user, 'manage_users'):
@@ -1439,7 +1439,7 @@ async def admin_policies_attendance_update(
     wd6_start: str = Form(""),
     wd6_end: str = Form(""),
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin)
+    user: User = Depends(require_permission("manage_policies"))
 ):
     """به‌روزرسانی سیاست حضور و غیاب"""
     if not has_permission(db, user, 'manage_users'):
@@ -1603,7 +1603,7 @@ async def admin_policies_attendance_delete(
     request: Request,
     policy_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin)
+    user: User = Depends(require_permission("manage_policies"))
 ):
     """حذف (غیرفعال کردن) سیاست حضور و غیاب - Soft Delete
 
@@ -1669,7 +1669,7 @@ def parse_time(time_str: str):
 async def admin_policies_hourly_leave(
     request: Request,
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin)
+    user: User = Depends(require_permission("manage_policies"))
 ):
     """صفحه مدیریت سیاست‌های مرخصی ساعتی"""
     if not has_permission(db, user, 'manage_users'):
@@ -1725,7 +1725,7 @@ async def admin_policies_hourly_leave(
 async def admin_policies_hourly_leave_new(
     request: Request,
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin)
+    user: User = Depends(require_permission("manage_policies"))
 ):
     """صفحه افزودن سیاست مرخصی ساعتی جدید"""
     if not has_permission(db, user, 'manage_users'):
@@ -1764,7 +1764,7 @@ async def admin_policies_hourly_leave_save(
     min_request_minutes: int = Form(15),
     max_request_minutes: int = Form(240),
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin)
+    user: User = Depends(require_permission("manage_policies"))
 ):
     """ذخیره سیاست مرخصی ساعتی جدید"""
     if not has_permission(db, user, 'manage_users'):
@@ -1876,7 +1876,7 @@ async def admin_policies_hourly_leave_edit(
     request: Request,
     policy_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin)
+    user: User = Depends(require_permission("manage_policies"))
 ):
     """صفحه ویرایش سیاست مرخصی ساعتی"""
     if not has_permission(db, user, 'manage_users'):
@@ -1935,7 +1935,7 @@ async def admin_policies_hourly_leave_update(
     min_request_minutes: int = Form(15),
     max_request_minutes: int = Form(240),
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin)
+    user: User = Depends(require_permission("manage_policies"))
 ):
     """به‌روزرسانی سیاست مرخصی ساعتی"""
     if not has_permission(db, user, 'manage_users'):
@@ -2047,7 +2047,7 @@ async def admin_policies_hourly_leave_delete(
     request: Request,
     policy_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin)
+    user: User = Depends(require_permission("manage_policies"))
 ):
     """حذف (غیرفعال کردن) سیاست مرخصی ساعتی"""
     if not has_permission(db, user, 'manage_users'):
@@ -2076,7 +2076,7 @@ async def admin_policies_hourly_leave_delete(
 async def admin_policies_hourly_mission(
     request: Request,
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin)
+    user: User = Depends(require_permission("manage_policies"))
 ):
     """صفحه مدیریت سیاست‌های مأموریت ساعتی"""
     if not has_permission(db, user, 'manage_users'):
@@ -2128,7 +2128,7 @@ async def admin_policies_hourly_mission(
 async def admin_policies_hourly_mission_new(
     request: Request,
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin)
+    user: User = Depends(require_permission("manage_policies"))
 ):
     """صفحه افزودن سیاست مأموریت ساعتی جدید"""
     if not has_permission(db, user, 'manage_users'):
@@ -2164,7 +2164,7 @@ async def admin_policies_hourly_mission_save(
     allowed_on_holidays: str = Form("off"),
     deduct_from_required_minutes: str = Form("off"),
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin)
+    user: User = Depends(require_permission("manage_policies"))
 ):
     """ذخیره سیاست مأموریت ساعتی جدید"""
     if not has_permission(db, user, 'manage_users'):
@@ -2263,7 +2263,7 @@ async def admin_policies_hourly_mission_edit(
     request: Request,
     policy_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin)
+    user: User = Depends(require_permission("manage_policies"))
 ):
     """صفحه ویرایش سیاست مأموریت ساعتی"""
     if not has_permission(db, user, 'manage_users'):
@@ -2319,7 +2319,7 @@ async def admin_policies_hourly_mission_update(
     allowed_on_holidays: str = Form("off"),
     deduct_from_required_minutes: str = Form("off"),
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin)
+    user: User = Depends(require_permission("manage_policies"))
 ):
     """به‌روزرسانی سیاست مأموریت ساعتی"""
     if not has_permission(db, user, 'manage_users'):
@@ -2419,7 +2419,7 @@ async def admin_policies_hourly_mission_delete(
     request: Request,
     policy_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin)
+    user: User = Depends(require_permission("manage_policies"))
 ):
     """حذف (غیرفعال کردن) سیاست مأموریت ساعتی"""
     if not has_permission(db, user, 'manage_users'):

@@ -41,7 +41,7 @@
                         <td>{{ run.results|length }}</td>
                         <td class="text-end">
                             <a class="btn btn-sm btn-outline-primary" href="/admin/payroll/runs/{{ run.id }}">جزئیات</a>
-                            {% if is_super_admin %}
+                            {% if user and 'manage_payroll' in user.effective_permissions %}
                             <form method="post" action="/admin/payroll/runs/{{ run.id }}/delete" class="d-inline" onsubmit="return confirm('این لیست حقوق و فیش‌های آن حذف شود؟');">
                                 <button class="btn btn-sm btn-outline-danger">حذف</button>
                             </form>

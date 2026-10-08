@@ -8,7 +8,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from models.user import User
-from web.dependencies import get_db, require_super_admin
+from web.dependencies import get_db, require_permission
 from web.permissions import has_permission
 from web.services.service_duty_region_service import (
     ServiceDutyRegionError,
@@ -32,7 +32,7 @@ def _bool_form(value: Optional[str]) -> bool:
 async def service_duty_regions_page(
     request: Request,
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin),
+    user: User = Depends(require_permission("manage_policies")),
 ):
     if not has_permission(db, user, "manage_users"):
         return RedirectResponse(url="/admin/", status_code=302)
@@ -61,7 +61,7 @@ async def add_service_duty_region(
     duration_months_non_native: str = Form(""),
     sort_order: int = Form(0),
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin),
+    user: User = Depends(require_permission("manage_policies")),
 ):
     if not has_permission(db, user, "manage_users"):
         return RedirectResponse(url="/admin/", status_code=302)
@@ -102,7 +102,7 @@ async def edit_service_duty_region(
     sort_order: int = Form(0),
     is_active: str = Form(""),
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin),
+    user: User = Depends(require_permission("manage_policies")),
 ):
     if not has_permission(db, user, "manage_users"):
         return RedirectResponse(url="/admin/", status_code=302)
@@ -136,7 +136,7 @@ async def edit_service_duty_region(
 async def toggle_service_duty_region(
     code: str,
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin),
+    user: User = Depends(require_permission("manage_policies")),
 ):
     if not has_permission(db, user, "manage_users"):
         return RedirectResponse(url="/admin/", status_code=302)
@@ -154,7 +154,7 @@ async def toggle_service_duty_region(
 async def delete_service_duty_region(
     code: str,
     db: Session = Depends(get_db),
-    user: User = Depends(require_super_admin),
+    user: User = Depends(require_permission("manage_policies")),
 ):
     if not has_permission(db, user, "manage_users"):
         return RedirectResponse(url="/admin/", status_code=302)

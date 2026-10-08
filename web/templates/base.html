@@ -966,17 +966,20 @@
         </a>
     </div>
 
-    {% if is_admin %}
+    {% set ep = user.effective_permissions if user and user.effective_permissions is not none else [] %}
+    {% if user and user.is_admin %}
     <!-- منوی مدیریت -->
     <div class="sidebar-section">
         <div class="sidebar-section-title">مدیریت</div>
 
+        {% if 'view_dashboard' in ep %}
         <a href="/admin/"
            class="sidebar-link {% if request.url.path == '/admin/' or request.url.path == '/admin' %}active{% endif %}">
             <i class="bi bi-grid-1x2"></i> پنل مدیریت
         </a>
+        {% endif %}
 
-        {% if can_view_system_monitoring | default(false) %}
+        {% if 'view_system_monitoring' in ep or can_view_system_monitoring | default(false) %}
         <a href="/admin/system"
            class="sidebar-link {% if request.url.path.startswith('/admin/system') %}active{% endif %}">
             <i class="bi bi-heart-pulse"></i> وضعیت سرویس‌ها
@@ -986,36 +989,42 @@
         <!-- حضور و غیاب -->
         {% set att_active = '/admin/attendance' in request.url.path or '/admin/incomplete' in request.url.path or
         '/admin/daily-status' in request.url.path %}
+        {% if 'view_all_attendance' in ep or 'view_incomplete' in ep %}
         <a class="sidebar-link {% if att_active %}active{% endif %}" data-bs-toggle="collapse" href="#attMenu"
            role="button" aria-expanded="{{ 'true' if att_active else 'false' }}">
             <i class="bi bi-people"></i> حضور و غیاب
             <i class="bi bi-chevron-down sidebar-toggle-icon"></i>
         </a>
         <div class="collapse sidebar-submenu {% if att_active %}show{% endif %}" id="attMenu">
+            {% if 'view_all_attendance' in ep %}
             <a href="/admin/attendance"
                class="sidebar-link {% if request.url.path == '/admin/attendance' %}active{% endif %}">
                 <i class="bi bi-clock"></i> تردد کارمندان
             </a>
-            {% if can_view_incomplete | default(true) %}
+            <a href="/admin/daily-status"
+               class="sidebar-link {% if request.url.path == '/admin/daily-status' %}active{% endif %}">
+                <i class="bi bi-calendar-day"></i> مأموریت و استراحت
+            </a>
+            {% endif %}
+            {% if 'view_incomplete' in ep %}
             <a href="/admin/incomplete"
                class="sidebar-link {% if request.url.path == '/admin/incomplete' %}active{% endif %}">
                 <i class="bi bi-exclamation-triangle"></i> ترددهای ناقص
             </a>
             {% endif %}
-            <a href="/admin/daily-status"
-               class="sidebar-link {% if request.url.path == '/admin/daily-status' %}active{% endif %}">
-                <i class="bi bi-calendar-day"></i> مأموریت و استراحت
-            </a>
         </div>
+        {% endif %}
 
         <!-- مرخصی‌ها -->
         {% set leave_active = '/admin/leave' in request.url.path or '/admin/carry-forward' in request.url.path %}
+        {% if 'approve_leave' in ep or 'view_leave_balances' in ep %}
         <a class="sidebar-link {% if leave_active %}active{% endif %}" data-bs-toggle="collapse" href="#leaveMenu"
            role="button" aria-expanded="{{ 'true' if leave_active else 'false' }}">
             <i class="bi bi-calendar2-week"></i> مرخصی‌ها
             <i class="bi bi-chevron-down sidebar-toggle-icon"></i>
         </a>
         <div class="collapse sidebar-submenu {% if leave_active %}show{% endif %}" id="leaveMenu">
+            {% if 'approve_leave' in ep %}
             <a href="/admin/leave-requests?status_filter=P"
                class="sidebar-link {% if request.url.path == '/admin/leave-requests' %}active{% endif %}">
                 <i class="bi bi-hourglass-split"></i> درخواست‌های مرخصی
@@ -1023,6 +1032,8 @@
                 <span class="badge-count">{{ pending_count }}</span>
                 {% endif %}
             </a>
+            {% endif %}
+            {% if 'view_leave_balances' in ep %}
             <a href="/admin/leave-balances"
                class="sidebar-link {% if request.url.path == '/admin/leave-balances' %}active{% endif %}">
                 <i class="bi bi-wallet2"></i> مانده مرخصی
@@ -1038,33 +1049,38 @@
                 <span class="badge-count">{{ pending_cf_count }}</span>
                 {% endif %}
             </a>
+            {% endif %}
         </div>
+        {% endif %}
 
         <!-- قراردادها و کاربران -->
         {% set org_active = '/admin/contracts' in request.url.path or '/admin/users' in request.url.path
             or '/admin/verifications' in request.url.path or '/admin/education' in request.url.path %}
+        {% if 'view_contracts' in ep or 'view_dashboard' in ep or 'manage_permissions' in ep or 'verify_employee_documents' in ep or 'verify_employee_relatives' in ep %}
         <a class="sidebar-link {% if org_active %}active{% endif %}" data-bs-toggle="collapse" href="#orgMenu"
            role="button" aria-expanded="{{ 'true' if org_active else 'false' }}">
             <i class="bi bi-briefcase"></i> قراردادها و کاربران
             <i class="bi bi-chevron-down sidebar-toggle-icon"></i>
         </a>
         <div class="collapse sidebar-submenu {% if org_active %}show{% endif %}" id="orgMenu">
-            {% if can_view_contracts | default(true) %}
+            {% if 'view_contracts' in ep or can_view_contracts | default(false) %}
             <a href="/admin/contracts"
                class="sidebar-link {% if request.url.path == '/admin/contracts' %}active{% endif %}">
                 <i class="bi bi-file-earmark-text"></i> مدیریت قراردادها
             </a>
             {% endif %}
+            {% if 'view_dashboard' in ep %}
             <a href="/admin/users" class="sidebar-link {% if request.url.path == '/admin/users' %}active{% endif %}">
                 <i class="bi bi-people"></i> مدیریت کاربران
             </a>
-            <!-- 🆕 اینجا اضافه شود -->
-            {% if user and user.role == 'super_admin' %}
+            {% endif %}
+            {% if 'manage_permissions' in ep %}
             <a href="/admin/permissions"
                class="sidebar-link {% if '/permissions' in request.url.path %}active{% endif %}">
                 <i class="bi bi-shield-lock"></i> مدیریت دسترسی‌ها
             </a>
             {% endif %}
+            {% if 'verify_employee_documents' in ep or 'verify_employee_relatives' in ep or 'view_dashboard' in ep %}
             <a href="/admin/verifications"
                class="sidebar-link {% if request.url.path == '/admin/verifications' %}active{% endif %}">
                 <i class="bi bi-shield-check"></i> تأیید مدارک
@@ -1076,30 +1092,39 @@
                class="sidebar-link {% if request.url.path == '/admin/verifications' and request.query_params.get('kind') == 'education' %}active{% endif %}">
                 <i class="bi bi-mortarboard"></i> مدارک تحصیلی
             </a>
+            {% endif %}
         </div>
+        {% endif %}
 
         <!-- عملیات حقوق -->
         {% set pay_active = '/admin/payroll' in request.url.path %}
+        {% if 'view_payroll' in ep or 'manage_payroll' in ep %}
         <a class="sidebar-link {% if pay_active %}active{% endif %}" data-bs-toggle="collapse" href="#payrollMenu"
            role="button" aria-expanded="{{ 'true' if pay_active else 'false' }}">
             <i class="bi bi-cash-stack"></i> عملیات حقوق
             <i class="bi bi-chevron-down sidebar-toggle-icon"></i>
         </a>
         <div class="collapse sidebar-submenu {% if pay_active %}show{% endif %}" id="payrollMenu">
+            {% if 'view_payroll' in ep %}
             <a href="/admin/payroll"
                class="sidebar-link {% if request.url.path == '/admin/payroll' %}active{% endif %}">
                 <i class="bi bi-list-ul"></i> لیست حقوق
             </a>
+            {% endif %}
+            {% if 'manage_payroll' in ep %}
             <a href="/admin/payroll/new"
                class="sidebar-link {% if request.url.path == '/admin/payroll/new' %}active{% endif %}">
                 <i class="bi bi-plus-circle"></i> حقوق جدید
             </a>
+            {% endif %}
         </div>
+        {% endif %}
 
-        <!-- گزارشات -->
+        {% if 'view_reports' in ep %}
         <a href="/reports" class="sidebar-link {% if request.url.path.startswith('/reports') %}active{% endif %}">
             <i class="bi bi-bar-chart-line"></i> گزارشات
         </a>
+        {% endif %}
 
         <!-- تنظیمات -->
         {% set set_active = '/admin/holidays' in request.url.path or '/admin/import-previous-leave' in request.url.path
@@ -1108,13 +1133,14 @@
             or '/admin/membership-types' in request.url.path
             or '/admin/service-adjustments' in request.url.path
         %}
+        {% if 'manage_policies' in ep or 'manage_cities' in ep or 'manage_positions' in ep or 'manage_employee_document_types' in ep or 'view_contracts' in ep or 'view_leave_balances' in ep or 'manage_membership_types' in ep or 'manage_service_adjustments' in ep %}
         <a class="sidebar-link {% if set_active %}active{% endif %}" data-bs-toggle="collapse" href="#setMenu"
            role="button" aria-expanded="{{ 'true' if set_active else 'false' }}">
             <i class="bi bi-gear"></i> تنظیمات
             <i class="bi bi-chevron-down sidebar-toggle-icon"></i>
         </a>
         <div class="collapse sidebar-submenu {% if set_active %}show{% endif %}" id="setMenu">
-            {% if user and user.role == 'super_admin' %}
+            {% if 'manage_policies' in ep %}
             <a href="/admin/policies"
                class="sidebar-link {% if '/admin/policies' in request.url.path %}active{% endif %}">
                 <i class="bi bi-gear-wide-connected"></i> سیاست کلی
@@ -1128,33 +1154,44 @@
                 <i class="bi bi-box-arrow-in-down"></i> ورود مرخصی سال قبل
             </a>
             {% endif %}
+            {% if 'manage_cities' in ep %}
             <a href="/admin/cities"
                class="sidebar-link {% if '/admin/cities' in request.url.path %}active{% endif %}">
                 <i class="bi bi-building"></i> شهرهای مرجع
             </a>
+            {% endif %}
+            {% if 'manage_positions' in ep %}
             <a href="/admin/positions"
                class="sidebar-link {% if '/admin/positions' in request.url.path %}active{% endif %}">
                 <i class="bi bi-briefcase"></i> مدیریت سمت‌ها
             </a>
+            {% endif %}
+            {% if 'manage_employee_document_types' in ep %}
             <a href="/admin/employee-document-types"
                class="sidebar-link {% if '/admin/employee-document-types' in request.url.path %}active{% endif %}">
                 <i class="bi bi-folder2"></i> انواع مدارک پرسنلی
             </a>
+            {% endif %}
+            {% if 'view_contracts' in ep or 'view_leave_balances' in ep %}
             <a href="/admin/annual-leave/policies"
                class="sidebar-link {% if '/admin/annual-leave' in request.url.path %}active{% endif %}">
                 <i class="bi bi-calendar2-check"></i> مرخصی استحقاقی
             </a>
-            {% if user and user.role == 'super_admin' %}
+            {% endif %}
+            {% if 'manage_membership_types' in ep %}
             <a href="/admin/membership-types"
                class="sidebar-link {% if '/admin/membership-types' in request.url.path %}active{% endif %}">
                 <i class="bi bi-people"></i> انواع عضویت
             </a>
+            {% endif %}
+            {% if 'manage_service_adjustments' in ep %}
             <a href="/admin/service-adjustments"
                class="sidebar-link {% if '/admin/service-adjustments' in request.url.path %}active{% endif %}">
                 <i class="bi bi-hourglass-split"></i> تعدیل خدمت
             </a>
             {% endif %}
         </div>
+        {% endif %}
     </div>
     {% endif %}
 

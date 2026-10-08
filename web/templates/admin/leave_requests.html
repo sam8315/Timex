@@ -172,7 +172,7 @@
 {% endif %}
 
 <!-- ===== باکس هشدار تایید با مانده منفی (فقط مدیر ارشد) ===== -->
-{% if confirm_negative_request and user and user.is_super_admin %}
+{% if confirm_negative_request and user and 'adjust_leave_balance' in user.effective_permissions %}
 <div class="alert alert-warning shadow-sm" role="alert">
     <div class="d-flex align-items-start gap-3">
         <i class="bi bi-exclamation-triangle-fill fs-3"></i>

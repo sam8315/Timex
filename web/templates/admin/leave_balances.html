@@ -264,7 +264,7 @@
     {% endif %}
 
     <!-- 🎨 فرم تنظیم دستی مانده -->
-    {% if is_super_admin %}
+    {% if user and 'adjust_leave_balance' in user.effective_permissions %}
     <div class="card adjust-card mb-4">
         <div class="card-header bg-transparent d-flex justify-content-between align-items-center py-3">
             <h6 class="mb-0 fw-bold">

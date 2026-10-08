@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, func
 import jdatetime
 from web.dependencies import get_db, check_password_change, require_admin
+from web.permissions import enforce_permission
 from models.user import User
 from models.employee import Employee
 from models.leave_balance import LeaveBalance
@@ -360,6 +361,7 @@ async def admin_user_dashboard(
     db: Session = Depends(get_db),
 ):
     """داشبورد از نگاه کاربر (برای ادمین)."""
+    enforce_permission(db, user, "view_dashboard")
     target = db.query(User).filter(User.user_id == target_user_id).first()
     if not target:
         return RedirectResponse(

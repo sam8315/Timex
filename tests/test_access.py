@@ -26,11 +26,9 @@ ADMIN_PAGES = [
     "/admin/leave-balances",
     "/admin/leave-transactions",
     "/admin/leave-requests",
-    "/admin/holidays",
     "/admin/daily-status",
     "/admin/carry-forward-requests",
     "/admin/education",
-    "/admin/import-previous-leave",
     "/admin/leave-requests/register",
     "/reports",
 ]
@@ -40,6 +38,8 @@ SUPER_PAGES = [
     "/admin/policies",
     "/admin/policies/leave",
     "/admin/policies/regions",
+    "/admin/holidays",
+    "/admin/import-previous-leave",
 ]
 
 

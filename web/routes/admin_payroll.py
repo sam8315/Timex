@@ -355,8 +355,8 @@ async def payroll_delete(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    if user.role != "super_admin":
-        return _redirect("/admin/payroll", error="حذف لیست حقوق فقط برای مدیر ارشد مجاز است")
+    if not has_permission(db, user, "manage_payroll"):
+        return _redirect("/admin/payroll", error="حذف لیست حقوق مجاز نیست")
     try:
         run_service.delete_run(db, run_id)
         return _redirect("/admin/payroll", success="لیست حقوق حذف شد")

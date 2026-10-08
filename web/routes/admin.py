@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
 from sqlalchemy.orm import Session
-from web.dependencies import get_db, require_admin, require_super_admin
+from web.dependencies import get_db, require_admin, require_permission
 from models.user import User
 from models.leave_request import LeaveRequest
 from datetime import timedelta, date, date as date_type
@@ -62,7 +62,14 @@ from web.services.hourly_mission_service import (
 )
 from web.services.travel_leave_service import build_leave_days_by_date
 from models.daily_status import DailyStatus
-from web.permissions import has_permission, get_effective_permissions, enforce_permission
+from web.permissions import (
+    has_permission,
+    get_effective_permissions,
+    enforce_permission,
+    list_role_options,
+    role_exists,
+    role_label_map,
+)
 
 
 def build_redirect_url(referer: str, key: str, value: str) -> str:
@@ -624,7 +631,7 @@ async def admin_dashboard(
 @router.post("/admin/tests/run")
 async def admin_run_tests(
     request: Request,
-    user: User = Depends(require_super_admin),
+    user: User = Depends(require_permission("manage_users")),
     db: Session = Depends(get_db)
 ):
     """اجرای تست‌های خودکار پنل وب در پس‌زمینه (فقط مدیر ارشد)"""
@@ -783,6 +790,7 @@ async def admin_users(
         "users": user_details,
         "is_admin": True,
         "is_super_admin": user.is_super_admin,
+        "role_options": list_role_options(db),
         **_admin_nav_flags(db, user),
         "total_count": total_count,
         "has_filter": has_filter,
@@ -881,7 +889,7 @@ async def admin_users_print(
                 'national_code': (emp.national_code if emp and emp.national_code else '—'),
                 'department': DEPT_LABELS.get(emp.department, emp.department or '—') if emp else '—',
                 'position': (emp.position_name if emp and emp.position_name else '—'),
-                'role': ROLE_LABELS.get(wu.role, wu.role or '—'),
+                'role': role_label_map(db).get(wu.role, wu.role or '—'),
                 'status': 'فعال' if (emp and emp.is_active) else 'غیرفعال',
                 'web_status': 'فعال' if wu.web_enabled else 'غیرفعال',
                 'last_login': last_login_display,
@@ -891,6 +899,7 @@ async def admin_users_print(
         "user": user,
         "is_admin": True,
         "is_super_admin": user.is_super_admin,
+        "role_options": list_role_options(db),
         **_admin_nav_flags(db, user),
         "rows": rows,
         "fields": selected_fields,
@@ -1810,6 +1819,7 @@ async def admin_user_attendance(
         "total_records": total_records,
         "is_admin": True,
         "is_super_admin": user.is_super_admin,
+        "role_options": list_role_options(db),
         **_admin_nav_flags(db, user),
         "status_filter": status_filter or 'all',
 
@@ -1882,7 +1892,6 @@ from typing import Optional
 from fastapi import Query, Form
 from fastapi.responses import RedirectResponse
 
-from web.dependencies import require_super_admin
 from web.security import hash_password
 from models.employee import Employee
 from models.user import User
@@ -2253,6 +2262,7 @@ async def admin_view_profile(
         "avatar_color": avatar_color,
         "is_admin": True,
         "is_super_admin": user.is_super_admin,
+        "role_options": list_role_options(db),
         **_admin_nav_flags(db, user),
         "target_phones": target_phones,
         "target_addresses": target_addresses,
@@ -2477,7 +2487,7 @@ async def admin_change_role(
 ):
     """تغییر نقش کاربر (نیازمند دسترسی change_role)"""
     enforce_permission(db, user, 'change_role')
-    if new_role not in ('user', 'admin', 'super_admin'):
+    if not role_exists(db, new_role):
         return RedirectResponse(url="/admin/users?error=invalid-role", status_code=302)
 
     target_user = db.query(User).filter(User.user_id == target_user_id).first()

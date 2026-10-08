@@ -36,7 +36,7 @@ async def holidays_page(
     db: Session = Depends(get_db)
 ):
     """لیست تعطیلات با فیلتر"""
-    enforce_permission(db, user, 'view_dashboard')
+    enforce_permission(db, user, 'manage_policies')
     today_j = jdatetime.date.today()
     if not year:
         year = today_j.year
@@ -102,7 +102,7 @@ async def add_holiday(
     db: Session = Depends(get_db)
 ):
     """افزودن تعطیلی جدید"""
-    enforce_permission(db, user, 'view_dashboard')
+    enforce_permission(db, user, 'manage_policies')
     try:
         # تبدیل تاریخ شمسی به میلادی
         j_date = jdatetime.datetime.strptime(date_str.strip(), "%Y/%m/%d").date()
@@ -144,7 +144,7 @@ async def edit_holiday(
     db: Session = Depends(get_db)
 ):
     """ویرایش تعطیلی"""
-    enforce_permission(db, user, 'view_dashboard')
+    enforce_permission(db, user, 'manage_policies')
     holiday = db.query(Holiday).filter(Holiday.id == holiday_id).first()
     if not holiday:
         return RedirectResponse(url="/admin/holidays?error=یافت نشد", status_code=302)
@@ -166,7 +166,7 @@ async def delete_holiday(
     db: Session = Depends(get_db)
 ):
     """حذف تعطیلی"""
-    enforce_permission(db, user, 'view_dashboard')
+    enforce_permission(db, user, 'manage_policies')
     holiday = db.query(Holiday).filter(Holiday.id == holiday_id).first()
     if not holiday:
         return RedirectResponse(url="/admin/holidays?error=یافت نشد", status_code=302)
