@@ -237,10 +237,32 @@
 {% endblock %}
 
 {% block content %}
-{% if request.query_params.get('success') %}
+{% if request.query_params.get('success') and not request.query_params.get('written') %}
 <div class="alert alert-success alert-dismissible fade show shadow-sm border-0" role="alert">
     <i class="bi bi-check-circle-fill"></i> {{ request.query_params.get('success') }}
     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+{% if request.query_params.get('written') %}
+<div class="modal fade" id="leaveWrittenNoticeModal" tabindex="-1" aria-labelledby="leaveWrittenNoticeTitle" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-body text-center px-4 pt-4 pb-3">
+                <div class="text-success mb-3" style="font-size: 2.5rem;"><i class="bi bi-check-circle-fill"></i></div>
+                <h5 class="fw-bold mb-3" id="leaveWrittenNoticeTitle">درخواست ثبت شد</h5>
+                {% if request.query_params.get('success') %}
+                <p class="mb-3">{{ request.query_params.get('success') }}</p>
+                {% endif %}
+                <div class="alert alert-warning text-start mb-0">
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                    علاوه بر درخواست سیستمی، درخواست کتبی خود را به بخش اداری تحویل دهید. مرخصی پس از تأیید مدیر تأیید می‌شود.
+                </div>
+            </div>
+            <div class="modal-footer justify-content-center border-0 pt-0 pb-4">
+                <button type="button" class="btn btn-primary px-4" data-bs-dismiss="modal">متوجه شدم</button>
+            </div>
+        </div>
+    </div>
 </div>
 {% endif %}
 {% if request.query_params.get('error') %}
@@ -778,6 +800,14 @@ document.addEventListener('DOMContentLoaded', function() {
     if (tlToggle) tlToggle.addEventListener('change', function() { const tlContent = document.getElementById('tlContent'); const destSelect = document.getElementById('tlDestinationSelect'); if (tlContent) tlContent.style.display = this.checked ? 'block' : 'none'; if (destSelect) destSelect.required = this.checked; if (this.checked) fetchTravelPreview(); else { const previewContainer = document.getElementById('tlPreviewContainer'); if (previewContainer) previewContainer.style.display = 'none'; } });
     const tlDestSelect = document.getElementById('tlDestinationSelect'); if (tlDestSelect) tlDestSelect.addEventListener('change', fetchTravelPreview);
     if (startTime) startTime.addEventListener('input', calculateHLDuration); if (endTime) endTime.addEventListener('input', calculateHLDuration);
+});
+</script>
+{% endif %}
+{% if request.query_params.get('written') %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var el = document.getElementById('leaveWrittenNoticeModal');
+    if (el && window.bootstrap) bootstrap.Modal.getOrCreateInstance(el).show();
 });
 </script>
 {% endif %}
