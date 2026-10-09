@@ -643,21 +643,10 @@
         <div class="summary-title">خلاصه ماهانه</div>
         <div class="pay-summary-grid">
             {% if report.summary.total_grace_hours %}
-            <div class="pay-pair-group" title="جمع کارکرد واقعی و فرجه">
-                <div class="pay-pair-cards">
-                    <div class="pay-summary-card">
-                        <span class="label">کارکرد واقعی</span>
-                        <span class="main-value">{{ report.summary.total_punch_hours | hhmm }}</span>
-                    </div>
-                    <div class="pay-summary-card">
-                        <span class="label">فرجه</span>
-                        <span class="main-value">{{ report.summary.total_grace_hours | hhmm }}</span>
-                    </div>
-                </div>
-                <div class="pay-pair-sum">
-                    <span class="pair-sum-label">جمع کارکرد</span>
-                    <span class="pair-sum-value">{{ report.summary.total_punch_grace_hours | hhmm }}</span>
-                </div>
+            <div class="pay-summary-card" title="جمع کارکرد واقعی و فرجه">
+                <span class="label">جمع کارکرد</span>
+                <span class="main-value">{{ report.summary.total_punch_grace_hours | hhmm }}</span>
+                <span class="sub-value">کارکرد واقعی <span class="num">{{ report.summary.total_punch_hours | hhmm }}</span> + فرجه <span class="num">{{ report.summary.total_grace_hours | hhmm }}</span></span>
             </div>
             {% else %}
             <div class="pay-summary-card">

@@ -602,9 +602,11 @@
             <div class="summary-item">
                 <span>⏱️ کارکرد:</span>
                 <span class="value">
-                    {{ report.summary.total_work_hours | hhmm }}
                     {% if report.summary.total_grace_hours %}
-                    <span class="work-grace-note">واقعی {{ report.summary.total_punch_hours | hhmm }} + فرجه {{ report.summary.total_grace_hours | hhmm }} = جمع {{ report.summary.total_punch_grace_hours | hhmm }}</span>
+                    {{ report.summary.total_punch_grace_hours | hhmm }}
+                    <span class="work-grace-note">کارکرد واقعی {{ report.summary.total_punch_hours | hhmm }} + فرجه {{ report.summary.total_grace_hours | hhmm }}</span>
+                    {% else %}
+                    {{ report.summary.total_work_hours | hhmm }}
                     {% endif %}
                 </span>
             </div>

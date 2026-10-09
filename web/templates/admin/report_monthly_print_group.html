@@ -376,7 +376,7 @@
                 <div class="summary-item"><span>غیبت:</span><span class="value">{{ report.summary.absent_days }}</span></div>
             </div>
             <div class="col-md-4">
-                <div class="summary-item"><span>کارکرد:</span><span class="value">{{ report.summary.total_work_hours | hhmm }}{% if report.summary.total_grace_hours %}<span class="work-grace-note">واقعی {{ report.summary.total_punch_hours | hhmm }} + فرجه {{ report.summary.total_grace_hours | hhmm }} = {{ report.summary.total_punch_grace_hours | hhmm }}</span>{% endif %}</span></div>
+                <div class="summary-item"><span>کارکرد:</span><span class="value">{% if report.summary.total_grace_hours %}{{ report.summary.total_punch_grace_hours | hhmm }}<span class="work-grace-note">کارکرد واقعی {{ report.summary.total_punch_hours | hhmm }} + فرجه {{ report.summary.total_grace_hours | hhmm }}</span>{% else %}{{ report.summary.total_work_hours | hhmm }}{% endif %}</span></div>
                 <div class="summary-item"><span>صبح:</span><span class="value">{{ report.summary.total_morning | hhmm }}</span></div>
                 <div class="summary-item"><span>عصر:</span><span class="value">{{ report.summary.total_evening | hhmm }}</span></div>
                 <div class="summary-item"><span>شب:</span><span class="value">{{ report.summary.total_night | hhmm }}</span></div>

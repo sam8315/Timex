@@ -187,19 +187,16 @@
         border-radius: 10px;
     }
 
-    .work-grace-split {
-        display: flex;
-        justify-content: center;
-        align-items: flex-end;
-        gap: 8px;
-    }
-    .work-grace-split .part-label { font-size: 0.72rem; font-weight: 700; }
-    .work-grace-sum {
+    .work-grace-formula {
         margin-top: 4px;
-        padding-top: 4px;
-        border-top: 1.5px solid #94a3b8;
-        font-size: 0.78rem;
+        font-size: 0.72rem;
         font-weight: 700;
+        direction: rtl;
+    }
+    .work-grace-formula .num {
+        direction: ltr;
+        unicode-bidi: isolate;
+        display: inline-block;
     }
 
     /* 🖨️ چاپ — کل گزارش یک نفر در یک صفحه A4 */
@@ -388,7 +385,7 @@
             | غیبت: {{ report.summary.absent_days }}
             | کارکرد: {{ report.summary.total_work_hours | hhmm }}
             {% if report.summary.total_grace_hours %}
-            (واقعی {{ report.summary.total_punch_hours | hhmm }} + فرجه {{ report.summary.total_grace_hours | hhmm }} = {{ report.summary.total_punch_grace_hours | hhmm }})
+            ({{ report.summary.total_punch_grace_hours | hhmm }} = کارکرد واقعی {{ report.summary.total_punch_hours | hhmm }} + فرجه {{ report.summary.total_grace_hours | hhmm }})
             {% endif %}
             | اضافی: {{ report.summary.total_surplus | hhmm }}
             | کسری: {{ report.summary.total_deficit | hhmm }}
@@ -439,20 +436,11 @@
                 <div class="card summary-card bg-primary bg-opacity-10">
                     <div class="card-body text-center">
                         {% if report.summary.total_grace_hours %}
-                        <div class="work-grace-split text-primary">
-                            <div>
-                                <div class="hour-value">{{ report.summary.total_punch_hours | hhmm }}</div>
-                                <div class="part-label">کارکرد واقعی</div>
-                            </div>
-                            <div class="part-label">+</div>
-                            <div>
-                                <div class="hour-value">{{ report.summary.total_grace_hours | hhmm }}</div>
-                                <div class="part-label">فرجه</div>
-                            </div>
+                        <div class="value text-primary">
+                            <span class="hour-value">{{ report.summary.total_punch_grace_hours | hhmm }}</span>
                         </div>
-                        <div class="work-grace-sum text-primary">
-                            جمع <span class="hour-value">{{ report.summary.total_punch_grace_hours | hhmm }}</span>
-                        </div>
+                        <div class="label text-primary">جمع کارکرد</div>
+                        <div class="work-grace-formula text-primary">کارکرد واقعی <span class="num">{{ report.summary.total_punch_hours | hhmm }}</span> + فرجه <span class="num">{{ report.summary.total_grace_hours | hhmm }}</span></div>
                         {% else %}
                         <div class="value text-primary">
                             <span class="hour-value">{{ report.summary.total_work_hours | hhmm }}</span>
