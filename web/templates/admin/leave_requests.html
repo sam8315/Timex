@@ -113,7 +113,12 @@
 
     .table-responsive {
         border-radius: 8px;
-        overflow: hidden;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .leave-mobile-actions .btn {
+        min-height: 44px;
     }
 
     .table thead th {
@@ -208,7 +213,7 @@
 {% endif %}
 
 <!-- ===== هدر صفحه ===== -->
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
     <div>
         <h4 class="mb-1">
             <i class="bi bi-envelope-paper text-primary"></i>
@@ -219,7 +224,7 @@
         </h4>
         <small class="text-muted">جستجو و مدیریت درخواست‌های مرخصی کارکنان</small>
     </div>
-    <div class="d-flex gap-2">
+    <div class="d-flex gap-2 flex-wrap">
         <a href="/admin/leave-requests/register" class="btn btn-success btn-sm">
             <i class="bi bi-person-plus"></i> ثبت مرخصی برای کاربر
         </a>
@@ -381,7 +386,7 @@
         <span class="badge bg-primary result-badge">{{ total_count }} مورد</span>
     </div>
     <div class="card-body">
-        <div class="table-responsive">
+        <div class="table-responsive d-none d-md-block">
             <table class="table table-hover table-striped">
                 <thead>
                 <tr>
@@ -551,6 +556,80 @@
                 {% endfor %}
                 </tbody>
             </table>
+        </div>
+
+        <div class="d-md-none leave-mobile-list">
+            {% for item in requests %}
+            <div class="border rounded-3 p-3 mb-3 {% if item.request.status == 'P' %}border-warning{% endif %}">
+                <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                    <div>
+                        <div class="fw-bold">{{ item.full_name }}</div>
+                        <small class="text-muted">{{ item.request.user_id }}</small>
+                    </div>
+                    <div>
+                        {% if item.request.status == 'P' %}
+                        <span class="badge bg-warning text-dark">در انتظار</span>
+                        {% elif item.request.status == 'A' %}
+                        <span class="badge bg-success">تایید شده</span>
+                        {% elif item.request.status == 'R' %}
+                        <span class="badge bg-danger">رد شده</span>
+                        {% elif item.request.status == 'D' %}
+                        <span class="badge bg-secondary">حذف شده</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="d-flex flex-wrap gap-2 small mb-2">
+                    {% if item.request.leave_type == 'AL' %}
+                    <span class="badge bg-success">استحقاقی</span>
+                    {% elif item.request.leave_type == 'SL' %}
+                    <span class="badge bg-info text-dark">استعلاجی</span>
+                    {% elif item.request.leave_type == 'UL' %}
+                    <span class="badge bg-danger">بدون حقوق</span>
+                    {% elif item.request.leave_type == 'HL' %}
+                    <span class="badge text-white" style="background-color: #0f766e;">ساعتی</span>
+                    {% else %}
+                    <span class="badge bg-secondary">{{ item.leave_type_name }}</span>
+                    {% endif %}
+                    {% if item.travel_detail %}
+                    <span class="badge bg-primary"><i class="bi bi-airplane"></i> توراهی</span>
+                    {% endif %}
+                    <span>از {{ item.from_j }}</span>
+                    <span>تا {{ item.to_j }}</span>
+                    <span class="fw-bold">
+                        {% if item.request.leave_type == 'HL' %}-{% else %}{{ item.request.days_count }} روز{% endif %}
+                    </span>
+                    {% if item.request.status == 'P' %}
+                    <span class="badge {% if item.current_balance >= item.request.days_count %}bg-success{% else %}bg-danger{% endif %}">
+                        مانده {{ item.current_balance }}
+                    </span>
+                    {% endif %}
+                </div>
+                {% if item.request.reason %}
+                <div class="small text-muted mb-2">{{ item.request.reason }}</div>
+                {% endif %}
+                <div class="d-flex flex-wrap gap-2 leave-mobile-actions">
+                    <a href="/admin/leave-requests/{{ item.request.id }}/edit" class="btn btn-outline-primary">ویرایش</a>
+                    {% if item.request.status == 'P' %}
+                    <form method="post" action="/admin/leave-requests/{{ item.request.id }}/approve" class="d-inline">
+                        <button type="submit" class="btn btn-success">تایید</button>
+                    </form>
+                    <form method="post" action="/admin/leave-requests/{{ item.request.id }}/reject" class="d-inline">
+                        <button type="submit" class="btn btn-warning">رد</button>
+                    </form>
+                    {% endif %}
+                    <form method="post" action="/admin/leave-requests/{{ item.request.id }}/delete" class="d-inline"
+                          onsubmit="return confirm('آیا از حذف این درخواست مرخصی مطمئن هستید؟ این عمل قابل بازگشت نیست.');">
+                        <button type="submit" class="btn btn-outline-danger">حذف</button>
+                    </form>
+                    {% if item.request.status == 'P' and item.travel_detail %}
+                    <button type="button" class="btn btn-outline-warning" data-bs-toggle="modal"
+                            data-bs-target="#tlOverrideModal{{ item.request.id }}">
+                        تغییر روز توراهی
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
         </div>
 
         <!-- جمع کل -->

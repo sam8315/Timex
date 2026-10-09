@@ -387,9 +387,12 @@
                 overflow-y: auto;
             }
 
-            .sidebar-logo {
-                padding: 20px;
+            .sidebar-brand {
                 border-bottom: 1px solid var(--border-color);
+            }
+
+            .sidebar-logo {
+                padding: 20px 20px 12px;
                 display: flex;
                 align-items: center;
                 gap: 12px;
@@ -431,12 +434,59 @@
             }
 
             .sidebar-section-title {
+                display: flex;
+                align-items: center;
+                width: 100%;
+                border: none;
+                background: transparent;
                 font-size: 0.68rem;
                 font-weight: 700;
                 color: var(--text-muted);
                 text-transform: uppercase;
                 letter-spacing: 0.5px;
                 padding: 0 12px 8px;
+                text-align: right;
+                cursor: pointer;
+            }
+
+            .sidebar-section-title:hover {
+                color: var(--text-primary);
+            }
+
+            .sidebar-section-chevron {
+                margin-right: auto;
+                font-size: 0.75rem;
+                transition: transform 0.2s ease;
+            }
+
+            .sidebar-section-title[aria-expanded="true"] .sidebar-section-chevron {
+                transform: rotate(180deg);
+            }
+
+            .sidebar-section-body.is-collapsed {
+                display: none;
+            }
+
+            .sidebar-sections-toggle {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 6px;
+                width: calc(100% - 24px);
+                margin: 0 12px 12px;
+                padding: 6px 10px;
+                border: 1px solid var(--border-color);
+                border-radius: 10px;
+                background: var(--bg-hover);
+                color: var(--text-secondary);
+                font-size: 0.75rem;
+                font-weight: 600;
+                cursor: pointer;
+            }
+
+            .sidebar-sections-toggle:hover {
+                background: var(--primary-soft);
+                color: var(--primary);
             }
 
             .sidebar-link {
@@ -930,19 +980,30 @@
 <!-- 🎨 Sidebar (سمت راست) -->
 <aside class="app-sidebar" id="appSidebar">
     <!-- لوگو -->
-    <a href="/dashboard" class="sidebar-logo">
-        <div class="logo-icon">
-            <i class="bi bi-clock-history"></i>
-        </div>
-        <div>
-            <div class="logo-text">Timex</div>
-            <div class="logo-sub">سامانه حضور و غیاب</div>
-        </div>
-    </a>
+    <div class="sidebar-brand">
+        <a href="/dashboard" class="sidebar-logo">
+            <div class="logo-icon">
+                <i class="bi bi-clock-history"></i>
+            </div>
+            <div>
+                <div class="logo-text">Timex</div>
+                <div class="logo-sub">سامانه حضور و غیاب</div>
+            </div>
+        </a>
+        <button type="button" id="toggleSidebarSections" class="sidebar-sections-toggle" title="جمع کردن منوها">
+            <i class="bi bi-chevron-bar-up" id="toggleSidebarSectionsIcon"></i>
+            <span id="toggleSidebarSectionsLabel">جمع کردن منوها</span>
+        </button>
+    </div>
 
     <!-- منوی اصلی -->
     <div class="sidebar-section">
-        <div class="sidebar-section-title">منوی اصلی</div>
+        <button type="button" class="sidebar-section-title" data-sidebar-section="main"
+                aria-expanded="true" aria-controls="sidebarMainLinks">
+            منوی اصلی
+            <i class="bi bi-chevron-down sidebar-section-chevron"></i>
+        </button>
+        <div id="sidebarMainLinks" class="sidebar-section-body">
         <a href="/dashboard" class="sidebar-link {% if request.url.path == '/dashboard' %}active{% endif %}">
             <i class="bi bi-speedometer2"></i> داشبورد
         </a>
@@ -967,13 +1028,19 @@
         <a href="/payroll" class="sidebar-link {% if request.url.path.startswith('/payroll') %}active{% endif %}">
             <i class="bi bi-wallet2"></i> حقوق من
         </a>
+        </div>
     </div>
 
     {% set ep = user.effective_permissions if user and user.effective_permissions is not none else [] %}
     {% if user and user.is_admin %}
     <!-- منوی مدیریت -->
     <div class="sidebar-section">
-        <div class="sidebar-section-title">مدیریت</div>
+        <button type="button" class="sidebar-section-title" data-sidebar-section="admin"
+                aria-expanded="true" aria-controls="sidebarAdminLinks">
+            مدیریت
+            <i class="bi bi-chevron-down sidebar-section-chevron"></i>
+        </button>
+        <div id="sidebarAdminLinks" class="sidebar-section-body">
 
         {% if 'view_dashboard' in ep %}
         <a href="/admin/"
@@ -991,7 +1058,7 @@
 
         <!-- حضور و غیاب -->
         {% set att_active = '/admin/attendance' in request.url.path or '/admin/incomplete' in request.url.path or
-        '/admin/daily-status' in request.url.path or '/admin/missed-attendance' in request.url.path %}
+        '/admin/missed-attendance' in request.url.path %}
         {% if 'view_all_attendance' in ep or 'view_incomplete' in ep or 'approve_missed_attendance' in ep %}
         <a class="sidebar-link {% if att_active %}active{% endif %}" data-bs-toggle="collapse" href="#attMenu"
            role="button" aria-expanded="{{ 'true' if att_active else 'false' }}">
@@ -1003,10 +1070,6 @@
             <a href="/admin/attendance"
                class="sidebar-link {% if request.url.path == '/admin/attendance' %}active{% endif %}">
                 <i class="bi bi-clock"></i> تردد کارمندان
-            </a>
-            <a href="/admin/daily-status"
-               class="sidebar-link {% if request.url.path == '/admin/daily-status' %}active{% endif %}">
-                <i class="bi bi-calendar-day"></i> مأموریت و استراحت
             </a>
             {% endif %}
             {% if 'view_incomplete' in ep %}
@@ -1025,8 +1088,9 @@
         {% endif %}
 
         <!-- مرخصی‌ها -->
-        {% set leave_active = '/admin/leave' in request.url.path or '/admin/carry-forward' in request.url.path %}
-        {% if 'approve_leave' in ep or 'view_leave_balances' in ep %}
+        {% set leave_active = '/admin/leave' in request.url.path or '/admin/carry-forward' in request.url.path
+            or '/admin/daily-status' in request.url.path %}
+        {% if 'approve_leave' in ep or 'view_leave_balances' in ep or 'view_all_attendance' in ep %}
         <a class="sidebar-link {% if leave_active %}active{% endif %}" data-bs-toggle="collapse" href="#leaveMenu"
            role="button" aria-expanded="{{ 'true' if leave_active else 'false' }}">
             <i class="bi bi-calendar2-week"></i> مرخصی‌ها
@@ -1059,13 +1123,20 @@
                 {% endif %}
             </a>
             {% endif %}
+            {% if 'view_all_attendance' in ep %}
+            <a href="/admin/daily-status"
+               class="sidebar-link {% if request.url.path == '/admin/daily-status' %}active{% endif %}">
+                <i class="bi bi-calendar-day"></i> مأموریت و استراحت
+            </a>
+            {% endif %}
         </div>
         {% endif %}
 
         <!-- قراردادها و کاربران -->
         {% set org_active = '/admin/contracts' in request.url.path or '/admin/users' in request.url.path
-            or '/admin/verifications' in request.url.path or '/admin/education' in request.url.path %}
-        {% if 'view_contracts' in ep or 'view_dashboard' in ep or 'manage_permissions' in ep or 'verify_employee_documents' in ep or 'verify_employee_relatives' in ep %}
+            or '/admin/verifications' in request.url.path or '/admin/education' in request.url.path
+            or '/admin/service-adjustments' in request.url.path %}
+        {% if 'view_contracts' in ep or 'view_dashboard' in ep or 'verify_employee_documents' in ep or 'verify_employee_relatives' in ep or 'manage_service_adjustments' in ep %}
         <a class="sidebar-link {% if org_active %}active{% endif %}" data-bs-toggle="collapse" href="#orgMenu"
            role="button" aria-expanded="{{ 'true' if org_active else 'false' }}">
             <i class="bi bi-briefcase"></i> قراردادها و کاربران
@@ -1083,12 +1154,6 @@
                 <i class="bi bi-people"></i> مدیریت کاربران
             </a>
             {% endif %}
-            {% if 'manage_permissions' in ep %}
-            <a href="/admin/permissions"
-               class="sidebar-link {% if '/permissions' in request.url.path %}active{% endif %}">
-                <i class="bi bi-shield-lock"></i> مدیریت دسترسی‌ها
-            </a>
-            {% endif %}
             {% if 'verify_employee_documents' in ep or 'verify_employee_relatives' in ep or 'view_dashboard' in ep %}
             <a href="/admin/verifications"
                class="sidebar-link {% if request.url.path == '/admin/verifications' %}active{% endif %}">
@@ -1100,6 +1165,12 @@
             <a href="/admin/verifications?kind=education"
                class="sidebar-link {% if request.url.path == '/admin/verifications' and request.query_params.get('kind') == 'education' %}active{% endif %}">
                 <i class="bi bi-mortarboard"></i> مدارک تحصیلی
+            </a>
+            {% endif %}
+            {% if 'manage_service_adjustments' in ep %}
+            <a href="/admin/service-adjustments"
+               class="sidebar-link {% if '/admin/service-adjustments' in request.url.path %}active{% endif %}">
+                <i class="bi bi-hourglass-split"></i> تعدیل خدمت
             </a>
             {% endif %}
         </div>
@@ -1140,9 +1211,9 @@
             or '/admin/cities' in request.url.path or '/admin/positions' in request.url.path
             or '/admin/employee-document-types' in request.url.path
             or '/admin/membership-types' in request.url.path
-            or '/admin/service-adjustments' in request.url.path
+            or '/permissions' in request.url.path
         %}
-        {% if 'manage_policies' in ep or 'manage_cities' in ep or 'manage_positions' in ep or 'manage_employee_document_types' in ep or 'view_contracts' in ep or 'view_leave_balances' in ep or 'manage_membership_types' in ep or 'manage_service_adjustments' in ep %}
+        {% if 'manage_policies' in ep or 'manage_cities' in ep or 'manage_positions' in ep or 'manage_employee_document_types' in ep or 'view_contracts' in ep or 'view_leave_balances' in ep or 'manage_membership_types' in ep or 'manage_permissions' in ep %}
         <a class="sidebar-link {% if set_active %}active{% endif %}" data-bs-toggle="collapse" href="#setMenu"
            role="button" aria-expanded="{{ 'true' if set_active else 'false' }}">
             <i class="bi bi-gear"></i> تنظیمات
@@ -1193,14 +1264,15 @@
                 <i class="bi bi-people"></i> انواع عضویت
             </a>
             {% endif %}
-            {% if 'manage_service_adjustments' in ep %}
-            <a href="/admin/service-adjustments"
-               class="sidebar-link {% if '/admin/service-adjustments' in request.url.path %}active{% endif %}">
-                <i class="bi bi-hourglass-split"></i> تعدیل خدمت
+            {% if 'manage_permissions' in ep %}
+            <a href="/admin/permissions"
+               class="sidebar-link {% if '/permissions' in request.url.path %}active{% endif %}">
+                <i class="bi bi-shield-lock"></i> مدیریت دسترسی‌ها
             </a>
             {% endif %}
         </div>
         {% endif %}
+        </div>
     </div>
     {% endif %}
 
@@ -1331,6 +1403,92 @@
             if (overlay) overlay.classList.remove('show');
         }
     });
+
+    // ============================================
+    // جمع و باز کردن بخش‌های منوی اصلی و مدیریت
+    // ============================================
+    (function() {
+        var STORAGE_KEY = 'timex-sidebar-sections';
+        var master = document.getElementById('toggleSidebarSections');
+        if (!master) return;
+
+        var sections = [
+            { key: 'main', bodyId: 'sidebarMainLinks' },
+            { key: 'admin', bodyId: 'sidebarAdminLinks' }
+        ];
+
+        function presentSections() {
+            return sections.filter(function(section) {
+                return document.getElementById(section.bodyId);
+            });
+        }
+
+        function readState() {
+            try {
+                var raw = localStorage.getItem(STORAGE_KEY);
+                if (!raw) return { main: true, admin: true };
+                var parsed = JSON.parse(raw);
+                return {
+                    main: parsed.main !== false,
+                    admin: parsed.admin !== false
+                };
+            } catch (e) {
+                return { main: true, admin: true };
+            }
+        }
+
+        function setExpanded(key, expanded) {
+            var bodyId = key === 'admin' ? 'sidebarAdminLinks' : 'sidebarMainLinks';
+            var body = document.getElementById(bodyId);
+            var button = document.querySelector('[data-sidebar-section="' + key + '"]');
+            if (!body) return;
+            body.classList.toggle('is-collapsed', !expanded);
+            if (button) button.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        }
+
+        function allCollapsed(state) {
+            return presentSections().every(function(section) {
+                return state[section.key] === false;
+            });
+        }
+
+        function updateMaster(state) {
+            var collapsed = allCollapsed(state);
+            var label = collapsed ? 'باز کردن منوها' : 'جمع کردن منوها';
+            master.title = label;
+            master.setAttribute('aria-label', label);
+            var text = document.getElementById('toggleSidebarSectionsLabel');
+            if (text) text.textContent = label;
+            var icon = document.getElementById('toggleSidebarSectionsIcon');
+            if (icon) icon.className = collapsed ? 'bi bi-chevron-bar-down' : 'bi bi-chevron-bar-up';
+        }
+
+        var state = readState();
+        presentSections().forEach(function(section) {
+            setExpanded(section.key, state[section.key] !== false);
+        });
+        updateMaster(state);
+
+        document.querySelectorAll('[data-sidebar-section]').forEach(function(button) {
+            button.addEventListener('click', function() {
+                var key = button.getAttribute('data-sidebar-section');
+                state[key] = state[key] === false;
+                setExpanded(key, state[key]);
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+                updateMaster(state);
+            });
+        });
+
+        master.addEventListener('click', function() {
+            var expand = allCollapsed(state);
+            presentSections().forEach(function(section) {
+                state[section.key] = expand;
+                setExpanded(section.key, expand);
+            });
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+            updateMaster(state);
+        });
+    })();
 
     // ============================================
     // 📅 Helper برای تقویم شمسی (در دسترس همه صفحات)
