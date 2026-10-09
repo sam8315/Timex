@@ -342,6 +342,34 @@ class HourlyLeavePolicy(TimestampMixin, Base):
         comment="حداکثر دقایق درخواست مرخصی ساعتی"
     )
 
+    enforce_allowed_window: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default="false",
+        nullable=False,
+        comment="اگر true: مرخصی ساعتی فقط داخل بازه allowed_start_time تا allowed_end_time مجاز است"
+    )
+
+    allowed_start_time: Mapped[Optional[time]] = mapped_column(
+        Time,
+        nullable=True,
+        comment="شروع بازه مجاز مرخصی ساعتی در همین سیاست"
+    )
+
+    allowed_end_time: Mapped[Optional[time]] = mapped_column(
+        Time,
+        nullable=True,
+        comment="پایان بازه مجاز مرخصی ساعتی در همین سیاست"
+    )
+
+    reject_attendance_overlap: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default="false",
+        nullable=False,
+        comment="اگر true: بازه مرخصی ساعتی نباید با تردد همان روز هم‌پوشانی داشته باشد"
+    )
+
     # Relationships
     user: Mapped[Optional["User"]] = relationship("User", backref="hourly_leave_policy_overrides")
 

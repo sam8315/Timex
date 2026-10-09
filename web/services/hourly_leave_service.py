@@ -18,7 +18,7 @@ import jdatetime
 
 from models.employee import Employee
 from models.attendance import (
-    AttendancePolicy, AttendancePolicyDay,
+    Attendance, AttendancePolicy, AttendancePolicyDay,
     HourlyLeavePolicy, HourlyLeaveResolution, HourlyLeaveTransaction,
 )
 from models.leave_request import LeaveRequest
@@ -105,6 +105,97 @@ def _minutes_to_time(m: int) -> time:
 def compute_requested_minutes(start_time: time, end_time: time) -> int:
     """محاسبه دقایق درخواست مرخصی ساعتی"""
     return _time_to_minutes(end_time) - _time_to_minutes(start_time)
+
+
+def _ranges_overlap(start_a: int, end_a: int, start_b: int, end_b: int) -> bool:
+    """هم‌پوشانی دو بازه دقیقه‌ای. تماس در مرز تداخل نیست."""
+    return start_a < end_b and start_b < end_a
+
+
+def presence_intervals_from_punches(records) -> List[Tuple[int, int]]:
+    """بازه‌های حضور همان روز از ترددهای مرتب‌شده.
+
+    ورود (punch=0) و خروج (punch=1) جفت می‌شوند.
+    خروج قبل از هر ورود، حضور از ابتدای روز تا آن خروج است.
+    ورود بدون خروج تا پایان روز حضور حساب می‌شود.
+    """
+    day_end = 24 * 60
+    ordered = sorted(
+        (rec for rec in records if getattr(rec, "punch", None) in (0, 1) and rec.timestamp),
+        key=lambda rec: rec.timestamp,
+    )
+    intervals: List[Tuple[int, int]] = []
+    open_enter: Optional[int] = None
+    seen_enter = False
+    for rec in ordered:
+        minute = _time_to_minutes(rec.timestamp.time())
+        if rec.punch == 0:
+            seen_enter = True
+            if open_enter is None:
+                open_enter = minute
+            continue
+        if not seen_enter:
+            if minute > 0:
+                if intervals and intervals[-1][0] == 0:
+                    intervals[-1] = (0, max(intervals[-1][1], minute))
+                else:
+                    intervals.append((0, minute))
+            continue
+        if open_enter is not None and minute > open_enter:
+            intervals.append((open_enter, minute))
+        open_enter = None
+    if open_enter is not None and open_enter < day_end:
+        intervals.append((open_enter, day_end))
+    return intervals
+
+
+def _allowed_window_error(
+    policy: HourlyLeavePolicy,
+    start_time: time,
+    end_time: time,
+) -> Optional[str]:
+    """اگر قانون بازه روشن باشد، درخواست باید کاملاً داخل آن باشد."""
+    if not policy.enforce_allowed_window:
+        return None
+    if (
+        not policy.allowed_start_time
+        or not policy.allowed_end_time
+        or policy.allowed_start_time >= policy.allowed_end_time
+    ):
+        return "بازه مجاز مرخصی ساعتی در سیاست این نوع عضویت تعریف نشده است"
+    start_min = _time_to_minutes(start_time)
+    end_min = _time_to_minutes(end_time)
+    window_start = _time_to_minutes(policy.allowed_start_time)
+    window_end = _time_to_minutes(policy.allowed_end_time)
+    if start_min < window_start or end_min > window_end:
+        return "مرخصی ساعتی فقط در بازه تعریف‌شده در سیاست مجاز است"
+    return None
+
+
+def _attendance_overlap_error(
+    db: Session,
+    user_id: str,
+    leave_date: date,
+    start_time: time,
+    end_time: time,
+    policy: HourlyLeavePolicy,
+) -> Optional[str]:
+    """اگر قانون تداخل روشن باشد، بازه مرخصی نباید با حضور همان روز هم‌پوشانی داشته باشد."""
+    if not policy.reject_attendance_overlap:
+        return None
+    records = db.query(Attendance).filter(
+        and_(
+            Attendance.user_id == user_id,
+            Attendance.is_deleted == False,
+            func.date(Attendance.timestamp) == leave_date,
+        )
+    ).all()
+    start_min = _time_to_minutes(start_time)
+    end_min = _time_to_minutes(end_time)
+    for present_start, present_end in presence_intervals_from_punches(records):
+        if _ranges_overlap(start_min, end_min, present_start, present_end):
+            return "مرخصی ساعتی با تردد ثبت‌شده تداخل دارد"
+    return None
 
 
 def format_hl_display(minutes: int) -> str:
@@ -326,6 +417,16 @@ def validate_hourly_leave_request(
         if work_end is not None and end_min > work_end:
             return False, "ساعت پایان مرخصی بعد از ساعت پایان شیفت کاری است"
 
+    window_error = _allowed_window_error(policy, start_time, end_time)
+    if window_error:
+        return False, window_error
+
+    overlap_error = _attendance_overlap_error(
+        db, employee.user_id, leave_date, start_time, end_time, policy,
+    )
+    if overlap_error:
+        return False, overlap_error
+
     # ۶. Conflict with full-day leave (AL/SL/RL/CW/UL)
     full_day_leave = db.query(LeaveRequest).filter(
         and_(
@@ -419,6 +520,22 @@ def approve_hourly_leave(
     policy = resolve_hourly_leave_policy(db, employee, leave_date)
     if not policy:
         return False, "سیاست مرخصی ساعتی یافت نشد"
+
+    window_error = _allowed_window_error(
+        policy, leave_request.start_time, leave_request.end_time,
+    )
+    if window_error:
+        return False, window_error
+    overlap_error = _attendance_overlap_error(
+        db,
+        leave_request.user_id,
+        leave_date,
+        leave_request.start_time,
+        leave_request.end_time,
+        policy,
+    )
+    if overlap_error:
+        return False, overlap_error
 
     # Jalali year/month
     j_date = jdatetime.date.fromgregorian(date=leave_date)

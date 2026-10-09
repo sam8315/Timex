@@ -81,6 +81,51 @@
             </div>
         </div>
 
+        <!-- Allowed window and attendance overlap -->
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-header bg-light">
+                    <h6 class="mb-0"><i class="bi bi-shield-check text-primary"></i> بازه مجاز و تداخل تردد</h6>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-12">
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" name="enforce_allowed_window"
+                                       id="enforceAllowedWindow" value="on"
+                                       {% if policy and policy.enforce_allowed_window %}checked{% endif %}>
+                                <label class="form-check-label fw-bold" for="enforceAllowedWindow">
+                                    فقط در بازه تعریف‌شده در سیاست
+                                </label>
+                            </div>
+                            <div class="form-text">کل مرخصی ساعتی باید داخل ساعت شروع و پایان همین سیاست باشد</div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">شروع بازه مجاز</label>
+                            <input type="time" name="allowed_start_time_str" class="form-control"
+                                   value="{{ policy.allowed_start_time.strftime('%H:%M') if policy and policy.allowed_start_time else '' }}">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">پایان بازه مجاز</label>
+                            <input type="time" name="allowed_end_time_str" class="form-control"
+                                   value="{{ policy.allowed_end_time.strftime('%H:%M') if policy and policy.allowed_end_time else '' }}">
+                        </div>
+                        <div class="col-md-12">
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" name="reject_attendance_overlap"
+                                       id="rejectAttendanceOverlap" value="on"
+                                       {% if policy and policy.reject_attendance_overlap %}checked{% endif %}>
+                                <label class="form-check-label fw-bold" for="rejectAttendanceOverlap">
+                                    تداخل با تردد ممنوع
+                                </label>
+                            </div>
+                            <div class="form-text">بازه مرخصی نباید با حضور ثبت‌شده همان روز هم‌پوشانی داشته باشد</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Hourly Leave Rules -->
         <div class="col-12">
             <div class="card shadow-sm">
@@ -191,6 +236,19 @@ document.addEventListener('DOMContentLoaded', function() {
         document.querySelectorAll('input.jalali-date').forEach(function(el) {
             window.initPersianDatePicker(el);
         });
+    }
+
+    const windowSwitch = document.getElementById('enforceAllowedWindow');
+    const windowStart = document.querySelector('input[name="allowed_start_time_str"]');
+    const windowEnd = document.querySelector('input[name="allowed_end_time_str"]');
+    function syncWindowRequired() {
+        const on = !!(windowSwitch && windowSwitch.checked);
+        if (windowStart) windowStart.required = on;
+        if (windowEnd) windowEnd.required = on;
+    }
+    if (windowSwitch) {
+        windowSwitch.addEventListener('change', syncWindowRequired);
+        syncWindowRequired();
     }
 
     // Form validation

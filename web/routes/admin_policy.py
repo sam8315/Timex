@@ -1661,6 +1661,39 @@ def parse_time(time_str: str):
         return None
 
 
+def _hourly_leave_rule_fields(
+    enforce_allowed_window: str,
+    allowed_start_time_str: str,
+    allowed_end_time_str: str,
+    reject_attendance_overlap: str,
+):
+    """بازه مجاز و قانون تداخل تردد. با روشن بودن بازه، هر دو ساعت الزامی‌اند."""
+    enforce = enforce_allowed_window == "on"
+    reject_overlap = reject_attendance_overlap == "on"
+    allowed_start = parse_time((allowed_start_time_str or "").strip())
+    allowed_end = parse_time((allowed_end_time_str or "").strip())
+    if (allowed_start_time_str or "").strip() and allowed_start is None:
+        raise ValueError("ساعت شروع بازه مجاز نامعتبر است")
+    if (allowed_end_time_str or "").strip() and allowed_end is None:
+        raise ValueError("ساعت پایان بازه مجاز نامعتبر است")
+    if enforce and (allowed_start is None or allowed_end is None):
+        raise ValueError("با روشن بودن محدودیت بازه، ساعت شروع و پایان الزامی است")
+    if allowed_start and allowed_end and allowed_start >= allowed_end:
+        raise ValueError("ساعت شروع بازه مجاز باید قبل از ساعت پایان باشد")
+    return enforce, allowed_start, allowed_end, reject_overlap
+
+
+def _allowed_window_label(policy: HourlyLeavePolicy) -> str:
+    if not policy.enforce_allowed_window:
+        return "خاموش"
+    if not policy.allowed_start_time or not policy.allowed_end_time:
+        return "تعریف نشده"
+    return (
+        f"{policy.allowed_start_time.strftime('%H:%M')}"
+        f"–{policy.allowed_end_time.strftime('%H:%M')}"
+    )
+
+
 # ============================================
 # 🆕 Phase 7: Hourly Leave Policy CRUD
 # ============================================
@@ -1701,6 +1734,8 @@ async def admin_policies_hourly_leave(
             'granularity_minutes': p.granularity_minutes,
             'min_request_minutes': p.min_request_minutes,
             'max_request_minutes': p.max_request_minutes,
+            'allowed_window_label': _allowed_window_label(p),
+            'reject_attendance_overlap': bool(p.reject_attendance_overlap),
             'is_user_override': p.user_id is not None,
         }
         if p.user_id:
@@ -1763,6 +1798,10 @@ async def admin_policies_hourly_leave_save(
     granularity_minutes: int = Form(15),
     min_request_minutes: int = Form(15),
     max_request_minutes: int = Form(240),
+    enforce_allowed_window: str = Form(""),
+    allowed_start_time_str: str = Form(""),
+    allowed_end_time_str: str = Form(""),
+    reject_attendance_overlap: str = Form(""),
     db: Session = Depends(get_db),
     user: User = Depends(require_permission("manage_policies"))
 ):
@@ -1811,6 +1850,13 @@ async def admin_policies_hourly_leave_save(
         if min_request_minutes > max_request_minutes_val:
             raise ValueError("حداقل درخواست نباید بیشتر از حداکثر باشد")
 
+        enforce_window, allowed_start, allowed_end, reject_overlap = _hourly_leave_rule_fields(
+            enforce_allowed_window,
+            allowed_start_time_str,
+            allowed_end_time_str,
+            reject_attendance_overlap,
+        )
+
         # Check overlapping active policies
         overlap_query = db.query(HourlyLeavePolicy).filter(
             HourlyLeavePolicy.employment_type_code == employment_type_code,
@@ -1845,6 +1891,10 @@ async def admin_policies_hourly_leave_save(
             granularity_minutes=granularity_minutes,
             min_request_minutes=min_request_minutes,
             max_request_minutes=max_request_minutes_val if min_request_minutes < max_request_minutes_val else None,
+            enforce_allowed_window=enforce_window,
+            allowed_start_time=allowed_start,
+            allowed_end_time=allowed_end,
+            reject_attendance_overlap=reject_overlap,
         )
         db.add(policy)
         db.commit()
@@ -1934,6 +1984,10 @@ async def admin_policies_hourly_leave_update(
     granularity_minutes: int = Form(15),
     min_request_minutes: int = Form(15),
     max_request_minutes: int = Form(240),
+    enforce_allowed_window: str = Form(""),
+    allowed_start_time_str: str = Form(""),
+    allowed_end_time_str: str = Form(""),
+    reject_attendance_overlap: str = Form(""),
     db: Session = Depends(get_db),
     user: User = Depends(require_permission("manage_policies"))
 ):
@@ -1984,6 +2038,13 @@ async def admin_policies_hourly_leave_update(
         if min_request_minutes > max_request_minutes_val:
             raise ValueError("حداقل درخواست نباید بیشتر از حداکثر باشد")
 
+        enforce_window, allowed_start, allowed_end, reject_overlap = _hourly_leave_rule_fields(
+            enforce_allowed_window,
+            allowed_start_time_str,
+            allowed_end_time_str,
+            reject_attendance_overlap,
+        )
+
         # Check overlap (exclude current)
         overlap_query = db.query(HourlyLeavePolicy).filter(
             HourlyLeavePolicy.employment_type_code == employment_type_code,
@@ -2017,6 +2078,10 @@ async def admin_policies_hourly_leave_update(
         policy.granularity_minutes = granularity_minutes
         policy.min_request_minutes = min_request_minutes
         policy.max_request_minutes = max_request_minutes_val if min_request_minutes < max_request_minutes_val else None
+        policy.enforce_allowed_window = enforce_window
+        policy.allowed_start_time = allowed_start
+        policy.allowed_end_time = allowed_end
+        policy.reject_attendance_overlap = reject_overlap
 
         db.commit()
 

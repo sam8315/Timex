@@ -14,7 +14,7 @@ NOTE on Jalali years:
 - Annual accumulation is PER Jalali YEAR (see get_annual_subject_minutes).
 """
 import pytest
-from datetime import date, time
+from datetime import date, datetime, time
 
 import jdatetime
 
@@ -22,7 +22,7 @@ from models.employee import Employee
 from models.leave_balance import LeaveBalance
 from models.leave_request import LeaveRequest
 from models.attendance import (
-    AttendancePolicy, AttendancePolicyDay,
+    Attendance, AttendancePolicy, AttendancePolicyDay,
     HourlyLeavePolicy, HourlyLeaveResolution, HourlyLeaveTransaction,
 )
 from models.daily_status import DailyStatus
@@ -131,7 +131,10 @@ def _seed_hl_policy(db, emp, *,
                     conversion=480, monthly_exempt=480, daily_limit=180,
                     entitled=True, granularity=15,
                     min_request=15, max_request=240,
-                    start=POLICY_START, end=POLICY_END):
+                    start=POLICY_START, end=POLICY_END,
+                    enforce_allowed_window=False,
+                    allowed_start=None, allowed_end=None,
+                    reject_attendance_overlap=False):
     try:
         existing = db.query(HourlyLeavePolicy).filter(
             HourlyLeavePolicy.employment_type_code == emp.department,
@@ -156,6 +159,10 @@ def _seed_hl_policy(db, emp, *,
         granularity_minutes=granularity,
         min_request_minutes=min_request,
         max_request_minutes=max_request,
+        enforce_allowed_window=enforce_allowed_window,
+        allowed_start_time=allowed_start,
+        allowed_end_time=allowed_end,
+        reject_attendance_overlap=reject_attendance_overlap,
     )
     db.add(policy)
     db.commit()
@@ -1181,3 +1188,124 @@ class TestHLPolicyCRUD:
         ).first()
         assert deleted is not None
         assert deleted.is_active is False  # soft delete
+
+
+def _seed_punches(db, user_id, day, pairs):
+    """pairs: sequence of (punch, time). punch 0=enter, 1=exit."""
+    for punch, clock in pairs:
+        db.add(Attendance(
+            user_id=user_id,
+            timestamp=datetime(day.year, day.month, day.day, clock.hour, clock.minute),
+            punch=punch,
+            source="M",
+            is_deleted=False,
+        ))
+    db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Test 21: Policy window and attendance overlap
+# ---------------------------------------------------------------------------
+class TestHourlyLeaveWindowAndAttendance:
+
+    def test_rules_off_allow_outside_window_and_overlapping_punch(self, db, make_user):
+        user = make_user(role="user", balance_al=30)
+        emp = db.query(Employee).filter(Employee.user_id == user["user_id"]).first()
+        _seed_hl_policy(
+            db, emp,
+            enforce_allowed_window=False,
+            allowed_start=time(10, 0),
+            allowed_end=time(12, 0),
+            reject_attendance_overlap=False,
+        )
+        _seed_attendance_policy(db, emp)
+        _seed_punches(db, emp.user_id, MONDAY, [(0, time(8, 0)), (1, time(12, 0))])
+
+        is_valid, error = validate_hourly_leave_request(
+            db, emp, MONDAY, time(8, 0), time(9, 0),
+        )
+        assert is_valid, error
+
+    def test_window_rejects_outside_and_accepts_inside(self, db, make_user):
+        user = make_user(role="user", balance_al=30)
+        emp = db.query(Employee).filter(Employee.user_id == user["user_id"]).first()
+        _seed_hl_policy(
+            db, emp,
+            enforce_allowed_window=True,
+            allowed_start=time(10, 0),
+            allowed_end=time(12, 0),
+        )
+        _seed_attendance_policy(db, emp)
+
+        outside, outside_err = validate_hourly_leave_request(
+            db, emp, MONDAY, time(9, 0), time(10, 30),
+        )
+        assert not outside
+        assert outside_err == "مرخصی ساعتی فقط در بازه تعریف‌شده در سیاست مجاز است"
+
+        inside, inside_err = validate_hourly_leave_request(
+            db, emp, MONDAY, time(10, 0), time(11, 0),
+        )
+        assert inside, inside_err
+
+    def test_window_without_times_is_rejected(self, db, make_user):
+        user = make_user(role="user", balance_al=30)
+        emp = db.query(Employee).filter(Employee.user_id == user["user_id"]).first()
+        _seed_hl_policy(db, emp, enforce_allowed_window=True)
+        _seed_attendance_policy(db, emp)
+
+        is_valid, error = validate_hourly_leave_request(
+            db, emp, MONDAY, time(10, 0), time(11, 0),
+        )
+        assert not is_valid
+        assert error == "بازه مجاز مرخصی ساعتی در سیاست این نوع عضویت تعریف نشده است"
+
+    def test_attendance_overlap_cases(self, db, make_user):
+        user = make_user(role="user", balance_al=30)
+        emp = db.query(Employee).filter(Employee.user_id == user["user_id"]).first()
+        _seed_hl_policy(db, emp, reject_attendance_overlap=True)
+        _seed_attendance_policy(db, emp)
+
+        _seed_punches(db, emp.user_id, MONDAY, [(0, time(8, 0)), (1, time(12, 0))])
+        overlap, overlap_err = validate_hourly_leave_request(
+            db, emp, MONDAY, time(9, 0), time(10, 0),
+        )
+        assert not overlap
+        assert overlap_err == "مرخصی ساعتی با تردد ثبت‌شده تداخل دارد"
+
+        db.query(Attendance).filter(Attendance.user_id == emp.user_id).delete()
+        db.commit()
+        _seed_punches(db, emp.user_id, MONDAY, [(0, time(7, 0)), (1, time(8, 0))])
+        before, before_err = validate_hourly_leave_request(
+            db, emp, MONDAY, time(9, 0), time(10, 0),
+        )
+        assert before, before_err
+
+        db.query(Attendance).filter(Attendance.user_id == emp.user_id).delete()
+        db.commit()
+        _seed_punches(db, emp.user_id, MONDAY, [(0, time(12, 0)), (1, time(14, 0))])
+        after, after_err = validate_hourly_leave_request(
+            db, emp, MONDAY, time(9, 0), time(10, 0),
+        )
+        assert after, after_err
+
+        db.query(Attendance).filter(Attendance.user_id == emp.user_id).delete()
+        db.commit()
+        empty, empty_err = validate_hourly_leave_request(
+            db, emp, MONDAY, time(9, 0), time(10, 0),
+        )
+        assert empty, empty_err
+
+    def test_approve_rejects_punch_added_after_request(self, db, make_user):
+        user = make_user(role="user", balance_al=30)
+        emp = db.query(Employee).filter(Employee.user_id == user["user_id"]).first()
+        _seed_hl_policy(db, emp, reject_attendance_overlap=True)
+        _seed_attendance_policy(db, emp)
+        _ensure_al(db, user["user_id"])
+
+        req = _create_hl_request(db, emp, "09:00", "10:00")
+        _seed_punches(db, emp.user_id, MONDAY, [(0, time(8, 0)), (1, time(12, 0))])
+
+        success, err = approve_hourly_leave(db, req, "admin")
+        assert success is False
+        assert err == "مرخصی ساعتی با تردد ثبت‌شده تداخل دارد"
