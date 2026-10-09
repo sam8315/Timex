@@ -1596,6 +1596,19 @@ async def edit_leave_request_form(
     })
 
 
+def _pending_leave_balance(db, user_id, year, leave_type):
+    """ماندهٔ هنوز ذخیره‌نشده با همین کلید. autoflush خاموش است و query آن را نمی‌بیند."""
+    for obj in db.new:
+        if (
+            getattr(obj, "__tablename__", None) == "leave_balances"
+            and obj.user_id == user_id
+            and obj.year == year
+            and obj.leave_type == leave_type
+        ):
+            return obj
+    return None
+
+
 @router.post("/leave-requests/{request_id}/edit")
 async def edit_leave_request_submit(
         request: Request,
@@ -1657,10 +1670,13 @@ async def edit_leave_request_submit(
             raise ValueError("تاریخ شروع باید قبل یا مساوی تاریخ پایان باشد")
 
         # محاسبه تعداد روزها
-        days_count = calculate_leave_days_admin(db, target_user_id, from_date, to_date)
-
-        if days_count <= 0:
-            raise ValueError("در بازه انتخابی، هیچ روز کاری وجود ندارد (همه تعطیل هستند)")
+        # مرخصی ساعتی با دقیقه حساب می‌شود؛ تعداد روز باید ۰ بماند (مثل ثبت اولیه)
+        if leave_type == 'HL':
+            days_count = 0
+        else:
+            days_count = calculate_leave_days_admin(db, target_user_id, from_date, to_date)
+            if days_count <= 0:
+                raise ValueError("در بازه انتخابی، هیچ روز کاری وجود ندارد (همه تعطیل هستند)")
         # Travel Leave
         tl_enabled = travel_leave_enabled == "on" and leave_type == "AL"
         tl_dest_city_id = None
@@ -1704,9 +1720,13 @@ async def edit_leave_request_submit(
                     LeaveBalance.leave_type == old_leave_type
                 )
             ).first()
+            if balance is None:
+                balance = _pending_leave_balance(
+                    db, old_user_id, old_year_j, old_leave_type
+                )
             if balance:
                 balance.balance += old_deduct_days
-            else:
+            elif old_deduct_days:
                 balance = LeaveBalance(
                     user_id=old_user_id,
                     year=old_year_j,
@@ -1802,9 +1822,13 @@ async def edit_leave_request_submit(
                     LeaveBalance.leave_type == leave_type
                 )
             ).first()
+            if balance is None:
+                balance = _pending_leave_balance(
+                    db, target_user_id, new_year_j, leave_type
+                )
             if balance:
                 balance.balance -= new_deduct_days
-            else:
+            elif new_deduct_days:
                 new_balance = LeaveBalance(
                     user_id=target_user_id,
                     year=new_year_j,
@@ -1823,7 +1847,8 @@ async def edit_leave_request_submit(
                 description=f"مرخصی ویرایش شده (درخواست #{request_id})",
                 reference_id=request_id
             )
-            db.add(new_tx)
+            if new_deduct_days:
+                db.add(new_tx)
 
             # تنظیم approved_by و approved_at اگر قبلاً تایید نشده بوده
             if old_status != 'A':
