@@ -33,6 +33,8 @@ from web.services.attendance_policy_service import (
     resolve_policy_day,
     compute_effective_required_minutes_for_day,
     compute_late_early_for_day,
+    grace_credit_minutes,
+    effective_work_hours,
 )
 from web.services.hourly_leave_service import (
     get_approved_hl_minutes,
@@ -281,6 +283,16 @@ class DetailedMonthlyReportGeneratorV2:
                 hl_intervals=hl_intervals_by_date.get(current),
             )
 
+            # کارکرد خام و اعتبار فرجه در همان رکورد روز؛
+            # سوئیچ سیاست فقط کارکرد مؤثر گزارش را عوض می‌کند.
+            punch_hours = float(work_hours)
+            grace_m = grace_credit_minutes(late_early)
+            include_grace = bool(
+                resolved and resolved.policy
+                and getattr(resolved.policy, 'include_grace_in_work', False)
+            )
+            work_hours = effective_work_hours(punch_hours, grace_m, include_grace)
+
             # محاسبه اضافی/کسری بر اساس موظفی روز + تخلف تأخیر/تعجیل
             surplus, deficit = self._calculate_surplus_deficit(
                 work_hours,
@@ -314,6 +326,8 @@ class DetailedMonthlyReportGeneratorV2:
                 'attendance_pairs': attendance_pairs,
                 'attendance_status': attendance_status,
                 'has_incomplete': has_incomplete,
+                'punch_hours': punch_hours,
+                'grace_credit_minutes': grace_m,
                 'work_hours': float(work_hours),
                 'surplus': surplus,
                 'deficit': deficit,

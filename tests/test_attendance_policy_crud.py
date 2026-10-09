@@ -10,6 +10,7 @@ Covers:
 - Authorization (non-super-admin rejected)
 - Historical delete protection (correction #5)
 """
+import re
 import pytest
 from datetime import date, time
 
@@ -104,6 +105,7 @@ class TestCreatePolicy:
             _FUTURE_START, "%Y/%m/%d").date().togregorian()
         assert p.late_allowed_minutes == 5
         assert p.late_enabled is True
+        assert p.include_grace_in_work is False
         days = db.query(AttendancePolicyDay).filter(
             AttendancePolicyDay.policy_id == p.id
         ).all()
@@ -137,6 +139,52 @@ class TestCreatePolicy:
         assert p is not None
         assert p.late_enabled is False
         assert p.late_allowed_minutes == 0
+        assert p.include_grace_in_work is False
+        _cleanup(db)
+
+    def test_create_and_update_include_grace_in_work(self, client, db, make_user):
+        _as_super(client, make_user)
+        form = client.get("/admin/policies/attendance/add")
+        assert form.status_code == 200
+        add_input = re.search(
+            r'<input[^>]*name="include_grace_in_work"[^>]*>',
+            form.text,
+        )
+        assert add_input is not None
+        assert "checked" not in add_input.group(0)
+
+        resp = client.post(
+            "/admin/policies/attendance/save",
+            data=_base_data(include_grace_in_work="on"),
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+        p = db.query(AttendancePolicy).filter(
+            AttendancePolicy.employment_type_code == "1",
+            AttendancePolicy.is_active == True,
+        ).order_by(AttendancePolicy.id.desc()).first()
+        assert p.include_grace_in_work is True
+
+        edit = client.get(f"/admin/policies/attendance/{p.id}/edit")
+        assert edit.status_code == 200
+        edit_input = re.search(
+            r'<input[^>]*name="include_grace_in_work"[^>]*>',
+            edit.text,
+        )
+        assert edit_input is not None
+        assert "checked" in edit_input.group(0)
+
+        data = _base_data()
+        data.pop("include_grace_in_work", None)
+        resp = client.post(
+            f"/admin/policies/attendance/{p.id}/update",
+            data=data,
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+        db.expire_all()
+        p2 = db.query(AttendancePolicy).filter(AttendancePolicy.id == p.id).first()
+        assert p2.include_grace_in_work is False
         _cleanup(db)
 
 

@@ -680,6 +680,34 @@ def compute_late_early_for_day(
     }
 
 
+def grace_credit_minutes(late_early: Dict) -> int:
+    """دقایق داخل فرجه که می‌توان به کارکرد اضافه کرد.
+
+    فقط سمتی که تخلفش فعال است و فاصله‌اش از فرجه بیشتر نیست (Grace کامل).
+    اگر فاصله از فرجه بگذرد اعتبار آن سمت صفر است.
+    """
+    credit = 0
+    if late_early.get('late_enabled') and not late_early.get('is_late'):
+        credit += max(0, int(late_early.get('late_minutes') or 0))
+    if late_early.get('early_leave_enabled') and not late_early.get('is_early_leave'):
+        credit += max(0, int(late_early.get('early_leave_minutes') or 0))
+    return credit
+
+
+def effective_work_hours(
+    punch_hours: float,
+    grace_minutes: int,
+    include_grace_in_work: bool,
+) -> float:
+    """کارکرد گزارش: جمع کارکرد خام و فرجه فقط وقتی سوئیچ سیاست روشن است."""
+    punch_hours = float(punch_hours or 0)
+    grace_minutes = max(0, int(grace_minutes or 0))
+    if not include_grace_in_work or grace_minutes == 0:
+        return punch_hours
+    punch_m = int(round(punch_hours * 60))
+    return (punch_m + grace_minutes) / 60.0
+
+
 # ============================================
 # 🆕 Daily Balance Computation
 # ============================================

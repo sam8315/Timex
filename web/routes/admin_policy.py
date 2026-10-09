@@ -1160,6 +1160,7 @@ async def admin_policies_attendance_save(
     early_leave_enabled: str = Form(""),
     early_leave_allowed_minutes: int = Form(0),
     early_reference_mode: str = Form("FIXED_TIME"),
+    include_grace_in_work: str = Form(""),
     # Schedule: 7 days (weekday 0-6)
     wd0_working: str = Form(""),
     wd0_start: str = Form(""),
@@ -1302,6 +1303,7 @@ async def admin_policies_attendance_save(
             early_leave_enabled=(early_leave_enabled == 'on'),
             early_leave_allowed_minutes=early_leave_allowed_minutes,
             early_leave_reference_mode=early_reference_mode,
+            include_grace_in_work=(include_grace_in_work == 'on'),
             is_active=True
         )
         db.add(policy)
@@ -1416,6 +1418,7 @@ async def admin_policies_attendance_update(
     early_leave_enabled: str = Form(""),
     early_leave_allowed_minutes: int = Form(0),
     early_reference_mode: str = Form("FIXED_TIME"),
+    include_grace_in_work: str = Form(""),
     # Schedule
     wd0_working: str = Form(""),
     wd0_start: str = Form(""),
@@ -1551,6 +1554,7 @@ async def admin_policies_attendance_update(
         policy.early_leave_enabled = (early_leave_enabled == 'on')
         policy.early_leave_allowed_minutes = early_leave_allowed_minutes
         policy.early_leave_reference_mode = early_reference_mode
+        policy.include_grace_in_work = (include_grace_in_work == 'on')
 
         # Delete existing schedule and recreate
         db.query(AttendancePolicyDay).filter(

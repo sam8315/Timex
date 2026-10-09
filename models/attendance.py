@@ -161,6 +161,14 @@ class AttendancePolicy(TimestampMixin, Base):
         comment="مرجع محاسبه خروج زود: FIXED_TIME (از Weekly Schedule) یا SHIFT (آینده)"
     )
 
+    # جمع دقایق داخل فرجه با کارکرد گزارش‌های ماهانه
+    include_grace_in_work: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        comment="اگر true: دقایق داخل فرجهٔ سمت فعال به کارکرد گزارش ماهانه اضافه می‌شود",
+    )
+
     # وضعیت فعال
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
 
