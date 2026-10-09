@@ -86,6 +86,23 @@
         padding-top: 8px;
         border-top: 1px dashed rgba(255,255,255,0.2);
     }
+    .grace-bucket {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr auto 1fr;
+        gap: 8px;
+        align-items: center;
+        margin-bottom: 14px;
+        padding: 12px;
+        border-radius: 10px;
+        background: #fff;
+        color: #0f172a;
+    }
+    .grace-bucket .gb-item { text-align: center; }
+    .grace-bucket .gb-label { display: block; font-size: 0.8rem; font-weight: 700; color: #475569; }
+    .grace-bucket .gb-value { display: block; font-size: 1.25rem; font-weight: 800; direction: ltr; unicode-bidi: embed; }
+    .grace-bucket .gb-op { font-size: 1.2rem; font-weight: 800; text-align: center; color: #334155; }
+    .grace-bucket .gb-sum .gb-value { color: #1d4ed8; }
+    .grace-bucket .gb-note { grid-column: 1 / -1; text-align: center; font-size: 0.75rem; color: #64748b; }
 
     /* 🎨 جستجوگر کاربر */
     .user-search-wrapper {
@@ -554,6 +571,26 @@
 <div class="summary-box">
     <div class="summary-title">
         <i class="bi bi-clipboard-data"></i> خلاصه ماهانه
+    </div>
+
+    <div class="grace-bucket">
+        <div class="gb-item">
+            <span class="gb-label">کارکرد واقعی</span>
+            <span class="gb-value">{% if report.summary.total_punch_hours %}{{ report.summary.total_punch_hours | hhmm }}{% else %}00:00{% endif %}</span>
+        </div>
+        <span class="gb-op">+</span>
+        <div class="gb-item">
+            <span class="gb-label">فرجه</span>
+            <span class="gb-value">{% if report.summary.total_grace_hours %}{{ report.summary.total_grace_hours | hhmm }}{% else %}00:00{% endif %}</span>
+        </div>
+        <span class="gb-op">=</span>
+        <div class="gb-item gb-sum">
+            <span class="gb-label">جمع</span>
+            <span class="gb-value">{% if report.summary.total_punch_grace_hours %}{{ report.summary.total_punch_grace_hours | hhmm }}{% else %}00:00{% endif %}</span>
+        </div>
+        {% if report.summary.total_grace_hours and not report.summary.grace_included_in_work %}
+        <div class="gb-note">این جمع در کارکرد گزارش لحاظ نشده است</div>
+        {% endif %}
     </div>
 
     <div class="row g-3">

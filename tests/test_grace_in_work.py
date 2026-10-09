@@ -8,6 +8,7 @@ from core.detailed_monthly_report_v2 import (
     DetailedMonthlyReportGeneratorV2,
     _hours_to_minutes,
     _minutes_to_hours,
+    punch_grace_totals,
 )
 from core.legal_overtime_monthly_report import build_legal_ot_summary
 from web.services.attendance_policy_service import (
@@ -198,3 +199,34 @@ def test_over_grace_credits_nothing_and_keeps_full_violation():
     assert summary['overtime_total'] == pytest.approx(0.0)
     assert summary['monthly_deficit'] == pytest.approx((20 + 25) / 60)
     assert summary['total_late_violation'] == pytest.approx(25 / 60)
+
+
+def test_summary_card_splits_punch_grace_and_sum():
+    """کارت خلاصه کارکرد واقعی، فرجه و جمع آن‌ها را جدا نشان می‌دهد."""
+    punch = _minutes_to_hours(PUNCH_MINUTES)
+    grace_m = 10
+    work = _minutes_to_hours(PUNCH_MINUTES + grace_m)
+    days = [{
+        'date': SATURDAY,
+        'work_hours': work,
+        'punch_hours': punch,
+        'grace_credit_minutes': grace_m,
+        'is_friday': False,
+        'is_holiday': False,
+        'is_day_off': False,
+        'person_status': 'P',
+        'daily_duty': _minutes_to_hours(DUTY_MINUTES),
+    }]
+    totals = punch_grace_totals(days)
+    assert _hours_to_minutes(totals['total_punch_hours']) == PUNCH_MINUTES
+    assert _hours_to_minutes(totals['total_grace_hours']) == grace_m
+    assert _hours_to_minutes(totals['total_punch_grace_hours']) == PUNCH_MINUTES + grace_m
+
+    summary = build_legal_ot_summary(days, {
+        'duty_hours': _minutes_to_hours(DUTY_MINUTES),
+        'total_work_hours': work,
+    })
+    assert summary['grace_included_in_work'] is True
+    assert _hours_to_minutes(summary['total_punch_grace_hours']) == _hours_to_minutes(
+        summary['total_work_hours']
+    )

@@ -17,6 +17,7 @@ from core.detailed_monthly_report_v2 import (
     DetailedMonthlyReportGeneratorV2,
     _hours_to_minutes,
     _minutes_to_hours,
+    punch_grace_totals,
 )
 
 WEEKLY_REQUIRED_HOURS = 44.0
@@ -217,6 +218,13 @@ def build_legal_ot_summary(days: List[Dict], base_summary: Dict) -> Dict:
     )
 
     summary = dict(base_summary)
+    summary.update(punch_grace_totals(days))
+    summary['grace_included_in_work'] = _hours_to_minutes(
+        summary.get('total_work_hours') or 0
+    ) == (
+        _hours_to_minutes(summary['total_punch_hours'])
+        + _hours_to_minutes(summary['total_grace_hours'])
+    )
     duty_m = _hours_to_minutes(summary.get('duty_hours') or 0)
     work_m = _hours_to_minutes(summary.get('total_work_hours') or 0)
     late_v_m = sum(int(d.get('late_violation_minutes') or 0) for d in days)

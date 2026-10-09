@@ -58,6 +58,23 @@ def _minutes_to_hours(minutes: int) -> float:
     return minutes / 60.0
 
 
+def punch_grace_totals(days: List[Dict]) -> Dict:
+    """جمع کارکرد واقعی، فرجه و جمع آن دو برای کارت خلاصه."""
+    punch_m = 0
+    grace_m = 0
+    for day in days:
+        if 'punch_hours' in day:
+            punch_m += _hours_to_minutes(day.get('punch_hours') or 0)
+        else:
+            punch_m += _hours_to_minutes(day.get('work_hours') or 0)
+        grace_m += int(day.get('grace_credit_minutes') or 0)
+    return {
+        'total_punch_hours': _minutes_to_hours(punch_m),
+        'total_grace_hours': _minutes_to_hours(grace_m),
+        'total_punch_grace_hours': _minutes_to_hours(punch_m + grace_m),
+    }
+
+
 # موظفی پیش‌فرض وقتی Policy نباشد: ۷:۲۰ = ۴۴۰ دقیقه (نه ۷.۳۳ شناور)
 _DEFAULT_DUTY_MINUTES = 440
 
@@ -581,6 +598,7 @@ class DetailedMonthlyReportGeneratorV2:
 
         total_duty_hours = _sum_hours('daily_duty')
         total_work_hours = _sum_hours('work_hours')
+        grace_totals = punch_grace_totals(days)
         total_morning = _sum_hours('morning_hours')
         total_evening = _sum_hours('evening_hours')
         total_night = _sum_hours('night_hours')
@@ -635,6 +653,13 @@ class DetailedMonthlyReportGeneratorV2:
             'friday_work_days': friday_work_days,
             'holiday_work_days': holiday_work_days,
             'total_work_hours': total_work_hours,
+            'total_punch_hours': grace_totals['total_punch_hours'],
+            'total_grace_hours': grace_totals['total_grace_hours'],
+            'total_punch_grace_hours': grace_totals['total_punch_grace_hours'],
+            'grace_included_in_work': _hours_to_minutes(total_work_hours) == (
+                _hours_to_minutes(grace_totals['total_punch_hours'])
+                + _hours_to_minutes(grace_totals['total_grace_hours'])
+            ),
             'total_morning': total_morning,
             'total_evening': total_evening,
             'total_night': total_night,
