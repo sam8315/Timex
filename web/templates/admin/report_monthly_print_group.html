@@ -99,22 +99,12 @@
         direction: ltr;
         unicode-bidi: embed;
     }
-    .grace-bucket {
-        display: grid;
-        grid-template-columns: 1fr auto 1fr auto 1fr;
-        gap: 4px;
-        align-items: center;
-        margin-bottom: 6px;
-        padding: 4px 6px;
-        border-radius: 6px;
-        background: #fff;
-        color: #0f172a;
+    .work-grace-note {
+        display: block;
+        font-size: 6.5pt;
+        font-weight: 600;
+        color: #cbd5e1;
     }
-    .grace-bucket .gb-item { text-align: center; }
-    .grace-bucket .gb-label { display: block; font-size: 7pt; font-weight: 700; color: #475569; }
-    .grace-bucket .gb-value { display: block; font-size: 9pt; font-weight: 800; direction: ltr; unicode-bidi: embed; }
-    .grace-bucket .gb-op { font-weight: 800; text-align: center; color: #334155; }
-    .grace-bucket .gb-sum .gb-value { color: #1d4ed8; }
     .empty-group {
         text-align: center;
         padding: 40px 16px;
@@ -377,22 +367,6 @@
 
     <div class="summary-box">
         <div class="summary-title">خلاصه ماهانه</div>
-        <div class="grace-bucket">
-            <div class="gb-item">
-                <span class="gb-label">کارکرد واقعی</span>
-                <span class="gb-value">{% if report.summary.total_punch_hours %}{{ report.summary.total_punch_hours | hhmm }}{% else %}00:00{% endif %}</span>
-            </div>
-            <span class="gb-op">+</span>
-            <div class="gb-item">
-                <span class="gb-label">فرجه</span>
-                <span class="gb-value">{% if report.summary.total_grace_hours %}{{ report.summary.total_grace_hours | hhmm }}{% else %}00:00{% endif %}</span>
-            </div>
-            <span class="gb-op">=</span>
-            <div class="gb-item gb-sum">
-                <span class="gb-label">جمع</span>
-                <span class="gb-value">{% if report.summary.total_punch_grace_hours %}{{ report.summary.total_punch_grace_hours | hhmm }}{% else %}00:00{% endif %}</span>
-            </div>
-        </div>
         <div class="row g-2">
             <div class="col-md-4">
                 <div class="summary-item"><span>موظفی:</span><span class="value">{{ report.summary.duty_days }} / {{ report.summary.duty_hours | hhmm }}</span></div>
@@ -402,7 +376,7 @@
                 <div class="summary-item"><span>غیبت:</span><span class="value">{{ report.summary.absent_days }}</span></div>
             </div>
             <div class="col-md-4">
-                <div class="summary-item"><span>کارکرد:</span><span class="value">{{ report.summary.total_work_hours | hhmm }}</span></div>
+                <div class="summary-item"><span>کارکرد:</span><span class="value">{{ report.summary.total_work_hours | hhmm }}{% if report.summary.total_grace_hours %}<span class="work-grace-note">واقعی {{ report.summary.total_punch_hours | hhmm }} + فرجه {{ report.summary.total_grace_hours | hhmm }} = {{ report.summary.total_punch_grace_hours | hhmm }}</span>{% endif %}</span></div>
                 <div class="summary-item"><span>صبح:</span><span class="value">{{ report.summary.total_morning | hhmm }}</span></div>
                 <div class="summary-item"><span>عصر:</span><span class="value">{{ report.summary.total_evening | hhmm }}</span></div>
                 <div class="summary-item"><span>شب:</span><span class="value">{{ report.summary.total_night | hhmm }}</span></div>

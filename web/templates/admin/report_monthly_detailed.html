@@ -187,24 +187,20 @@
         border-radius: 10px;
     }
 
-    .grace-bucket {
-        display: grid;
-        grid-template-columns: 1fr auto 1fr auto 1fr;
+    .work-grace-split {
+        display: flex;
+        justify-content: center;
+        align-items: flex-end;
         gap: 8px;
-        align-items: center;
-        margin-bottom: 12px;
-        padding: 12px;
-        border: 1.5px solid #64748b;
-        border-radius: 10px;
-        background: #fff;
-        color: #0f172a;
     }
-    .grace-bucket .gb-item { text-align: center; }
-    .grace-bucket .gb-label { display: block; font-size: 0.8rem; font-weight: 700; color: #475569; }
-    .grace-bucket .gb-value { display: block; font-size: 1.25rem; font-weight: 800; direction: ltr; unicode-bidi: embed; }
-    .grace-bucket .gb-op { font-size: 1.2rem; font-weight: 800; text-align: center; }
-    .grace-bucket .gb-sum .gb-value { color: #1d4ed8; }
-    .grace-bucket .gb-note { grid-column: 1 / -1; text-align: center; font-size: 0.75rem; color: #64748b; }
+    .work-grace-split .part-label { font-size: 0.72rem; font-weight: 700; }
+    .work-grace-sum {
+        margin-top: 4px;
+        padding-top: 4px;
+        border-top: 1.5px solid #94a3b8;
+        font-size: 0.78rem;
+        font-weight: 700;
+    }
 
     /* 🖨️ چاپ — کل گزارش یک نفر در یک صفحه A4 */
     @media print {
@@ -239,9 +235,6 @@
             page-break-inside: avoid;
             break-inside: avoid;
         }
-        .grace-bucket { padding: 4px !important; margin-bottom: 4px !important; }
-        .grace-bucket .gb-label { font-size: 7pt !important; }
-        .grace-bucket .gb-value { font-size: 9pt !important; }
         .screen-summary-cards {
             display: none !important;
         }
@@ -393,35 +386,15 @@
             | حضور: {{ report.summary.present_days }}
             | مرخصی: {{ report.summary.leave_days }}
             | غیبت: {{ report.summary.absent_days }}
-            | کارکرد واقعی: {% if report.summary.total_punch_hours %}{{ report.summary.total_punch_hours | hhmm }}{% else %}00:00{% endif %}
-            | فرجه: {% if report.summary.total_grace_hours %}{{ report.summary.total_grace_hours | hhmm }}{% else %}00:00{% endif %}
-            | جمع: {% if report.summary.total_punch_grace_hours %}{{ report.summary.total_punch_grace_hours | hhmm }}{% else %}00:00{% endif %}
             | کارکرد: {{ report.summary.total_work_hours | hhmm }}
+            {% if report.summary.total_grace_hours %}
+            (واقعی {{ report.summary.total_punch_hours | hhmm }} + فرجه {{ report.summary.total_grace_hours | hhmm }} = {{ report.summary.total_punch_grace_hours | hhmm }})
+            {% endif %}
             | اضافی: {{ report.summary.total_surplus | hhmm }}
             | کسری: {{ report.summary.total_deficit | hhmm }}
             | تأخیر: {{ report.summary.total_late_violation | hhmm }}
             | تعجیل: {{ report.summary.total_early_leave_violation | hhmm }}
             | {{ report.summary.overall_status }} / {{ report.summary.net_balance | hhmm }}
-        </div>
-
-        <div class="grace-bucket">
-            <div class="gb-item">
-                <span class="gb-label">کارکرد واقعی</span>
-                <span class="gb-value">{% if report.summary.total_punch_hours %}{{ report.summary.total_punch_hours | hhmm }}{% else %}00:00{% endif %}</span>
-            </div>
-            <span class="gb-op">+</span>
-            <div class="gb-item">
-                <span class="gb-label">فرجه</span>
-                <span class="gb-value">{% if report.summary.total_grace_hours %}{{ report.summary.total_grace_hours | hhmm }}{% else %}00:00{% endif %}</span>
-            </div>
-            <span class="gb-op">=</span>
-            <div class="gb-item gb-sum">
-                <span class="gb-label">جمع</span>
-                <span class="gb-value">{% if report.summary.total_punch_grace_hours %}{{ report.summary.total_punch_grace_hours | hhmm }}{% else %}00:00{% endif %}</span>
-            </div>
-            {% if report.summary.total_grace_hours and not report.summary.grace_included_in_work %}
-            <div class="gb-note">این جمع در کارکرد گزارش لحاظ نشده است</div>
-            {% endif %}
         </div>
 
         <!-- 📈 کارت‌های خلاصه -->
@@ -465,10 +438,27 @@
             <div class="col-md-3 col-6">
                 <div class="card summary-card bg-primary bg-opacity-10">
                     <div class="card-body text-center">
+                        {% if report.summary.total_grace_hours %}
+                        <div class="work-grace-split text-primary">
+                            <div>
+                                <div class="hour-value">{{ report.summary.total_punch_hours | hhmm }}</div>
+                                <div class="part-label">کارکرد واقعی</div>
+                            </div>
+                            <div class="part-label">+</div>
+                            <div>
+                                <div class="hour-value">{{ report.summary.total_grace_hours | hhmm }}</div>
+                                <div class="part-label">فرجه</div>
+                            </div>
+                        </div>
+                        <div class="work-grace-sum text-primary">
+                            جمع <span class="hour-value">{{ report.summary.total_punch_grace_hours | hhmm }}</span>
+                        </div>
+                        {% else %}
                         <div class="value text-primary">
                             <span class="hour-value">{{ report.summary.total_work_hours | hhmm }}</span>
                         </div>
                         <div class="label text-primary">مجموع ساعات کاری</div>
+                        {% endif %}
                     </div>
                 </div>
             </div>
