@@ -11,6 +11,7 @@ from urllib.parse import quote
 import jdatetime
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
+from starlette.concurrency import iterate_in_threadpool
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
@@ -335,6 +336,8 @@ async def payroll_calculate_stream(
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=404)
     if not _can_mutate_run(user, run):
         return JSONResponse({"ok": False, "error": _MUTATE_DENIED}, status_code=403)
+    # تراکنش درخواست را ببند تا محاسبه (گزارش کارکرد) با قفل ALTER/SELECT گیر نکند.
+    db.commit()
 
     def events():
         stream_db = SessionLocal()
@@ -356,7 +359,7 @@ async def payroll_calculate_stream(
             stream_db.close()
 
     return StreamingResponse(
-        events(),
+        iterate_in_threadpool(events()),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

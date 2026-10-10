@@ -80,8 +80,9 @@ def list_runs(db: Session) -> List[PayrollRun]:
     )
 
 
-def get_run(db: Session, run_id: int) -> PayrollRun:
-    ensure_payroll_defaults(db)
+def get_run(db: Session, run_id: int, *, ensure_defaults: bool = True) -> PayrollRun:
+    if ensure_defaults:
+        ensure_payroll_defaults(db)
     run = (
         db.query(PayrollRun)
         .options(
@@ -541,7 +542,8 @@ def calculate_run(db: Session, run_id: int) -> PayrollRun:
 
 def iter_calculate(db: Session, run_id: int):
     """محاسبه نفر به نفر و گزارش درصد پیشرفت."""
-    run = get_run(db, run_id)
+    # بدون ensure_payroll_defaults: ALTER وسط استریم با جلسهٔ باز درخواست قفل می‌شود.
+    run = get_run(db, run_id, ensure_defaults=False)
     if run.status not in EDITABLE_STATUSES and run.status != "draft":
         if run.status in ("approved", "published"):
             yield {
