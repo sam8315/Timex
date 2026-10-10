@@ -1238,7 +1238,8 @@ def test_submit_hourly_mission_outside_working_hours_rejected(client, db, make_u
         target = make_user(role="user", balance_al=None)
         emp = db.query(Employee).filter(
             Employee.user_id == target["user_id"]).one()
-        assert emp.department == "4"
+        assert emp.membership_type_code == "4"
+        assert emp.department_id is None
         _seed_policy(db, employment_type_code="4", enabled=True,
                      working_hours_only=True, allowed_on_holidays=True)
         _seed_attendance_policy(db, department="4",

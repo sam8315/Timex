@@ -297,25 +297,10 @@ def resolve_max_buyback(
     return default_buyback_cap_for_membership(policy_code, db=db)
 
 
-def resolve_membership_for_user(db: Session, user_id: str) -> str:
-    """عضویت مؤثر کاربر از قرارداد فعال یا Employee.department."""
-    today = date.today()
-    contracts = (
-        db.query(Contract)
-        .filter(Contract.user_id == user_id)
-        .order_by(Contract.start_date.desc())
-        .all()
-    )
-    for c in contracts:
-        if c.start_date <= today and c.is_active:
-            return resolve_membership_code_for_policy(c.contract_type_code)
-    if contracts:
-        return resolve_membership_code_for_policy(contracts[0].contract_type_code)
-
-    employee = db.query(Employee).filter(Employee.user_id == user_id).first()
-    if employee and employee.department:
-        return resolve_membership_code_for_policy(str(employee.department))
-    return '4'
+def resolve_membership_for_user(db: Session, user_id: str, on_date: Optional[date] = None) -> Optional[str]:
+    """عضویت مؤثر: قرارداد پوشش‌دهنده تاریخ، وگرنه عضویت پایه. بدون حدس از دپارتمان."""
+    from web.services.membership_resolve import resolve_employee_membership
+    return resolve_employee_membership(db, user_id, on_date or date.today()).code
 
 
 def _has_membership_rule(db: Session, membership_code: str) -> bool:
@@ -632,41 +617,13 @@ def sync_employee_department_from_active_contract(
     user_id: str,
     commit: bool = False,
 ) -> Optional[str]:
-    """
-    هم‌ترازی Employee.department با عضویت مؤثر:
-    1) قرارداد فعال امروز
-    2) در غیر این صورت آخرین رکورد بر اساس start_date
-    """
-    today = date.today()
-    contracts = (
-        db.query(Contract)
-        .filter(Contract.user_id == user_id)
-        .order_by(Contract.start_date.desc())
-        .all()
+    """نام قدیمی. فقط membership_type_code را هم‌تراز می‌کند، نه دپارتمان را."""
+    from web.services.membership_resolve import (
+        sync_employee_base_membership_from_active_contract,
     )
-    if not contracts:
-        return None
-
-    chosen = None
-    for c in contracts:
-        if c.start_date <= today and c.is_active:
-            chosen = c
-            break
-    if chosen is None:
-        chosen = contracts[0]  # آخرین بر اساس start_date
-
-    employee = db.query(Employee).filter(Employee.user_id == user_id).first()
-    if not employee:
-        return None
-
-    code = chosen.contract_type_code
-    # بدون remap: همان کد عضویت مؤثر روی department نوشته می‌شود
-    dept = resolve_membership_code_for_policy(code)
-    if employee.department != dept:
-        employee.department = dept
-        if commit:
-            db.commit()
-    return dept
+    return sync_employee_base_membership_from_active_contract(
+        db, user_id, commit=commit
+    )
 
 
 DEFAULT_REGION_CODE = 'NORMAL'

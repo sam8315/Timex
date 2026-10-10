@@ -307,7 +307,8 @@ class TestChargeAndSync:
         assert bal is not None and bal.balance == 30
 
         emp = db.query(Employee).filter_by(user_id=user["user_id"]).first()
-        assert emp.department == '4'
+        assert emp.membership_type_code == '4'
+        assert emp.department_id is None
 
     def test_membership_timeline_order(self, db, make_user):
         user = make_user(department="1", balance_al=None)

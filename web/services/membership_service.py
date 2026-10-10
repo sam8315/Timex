@@ -304,8 +304,8 @@ def count_business_dependencies(db: Session, code: str) -> dict:
         or 0
     )
     employees = (
-        db.query(func.count(Employee.user_id))
-        .filter(Employee.department == code)
+        db.query(func.count(func.distinct(Employee.user_id)))
+        .filter(Employee.membership_type_code == code)
         .scalar()
         or 0
     )

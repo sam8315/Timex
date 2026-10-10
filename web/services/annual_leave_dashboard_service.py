@@ -60,7 +60,9 @@ def build_user_annual_leave_dashboard(
             active = c
             break
     membership_code = (
-        active.contract_type_code if active else (employee.department if employee else None)
+        active.contract_type_code if active else (
+            employee.membership_type_code if employee else None
+        )
     )
     region = employee.region_code if employee else None
     live_annual = None

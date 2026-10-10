@@ -30,6 +30,26 @@ def _active_positions(db):
     ).all()
 
 
+def _active_departments(db):
+    from models.department import Department
+    return db.query(Department).filter(Department.is_active == True).order_by(
+        Department.sort_order, Department.name
+    ).all()
+
+
+def _membership_choices(db):
+    from web.services.membership_service import list_membership_types
+    return list_membership_types(db, active_only=True)
+
+
+def _choice_context(db):
+    return {
+        "positions": _active_positions(db),
+        "departments": _active_departments(db),
+        "membership_types": _membership_choices(db),
+    }
+
+
 @router.get("/admin/users/create", response_class=HTMLResponse)
 async def create_user_form(
     request: Request,
@@ -44,7 +64,7 @@ async def create_user_form(
         "csrf_token": make_csrf_token(user.user_id),
         "error": None,
         "form": {},
-        "positions": _active_positions(db),
+        **_choice_context(db),
     })
 
 
@@ -62,7 +82,8 @@ async def create_user_submit(
     marital_status: str = Form(""),
     email: str = Form(""),
     hire_date_str: str = Form(""),
-    department: str = Form(""),
+    membership_type_code: str = Form(""),
+    department_id: str = Form(""),
     position_id: str = Form(""),
     notes: str = Form(""),
     is_active: str = Form("on"),
@@ -85,8 +106,8 @@ async def create_user_submit(
         return _form_response(
             request, cur_user, msg, db,
             uid, uname, fn, ln, nc, father_name, birth_date_str,
-            gender, marital_status, email, hire_date_str, department,
-            position_id, notes,
+            gender, marital_status, email, hire_date_str, membership_type_code,
+            department_id, position_id, notes,
         )
 
     # ── اعتبارسنجی ──
@@ -116,6 +137,10 @@ async def create_user_submit(
 
     try:
         resolved_position_id = resolve_position_id(db, position_id)
+        from web.routes.admin_departments import resolve_department_id
+        from web.services.membership_resolve import resolve_membership_type_code
+        resolved_department_id = resolve_department_id(db, department_id)
+        resolved_membership = resolve_membership_type_code(db, membership_type_code)
     except ValueError as e:
         return _err(str(e))
 
@@ -143,7 +168,8 @@ async def create_user_submit(
             gender=gender or None,
             marital_status=marital_status or None,
             email=email.strip() or None,
-            department=department.strip() or None,
+            membership_type_code=resolved_membership,
+            department_id=resolved_department_id,
             position_id=resolved_position_id,
             region_code="NORMAL",
             notes=notes.strip() or None,
@@ -169,7 +195,7 @@ def _form_response(request, cur_user, error, db,
                    uid="", uname="", fn="", ln="", nc="",
                    father_name="", birth_date_str="", gender="",
                    marital_status="", email="", hire_date_str="",
-                   department="", position_id="", notes=""):
+                   membership_type_code="", department_id="", position_id="", notes=""):
     """رندر مجدد فرم با پیام خطا و مقادیر قبلی."""
     return templates.TemplateResponse(request, "admin/create_user.html", {
         "user": cur_user,
@@ -177,7 +203,7 @@ def _form_response(request, cur_user, error, db,
         "is_super_admin": True,
         "csrf_token": make_csrf_token(cur_user.user_id),
         "error": error,
-        "positions": _active_positions(db),
+        **_choice_context(db),
         "form": {
             "user_id": uid,
             "name": uname,
@@ -190,7 +216,8 @@ def _form_response(request, cur_user, error, db,
             "marital_status": marital_status,
             "email": email,
             "hire_date_str": hire_date_str,
-            "department": department,
+            "membership_type_code": membership_type_code,
+            "department_id": department_id,
             "position_id": position_id,
             "notes": notes,
         },

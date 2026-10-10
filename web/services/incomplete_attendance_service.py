@@ -131,6 +131,8 @@ def find_incomplete_attendances(
     to_date: date,
     *,
     department: Optional[str] = None,
+    membership_type: Optional[str] = None,
+    department_id: Optional[int] = None,
     issue_type: Optional[str] = None,
     include_night_shift: bool = False,
     user_id: Optional[str] = None,
@@ -183,8 +185,11 @@ def find_incomplete_attendances(
     results: List[Dict] = []
     for user_id, day in candidate_keys:
         emp = emp_by_uid.get(user_id)
-        dept = (emp.department if emp and emp.department else 'بدون گروه')
-        if department and dept != department:
+        code = (emp.membership_type_code if emp and emp.membership_type_code else 'بدون گروه')
+        wanted = membership_type or department
+        if wanted and code != wanted:
+            continue
+        if department_id is not None and (emp is None or emp.department_id != department_id):
             continue
 
         day_records = by_user_day.get((user_id, day), [])
@@ -223,7 +228,8 @@ def find_incomplete_attendances(
             'user_id': user_id,
             'name': emp.full_name if emp else user_id,
             'full_name': full_name,
-            'department': dept,
+            'department': code,
+            'membership_type_code': None if code == 'بدون گروه' else code,
             'date': day,
             'date_j': j_date.strftime('%Y/%m/%d'),
             'year_j': j_date.year,

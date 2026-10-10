@@ -123,7 +123,7 @@ def test_monthly_stats_fallback_without_contract(client, db, make_user):
     resp = client.post(
         "/reports/monthly-stats",
         data={"year": str(today_j.year), "month": str(today_j.month),
-              "department": "all"},
+              "membership_type": "all"},
     )
     assert resp.status_code == 200
     assert "معرفی" in resp.text
@@ -147,7 +147,7 @@ def test_monthly_stats_contract_markers(client, db, make_user):
     resp = client.post(
         "/reports/monthly-stats",
         data={"year": str(today_j.year), "month": str(today_j.month),
-              "department": "all"},
+              "membership_type": "all"},
     )
     assert resp.status_code == 200
     assert "معرفی" in resp.text
@@ -161,7 +161,7 @@ def test_monthly_stats_excel_exports(client, make_user):
     resp = client.get(
         "/reports/monthly-stats/excel",
         params={"year": today_j.year, "month": today_j.month,
-                "department": "all"},
+                "membership_type": "all"},
     )
     assert resp.status_code == 200
     assert "spreadsheetml" in resp.headers["content-type"]
@@ -441,7 +441,7 @@ def test_monthly_stats_route_marks_travel_leave_days(client, db, make_user):
     resp = client.post(
         "/reports/monthly-stats",
         data={"year": str(today_j.year), "month": str(today_j.month),
-              "department": "all"},
+              "membership_type": "all"},
     )
     assert resp.status_code == 200
     # Rendered day cells: two travel-leave days (first two working days,
@@ -472,7 +472,7 @@ def _generate_monthly_stats(client, admin, today_j):
     return client.post(
         "/reports/monthly-stats",
         data={"year": str(today_j.year), "month": str(today_j.month),
-              "department": "all"},
+              "membership_type": "all"},
     )
 
 
@@ -561,7 +561,7 @@ def test_monthly_stats_excel_travel_leave_presentation(
     resp = client.get(
         "/reports/monthly-stats/excel",
         params={"year": today_j.year, "month": today_j.month,
-                "department": "all"},
+                "membership_type": "all"},
     )
     assert resp.status_code == 200
 

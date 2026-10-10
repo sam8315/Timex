@@ -73,15 +73,14 @@ def build_redirect_url(referer: str, key: str, value: str) -> str:
 
 
 def calculate_leave_days(db: Session, user_id: str, from_date: date, to_date: date) -> int:
+    from web.services.membership_resolve import holiday_applies, membership_code_for
     employee = db.query(Employee).filter(Employee.user_id == user_id).first()
-    user_group = employee.department if employee else None
     days = 0
     current = from_date
     while current <= to_date:
         holiday = db.query(Holiday).filter(Holiday.holiday_date == current).first()
-        is_holiday_for_user = False
-        if holiday and (holiday.group_id is None or holiday.group_id == user_group):
-            is_holiday_for_user = True
+        code = membership_code_for(db, employee, current)
+        is_holiday_for_user = bool(holiday) and holiday_applies(holiday.group_id, code)
         is_friday = current.weekday() == 4
         if not is_holiday_for_user and not is_friday:
             days += 1

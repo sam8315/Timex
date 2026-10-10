@@ -80,6 +80,9 @@ async def holidays_page(
     # لیست سال‌ها (۵ سال اخیر و ۵ سال آینده)
     available_years = list(range(year - 2, year + 3))
 
+    from web.services.membership_service import list_membership_types
+    membership_types = list_membership_types(db, active_only=False)
+
     return templates.TemplateResponse(request, "admin/holidays.html", {
         "user": user,
         "year": year,
@@ -88,6 +91,7 @@ async def holidays_page(
         "holidays": holidays_data,
         "total_count": len(holidays_data),
         "group_names": GROUP_NAMES,
+        "membership_types": membership_types,
         "is_admin": True,
     })
 
@@ -117,12 +121,17 @@ async def add_holiday(
                 status_code=302
             )
 
+        from web.services.membership_resolve import membership_code_known
+        gid = (group_id or "").strip() or None
+        if gid and not membership_code_known(db, gid):
+            raise ValueError("نوع عضویت تعطیلی نامعتبر است")
+
         # افزودن
         holiday = Holiday(
             holiday_date=g_date,
             title=title.strip(),
-            is_national=(group_id == ""),
-            group_id=group_id if group_id else None
+            is_national=(gid is None),
+            group_id=gid,
         )
         db.add(holiday)
         db.commit()
@@ -149,9 +158,13 @@ async def edit_holiday(
     if not holiday:
         return RedirectResponse(url="/admin/holidays?error=یافت نشد", status_code=302)
 
+    from web.services.membership_resolve import membership_code_known
+    gid = (group_id or "").strip() or None
+    if gid and not membership_code_known(db, gid):
+        return RedirectResponse(url="/admin/holidays?error=نوع عضویت تعطیلی نامعتبر است", status_code=302)
     holiday.title = title.strip()
-    holiday.group_id = group_id if group_id else None
-    holiday.is_national = (group_id == "")
+    holiday.group_id = gid
+    holiday.is_national = (gid is None)
     db.commit()
 
     referer = request.headers.get("referer", "/admin/holidays")

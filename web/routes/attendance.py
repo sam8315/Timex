@@ -130,8 +130,9 @@ async def attendance_page(
     ).order_by(Attendance.timestamp).all()
 
     # 🆕 دریافت گروه کاربر (بر اساس دپارتمان) - FIXED: use employee instance
+    from web.services.membership_resolve import membership_code_for
     emp = db.query(Employee).filter(Employee.user_id == user.user_id).first()
-    user_group = emp.department if emp else None
+    user_group = membership_code_for(db, emp, month_start_g) if emp else None
 
     # 🆕 دریافت مرخصی‌های تایید شده برای بازه ماه (فقط مرخصی‌های روزانه، HL جداگانه پردازش می‌شود)
     approved_leaves = db.query(LeaveRequest).filter(

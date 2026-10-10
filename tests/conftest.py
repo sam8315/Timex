@@ -106,6 +106,8 @@ from database.init_db import (  # noqa: E402
     migrate_employee_address_range_check,
     migrate_city_region_code,
     migrate_employee_position_id,
+    migrate_department_membership_split,
+    migrate_drop_employee_department,
     migrate_employee_document_types,
     migrate_employee_relative_verification,
     migrate_employee_relative_files,
@@ -257,6 +259,8 @@ with test_engine.connect() as _conn:
 
 migrate_city_region_code(bind_engine=test_engine)
 migrate_employee_position_id(bind_engine=test_engine)
+migrate_department_membership_split(bind_engine=test_engine)
+migrate_drop_employee_department(bind_engine=test_engine)
 
 # Audit history must not be cascade-deleted: drop the legacy user_id FK
 # on the persistent test table using the real startup migration.
@@ -662,7 +666,9 @@ def make_user(db):
             department="4",
             web_enabled=True,
             region_code="NORMAL",
-            contract_type_code="4",
+            contract_type_code=None,
+            membership_type_code=None,
+            department_id=None,
             create_employee=True,
     ):
         n = next(_seq)
@@ -681,6 +687,17 @@ def make_user(db):
         # Attendance-policy tests create their own Employee row so they can
         # control department/policy resolution. Other tests need the standard
         # Employee fixture for authentication and Travel Leave integration.
+        if contract_type_code is None:
+            contract_type_code = department or "4"
+        if membership_type_code is None:
+            from models.membership_type import MembershipType
+            known = (
+                db.query(MembershipType.code)
+                .filter(MembershipType.code == str(contract_type_code))
+                .first()
+            )
+            membership_type_code = str(contract_type_code) if known else None
+
         if create_employee:
             db.add(
                 Employee(
@@ -688,7 +705,8 @@ def make_user(db):
                     national_code=national_code,
                     first_name="تست",
                     last_name=str(n),
-                    department=department,
+                    department_id=department_id,
+                    membership_type_code=membership_type_code,
                     is_active=True,
                     marital_status="S",
                     region_code=region_code,

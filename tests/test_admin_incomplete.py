@@ -353,13 +353,13 @@ class TestIncompleteRoute:
         _login_admin(client, make_user)
         q = (
             f'from_date_str={_jalali(DAY)}&to_date_str={_jalali(DAY)}'
-            f'&department=4&issue_type=missing_exit&include_night_shift=1'
+            f'&membership_type=4&issue_type=missing_exit&include_night_shift=1'
         )
         resp, ctx = _capture_incomplete(client, monkeypatch, q)
         assert resp.status_code == 200
         assert ctx['from_date_str'] == _jalali(DAY)
         assert ctx['to_date_str'] == _jalali(DAY)
-        assert ctx['department'] == '4'
+        assert ctx['membership_type'] == '4'
         assert ctx['issue_type'] == 'missing_exit'
         assert ctx['include_night_shift'] == '1'
 

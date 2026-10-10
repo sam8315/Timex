@@ -11,6 +11,8 @@ from database.engine import SessionLocal
 from models.user import User
 from models.employee import Employee
 from models.position import Position
+from models.department import Department
+from models.membership_type import MembershipType
 
 
 class EmployeeManager:
@@ -35,7 +37,8 @@ class EmployeeManager:
             marital_status: Optional[str] = None,
             email: Optional[str] = None,
             hire_date: Optional[date] = None,
-            department: Optional[str] = None,
+            membership_type_code: Optional[str] = None,
+            department_id: Optional[int] = None,
             position_id: Optional[int] = None,
             notes: Optional[str] = None
     ) -> Dict:
@@ -76,7 +79,8 @@ class EmployeeManager:
                 marital_status=marital_status,
                 email=email,
                 hire_date=hire_date,
-                department=department,
+                membership_type_code=membership_type_code,
+                department_id=department_id,
                 position_id=position_id,
                 notes=notes
             )
@@ -131,12 +135,18 @@ class EmployeeManager:
         q = self.db.query(Employee)
 
         if field == 'all':
-            q = q.outerjoin(Position, Employee.position_id == Position.id).filter(
+            q = q.outerjoin(Position, Employee.position_id == Position.id).outerjoin(
+                Department, Employee.department_id == Department.id
+            ).outerjoin(
+                MembershipType, Employee.membership_type_code == MembershipType.code
+            ).filter(
                 or_(
                     Employee.first_name.ilike(f'%{query}%'),
                     Employee.last_name.ilike(f'%{query}%'),
                     Employee.national_code.ilike(f'%{query}%'),
-                    Employee.department.ilike(f'%{query}%'),
+                    Department.name.ilike(f'%{query}%'),
+                    MembershipType.name.ilike(f'%{query}%'),
+                    Employee.membership_type_code.ilike(f'%{query}%'),
                     Position.name.ilike(f'%{query}%')
                 )
             )
@@ -150,7 +160,9 @@ class EmployeeManager:
         elif field == 'national_code':
             q = q.filter(Employee.national_code.ilike(f'%{query}%'))
         elif field == 'department':
-            q = q.filter(Employee.department.ilike(f'%{query}%'))
+            q = q.outerjoin(Department, Employee.department_id == Department.id).filter(
+                Department.name.ilike(f'%{query}%')
+            )
         elif field == 'position':
             q = q.outerjoin(Position, Employee.position_id == Position.id).filter(
                 Position.name.ilike(f'%{query}%')
@@ -159,15 +171,22 @@ class EmployeeManager:
         return q.all()
 
     def get_employees_by_department(self, department: str) -> List[Employee]:
-        """دریافت کارمندان یک دپارتمان"""
-        return self.db.query(Employee).filter(
-            Employee.department == department
+        """کارمندان یک نوع عضویت (پارامتر تاریخی) یا نام دپارتمان."""
+        by_membership = self.db.query(Employee).filter(
+            Employee.membership_type_code == department
         ).order_by(Employee.last_name).all()
+        if by_membership:
+            return by_membership
+        return self.db.query(Employee).join(
+            Department, Employee.department_id == Department.id
+        ).filter(Department.name == department).order_by(Employee.last_name).all()
 
     def get_departments(self) -> List[str]:
-        """دریافت لیست دپارتمان‌ها"""
-        results = self.db.query(Employee.department).distinct().all()
-        return sorted([r[0] for r in results if r[0]])
+        """نام دپارتمان‌های سازمانی فعال."""
+        results = self.db.query(Department.name).filter(
+            Department.is_active == True
+        ).order_by(Department.sort_order, Department.name).all()
+        return [r[0] for r in results]
 
     def get_statistics(self) -> Dict:
         """آمار کارمندان"""
@@ -205,8 +224,9 @@ class EmployeeManager:
         ).count()
 
         # تعداد دپارتمان‌ها (فقط فعال‌ها)
-        departments = self.db.query(Employee.department).filter(
-            Employee.is_active == True
+        departments = self.db.query(Employee.department_id).filter(
+            Employee.is_active == True,
+            Employee.department_id.isnot(None),
         ).distinct().count()
 
         return {
@@ -261,9 +281,10 @@ class EmployeeManager:
         دریافت نام گروه از فیلد department جدول employee
         """
         employee = self.db.query(Employee).filter(Employee.user_id == user_id).first()
-        if employee and employee.department:
-            return employee.department
-
+        if employee and employee.membership_name:
+            return employee.membership_name
+        if employee and employee.membership_type_code:
+            return employee.membership_type_code
         return "بدون گروه"
 
     @staticmethod
@@ -272,9 +293,10 @@ class EmployeeManager:
         from models.employee import Employee
 
         employee = db.query(Employee).filter(Employee.user_id == user_id).first()
-        if employee and employee.department:
-            return employee.department
-
+        if employee and employee.membership_name:
+            return employee.membership_name
+        if employee and employee.membership_type_code:
+            return employee.membership_type_code
         return "بدون گروه"
 
     def set_employee_status(

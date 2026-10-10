@@ -38,7 +38,7 @@ class ReportGenerator:
         employees_query = self.db.query(Employee).filter(Employee.is_active == True)
 
         if department is not None:
-            employees_query = employees_query.filter(Employee.department == department)
+            employees_query = employees_query.filter(Employee.membership_type_code == department)
 
         employees = employees_query.all()
 
@@ -50,7 +50,7 @@ class ReportGenerator:
             reports.append({
                 'user_id': emp.user_id,
                 'full_name': emp.full_name,
-                'department': emp.department or 'بدون گروه',  # ✅ اطمینان از وجود
+                'department': emp.membership_type_code or 'بدون گروه',
                 'present_days': monthly['status_counts'].get('P', 0),
                 'absent_days': monthly['status_counts'].get('A', 0),
                 'holiday_days': monthly['status_counts'].get('H', 0),
@@ -166,7 +166,8 @@ class ReportGenerator:
             reports.append({
                 'user_id': user_id,
                 'full_name': emp.full_name,
-                'department': emp.department or '',
+                'department': emp.department_name or '',
+                'membership': emp.membership_name or emp.membership_type_code or '',
                 # AL
                 'al_total': al_total,
                 'al_used': used_map.get('AL', 0),
@@ -209,7 +210,7 @@ class ReportGenerator:
         employees_query = self.db.query(Employee).filter(Employee.is_active == True)
 
         if department is not None:
-            employees_query = employees_query.filter(Employee.department == department)
+            employees_query = employees_query.filter(Employee.membership_type_code == department)
 
         employees = employees_query.all()
 
@@ -227,7 +228,8 @@ class ReportGenerator:
                 report.append({
                     'user_id': emp.user_id,
                     'full_name': emp.full_name,  # ✅ از employee
-                    'department': emp.department or 'بدون گروه',  # ✅ از employee
+                    'department': emp.department_name or '',
+                    'membership': emp.membership_name or emp.membership_type_code or 'بدون گروه',
                     'absent_count': len(absent_dates),
                     'absent_dates': absent_dates
                 })

@@ -96,7 +96,7 @@ def test_department_and_user_compatible(client, db, make_user):
     other_dept = make_user(role="user", department="2")
     _make_attendance(db, target["user_id"], _today_j(), 9, 0)
     login_as(client, admin["national_code"])
-    url = f"/admin/attendance?department=1&user_id={target['user_id']}"
+    url = f"/admin/attendance?membership_type=1&user_id={target['user_id']}"
     resp = client.get(url, follow_redirects=False)
     assert resp.status_code == 200
     tbody_start = resp.text.find("<tbody>")
@@ -113,7 +113,7 @@ def test_department_and_user_incompatible(client, db, make_user):
     target = make_user(role="user", department="2")
     _make_attendance(db, target["user_id"], _today_j(), 9, 0)
     login_as(client, admin["national_code"])
-    url = f"/admin/attendance?department=1&user_id={target['user_id']}"
+    url = f"/admin/attendance?membership_type=1&user_id={target['user_id']}"
     resp = client.get(url, follow_redirects=False)
     assert resp.status_code == 200
     tbody_start = resp.text.find("<tbody>")

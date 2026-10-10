@@ -23,6 +23,7 @@ from web.services.attendance_policy_service import (
     resolve_policy_day,
     time_to_minutes,
 )
+from web.services.membership_resolve import membership_code_for
 
 
 # System/default fallback (بخش ۷ راهنما)
@@ -47,13 +48,13 @@ def resolve_hourly_mission_policy(
 
     Priority:
     1. Employee Override (user_id = employee.user_id)
-    2. Employment Type Policy (employment_type_code = employee.department)
+    2. Employment Type Policy (employment_type_code = resolved membership code)
 
     Returns:
         HourlyMissionPolicy یا None اگر پیدا نشود
     """
-    employment_type = employee.department if employee else None
-    if not employment_type:
+    employment_type = membership_code_for(db, employee, target_date)
+    if not employee:
         return None
 
     # مرحله ۱: Employee Override
@@ -71,6 +72,9 @@ def resolve_hourly_mission_policy(
 
     if override:
         return override
+
+    if not employment_type:
+        return None
 
     # مرحله ۲: Employment Type Policy
     emp_policy = db.query(HourlyMissionPolicy).filter(
@@ -228,7 +232,7 @@ def is_holiday_for_employee(
 
     ترکیب:
     1. Friday: date.weekday() == 4 (Python; هفته کاری شمسی)
-    2. جدول holidays: group_id NULL (ملی) یا group_id == employee.department
+    2. جدول holidays: group_id NULL (ملی) یا group_id برابر کد عضویت همان روز
 
     AttendancePolicyDay.is_working_day جداگانه بررسی می‌شود (روز غیرکاری).
     الگو: query در calculate_daily_attendance (attendance_policy_service).
@@ -236,7 +240,7 @@ def is_holiday_for_employee(
     if target_date.weekday() == 4:  # Friday
         return True
 
-    employment_type = employee.department if employee else None
+    employment_type = membership_code_for(db, employee, target_date)
     query = db.query(Holiday).filter(Holiday.holiday_date == target_date)
     if employment_type:
         query = query.filter(

@@ -23,14 +23,21 @@ class Holiday(TimestampMixin, Base):
 
     @property
     def group_name(self) -> str:
-        """دریافت نام گروه"""
+        """نام گروه تعطیل. NULL یعنی ملی. مقدار غیرخالی کد نوع عضویت است."""
         if self.group_id is None:
             return "ملی (همه)"
-        group_names = {
-            '1': 'رسمی',
-            '2': 'وظیفه',
-            '3': 'خریدخدمت',
-            '4': 'قراردادی',
-            '5': 'پزشکی'
-        }
-        return group_names.get(self.group_id, f'گروه {self.group_id}')
+        session = None
+        try:
+            from sqlalchemy.orm import object_session
+            session = object_session(self)
+        except Exception:
+            session = None
+        if session is not None:
+            try:
+                from models.membership_type import MembershipType
+                row = session.get(MembershipType, self.group_id)
+                if row is not None:
+                    return row.name
+            except Exception:
+                pass
+        return f"گروه {self.group_id}"

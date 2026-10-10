@@ -34,16 +34,26 @@
                     </div>
                 </div>
 
-                <!-- دپارتمان -->
+                <div class="col-md-2">
+                    <label class="form-label"><i class="bi bi-person-badge"></i> نوع عضویت</label>
+                    <select name="membership_type" class="form-select">
+                        <option value="">همه</option>
+                        {% for mt in membership_types %}
+                        <option value="{{ mt.code }}" {% if membership_type == mt.code %}selected{% endif %}>
+                            {{ mt.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
                 <div class="col-md-2">
                     <label class="form-label"><i class="bi bi-building"></i> دپارتمان</label>
-                    <select name="department" class="form-select">
+                    <select name="department_id" class="form-select">
                         <option value="">همه</option>
-                        <option value="1" {% if department == '1' %}selected{% endif %}>رسمی</option>
-                        <option value="2" {% if department == '2' %}selected{% endif %}>وظیفه</option>
-                        <option value="3" {% if department == '3' %}selected{% endif %}>خریدخدمت</option>
-                        <option value="4" {% if department == '4' %}selected{% endif %}>قراردادی</option>
-                        <option value="5" {% if department == '5' %}selected{% endif %}>پزشکی</option>
+                        {% for d in departments %}
+                        <option value="{{ d.id }}" {% if department_id|string == d.id|string %}selected{% endif %}>
+                            {{ d.name }}
+                        </option>
+                        {% endfor %}
                     </select>
                 </div>
 
@@ -175,6 +185,10 @@
                 <span class="form-check-label">کد ملی</span>
             </label>
             <label class="form-check">
+                <input class="form-check-input" type="checkbox" name="fields" value="membership" checked>
+                <span class="form-check-label">نوع عضویت</span>
+            </label>
+            <label class="form-check">
                 <input class="form-check-input" type="checkbox" name="fields" value="department" checked>
                 <span class="form-check-label">دپارتمان</span>
             </label>
@@ -217,6 +231,7 @@
                         <th>کد پرسنلی</th>
                         <th>نام کامل</th>
                         <th>کد ملی</th>
+                        <th>نوع عضویت</th>
                         <th>دپارتمان</th>
                         <th>سمت</th>
                         <th class="text-center">نقش</th>
@@ -245,17 +260,15 @@
                         </td>
                         <td>{{ item.employee.national_code if item.employee else '-' }}</td>
                         <td>
-                            {% if item.employee and item.employee.department %}
-                            {% if item.employee.department == '1' %}<span class="badge bg-primary">رسمی</span>
-                            {% elif item.employee.department == '2' %}<span class="badge bg-info">وظیفه</span>
-                            {% elif item.employee.department == '3' %}<span class="badge bg-warning text-dark">خریدخدمت</span>
-                            {% elif item.employee.department == '4' %}<span class="badge bg-success">قراردادی</span>
-                            {% elif item.employee.department == '5' %}<span class="badge bg-danger">پزشکی</span>
-                            {% else %}<span class="badge bg-secondary">-</span>{% endif %}
+                            {% if item.employee and item.employee.membership_name %}
+                            <span class="badge bg-primary">{{ item.employee.membership_name }}</span>
+                            {% elif item.employee and item.employee.membership_type_code %}
+                            <span class="badge bg-secondary">{{ item.employee.membership_type_code }}</span>
                             {% else %}
                             <span class="text-muted">-</span>
                             {% endif %}
                         </td>
+                        <td>{{ item.employee.department_name if item.employee and item.employee.department_name else '—' }}</td>
                         <td>{{ item.employee.position_name if item.employee and item.employee.position_name else '—' }}</td>
                         <td class="text-center">
                             {% set role_ns = namespace(label=item.web_user.role) %}

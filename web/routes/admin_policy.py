@@ -27,30 +27,11 @@ from models.hourly_mission import HourlyMissionPolicy
 router = APIRouter()
 templates = Jinja2Templates(directory=Path(__file__).parent.parent / "templates")
 
-# Fallback انواع عضویت (تا قبل از seed؛ منبع اصلی = membership_types)
-DEPT_TYPES = [
-    ('1', 'رسمی'),
-    ('2', 'وظیفه'),
-    ('3', 'خریدخدمت'),
-    ('4', 'قراردادی'),
-    ('5', 'پزشکی'),
-    ('6', 'سایر / متفرقه'),
-    ('7', 'قرارداد با بیمه‌ها'),
-]
-DEPT_TYPES_DICT = dict(DEPT_TYPES)
-
-
 def _dept_types(db) -> list:
-    """انواع عضویت از DB؛ در صورت خالی بودن seed، fallback."""
-    try:
-        from web.services.membership_service import list_membership_types
-        # Policy admin lists need all known membership codes (incl. inactive)
-        rows = list_membership_types(db, active_only=False)
-        if rows:
-            return [(r.code, r.name) for r in rows]
-    except Exception:
-        pass
-    return list(DEPT_TYPES)
+    """گزینه‌های فرم سیاست فقط از membership_types."""
+    from web.services.membership_service import list_membership_types
+    rows = list_membership_types(db, active_only=False)
+    return [(r.code, r.name) for r in rows]
 
 
 def _dept_types_dict(db) -> dict:

@@ -114,14 +114,27 @@
                                    placeholder="1400/01/01" autocomplete="off">
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label">دپارتمان</label>
-                            <select name="department" class="form-select">
+                            <label class="form-label">نوع عضویت</label>
+                            <select name="membership_type_code" class="form-select">
                                 <option value="">-</option>
-                                <option value="1" {% if form.get('department') == '1' %}selected{% endif %}>رسمی</option>
-                                <option value="2" {% if form.get('department') == '2' %}selected{% endif %}>وظیفه</option>
-                                <option value="3" {% if form.get('department') == '3' %}selected{% endif %}>خریدخدمت</option>
-                                <option value="4" {% if form.get('department') == '4' %}selected{% endif %}>قراردادی</option>
-                                <option value="5" {% if form.get('department') == '5' %}selected{% endif %}>پزشکی</option>
+                                {% for mt in membership_types %}
+                                <option value="{{ mt.code }}"
+                                    {% if form.get('membership_type_code') == mt.code %}selected{% endif %}>
+                                    {{ mt.name }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">دپارتمان</label>
+                            <select name="department_id" class="form-select">
+                                <option value="">-</option>
+                                {% for d in departments %}
+                                <option value="{{ d.id }}"
+                                    {% if form.get('department_id')|string == d.id|string %}selected{% endif %}>
+                                    {{ d.name }}
+                                </option>
+                                {% endfor %}
                             </select>
                         </div>
                         <div class="col-md-6">

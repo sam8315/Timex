@@ -389,7 +389,7 @@ class RawReportService:
         if employee_user_id:
             employee_query = employee_query.filter(Employee.user_id == employee_user_id)
         elif employment_type != 'all':
-            employee_query = employee_query.filter(Employee.department == employment_type)
+            employee_query = employee_query.filter(Employee.membership_type_code == employment_type)
         employees = employee_query.order_by(
             Employee.first_name, Employee.last_name, Employee.user_id
         ).all()
@@ -458,7 +458,8 @@ class RawReportService:
                     continue
 
                 employee = employees_by_id.get(leave.user_id)
-                department = employee.department if employee else None
+                from web.services.membership_resolve import membership_code_for
+                department = membership_code_for(self.db, employee, leave.from_date) if employee else None
                 applicable_holidays = self._holiday_dates_for_department(
                     department, holidays_by_date
                 )
@@ -485,17 +486,21 @@ class RawReportService:
                 ).append(mission)
 
         employee_reports = []
+        from web.services.membership_resolve import membership_code_for
         for employee in employees:
-            department = employee.department
             leaves_by_date = leaves_by_user.get(employee.user_id, {})
             hourly_leaves_by_date = hourly_leaves_by_user.get(employee.user_id, {})
             hourly_missions_by_date = hourly_missions_by_user.get(employee.user_id, {})
             days = []
+            header_code = None
             for offset in range(days_count):
                 day = start_g + timedelta(days=offset)
+                day_code = membership_code_for(self.db, employee, day)
+                if header_code is None:
+                    header_code = day_code
                 days.append(self._build_day(
                     day,
-                    department,
+                    day_code,
                     holidays_by_date,
                     statuses_by_user.get(employee.user_id, {}),
                     leaves_by_date,
@@ -508,8 +513,8 @@ class RawReportService:
                 'full_name': employee.full_name,
                 'first_name': employee.first_name or '',
                 'last_name': employee.last_name or '',
-                'department': department or '',
-                'membership': self._membership_name(department),
+                'department': employee.department_name or '',
+                'membership': self._membership_name(header_code or employee.membership_type_code),
                 'hire_date_j': (
                     jdatetime.date.fromgregorian(date=employee.hire_date).strftime('%Y/%m/%d')
                     if employee.hire_date else None

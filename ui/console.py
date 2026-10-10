@@ -897,7 +897,7 @@ class ConsoleUI:
                 # دریافت اطلاعات کارمند
                 employee = analyzer.db.query(Employee).filter(Employee.user_id == item['user_id']).first()
                 if employee:
-                    dept = employee.department or 'بدون گروه'
+                    dept = employee.membership_name or employee.membership_type_code or 'بدون گروه'
                     dept_name = self._get_department_name(dept)
                     full_name = employee.full_name
                 else:
@@ -3247,7 +3247,7 @@ class ConsoleUI:
             None: 'بدون گروه',
             '': 'بدون گروه'
         }
-        return dept_map.get(str(dept_code) if dept_code else '', f'گروه {dept_code}')
+        return dept_map.get(str(dept_code) if dept_code else '', str(dept_code or 'بدون گروه'))
 
     def _show_daily_report(self):
         """گزارش وضعیت روزانه - مرتب بر اساس گروه، وضعیت و تاریخ استخدام"""
@@ -4073,7 +4073,38 @@ class ConsoleUI:
             except:
                 print("  ⚠️  تاریخ استخدام نامعتبر - نادیده گرفته شد")
 
-        department = input("  🏢 دپارتمان (اختیاری): ").strip() or None
+        from models.membership_type import MembershipType
+        from models.department import Department
+        from core.employee_manager import EmployeeManager
+        manager = EmployeeManager()
+        membership_rows = manager.db.query(MembershipType).filter(
+            MembershipType.is_active == True
+        ).order_by(MembershipType.sort_order, MembershipType.code).all()
+        print("  نوع عضویت (خالی = بدون عضویت):")
+        for mt in membership_rows:
+            print(f"    {mt.code}. {mt.name}")
+        membership_type_code = input("  کد نوع عضویت: ").strip() or None
+        if membership_type_code and not any(mt.code == membership_type_code for mt in membership_rows):
+            print("  ❌ نوع عضویت نامعتبر")
+            manager.close()
+            return
+        departments = manager.db.query(Department).filter(
+            Department.is_active == True
+        ).order_by(Department.sort_order, Department.name).all()
+        print("  دپارتمان سازمانی (خالی = بدون دپارتمان):")
+        for dept in departments:
+            print(f"    {dept.id}. {dept.name}")
+        department_raw = input("  شناسه دپارتمان: ").strip()
+        department_id = None
+        department_label = None
+        if department_raw:
+            match = next((dept for dept in departments if str(dept.id) == department_raw), None)
+            if match is None:
+                print("  ❌ دپارتمان نامعتبر")
+                manager.close()
+                return
+            department_id = match.id
+            department_label = match.name
         position_id = None
         notes = input("  📝 یادداشت (اختیاری): ").strip() or None
 
@@ -4098,16 +4129,18 @@ class ConsoleUI:
         if hire_date:
             j_hire = jdatetime.date.fromgregorian(date=hire_date)
             print(f"     • تاریخ استخدام: {j_hire.strftime('%Y/%m/%d')}")
-        if department:
-            print(f"     • دپارتمان     : {department}")
+        if membership_type_code:
+            print(f"     • نوع عضویت    : {membership_type_code}")
+        if department_label:
+            print(f"     • دپارتمان     : {department_label}")
         print("-" * 70)
 
         confirm = input("\n  آیا تایید می‌کنید؟ (بله/خیر): ").strip()
         if confirm.lower() not in ['بله', 'yes', 'y']:
             print("  ❌ عملیات لغو شد")
+            manager.close()
             return
 
-        manager = EmployeeManager()
         try:
             result = manager.add_employee(
                 user_id=user_id,
@@ -4120,7 +4153,8 @@ class ConsoleUI:
                 marital_status=marital_status,
                 email=email,
                 hire_date=hire_date,
-                department=department,
+                membership_type_code=membership_type_code,
+                department_id=department_id,
                 position_id=position_id,
                 notes=notes
             )
@@ -4154,7 +4188,7 @@ class ConsoleUI:
             print(f"\n  👤 اطلاعات کارمند:")
             print(f"     • کد پرسنلی    : {user_id}")
             print(f"     • نام کامل     : {employee.full_name}")
-            print(f"     • دپارتمان     : {employee.department or 'بدون گروه'}")
+            print(f"     • دپارتمان     : {employee.membership_name or employee.membership_type_code or 'بدون گروه'}")
 
             print(f"\n  📋 اطلاعات تکمیلی:")
             print(f"     • نام کامل     : {employee.full_name}")
@@ -4175,8 +4209,9 @@ class ConsoleUI:
             if employee.hire_date:
                 j_hire = jdatetime.date.fromgregorian(date=employee.hire_date)
                 print(f"     • تاریخ استخدام: {j_hire.strftime('%Y/%m/%d')}")
-            if employee.department:
-                print(f"     • دپارتمان     : {employee.department}")
+            if employee.membership_type_code or employee.department_name:
+                print(f"     • نوع عضویت     : {employee.membership_name or employee.membership_type_code or '-'}")
+                print(f"     • دپارتمان     : {employee.department_name or '-'}")
             if employee.position_name:
                 print(f"     • سمت          : {employee.position_name}")
 
@@ -4219,7 +4254,7 @@ class ConsoleUI:
 
             for i, emp in enumerate(employees, 1):
                 print(f"  │ {i:<4} │ {emp.user_id:<6} │ {emp.full_name[:16]:<16} │ "
-                      f"{emp.department or '-':<10} │ {emp.position_name or '-':<10} │ "
+                      f"{(emp.membership_name or emp.membership_type_code or '-'):<10} │ {emp.position_name or '-':<10} │ "
                       f"{emp.gender_name:<10} │")
 
             print("  └──────┴────────┴──────────────────┴────────────┴────────────┴────────────┘")
@@ -4267,7 +4302,7 @@ class ConsoleUI:
 
             for i, emp in enumerate(results, 1):
                 print(f"  │ {i:<4} │ {emp.user_id:<6} │ {emp.full_name[:16]:<16} │ "
-                      f"{emp.department or '-':<10} │ {emp.position_name or '-':<10} │")
+                      f"{(emp.membership_name or emp.membership_type_code or '-'):<10} │ {emp.position_name or '-':<10} │")
 
             print("  └──────┴────────┴──────────────────┴────────────┴────────────┘")
 
@@ -4675,7 +4710,7 @@ class ConsoleUI:
                     hire_str = j_hire.strftime('%Y/%m/%d')
 
                 print(f"  │ {i:<4} │ {emp.user_id:<6} │ {emp.full_name[:20]:<20} │ "
-                      f"{emp.department or '-':<10} │ {emp.position_name or '-':<10} │ {hire_str:<10} │")
+                      f"{(emp.membership_name or emp.membership_type_code or '-'):<10} │ {emp.position_name or '-':<10} │ {hire_str:<10} │")
 
             print("  └──────┴────────┴──────────────────────┴────────────┴────────────┴────────────┘")
 
@@ -4715,7 +4750,7 @@ class ConsoleUI:
                 reason = (emp.termination_reason or '-')[:20]
 
                 print(f"  │ {i:<4} │ {emp.user_id:<6} │ {emp.full_name[:20]:<20} │ "
-                      f"{emp.department or '-':<10} │ {term_date_str:<10} │ {reason:<20} │")
+                      f"{(emp.membership_name or emp.membership_type_code or '-'):<10} │ {term_date_str:<10} │ {reason:<20} │")
 
             print("  └──────┴────────┴──────────────────────┴────────────┴────────────┴──────────────────────┘")
 
@@ -5119,7 +5154,7 @@ class ConsoleUI:
             None: 'بدون گروه',
             '': 'بدون گروه'
         }
-        return dept_map.get(str(dept_code), f'گروه {dept_code}')
+        return dept_map.get(str(dept_code) if dept_code else '', str(dept_code or 'بدون گروه'))
 
     def _update_employee_info(self):
         """ویرایش اطلاعات کارمند"""
@@ -5171,7 +5206,7 @@ class ConsoleUI:
             else:
                 print(f"     • تاریخ استخدام   : -")
 
-            print(f"     • دپارتمان        : {employee.department or '-'}")
+            print(f"     • دپارتمان        : {employee.department_name or '-'}")
             print(f"     • سمت             : {employee.position_name or '-'}")
             print(f"     • وضعیت           : {employee.status_name}")
             print(f"     • یادداشت         : {employee.notes or '-'}")
@@ -5293,16 +5328,21 @@ class ConsoleUI:
                     updated = True
 
             elif field_choice == '10':
-                print("    1. رسمی")
-                print("    2. وظیفه")
-                print("    3. خریدخدمت")
-                print("    4. قراردادی")
-                print("    5. پزشکی")
-                new_value = input(f"  دپارتمان جدید [{employee.department or '-'}]: ").strip()
-                if new_value in ['1', '2', '3', '4', '5']:
-                    employee.department = new_value
+                from models.membership_type import MembershipType
+                types = manager.db.query(MembershipType).filter(
+                    MembershipType.is_active == True
+                ).order_by(MembershipType.sort_order, MembershipType.code).all()
+                for mt in types:
+                    print(f"    {mt.code}. {mt.name}")
+                current = employee.membership_type_code or '-'
+                new_value = input(f"  نوع عضویت جدید [{current}]: ").strip()
+                if not new_value:
+                    employee.membership_type_code = None
                     updated = True
-                elif new_value:
+                elif any(mt.code == new_value for mt in types):
+                    employee.membership_type_code = new_value
+                    updated = True
+                else:
                     print("  ❌ انتخاب نامعتبر")
                     return
 
@@ -5358,7 +5398,7 @@ class ConsoleUI:
                 print("-" * 70)
                 print(f"     • کد پرسنلی     : {employee.user_id}")
                 print(f"     • نام کامل        : {employee.full_name}")
-                print(f"     • دپارتمان        : {employee.department or '-'}")
+                print(f"     • دپارتمان        : {employee.department_name or '-'}")
                 print(f"     • سمت             : {employee.position_name or '-'}")
                 print(f"     • وضعیت           : {employee.status_name}")
                 print("-" * 70)

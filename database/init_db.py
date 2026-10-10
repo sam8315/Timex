@@ -1879,6 +1879,120 @@ def seed_role_permissions(bind_engine=None) -> None:
     )
 
 
+def migrate_department_membership_split(bind_engine=None) -> None:
+    """
+    Add departments, employee.department_id and employee.membership_type_code.
+
+    Schema only. Does not copy membership codes and does not create departments
+    from the legacy employee.department strings.
+    """
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
+    tables = set(inspector.get_table_names())
+    if "employee" not in tables or "membership_types" not in tables:
+        return
+
+    with target.connect() as conn:
+        if "departments" not in tables:
+            conn.execute(text(
+                """
+                CREATE TABLE departments (
+                    id SERIAL PRIMARY KEY,
+                    name VARCHAR(100) NOT NULL UNIQUE,
+                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            ))
+            conn.commit()
+            logger.info(
+                "Table created name=departments",
+                extra={"event": "database.ready"},
+            )
+
+        inspector = inspect(target)
+        columns = {row["name"] for row in inspector.get_columns("employee")}
+        if "department_id" not in columns:
+            conn.execute(text(
+                'ALTER TABLE employee ADD COLUMN department_id INTEGER NULL'
+            ))
+            conn.commit()
+        if "membership_type_code" not in columns:
+            conn.execute(text(
+                'ALTER TABLE employee ADD COLUMN membership_type_code VARCHAR(6) NULL'
+            ))
+            conn.commit()
+
+        inspector = inspect(target)
+        index_names = {idx["name"] for idx in inspector.get_indexes("employee")}
+        if "ix_employee_department_id" not in index_names:
+            conn.execute(text(
+                'CREATE INDEX ix_employee_department_id ON employee (department_id)'
+            ))
+            conn.commit()
+        if "ix_employee_membership_type_code" not in index_names:
+            conn.execute(text(
+                'CREATE INDEX ix_employee_membership_type_code '
+                'ON employee (membership_type_code)'
+            ))
+            conn.commit()
+        dept_indexes = {idx["name"] for idx in inspector.get_indexes("departments")}
+        if "ix_departments_is_active" not in dept_indexes:
+            conn.execute(text(
+                'CREATE INDEX ix_departments_is_active ON departments (is_active)'
+            ))
+            conn.commit()
+
+        inspector = inspect(target)
+        constrained = {
+            tuple(fk.get("constrained_columns") or [])
+            for fk in inspector.get_foreign_keys("employee")
+        }
+        if ("department_id",) not in constrained:
+            conn.execute(text(
+                'ALTER TABLE employee '
+                'ADD CONSTRAINT employee_department_id_fkey '
+                'FOREIGN KEY (department_id) REFERENCES departments (id) '
+                'ON DELETE SET NULL'
+            ))
+            conn.commit()
+            logger.info(
+                "Foreign key added employee.department_id -> departments.id",
+                extra={"event": "database.ready"},
+            )
+        if ("membership_type_code",) not in constrained:
+            conn.execute(text(
+                'ALTER TABLE employee '
+                'ADD CONSTRAINT fk_employee_membership_type_code '
+                'FOREIGN KEY (membership_type_code) REFERENCES membership_types (code) '
+                'ON DELETE RESTRICT'
+            ))
+            conn.commit()
+            logger.info(
+                "Foreign key added employee.membership_type_code -> membership_types.code",
+                extra={"event": "database.ready"},
+            )
+
+
+def migrate_drop_employee_department(bind_engine=None) -> None:
+    """Remove the legacy membership cache after backfill. Idempotent."""
+    bind = bind_engine or engine
+    inspector = inspect(bind)
+    if "employee" not in inspector.get_table_names():
+        return
+    columns = {col["name"] for col in inspector.get_columns("employee")}
+    if "department" not in columns:
+        return
+    with bind.begin() as conn:
+        conn.execute(text("ALTER TABLE employee DROP COLUMN IF EXISTS department"))
+    logger.info(
+        "Dropped legacy employee.department",
+        extra={"event": "database.ready"},
+    )
+
+
 def create_tables() -> None:
     """
     ساخت تمام جداول تعریف شده در مدل‌ها
@@ -1891,6 +2005,8 @@ def create_tables() -> None:
         migrate_users_role_length()
         migrate_city_region_code()
         migrate_employee_position_id()
+        migrate_department_membership_split()
+        migrate_drop_employee_department()
         migrate_employee_address_city_id()
         migrate_employee_address_history()
         migrate_employee_address_coords_pair()

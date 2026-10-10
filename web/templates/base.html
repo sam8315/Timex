@@ -1246,6 +1246,12 @@
                 <i class="bi bi-briefcase"></i> مدیریت سمت‌ها
             </a>
             {% endif %}
+            {% if 'manage_departments' in ep %}
+            <a href="/admin/departments"
+               class="sidebar-link {% if '/admin/departments' in request.url.path %}active{% endif %}">
+                <i class="bi bi-building"></i> مدیریت دپارتمان‌ها
+            </a>
+            {% endif %}
             {% if 'manage_employee_document_types' in ep %}
             <a href="/admin/employee-document-types"
                class="sidebar-link {% if '/admin/employee-document-types' in request.url.path %}active{% endif %}">

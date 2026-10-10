@@ -34,14 +34,19 @@
                 <div class="user-search-results" id="userSearchResults"></div>
             </div>
 
-            <label class="form-label small mb-0 d-inline-block" style="max-width: 70px;">🏢 دپارتمان</label>
-            <select name="department" class="form-select" style="width: 160px;">
+            <label class="form-label small mb-0 d-inline-block" style="max-width: 70px;">نوع عضویت</label>
+            <select name="membership_type" class="form-select" style="width: 160px;">
+                <option value="">همه عضویت‌ها</option>
+                {% for mt in membership_types %}
+                <option value="{{ mt.code }}" {% if membership_type == mt.code %}selected{% endif %}>{{ mt.name }}</option>
+                {% endfor %}
+            </select>
+            <label class="form-label small mb-0 d-inline-block" style="max-width: 70px;">دپارتمان</label>
+            <select name="department_id" class="form-select" style="width: 160px;">
                 <option value="">همه دپارتمان‌ها</option>
-                <option value="1" {% if department == '1' %}selected{% endif %}>رسمی</option>
-                <option value="2" {% if department == '2' %}selected{% endif %}>وظیفه</option>
-                <option value="3" {% if department == '3' %}selected{% endif %}>خریدخدمت</option>
-                <option value="4" {% if department == '4' %}selected{% endif %}>قراردادی</option>
-                <option value="5" {% if department == '5' %}selected{% endif %}>پزشکی</option>
+                {% for d in departments %}
+                <option value="{{ d.id }}" {% if department_id == d.id|string %}selected{% endif %}>{{ d.name }}</option>
+                {% endfor %}
             </select>
 
             <button type="submit" class="btn btn-primary">
@@ -49,16 +54,16 @@
             </button>
 
             <div class="d-flex align-items-center gap-2 ms-auto">
-                <a href="/admin/attendance?date_str={{ prev_date_str }}{% if department %}&department={{ department }}{% endif %}{{ user_id_query }}"
+                <a href="/admin/attendance?date_str={{ prev_date_str }}{{ filter_query }}{{ user_id_query }}"
                    class="btn btn-outline-primary btn-sm">
                     <i class="bi bi-chevron-right"></i> روز قبل
                 </a>
                 {% if not is_today %}
-                <a href="/admin/attendance{% if department %}?department={{ department }}{% endif %}{% if selected_user_id %}{% if department %}&{% else %}?{% endif %}user_id={{ selected_user_id }}{% endif %}" class="btn btn-success btn-sm">
+                <a href="/admin/attendance{{ today_query }}" class="btn btn-success btn-sm">
                     <i class="bi bi-calendar-today"></i> امروز
                 </a>
                 {% endif %}
-                <a href="/admin/attendance?date_str={{ next_date_str }}{% if department %}&department={{ department }}{% endif %}{{ user_id_query }}"
+                <a href="/admin/attendance?date_str={{ next_date_str }}{{ filter_query }}{{ user_id_query }}"
                    class="btn btn-outline-primary btn-sm">
                     روز بعد <i class="bi bi-chevron-left"></i>
                 </a>
@@ -121,6 +126,7 @@
                         <th>ردیف</th>
                         <th>کد</th>
                         <th>نام کامل</th>
+                        <th>نوع عضویت</th>
                         <th>دپارتمان</th>
                         <th>اولین ورود</th>
                         <th>آخرین خروج</th>
@@ -135,14 +141,8 @@
                         <td>{{ loop.index }}</td>
                         <td>{{ r.user_id }}</td>
                         <td>{{ r.full_name }}</td>
-                        <td>
-                            {% if r.department == '1' %}رسمی
-                            {% elif r.department == '2' %}وظیفه
-                            {% elif r.department == '3' %}خریدخدمت
-                            {% elif r.department == '4' %}قراردادی
-                            {% elif r.department == '5' %}پزشکی
-                            {% else %}-{% endif %}
-                        </td>
+                        <td>{{ r.membership_name or '-' }}</td>
+                        <td>{{ r.department_name or '—' }}</td>
                         <td>
                             {% if r.first_enter %}
                             <span class="badge bg-success">{{ r.first_enter.strftime('%H:%M') }}</span>

@@ -453,7 +453,7 @@ class TestCrossMonthHolidayRoute:
                 Holiday.holiday_date >= month_start_g,
                 Holiday.holiday_date <= month_end_g,
             ).all()
-            if h.group_id is None or h.group_id == emp.department
+            if h.group_id is None or h.group_id == emp.membership_type_code
         }
 
         visible_workdays = []

@@ -111,7 +111,7 @@ class AnalyticalReportGenerator:
 
         # فیلتر بر اساس department
         if group_id is not None:
-            employees_query = employees_query.filter(Employee.department == str(group_id))
+            employees_query = employees_query.filter(Employee.membership_type_code == str(group_id))
 
         employees = employees_query.all()
 
@@ -119,7 +119,7 @@ class AnalyticalReportGenerator:
 
         for emp in employees:
             # ✅ استفاده از department به عنوان گروه
-            department = emp.department or 'بدون گروه'
+            department = emp.membership_name or emp.membership_type_code or 'بدون گروه'
 
             # دریافت تمام رکوردهای تردد ماه
             attendances = self.db.query(Attendance).filter(

@@ -8,13 +8,13 @@ from .conftest import login_as
 
 def _seed_policy(db, emp, conversion=480, monthly_exempt=480, daily_limit=180, granularity=15, min_req=1, max_req=240):
     try:
-        for p in db.query(HourlyLeavePolicy).filter(HourlyLeavePolicy.employment_type_code == emp.department, HourlyLeavePolicy.user_id.is_(None)).all():
+        for p in db.query(HourlyLeavePolicy).filter(HourlyLeavePolicy.employment_type_code == emp.membership_type_code, HourlyLeavePolicy.user_id.is_(None)).all():
             db.delete(p)
         db.commit()
     except Exception:
         db.rollback()
     policy = HourlyLeavePolicy(
-        employment_type_code=emp.department, user_id=None,
+        employment_type_code=emp.membership_type_code, user_id=None,
         effective_from_date=date(2027,2,1), effective_to_date=date(2027,5,31),
         is_active=True, hourly_leave_entitled=True,
         max_daily_minutes=daily_limit, monthly_exempt_minutes=monthly_exempt,

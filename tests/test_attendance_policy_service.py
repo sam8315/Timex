@@ -118,12 +118,13 @@ class TestResolvePolicy:
             role='employee',
             balance_al=None,
             create_employee=False,
+            contract_type_code='1',
         )
         user_id = user['user_id']
         _cleanup_policies(db, employment_codes=['1'], user_ids=[user_id])
 
         # Create employee with department code '1'
-        emp = Employee(user_id=user_id, department='1', first_name='Test', last_name='User')
+        emp = Employee(user_id=user_id, membership_type_code='1', first_name='Test', last_name='User')
         db.add(emp)
         db.flush()
 
@@ -196,11 +197,12 @@ class TestResolvePolicy:
             role='employee',
             balance_al=None,
             create_employee=False,
+            contract_type_code='2',
         )
         user_id = user['user_id']
         _cleanup_policies(db, employment_codes=['2'], user_ids=[user_id])
 
-        emp = Employee(user_id=user_id, department='2', first_name='Test', last_name='User')
+        emp = Employee(user_id=user_id, membership_type_code='2', first_name='Test', last_name='User')
         db.add(emp)
         db.flush()
 
@@ -244,10 +246,11 @@ class TestResolvePolicy:
             role='employee',
             balance_al=None,
             create_employee=False,
+            contract_type_code='9',
         )
         user_id = user['user_id']
 
-        emp = Employee(user_id=user_id, department='9', first_name='Test', last_name='User')
+        emp = Employee(user_id=user_id, first_name='Test', last_name='User')
         db.add(emp)
         db.commit()
 
@@ -265,11 +268,12 @@ class TestResolvePolicy:
             role='employee',
             balance_al=None,
             create_employee=False,
+            contract_type_code='1',
         )
         user_id = user['user_id']
         _cleanup_policies(db, employment_codes=['1'], user_ids=[user_id])
 
-        emp = Employee(user_id=user_id, department='1', first_name='Test', last_name='User')
+        emp = Employee(user_id=user_id, membership_type_code='1', first_name='Test', last_name='User')
         db.add(emp)
         db.flush()
 
@@ -326,11 +330,12 @@ class TestResolveRequiredMinutes:
             role='employee',
             balance_al=None,
             create_employee=False,
+            contract_type_code='1',
         )
         user_id = user['user_id']
         _cleanup_policies(db, employment_codes=['1'], user_ids=[user_id])
 
-        emp = Employee(user_id=user_id, department='1', first_name='Test', last_name='User')
+        emp = Employee(user_id=user_id, membership_type_code='1', first_name='Test', last_name='User')
         db.add(emp)
         db.flush()
 
@@ -375,11 +380,12 @@ class TestResolveRequiredMinutes:
             role='employee',
             balance_al=None,
             create_employee=False,
+            contract_type_code='1',
         )
         user_id = user['user_id']
         _cleanup_policies(db, employment_codes=['1'], user_ids=[user_id])
 
-        emp = Employee(user_id=user_id, department='1', first_name='Test', last_name='User')
+        emp = Employee(user_id=user_id, membership_type_code='1', first_name='Test', last_name='User')
         db.add(emp)
         db.flush()
 

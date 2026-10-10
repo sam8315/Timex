@@ -19,6 +19,7 @@ from web.services.membership_service import (
     employment_type_options,
     membership_types_as_dict,
 )
+from web.services.membership_resolve import membership_code_for
 from core.raw_report import (
     JALALI_MONTHS,
     STATUS_FILTER_OPTIONS,
@@ -93,7 +94,7 @@ def _validate_monthly_employment_type(employment_type: str, db: Session = None) 
 def _employees_for_employment_type(db: Session, employment_type: str):
     query = db.query(Employee).filter(Employee.is_active.is_(True))
     if employment_type != 'all':
-        query = query.filter(Employee.department == employment_type)
+        query = query.filter(Employee.membership_type_code == employment_type)
     return query.order_by(
         Employee.first_name, Employee.last_name, Employee.user_id
     ).all()
@@ -335,7 +336,9 @@ def _monthly_form_context(
         {
             'user_id': emp.user_id,
             'full_name': emp.full_name,
-            'department': emp.department or '-',
+            'department': emp.membership_name or emp.membership_type_code or '-',
+            'organization': emp.department_name or '',
+            'membership': emp.membership_name or emp.membership_type_code or '-',
         }
         for emp in employees
     ]
@@ -435,7 +438,8 @@ def _raw_employee_search_data(db: Session) -> list:
             'full_name': employee.full_name,
             'national_code': employee.national_code or '',
             'card': employee.user_id,
-            'department': employee.department or '-',
+            'department': employee.membership_name or employee.membership_type_code or '-',
+            'organization': employee.department_name or '',
         }
         for employee in employees
     ]
@@ -1253,10 +1257,21 @@ from sqlalchemy import and_, func, or_
 from datetime import timedelta
 
 
-DEPT_NAMES_REPORT = {
-    '1': 'رسمی', '2': 'وظیفه', '3': 'خریدخدمت',
-    '4': 'قراردادی', '5': 'پزشکی'
-}
+def _active_departments(db):
+    from models.department import Department
+    return db.query(Department).filter(Department.is_active == True).order_by(
+        Department.sort_order, Department.name
+    ).all()
+
+
+def _optional_department_id(raw: str):
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    try:
+        return int(text)
+    except ValueError:
+        return None
 
 
 def get_month_days_count(year: int, month: int) -> int:
@@ -1485,9 +1500,14 @@ async def monthly_stats_report_form(
         "jalali_months": JALALI_MONTHS_LIST,  # ✅ لیست دیکشنری
         "current_year": current_year_j,
         "current_month": jdatetime.date.today().month,
-        "dept_names": DEPT_NAMES_REPORT,
+        "dept_names": {
+            code: info["name"]
+            for code, info in membership_types_as_dict(db, active_only=True).items()
+        },
+        "departments": _active_departments(db),
         "report": None,
-        "selected_department": "all",
+        "selected_membership": "all",
+        "selected_department_id": "",
         "is_admin": True,
     })
 
@@ -1497,7 +1517,8 @@ async def monthly_stats_report_generate(
     request: Request,
     year: int = Form(...),
     month: int = Form(...),
-    department: str = Form("all"),
+    membership_type: str = Form("all"),
+    department_id: str = Form(""),
     user: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
@@ -1522,8 +1543,11 @@ async def monthly_stats_report_generate(
                 Employee.termination_date >= month_start_g
             )
         )
-        if department != "all":
-            emp_query = emp_query.filter(Employee.department == department)
+        if membership_type != "all":
+            emp_query = emp_query.filter(Employee.membership_type_code == membership_type)
+        org_id = _optional_department_id(department_id)
+        if org_id is not None:
+            emp_query = emp_query.filter(Employee.department_id == org_id)
 
         # مرتب‌سازی بر اساس تاریخ عضویت
         employees = emp_query.order_by(Employee.hire_date, Employee.first_name).all()
@@ -1537,7 +1561,7 @@ async def monthly_stats_report_generate(
         leaves_map = build_monthly_stats_leaves_map(
             approved_leaves,
             all_holidays,
-            {emp.user_id: emp.department for emp in employees},
+            {emp.user_id: membership_code_for(db, emp, month_end_g) for emp in employees},
             month_start_g,
             month_end_g,
         )
@@ -1623,7 +1647,7 @@ async def monthly_stats_report_generate(
                 )
                 day_codes.append(code)
 
-            dept_name = DEPT_NAMES_REPORT.get(emp.department, emp.department or '-')
+            dept_name = emp.membership_name or emp.membership_type_code or '-'
 
             report_rows.append({
                 'row_num': idx,
@@ -1652,7 +1676,11 @@ async def monthly_stats_report_generate(
             "jalali_months": JALALI_MONTHS_LIST,  # ✅ لیست دیکشنری (نه JALALI_MONTHS)
             "current_year": year,
             "current_month": month,
-            "dept_names": DEPT_NAMES_REPORT,
+            "dept_names": {
+            code: info["name"]
+            for code, info in membership_types_as_dict(db, active_only=True).items()
+        },
+            "departments": _active_departments(db),
             "report": {
                 "year": year,
                 "month": month,
@@ -1661,7 +1689,8 @@ async def monthly_stats_report_generate(
                 "rows": report_rows,
                 "total_employees": len(report_rows),
             },
-            "selected_department": department,
+            "selected_membership": membership_type,
+            "selected_department_id": department_id or "",
             "is_admin": True,
             "friday_or_holiday_days": friday_or_holiday_days,
         })
@@ -1678,7 +1707,8 @@ async def monthly_stats_report_excel(
     request: Request,
     year: int = Query(...),
     month: int = Query(...),
-    department: str = Query("all"),
+    membership_type: str = Query("all"),
+    department_id: str = Query(""),
     user: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
@@ -1710,8 +1740,11 @@ async def monthly_stats_report_excel(
                 Employee.termination_date >= month_start_g
             )
         )
-        if department != "all":
-            emp_query = emp_query.filter(Employee.department == department)
+        if membership_type != "all":
+            emp_query = emp_query.filter(Employee.membership_type_code == membership_type)
+        org_id = _optional_department_id(department_id)
+        if org_id is not None:
+            emp_query = emp_query.filter(Employee.department_id == org_id)
         employees = emp_query.order_by(
             Employee.hire_date, Employee.first_name
         ).all()
@@ -1726,7 +1759,7 @@ async def monthly_stats_report_excel(
         leaves_map = build_monthly_stats_leaves_map(
             approved_leaves,
             all_holidays,
-            {emp.user_id: emp.department for emp in employees},
+            {emp.user_id: membership_code_for(db, emp, month_end_g) for emp in employees},
             month_start_g,
             month_end_g,
         )
@@ -1934,9 +1967,7 @@ async def monthly_stats_report_excel(
                 cell.fill = fill_even_row
 
             # ستون نوع عضویت
-            dept_name = DEPT_NAMES_REPORT.get(
-                emp.department, emp.department or '-'
-            )
+            dept_name = emp.membership_name or emp.membership_type_code or '-'
             cell = ws.cell(row=row_num, column=4, value=dept_name)
             cell.font = data_font
             cell.alignment = center_align

@@ -37,7 +37,18 @@ class Employee(TimestampMixin, Base):
     # اطلاعات تماس و شغلی
     email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     hire_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True, index=True)
-    department: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    department_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("departments.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    membership_type_code: Mapped[Optional[str]] = mapped_column(
+        String(6),
+        ForeignKey("membership_types.code", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
     position_id: Mapped[Optional[int]] = mapped_column(
         Integer,
         ForeignKey("positions.id", ondelete="SET NULL"),
@@ -62,6 +73,12 @@ class Employee(TimestampMixin, Base):
     # Relationships
     user = relationship("User", backref="employee")
     position_rel = relationship("Position", foreign_keys=[position_id])
+    department_rel = relationship("Department", foreign_keys=[department_id])
+    membership_type_rel = relationship(
+        "MembershipType",
+        foreign_keys=[membership_type_code],
+        primaryjoin="Employee.membership_type_code==MembershipType.code",
+    )
     # 🆕 عکس پروفایل
     photo_path: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
@@ -69,6 +86,16 @@ class Employee(TimestampMixin, Base):
     def position_name(self) -> Optional[str]:
         """نام سمت از جدول مرجع (null-safe)."""
         return self.position_rel.name if self.position_rel else None
+
+    @property
+    def department_name(self) -> Optional[str]:
+        """نام واحد سازمانی. هرگز نام نوع عضویت نیست."""
+        return self.department_rel.name if self.department_rel else None
+
+    @property
+    def membership_name(self) -> Optional[str]:
+        """نام عضویت پایه کارمند."""
+        return self.membership_type_rel.name if self.membership_type_rel else None
 
     def __repr__(self) -> str:
         status = "فعال" if self.is_active else "غیرفعال"
@@ -110,7 +137,11 @@ class Employee(TimestampMixin, Base):
             'marital_status_name': self.marital_status_name,
             'email': self.email,
             'hire_date': self.hire_date,
-            'department': self.department,
+            'department': self.department_name,
+            'department_id': self.department_id,
+            'department_name': self.department_name,
+            'membership_type_code': self.membership_type_code,
+            'membership_name': self.membership_name,
             'position_id': self.position_id,
             'position': self.position_name,
             'region_code': self.region_code,

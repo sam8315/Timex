@@ -93,10 +93,15 @@ def charge_mode(db: Session, membership_code: str) -> str:
     return CHARGE_PRORATE
 
 
-def uses_department_travel_resolve(db: Session, membership_code: str) -> bool:
-    """Travel Leave: official/conscript resolve via Employee.department (رفتار فعلی)."""
+def uses_base_membership_travel_resolve(db: Session, membership_code: str) -> bool:
+    """توراهی: رسمی/وظیفه از عضویت پایه کارمند، نه از دپارتمان."""
     profile = get_behavior_profile(db, membership_code)
     return profile in (BEHAVIOR_PERMANENT, BEHAVIOR_CONSCRIPT)
+
+
+def uses_department_travel_resolve(db: Session, membership_code: str) -> bool:
+    """نام قدیمی uses_base_membership_travel_resolve."""
+    return uses_base_membership_travel_resolve(db, membership_code)
 
 
 def default_buyback_cap(db: Session, membership_code: str) -> Optional[int]:

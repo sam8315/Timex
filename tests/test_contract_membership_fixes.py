@@ -284,4 +284,5 @@ class TestDepartmentSync:
         dept = sync_employee_department_from_active_contract(db, user["user_id"], commit=True)
         assert dept == '1'
         emp = db.query(Employee).filter_by(user_id=user["user_id"]).first()
-        assert emp.department == '1'
+        assert emp.membership_type_code == '1'
+        assert emp.department_id is None

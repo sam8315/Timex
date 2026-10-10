@@ -286,15 +286,12 @@
                         <span class="fw-bold">{{ hire_j_display or '-' }}</span>
                     </div>
                     <div class="list-group-item d-flex justify-content-between px-0">
+                        <span class="text-muted">نوع عضویت</span>
+                        <span class="fw-bold">{{ employee.membership_name or '—' }}</span>
+                    </div>
+                    <div class="list-group-item d-flex justify-content-between px-0">
                         <span class="text-muted">دپارتمان</span>
-                        <span>
-                            {% if employee.department == '1' %}<span class="badge bg-primary">رسمی</span>
-                            {% elif employee.department == '2' %}<span class="badge bg-info">وظیفه</span>
-                            {% elif employee.department == '3' %}<span class="badge bg-warning text-dark">خریدخدمت</span>
-                            {% elif employee.department == '4' %}<span class="badge bg-success">قراردادی</span>
-                            {% elif employee.department == '5' %}<span class="badge bg-danger">پزشکی</span>
-                            {% else %}<span class="badge bg-secondary">-</span>{% endif %}
-                        </span>
+                        <span class="fw-bold">{{ employee.department_name or '—' }}</span>
                     </div>
                     <div class="list-group-item d-flex justify-content-between px-0">
                         <span class="text-muted">سمت</span>

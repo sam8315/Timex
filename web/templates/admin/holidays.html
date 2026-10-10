@@ -39,14 +39,12 @@
                 <input type="text" name="title" class="form-control" placeholder="عید نوروز" required>
             </div>
             <div class="col-md-3">
-                <label class="form-label">👥 گروه</label>
+                <label class="form-label">👥 نوع عضویت</label>
                 <select name="group_id" class="form-select">
                     <option value="">ملی (همه)</option>
-                    <option value="1">رسمی</option>
-                    <option value="2">وظیفه</option>
-                    <option value="3">خریدخدمت</option>
-                    <option value="4">قراردادی</option>
-                    <option value="5">پزشکی</option>
+                    {% for mt in membership_types %}
+                    <option value="{{ mt.code }}">{{ mt.name }}</option>
+                    {% endfor %}
                 </select>
             </div>
             <div class="col-md-2">
@@ -71,11 +69,9 @@
             <select name="group_filter" class="form-select form-select-sm" style="width: auto;">
                 <option value="">همه گروه‌ها</option>
                 <option value="national" {% if group_filter == 'national' %}selected{% endif %}>ملی (همه)</option>
-                <option value="1" {% if group_filter == '1' %}selected{% endif %}>رسمی</option>
-                <option value="2" {% if group_filter == '2' %}selected{% endif %}>وظیفه</option>
-                <option value="3" {% if group_filter == '3' %}selected{% endif %}>خریدخدمت</option>
-                <option value="4" {% if group_filter == '4' %}selected{% endif %}>قراردادی</option>
-                <option value="5" {% if group_filter == '5' %}selected{% endif %}>پزشکی</option>
+                {% for mt in membership_types %}
+                <option value="{{ mt.code }}" {% if group_filter == mt.code %}selected{% endif %}>{{ mt.name }}</option>
+                {% endfor %}
             </select>
             <button type="submit" class="btn btn-primary btn-sm">
                 <i class="bi bi-search"></i> اعمال
@@ -117,19 +113,7 @@
                         </td>
                         <td>{{ h.title }}</td>
                         <td class="text-center">
-                            {% if h.group_id is none %}
-                            <span class="badge bg-primary">ملی (همه)</span>
-                            {% elif h.group_id == '1' %}
-                            <span class="badge bg-secondary">رسمی</span>
-                            {% elif h.group_id == '2' %}
-                            <span class="badge bg-info">وظیفه</span>
-                            {% elif h.group_id == '3' %}
-                            <span class="badge bg-warning text-dark">خریدخدمت</span>
-                            {% elif h.group_id == '4' %}
-                            <span class="badge bg-success">قراردادی</span>
-                            {% elif h.group_id == '5' %}
-                            <span class="badge bg-danger">پزشکی</span>
-                            {% endif %}
+                            <span class="badge bg-secondary">{{ h.group_name }}</span>
                         </td>
                         <td class="text-center">
                             <div class="btn-group btn-group-sm">
@@ -171,11 +155,9 @@
                                             <label class="form-label">👥 گروه</label>
                                             <select name="group_id" class="form-select">
                                                 <option value="" {% if h.group_id is none %}selected{% endif %}>ملی (همه)</option>
-                                                <option value="1" {% if h.group_id == '1' %}selected{% endif %}>رسمی</option>
-                                                <option value="2" {% if h.group_id == '2' %}selected{% endif %}>وظیفه</option>
-                                                <option value="3" {% if h.group_id == '3' %}selected{% endif %}>خریدخدمت</option>
-                                                <option value="4" {% if h.group_id == '4' %}selected{% endif %}>قراردادی</option>
-                                                <option value="5" {% if h.group_id == '5' %}selected{% endif %}>پزشکی</option>
+                                                {% for mt in membership_types %}
+                                                <option value="{{ mt.code }}" {% if h.group_id == mt.code %}selected{% endif %}>{{ mt.name }}</option>
+                                                {% endfor %}
                                             </select>
                                         </div>
                                     </div>

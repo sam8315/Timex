@@ -25,14 +25,21 @@
                            value="{{ to_date_str }}" placeholder="1405/05/19">
                 </div>
 <div class="col-md-2">
-    <label class="form-label">🏢 دپارتمان</label>
-    <select name="department" class="form-select">
+    <label class="form-label">نوع عضویت</label>
+    <select name="membership_type" class="form-select">
         <option value="">همه</option>
-        <option value="1" {% if department|default('') == '1' %}selected{% endif %}>رسمی</option>
-        <option value="2" {% if department|default('') == '2' %}selected{% endif %}>وظیفه</option>
-        <option value="3" {% if department|default('') == '3' %}selected{% endif %}>خریدخدمت</option>
-        <option value="4" {% if department|default('') == '4' %}selected{% endif %}>قراردادی</option>
-        <option value="5" {% if department|default('') == '5' %}selected{% endif %}>پزشکی</option>
+        {% for mt in membership_types %}
+        <option value="{{ mt.code }}" {% if membership_type == mt.code %}selected{% endif %}>{{ mt.name }}</option>
+        {% endfor %}
+    </select>
+</div>
+<div class="col-md-2">
+    <label class="form-label">دپارتمان</label>
+    <select name="department_id" class="form-select">
+        <option value="">همه</option>
+        {% for d in departments %}
+        <option value="{{ d.id }}" {% if department_id == d.id|string %}selected{% endif %}>{{ d.name }}</option>
+        {% endfor %}
     </select>
 </div>                <div class="col-md-2">
                     <label class="form-label">⚠️ نوع نقص</label>
@@ -172,7 +179,7 @@
     <div class="card-header bg-white d-flex justify-content-between align-items-center">
         <h6 class="mb-0">
             <i class="bi bi-building"></i>
-            {{ dept_names.get(dept, dept) }}
+            {{ membership_names.get(dept, dept) }}
         </h6>
         <span class="badge bg-primary">{{ items | length }} مورد</span>
     </div>

@@ -564,7 +564,8 @@ async def leave_requests_page(
         {
             'user_id': emp.user_id,
             'full_name': emp.full_name,
-            'department': emp.department or '-',
+            'department': emp.membership_name or emp.membership_type_code or '-',
+            'organization': emp.department_name or '',
         }
         for emp in employees
     ]
@@ -1250,18 +1251,15 @@ def calculate_leave_days_admin(db, user_id, from_date, to_date) -> int:
     from models.holiday import Holiday
 
     employee = db.query(Employee).filter(Employee.user_id == user_id).first()
-    user_group = employee.department if employee else None
+    from web.services.membership_resolve import holiday_applies, membership_code_for
 
     days = 0
     current = from_date
 
     while current <= to_date:
-        # بررسی تعطیل بودن
         holiday = db.query(Holiday).filter(Holiday.holiday_date == current).first()
-        is_holiday_for_user = False
-        if holiday:
-            if holiday.group_id is None or holiday.group_id == user_group:
-                is_holiday_for_user = True
+        code = membership_code_for(db, employee, current)
+        is_holiday_for_user = bool(holiday) and holiday_applies(holiday.group_id, code)
 
         # 🆕 بررسی جمعه (current میلادی است، جمعه = 4)
         is_friday = current.weekday() == 4
@@ -1293,7 +1291,8 @@ async def register_leave_form(
         {
             'user_id': emp.user_id,
             'full_name': emp.full_name,
-            'department': emp.department or '-',
+            'department': emp.membership_name or emp.membership_type_code or '-',
+            'organization': emp.department_name or '',
         }
         for emp in employees
     ]
@@ -1534,7 +1533,8 @@ async def edit_leave_request_form(
         {
             'user_id': emp.user_id,
             'full_name': emp.full_name,
-            'department': emp.department or '-',
+            'department': emp.membership_name or emp.membership_type_code or '-',
+            'organization': emp.department_name or '',
         }
         for emp in employees
     ]

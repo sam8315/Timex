@@ -451,6 +451,8 @@ def resolve_cw_buyback_limit(
     if quota is not None:
         return max(0, int(quota.days or 0))
     membership = resolve_membership_for_user(db, user_id)
+    if not membership:
+        return None
     return resolve_max_buyback(db, membership, user_id=user_id, year_j=year)
 
 

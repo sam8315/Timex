@@ -78,7 +78,7 @@ def punch_grace_totals(days: List[Dict]) -> Dict:
 # موظفی پیش‌فرض وقتی Policy نباشد: ۷:۲۰ = ۴۴۰ دقیقه (نه ۷.۳۳ شناور)
 _DEFAULT_DUTY_MINUTES = 440
 
-# نام فارسی نوع عضویت (فیلد Employee.department)
+# نام فارسی نوع عضویت برای کدهایی که در کاتالوگ نام ندارند
 EMPLOYMENT_TYPE_LABELS = {
     '1': 'رسمی',
     '2': 'وظیفه',
@@ -116,7 +116,7 @@ class DetailedMonthlyReportGeneratorV2:
         return self.db.query(Employee).filter(
             and_(
                 Employee.is_active == True,
-                Employee.department == department
+                Employee.membership_type_code == department
             )
         ).order_by(Employee.hire_date, Employee.last_name, Employee.first_name).all()
 
@@ -235,7 +235,8 @@ class DetailedMonthlyReportGeneratorV2:
 
             # تعیین وضعیت روز
             is_friday = current.weekday() == 4
-            holiday = self._find_holiday(current, employee.department)
+            from web.services.membership_resolve import membership_code_for
+            holiday = self._find_holiday(current, membership_code_for(self.db, employee, current))
             is_holiday = holiday is not None
             holiday_title = holiday.title if holiday is not None else None
 
@@ -381,8 +382,10 @@ class DetailedMonthlyReportGeneratorV2:
             'employee': {
                 'user_id': employee.user_id,
                 'full_name': employee.full_name,
-                'department': employee.department,
-                'department_name': employment_type_label(employee.department),
+                'department': employee.membership_type_code or '',
+                'department_name': employee.membership_name or employment_type_label(employee.membership_type_code),
+                'membership': employee.membership_name or employment_type_label(employee.membership_type_code),
+                'organization_department': employee.department_name or '',
             },
             'year': year,
             'month': month,

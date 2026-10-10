@@ -265,11 +265,20 @@
                 </select>
             </div>
             <div class="col-md-3">
-                <label class="form-label fw-bold">🏢 نوع عضویت</label>
-                <select name="department" class="form-select">
-                    <option value="all" {% if selected_department == 'all' %}selected{% endif %}>همه</option>
+                <label class="form-label fw-bold">نوع عضویت</label>
+                <select name="membership_type" class="form-select">
+                    <option value="all" {% if selected_membership == 'all' %}selected{% endif %}>همه</option>
                     {% for code, name in dept_names.items() %}
-                    <option value="{{ code }}" {% if selected_department == code %}selected{% endif %}>{{ name }}</option>
+                    <option value="{{ code }}" {% if selected_membership == code %}selected{% endif %}>{{ name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label fw-bold">دپارتمان</label>
+                <select name="department_id" class="form-select">
+                    <option value="">همه</option>
+                    {% for d in departments %}
+                    <option value="{{ d.id }}" {% if selected_department_id == d.id|string %}selected{% endif %}>{{ d.name }}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -280,7 +289,7 @@
         <button type="submit" class="btn btn-primary flex-grow-1">
             <i class="bi bi-search"></i> نمایش گزارش
         </button>
-        <a href="/reports/monthly-stats/excel?year={{ report.year }}&month={{ report.month }}&department={{ selected_department }}"
+        <a href="/reports/monthly-stats/excel?year={{ report.year }}&month={{ report.month }}&membership_type={{ selected_membership }}&department_id={{ selected_department_id }}"
            class="btn btn-success flex-grow-1">
             <i class="bi bi-file-earmark-excel"></i> خروجی اکسل
         </a>

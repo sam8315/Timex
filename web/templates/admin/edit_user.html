@@ -95,14 +95,27 @@
                                    value="{{ hire_j_value }}" placeholder="1400/01/01" autocomplete="off">
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label">دپارتمان</label>
-                            <select name="department" class="form-select">
+                            <label class="form-label">نوع عضویت</label>
+                            <select name="membership_type_code" class="form-select">
                                 <option value="">-</option>
-                                <option value="1" {% if employee.department == '1' %}selected{% endif %}>رسمی</option>
-                                <option value="2" {% if employee.department == '2' %}selected{% endif %}>وظیفه</option>
-                                <option value="3" {% if employee.department == '3' %}selected{% endif %}>خریدخدمت</option>
-                                <option value="4" {% if employee.department == '4' %}selected{% endif %}>قراردادی</option>
-                                <option value="5" {% if employee.department == '5' %}selected{% endif %}>پزشکی</option>
+                                {% for mt in membership_types %}
+                                <option value="{{ mt.code }}"
+                                    {% if employee.membership_type_code == mt.code %}selected{% endif %}>
+                                    {{ mt.name }}{% if not mt.is_active %} (غیرفعال){% endif %}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">دپارتمان</label>
+                            <select name="department_id" class="form-select">
+                                <option value="">-</option>
+                                {% for d in departments %}
+                                <option value="{{ d.id }}"
+                                    {% if employee.department_id == d.id %}selected{% endif %}>
+                                    {{ d.name }}{% if not d.is_active %} (غیرفعال){% endif %}
+                                </option>
+                                {% endfor %}
                             </select>
                         </div>
                         <div class="col-md-6">

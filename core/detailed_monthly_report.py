@@ -47,7 +47,7 @@ class DetailedMonthlyReportGenerator:
         return self.db.query(Employee).filter(
             and_(
                 Employee.is_active == True,
-                Employee.department == department
+                Employee.membership_type_code == department
             )
         ).order_by(Employee.last_name, Employee.first_name).all()
 
@@ -116,7 +116,8 @@ class DetailedMonthlyReportGenerator:
 
             # تعیین وضعیت روز
             is_friday = current.weekday() == 4
-            is_holiday = self._is_holiday(current, employee.department)
+            from web.services.membership_resolve import membership_code_for
+            is_holiday = self._is_holiday(current, membership_code_for(self.db, employee, current))
             is_day_off = is_friday or is_holiday
 
             # تعیین وضعیت فرد
@@ -187,7 +188,7 @@ class DetailedMonthlyReportGenerator:
             'employee': {
                 'user_id': employee.user_id,
                 'full_name': employee.full_name,
-                'department': employee.department
+                'department': employee.membership_type_code or ''
             },
             'year': year,
             'month': month,

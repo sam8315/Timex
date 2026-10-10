@@ -17,6 +17,7 @@ from sqlalchemy import and_, func
 import jdatetime
 
 from models.employee import Employee
+from web.services.membership_resolve import membership_code_for
 from models.attendance import (
     Attendance, AttendancePolicy, AttendancePolicyDay,
     HourlyLeavePolicy, HourlyLeaveResolution, HourlyLeaveTransaction,
@@ -46,13 +47,13 @@ def resolve_hourly_leave_policy(
 
     Priority:
     1. Employee Override (user_id = employee.user_id)
-    2. Employment Type Policy (employment_type_code = employee.department)
+    2. Employment Type Policy (employment_type_code = resolved membership code)
 
     Returns:
         HourlyLeavePolicy یا None اگر پیدا نشود
     """
-    employment_type = employee.department if employee else None
-    if not employment_type:
+    employment_type = membership_code_for(db, employee, target_date)
+    if not employee:
         return None
 
     # مرحله ۱: Employee Override
@@ -70,6 +71,9 @@ def resolve_hourly_leave_policy(
 
     if override:
         return override
+
+    if not employment_type:
+        return None
 
     # مرحله ۲: Employment Type Policy
     emp_policy = db.query(HourlyLeavePolicy).filter(

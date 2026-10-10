@@ -86,7 +86,7 @@ def _seed_attendance_policy(db, emp, start, end,
                             workday_start=time(7, 0), workday_end=time(15, 0)):
     try:
         pids = [p[0] for p in db.query(AttendancePolicy.id).filter(
-            AttendancePolicy.employment_type_code == emp.department,
+            AttendancePolicy.employment_type_code == emp.membership_type_code,
             AttendancePolicy.user_id.is_(None),
         ).all()]
         if pids:
@@ -101,7 +101,7 @@ def _seed_attendance_policy(db, emp, start, end,
         db.rollback()
 
     policy = AttendancePolicy(
-        employment_type_code=emp.department,
+        employment_type_code=emp.membership_type_code,
         user_id=None,
         effective_from_date=start,
         effective_to_date=end,
@@ -135,7 +135,7 @@ def _seed_hl_policy(db, emp, *,
                     start, end):
     try:
         existing = db.query(HourlyLeavePolicy).filter(
-            HourlyLeavePolicy.employment_type_code == emp.department,
+            HourlyLeavePolicy.employment_type_code == emp.membership_type_code,
             HourlyLeavePolicy.user_id.is_(None),
         ).all()
         for p in existing:
@@ -145,7 +145,7 @@ def _seed_hl_policy(db, emp, *,
         db.rollback()
 
     policy = HourlyLeavePolicy(
-        employment_type_code=emp.department,
+        employment_type_code=emp.membership_type_code,
         user_id=None,
         effective_from_date=start,
         effective_to_date=end,

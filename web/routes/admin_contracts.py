@@ -320,7 +320,8 @@ async def contracts_page(
         {
             'user_id': emp.user_id,
             'full_name': emp.full_name,
-            'department': emp.department or '-',
+            'department': emp.membership_name or emp.membership_type_code or '-',
+            'organization': emp.department_name or '',
         }
         for emp in employees_for_search
     ]

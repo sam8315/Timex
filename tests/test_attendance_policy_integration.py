@@ -28,7 +28,7 @@ def _seed_policy(db, employee, start, end, working_days):
     working_days: list of (weekday, start_time, end_time, expected_minutes)
     """
     policy = AttendancePolicy(
-        employment_type_code=employee.department,
+        employment_type_code=employee.membership_type_code,
         user_id=None,
         effective_from_date=start,
         effective_to_date=end,
@@ -54,7 +54,7 @@ def _seed_policy(db, employee, start, end, working_days):
 def _cleanup_policy(db, employee):
     try:
         pids = [p[0] for p in db.query(AttendancePolicy.id).filter(
-            and_(AttendancePolicy.employment_type_code == employee.department,
+            and_(AttendancePolicy.employment_type_code == employee.membership_type_code,
                  AttendancePolicy.user_id.is_(None))
         ).all()]
         if pids:

@@ -23,6 +23,7 @@ from models.attendance import Attendance, AttendancePolicy, AttendancePolicyDay
 from models.holiday import Holiday
 from models.leave_request import LeaveRequest
 from models.daily_status import DailyStatus
+from web.services.membership_resolve import holiday_applies, membership_code_for
 
 
 class ReferenceMode(str, Enum):
@@ -158,14 +159,13 @@ def resolve_policy(db: Session, employee: Employee, target_date: date) -> Option
 
     Priority:
     1. Employee Override (user_id = employee.user_id)
-    2. Employment Type Policy (employment_type_code = employee.department)
+    2. Employment Type Policy (employment_type_code = resolved membership code)
 
     Returns:
         ResolvedPolicy یا None اگر سیافت نشود
     """
-    employment_type = employee.department if employee else None
-
-    if not employment_type:
+    employment_type = membership_code_for(db, employee, target_date)
+    if not employee:
         return None
 
     # مرحله ۱: جستجوی Employee Override
@@ -201,12 +201,15 @@ def resolve_policy(db: Session, employee: Employee, target_date: date) -> Option
 
         return ResolvedPolicy(
             policy=override_policy,
-            employment_type_code=employment_type,
+            employment_type_code=employment_type or "",
             policy_days=policy_days,
             is_employee_override=True
         )
 
-    # مرحله ۲: جستجوی Employment Type Policy
+    if not employment_type:
+        return None
+
+    # مرحله ۲: سیاست نوع عضویت
     query = db.query(AttendancePolicy).filter(
         and_(
             AttendancePolicy.employment_type_code == employment_type,
@@ -753,7 +756,7 @@ def calculate_daily_attendance(
     from core.attendance_calculator import analyze_day_status
 
     # ۱. بررسی تعطیلی
-    employment_type = employee.department if employee else None
+    employment_type = membership_code_for(db, employee, target_date)
     holiday_query = db.query(Holiday).filter(Holiday.holiday_date == target_date)
     if employment_type:
         holiday_query = holiday_query.filter(

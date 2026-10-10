@@ -71,30 +71,29 @@ def has_carry_forward_request(db: Session, user_id: str, from_year: int) -> bool
     return request is not None
 
 
-def _get_employment_type(employee) -> str:
-    """
-    🆕 دریافت نوع استخدام از کارمند
-    اگر فیلد employment_type وجود نداشت، از روی department حدس می‌زند.
-    """
-    if not employee:
-        return 'LABOR_LAW'
+def _get_employment_type(employee, db=None, on_date=None) -> str:
+    """سطل سازگاری انتقال مانده از کد عضویت، نه از دپارتمان."""
+    from web.services.membership_resolve import membership_code_for
+    from web.services import membership_semantics as msem
 
-    # 1. بررسی فیلد employment_type (اگر در آینده به مدل اضافه شد)
-    if hasattr(employee, 'employment_type') and getattr(employee, 'employment_type', None):
-        return employee.employment_type
-
-    # 2. استفاده از department (کدهای 1 تا 5)
-    DEPT_TO_EMP_TYPE = {
-        '1': 'PERMANENT',   # رسمی
-        '2': 'CONSCRIPT',   # وظیفه
-        '3': 'CONTRACTOR',  # خریدخدمت
-        '4': 'LABOR_LAW',   # قراردادی اداره کار
-        '5': 'PHYSICIAN',   # پزشکی
-    }
-    if hasattr(employee, 'department') and getattr(employee, 'department', None):
-        return DEPT_TO_EMP_TYPE.get(str(employee.department), 'LABOR_LAW')
-
-    return 'LABOR_LAW'
+    code = None
+    if db is not None and employee is not None:
+        code = membership_code_for(db, employee, on_date or date.today())
+    elif employee is not None:
+        code = getattr(employee, "membership_type_code", None)
+    if not code or db is None:
+        return "UNRESOLVED"
+    if msem.is_permanent(db, code):
+        return "PERMANENT"
+    if msem.is_conscript(db, code):
+        return "CONSCRIPT"
+    if msem.is_physician(db, code):
+        return "PHYSICIAN"
+    if str(code) == "3":
+        return "CONTRACTOR"
+    if str(code) == "4":
+        return "LABOR_LAW"
+    return "LABOR_LAW"
 
 
 def _get_year_range_g(year: int) -> tuple:
@@ -155,7 +154,7 @@ def analyze_yearly_contracts(db, user_id: str, year: int) -> dict:
 
     if not contracts:
         employee = db.query(Employee).filter(Employee.user_id == user_id).first()
-        employment_type = _get_employment_type(employee)
+        employment_type = _get_employment_type(employee, db, year_end_g)
 
         # 🆕 اصلاح: بررسی فعال بودن کارمند در سال مورد نظر
         if _was_employee_active_in_year(db, user_id, year):
@@ -215,7 +214,7 @@ def analyze_yearly_contracts(db, user_id: str, year: int) -> dict:
     if type_counts:
         employment_type = max(type_counts, key=type_counts.get)
     else:
-        employment_type = _get_employment_type(employee)
+        employment_type = _get_employment_type(employee, db, year_end_g)
 
     return {
         'contracts_count': len(contracts),
@@ -334,14 +333,28 @@ def calculate_carry_forward_limit(db: Session, user_id: str, from_year: int) -> 
         # 🆕 اصلاح: به جای رفتن به اولویت‌های بعدی،
         # بررسی کن آیا کارمند در آن سال فعال بوده یا نه
         employee = db.query(Employee).filter(Employee.user_id == user_id).first()
-        employment_type = _get_employment_type(employee)
+        employment_type = _get_employment_type(employee, db, year_end_g)
 
         if _was_employee_active_in_year(db, user_id, from_year):
-            # ✅ کارمند فعال بوده ولی قرارداد ثبت نشده
             from web.services.leave_settlement import resolve_storage_cap
-            emp_code = '1' if employment_type == 'PERMANENT' else (
-                '2' if employment_type == 'CONSCRIPT' else '4'
-            )
+            from web.services.membership_resolve import resolve_employee_membership
+            resolution = resolve_employee_membership(db, user_id, year_end_g)
+            emp_code = resolution.code
+            if not emp_code:
+                return {
+                    'max_days': 0,
+                    'base_limit': 0,
+                    'unlimited': False,
+                    'worked_days': year_days,
+                    'year_days': year_days,
+                    'full_year': True,
+                    'contract_type_code': None,
+                    'contract_type_name': 'عضویت نامشخص',
+                    'source': f'بدون عضویت قابل‌تشخیص برای سال {from_year}',
+                    'assumed_full_year': True,
+                    'employment_type': 'UNRESOLVED',
+                    'unresolved_membership': True,
+                }
             policy_cap = resolve_storage_cap(db, emp_code, year_j=from_year)
             return {
                 'max_days': policy_cap if policy_cap is not None else year_days,
@@ -543,12 +556,12 @@ def user_chooses_use_leave(db, user_id: str, leave_type: str = 'AL', year: int =
 
         employee = db.query(Employee).filter(Employee.user_id == user_id).first()
         from web.services.leave_settlement import resolve_storage_cap
-        emp_code = '1' if contract_info['employment_type'] == 'PERMANENT' else (
-            '2' if contract_info['employment_type'] == 'CONSCRIPT' else '4'
-        )
-        if employee and getattr(employee, 'department', None):
-            emp_code = str(employee.department)
-        policy_cap = resolve_storage_cap(db, emp_code, year_j=from_year)
+        from web.services.membership_resolve import membership_code_for
+        year_end_g = _get_year_range_g(year)[1]
+        emp_code = membership_code_for(db, employee, year_end_g)
+        if not emp_code:
+            return {'success': False, 'error': 'نوع عضویت برای این سال مشخص نیست'}
+        policy_cap = resolve_storage_cap(db, emp_code, year_j=year)
 
         if policy_cap is None:
             max_days = remaining_days

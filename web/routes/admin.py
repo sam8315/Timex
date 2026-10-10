@@ -161,6 +161,7 @@ from web.routes.attendance import (
 from models.attendance import Attendance
 from models.employee import Employee
 from models.position import Position
+from models.department import Department
 from models.holiday import Holiday
 
 """
@@ -257,23 +258,21 @@ async def admin_dashboard(
         Employee.is_active == True
     ).count()
 
-    # 🆕 تفکیک کارمندان فعال بر اساس نوع قرارداد
-    DEPT_NAMES = {
-        '1': 'رسمی', '2': 'وظیفه', '3': 'خریدخدمت',
-        '4': 'قراردادی', '5': 'پزشکی'
-    }
+    # تفکیک کارمندان فعال بر اساس نوع عضویت پایه
+    from web.services.membership_service import membership_types_as_dict
+    membership_names = membership_types_as_dict(db, active_only=False)
     dept_counts_raw = db.query(
-        Employee.department,
+        Employee.membership_type_code,
         func.count(Employee.id)
     ).filter(
         Employee.is_active == True
-    ).group_by(Employee.department).all()
+    ).group_by(Employee.membership_type_code).all()
 
     employee_breakdown = []
     for dept_code, count in dept_counts_raw:
         employee_breakdown.append({
             'code': dept_code,
-            'name': DEPT_NAMES.get(dept_code, dept_code or 'نامشخص'),
+            'name': membership_names.get(dept_code, dept_code or 'نامشخص'),
             'count': count
         })
 
@@ -476,7 +475,7 @@ async def admin_dashboard(
         present_list.append({
             'user_id': uid,
             'full_name': employee.full_name if employee else uid,
-            'department': employee.department if employee else '-',
+            'department': employee.membership_name or employee.membership_type_code or '-',
             'enter_time': first_enter.timestamp.strftime('%H:%M') if first_enter else '-',
         })
 
@@ -491,7 +490,7 @@ async def admin_dashboard(
         no_attendance_list.append({
             'user_id': uid,
             'full_name': employee.full_name if employee else uid,
-            'department': employee.department if employee else '-',
+            'department': employee.membership_name or employee.membership_type_code or '-',
         })
     no_attendance_list.sort(key=lambda x: x['full_name'])
 
@@ -706,7 +705,8 @@ from sqlalchemy import or_
 async def admin_users(
     request: Request,
     search: Optional[str] = Query(None),
-    department: Optional[str] = Query(None),
+    membership_type: Optional[str] = Query(None),
+    department_id: Optional[str] = Query(None),
     position_id: Optional[str] = Query(None),
     role: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
@@ -716,8 +716,9 @@ async def admin_users(
     db: Session = Depends(get_db)
 ):
     """مدیریت کاربران با فیلتر و جستجو"""
+    from web.services.membership_service import list_membership_types
     enforce_permission(db, user, 'view_dashboard')
-    has_filter = any([search, department, position_id, role, status, web_status, show_all])
+    has_filter = any([search, membership_type, department_id, position_id, role, status, web_status, show_all])
 
     user_details = []
     total_count = 0
@@ -726,7 +727,7 @@ async def admin_users(
         query = db.query(User)
 
         # 🆕 بررسی اینکه آیا نیاز به join با Employee داریم
-        needs_employee_join = any([search, department, position_id, status])
+        needs_employee_join = any([search, membership_type, department_id, position_id, status])
         if needs_employee_join:
             query = query.outerjoin(Employee, User.user_id == Employee.user_id)
 
@@ -744,8 +745,13 @@ async def admin_users(
             )
 
         # 🏢 فیلتر دپارتمان (بدون join مجدد)
-        if department:
-            query = query.filter(Employee.department == department)
+        if membership_type:
+            query = query.filter(Employee.membership_type_code == membership_type)
+        if department_id:
+            try:
+                query = query.filter(Employee.department_id == int(department_id))
+            except (TypeError, ValueError):
+                pass
 
         # 👔 فیلتر سمت
         if position_id:
@@ -808,7 +814,12 @@ async def admin_users(
         "has_filter": has_filter,
         "show_all": show_all,
         "search": search or "",
-        "department": department or "",
+        "membership_type": membership_type or "",
+        "department_id": department_id or "",
+        "departments": db.query(Department).filter(Department.is_active == True).order_by(
+            Department.sort_order, Department.name
+        ).all(),
+        "membership_types": list_membership_types(db, active_only=True),
         "position_id": position_id or "",
         "positions": active_positions,
         "role": role or "",
@@ -829,6 +840,7 @@ PRINT_FIELD_LABELS = {
     'user_id': 'کد پرسنلی',
     'name': 'نام',
     'national_code': 'کد ملی',
+    'membership': 'نوع عضویت',
     'department': 'دپارتمان',
     'position': 'سمت',
     'role': 'نقش',
@@ -899,7 +911,8 @@ async def admin_users_print(
                 'user_id': wu.user_id,
                 'name': emp.full_name if emp else wu.name,
                 'national_code': (emp.national_code if emp and emp.national_code else '—'),
-                'department': DEPT_LABELS.get(emp.department, emp.department or '—') if emp else '—',
+                'department': (emp.department_name if emp and emp.department_name else '—'),
+                'membership': (emp.membership_name if emp and emp.membership_name else '—'),
                 'position': (emp.position_name if emp and emp.position_name else '—'),
                 'role': role_label_map(db).get(wu.role, wu.role or '—'),
                 'status': 'فعال' if (emp and emp.is_active) else 'غیرفعال',
@@ -919,16 +932,38 @@ async def admin_users_print(
     })
 
 
+def _attendance_filter_query(membership_type, department_id) -> str:
+    parts = []
+    if membership_type:
+        parts.append(f"membership_type={membership_type}")
+    if department_id:
+        parts.append(f"department_id={department_id}")
+    return ("&" + "&".join(parts)) if parts else ""
+
+
+def _attendance_today_query(membership_type, department_id, user_id) -> str:
+    parts = []
+    if membership_type:
+        parts.append(f"membership_type={membership_type}")
+    if department_id:
+        parts.append(f"department_id={department_id}")
+    if user_id:
+        parts.append(f"user_id={user_id}")
+    return ("?" + "&".join(parts)) if parts else ""
+
+
 @router.get("/admin/attendance", response_class=HTMLResponse)
 async def admin_attendance(
     request: Request,
     date_str: Optional[str] = None,
-    department: Optional[str] = None,
+    membership_type: Optional[str] = None,
+    department_id: Optional[str] = None,
     user_id: Optional[str] = None,
     user: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
     """نمای روزانه تردد همه کارمندان"""
+    from web.services.membership_service import list_membership_types
     enforce_permission(db, user, 'view_all_attendance')
     # تاریخ هدف
     if date_str:
@@ -951,8 +986,13 @@ async def admin_attendance(
             Employee.user_id == user_id,
             Employee.is_active == True,
         )
-        if department:
-            user_query = user_query.filter(Employee.department == department)
+        if membership_type:
+            user_query = user_query.filter(Employee.membership_type_code == membership_type)
+        if department_id:
+            try:
+                user_query = user_query.filter(Employee.department_id == int(department_id))
+            except (TypeError, ValueError):
+                pass
         filter_employee = user_query.first()
         # اگر کاربر یافت نشد یا inactive یا ناسازگار با department است → بدون فیلتر کاربر
         if not filter_employee:
@@ -961,14 +1001,19 @@ async def admin_attendance(
 
     # دریافت کارمندان فعال
     query = db.query(Employee).filter(Employee.is_active == True)
-    if department:
-        query = query.filter(Employee.department == department)
+    if membership_type:
+        query = query.filter(Employee.membership_type_code == membership_type)
+    if department_id:
+        try:
+            query = query.filter(Employee.department_id == int(department_id))
+        except (TypeError, ValueError):
+            pass
     if filter_employee:
         query = query.filter(Employee.user_id == filter_employee.user_id)
 
     # 🆕 مرتب‌سازی بر اساس عضویت، تاریخ استخدام، نام
     employees = query.order_by(
-        Employee.department,  # ۱. عضویت
+        Employee.membership_type_code,
         nulls_last(Employee.hire_date),  # ۲. تاریخ استخدام (خالی‌ها آخر)
         Employee.first_name  # ۳. نام
     ).all()
@@ -1028,6 +1073,8 @@ async def admin_attendance(
         Holiday.holiday_date == target_date
     ).first()
 
+    from web.services.membership_resolve import holiday_applies, membership_code_for
+
     # ساخت لیست نتایج
     results = []
     for emp in employees:
@@ -1045,7 +1092,7 @@ async def admin_attendance(
         if leave is not None:
             emp_holiday_dates = {
                 h.holiday_date for h in all_holidays_in_range
-                if h.group_id is None or h.group_id == emp.department
+                if holiday_applies(h.group_id, membership_code_for(db, emp, target_date))
             }
             _leave_map = build_leave_days_by_date(
                 [leave], emp_holiday_dates, target_date, target_date
@@ -1121,7 +1168,9 @@ async def admin_attendance(
         results.append({
             'user_id': emp.user_id,
             'full_name': emp.full_name,
-            'department': emp.department,
+            'department': emp.membership_type_code or '-',
+            'department_name': emp.department_name or '',
+            'membership_name': emp.membership_name or emp.membership_type_code or '-',
             # 🆕 تاریخ استخدام (شمسی)
             'hire_date_j': jdatetime.date.fromgregorian(date=emp.hire_date).strftime('%Y/%m/%d') if emp.hire_date else '-',
             'first_enter': first_enter,
@@ -1162,7 +1211,7 @@ async def admin_attendance(
         {
             'user_id': emp.user_id,
             'full_name': emp.full_name,
-            'department': emp.department or '-',
+            'department': emp.membership_type_code or '-',
         }
         for emp in employees_for_search
     ]
@@ -1174,7 +1223,17 @@ async def admin_attendance(
         "target_j": target_j,
         "date_str_input": target_j.strftime('%Y/%m/%d'),
         "results": results,
-        "department": department,
+        "membership_type": membership_type or "",
+        "department_id": department_id or "",
+        "membership_types": list_membership_types(db, active_only=True),
+        "departments": db.query(Department).filter(Department.is_active == True).order_by(
+            Department.sort_order, Department.name
+        ).all(),
+        "filter_query": _attendance_filter_query(membership_type, department_id),
+        "today_query": _attendance_today_query(
+            membership_type, department_id,
+            filter_employee.user_id if filter_employee else None,
+        ),
         "selected_user_id": filter_employee.user_id if filter_employee else None,
         "selected_user_name": selected_user_name,
         "employees_data": employees_data,
@@ -1304,7 +1363,8 @@ async def admin_user_attendance(
     # (مانند status_filter که days_list را بعد از ساخت محدود می‌کند)
 
     # دریافت گروه کاربر (بر اساس دپارتمان)
-    user_group = target_employee.department if target_employee else None
+    from web.services.membership_resolve import membership_code_for
+    user_group = membership_code_for(db, target_employee, month_start_g) if target_employee else None
 
     # دریافت مرخصی‌های تایید شده کاربر هدف برای بازه ماه (فقط مرخصی‌های روزانه، HL جداگانه پردازش می‌شود)
     approved_leaves = db.query(LeaveRequest).filter(
@@ -1814,7 +1874,7 @@ async def admin_user_attendance(
         {
             'user_id': emp.user_id,
             'full_name': emp.full_name,
-            'department': emp.department or '-',
+            'department': emp.membership_type_code or '-',
         }
         for emp in employees_for_search
     ]
@@ -2190,14 +2250,12 @@ async def admin_view_profile(
 
     from web.services.leave_entitlement_service import (
         get_membership_timeline,
-        sync_employee_department_from_active_contract,
         sync_employee_region_from_service_location,
     )
     from web.services.travel_leave_service import resolve_effective_service_location
     from models.region import Region as RegionModel
     from models.employee_region import EmployeeRegion as EmpRegionModel
 
-    sync_employee_department_from_active_contract(db, target_user_id, commit=True)
     sync_employee_region_from_service_location(db, target_user_id, commit=True)
     if employee:
         db.refresh(employee)
@@ -2352,6 +2410,19 @@ async def admin_edit_profile_page(
         or_(Position.is_active == True, Position.id == employee.position_id)
     ).order_by(Position.sort_order, Position.name).all()
 
+    from models.department import Department as DeptModel
+    from models.membership_type import MembershipType
+    from sqlalchemy import or_ as _or
+    departments = db.query(DeptModel).filter(
+        _or(DeptModel.is_active == True, DeptModel.id == employee.department_id)
+    ).order_by(DeptModel.sort_order, DeptModel.name).all()
+    membership_types = db.query(MembershipType).filter(
+        _or(
+            MembershipType.is_active == True,
+            MembershipType.code == employee.membership_type_code,
+        )
+    ).order_by(MembershipType.sort_order, MembershipType.code).all()
+
     return templates.TemplateResponse(request, "admin/edit_user.html", {
         "user": user,
         "employee": employee,
@@ -2359,6 +2430,8 @@ async def admin_edit_profile_page(
         "hire_j_value": hire_j_value,
         "term_j_value": term_j_value,
         "positions": positions,
+        "departments": departments,
+        "membership_types": membership_types,
         "is_admin": True,
         "is_super_admin": True,
         **_admin_nav_flags(db, user),
@@ -2378,7 +2451,8 @@ async def admin_edit_profile_submit(
     marital_status: str = Form(""),
     email: str = Form(""),
     hire_date_str: str = Form(""),
-    department: str = Form(""),
+    membership_type_code: str = Form(""),
+    department_id: str = Form(""),
     position_id: str = Form(""),
     notes: str = Form(""),
     is_active: str = Form(""),
@@ -2398,6 +2472,14 @@ async def admin_edit_profile_submit(
             resolved_position_id = resolve_position_id(
                 db, position_id, allow_current_id=employee.position_id
             )
+            from web.routes.admin_departments import resolve_department_id
+            from web.services.membership_resolve import resolve_membership_type_code
+            resolved_department_id = resolve_department_id(
+                db, department_id, allow_current_id=employee.department_id
+            )
+            resolved_membership = resolve_membership_type_code(
+                db, membership_type_code, allow_current=employee.membership_type_code
+            )
         except ValueError as e:
             referer = request.headers.get("referer", f"/admin/profile/{target_user_id}/edit")
             return RedirectResponse(
@@ -2412,7 +2494,8 @@ async def admin_edit_profile_submit(
         employee.gender = gender or None
         employee.marital_status = marital_status or None
         employee.email = email.strip() or None
-        employee.department = department or None
+        employee.membership_type_code = resolved_membership
+        employee.department_id = resolved_department_id
         employee.position_id = resolved_position_id
         employee.notes = notes.strip() or None
 
@@ -2753,7 +2836,8 @@ async def admin_incomplete_attendance(
     request: Request,
     from_date_str: Optional[str] = Query(None),
     to_date_str: Optional[str] = Query(None),
-    department: Optional[str] = Query(None),
+    membership_type: Optional[str] = Query(None),
+    department_id: Optional[str] = Query(None),
     issue_type: Optional[str] = Query(None),
     include_night_shift: Optional[str] = Query(None),
     show_all: Optional[str] = Query(None),
@@ -2779,7 +2863,8 @@ async def admin_incomplete_attendance(
     has_filter = any([
         from_date_str,
         to_date_str,
-        department,
+        membership_type,
+        department_id,
         issue_type,
         show_all_flag,
         include_night_shift is not None,
@@ -2809,11 +2894,18 @@ async def admin_incomplete_attendance(
                 date=to_date
             ).strftime('%Y/%m/%d')
 
+            dept_filter = None
+            if department_id:
+                try:
+                    dept_filter = int(department_id)
+                except ValueError:
+                    dept_filter = None
             filtered_incomplete = find_incomplete_attendances(
                 db,
                 from_date,
                 to_date,
-                department=department or None,
+                membership_type=membership_type or None,
+                department_id=dept_filter,
                 issue_type=issue_type or None,
                 include_night_shift=include_night,
             )
@@ -2824,16 +2916,21 @@ async def admin_incomplete_attendance(
             filtered_incomplete = []
             by_department = {}
 
-    dept_names = {
-        '1': 'رسمی', '2': 'وظیفه', '3': 'خریدخدمت',
-        '4': 'قراردادی', '5': 'پزشکی', 'بدون گروه': 'بدون گروه'
-    }
+    from web.services.membership_service import membership_types_as_dict, list_membership_types
+    membership_names = membership_types_as_dict(db, active_only=False)
+    membership_names['بدون گروه'] = 'بدون گروه'
 
     return templates.TemplateResponse(request, "admin/incomplete.html", {
         "user": user,
         "from_date_str": from_date_display,
         "to_date_str": to_date_display,
-        "department": department or "",
+        "membership_type": membership_type or "",
+        "department_id": department_id or "",
+        "membership_types": list_membership_types(db, active_only=True),
+        "departments": db.query(Department).filter(Department.is_active == True).order_by(
+            Department.sort_order, Department.name
+        ).all(),
+        "membership_names": membership_names,
         "issue_type": issue_type or "",
         "include_night_shift": "1" if include_night else "0",
         "show_all": show_all,
@@ -2842,7 +2939,6 @@ async def admin_incomplete_attendance(
         "incomplete_list": filtered_incomplete,
         "stats": stats,
         "by_department": by_department,
-        "dept_names": dept_names,
         "is_admin": True,
         **_admin_nav_flags(db, user),
     })

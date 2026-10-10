@@ -22,6 +22,7 @@ from models.holiday import Holiday
 from models.daily_status import DailyStatus
 from models.hourly_mission import HourlyMission, HourlyMissionPolicy
 from models.employee import Employee
+from models.department import Department
 from models.position import Position
 from models.employee_phone import EmployeePhone
 from models.employee_address import EmployeeAddress
@@ -88,7 +89,7 @@ __all__ = [
     'EmployeePhone', 'EmployeeAddress', 'EmployeeAddressHistory', 'Education',
     'UserPermission', 'UserPermissionHistory',
     'Role', 'RolePermission', 'RolePermissionHistory', 'BaleUser',
-    'Employee', 'Position', 'Region', 'Policy', 'PolicyValue', 'PolicyAuditLog',
+    'Employee', 'Department', 'Position', 'Region', 'Policy', 'PolicyValue', 'PolicyAuditLog',
     'EmployeeRegion',
     'City', 'EmployeeServiceLocation', 'TravelLeaveDetail', 'TravelLeavePolicy',
     'TravelLeavePolicyRule', 'TravelLeaveQuotaSetting',

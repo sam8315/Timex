@@ -74,9 +74,10 @@ class DailyStatusManager:
         """
         تشخیص خودکار وضعیت یک کاربر در یک روز
         """
-        # ✅ دریافت گروه کاربر
-        user = self.db.query(User).filter(User.user_id == user_id).first()
-        user_group_id = user.group_id if user else None
+        from models.employee import Employee
+        from web.services.membership_resolve import membership_code_for
+        employee = self.db.query(Employee).filter(Employee.user_id == user_id).first()
+        user_group_id = membership_code_for(self.db, employee, target_date)
 
         # 1. بررسی تعطیلی (با در نظر گرفتن گروه کاربر)
         if self.holiday_manager.is_holiday(target_date, user_group_id):
@@ -218,7 +219,7 @@ class DailyStatusManager:
             employees_query = employees_query.filter(Employee.is_active == True)
 
         if group_id is not None:
-            employees_query = employees_query.filter(Employee.department == str(group_id))
+            employees_query = employees_query.filter(Employee.membership_type_code == str(group_id))
 
         employees = employees_query.all()
 
@@ -410,7 +411,8 @@ class DailyStatusManager:
                 report.append({
                     'user_id': emp.user_id,
                     'full_name': emp.full_name,
-                    'department': emp.department or 'بدون گروه',
+                    'department': emp.department_name or '',
+                    'membership': emp.membership_name or emp.membership_type_code or 'بدون گروه',
                     'hire_date': emp.hire_date,  # ✅ اضافه شد
                     'day_status': day_status,
                     'person_status': person_status,
@@ -446,9 +448,9 @@ class DailyStatusManager:
 
     def get_monthly_report(self, user_id: str, year: int, month: int) -> Dict:
         """گزارش ماهانه یک کاربر"""
-        # ✅ دریافت گروه کاربر
-        user = self.db.query(User).filter(User.user_id == user_id).first()
-        user_group_id = user.group_id if user else None
+        from models.employee import Employee
+        from web.services.membership_resolve import membership_code_for
+        employee = self.db.query(Employee).filter(Employee.user_id == user_id).first()
 
         # محاسبه بازه ماه
         j_month_start = jdatetime.date(year, month, 1)

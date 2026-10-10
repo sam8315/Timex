@@ -81,7 +81,7 @@ def deactivate_inactive_employees():
             else:
                 last_str = "بدون تردد"
 
-            print(f"  {i:<4} {emp.user_id:<8} {emp.full_name[:23]:<25} {emp.department or '-':<15} {last_str:<12}")
+            print(f"  {i:<4} {emp.user_id:<8} {emp.full_name[:23]:<25} {(emp.membership_name or emp.membership_type_code or '-'):<15} {last_str:<12}")
 
         print("  " + "-" * 70)
 

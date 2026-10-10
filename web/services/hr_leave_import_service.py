@@ -109,7 +109,10 @@ def import_hr_opening_line(
     if not employee:
         return {'success': False, 'error': f'کاربر {user_id} یافت نشد'}
 
-    dept = membership_hint or employee.department or ''
+    hint = (membership_hint or "").strip()
+    if not hint:
+        from web.services.membership_resolve import membership_code_for
+        hint = membership_code_for(db, employee) or ""
     actions = []
 
     if stored_days:
@@ -119,7 +122,7 @@ def import_hr_opening_line(
 
     # سوخت عمدتاً برای قراردادی؛ برای رسمی اگر ارسال شود هم در ledger ثبت می‌شود
     if burned_days:
-        if dept == '1' and burned_days > 0:
+        if hint == "1" and burned_days > 0:
             # رسمی معمولاً سوخت ندارد — باز هم ثبت تاریخچه مجاز است با هشدار
             actions.append(_add_burn(db, user_id, year, burned_days, admin_name) + " (هشدار: رسمی)")
         else:
@@ -132,6 +135,7 @@ def import_hr_opening_line(
         'success': True,
         'user_id': user_id,
         'full_name': employee.full_name,
-        'department': dept,
+        'membership_type_code': hint,
+        'department': employee.department_name or "",
         'action': ' | '.join(actions),
     }

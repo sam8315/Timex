@@ -19,30 +19,6 @@ from models.travel_leave_policy_rules import TravelLeavePolicyRule, TravelLeaveQ
 logger = logging.getLogger(__name__)
 
 
-# Temporary compatibility rule: until Employee gets a dedicated membership field,
-# رسمی/وظیفه are read from Employee.department and do not require a Contract row.
-_DEPARTMENT_MEMBERSHIP_CODES = {
-    "رسمی": "1",
-    "وظیفه": "2",
-    "وظيفه": "2",
-    "1": "1",
-    "2": "2",
-}
-
-
-def _normalize_department(value: Optional[str]) -> str:
-    if not value:
-        return ""
-    return " ".join(value.strip().replace("ي", "ی").replace("ك", "ک").split())
-
-
-def resolve_department_membership_code(employee: Optional[Employee]) -> Optional[str]:
-    if not employee:
-        return None
-    department = _normalize_department(employee.department)
-    return _DEPARTMENT_MEMBERSHIP_CODES.get(department)
-
-
 def resolve_effective_service_location(db: Session, user_id: str, effective_date: date) -> Optional[EmployeeServiceLocation]:
     locations = db.query(EmployeeServiceLocation).filter(
         EmployeeServiceLocation.user_id == user_id,
@@ -93,14 +69,16 @@ def resolve_policy(db: Session, user_id: str, effective_date: date) -> Tuple[Opt
         return None, None, None
 
     from web.services import membership_semantics as msem
+    from web.services.membership_resolve import membership_code_known
 
-    department_membership_code = resolve_department_membership_code(employee)
-    # Department shortcut for permanent/conscript profiles (رفتار فعلی؛ نه code literal)
-    if department_membership_code and msem.uses_department_travel_resolve(
-        db, department_membership_code
+    base_code = str(employee.membership_type_code or "").strip()
+    if (
+        base_code
+        and membership_code_known(db, base_code)
+        and msem.uses_base_membership_travel_resolve(db, base_code)
     ):
         policy = db.query(TravelLeavePolicy).filter(
-            TravelLeavePolicy.contract_type_code == department_membership_code
+            TravelLeavePolicy.contract_type_code == base_code
         ).first()
         return policy, None, employee
 
@@ -120,14 +98,14 @@ def resolve_membership_code(
     db: Optional[Session] = None,
 ) -> Optional[str]:
     from web.services import membership_semantics as msem
+    from web.services.membership_resolve import membership_code_known
 
-    department_membership_code = resolve_department_membership_code(employee)
-    if department_membership_code and db is not None:
-        if msem.uses_department_travel_resolve(db, department_membership_code):
-            return department_membership_code
-    elif department_membership_code in {"1", "2"}:
-        # fallback وقتی Session نیست (سازگاری تست/legacy)
-        return department_membership_code
+    base_code = str(getattr(employee, "membership_type_code", None) or "").strip()
+    if base_code and db is not None and membership_code_known(db, base_code):
+        if msem.uses_base_membership_travel_resolve(db, base_code):
+            return base_code
+    elif base_code in {"1", "2"} and db is None:
+        return base_code
     return contract.contract_type_code if contract else None
 
 def calculate_travel_days(distance_km: float, rules: list) -> Tuple[int, Optional[TravelLeavePolicyRule]]:
