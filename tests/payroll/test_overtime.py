@@ -99,7 +99,8 @@ def test_monthly_div_basis_uses_thirty_days_not_month_work_days():
         RateSettingsInput(insurance_employee_pct=D(0), tax_pct=D(0)),
         [],
     )
-    assert all(i.component_code != "OVERTIME" for i in draft.items)
+    line = next(i for i in draft.items if i.component_code == "OVERTIME")
+    assert line.amount == D(0)
 
 
 def test_holiday_work_uses_the_same_rate_as_overtime():

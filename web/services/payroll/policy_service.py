@@ -660,13 +660,14 @@ def upsert_night_policy(
     *,
     membership_type_code: str,
     premium_percent: Decimal,
+    basis_codes: List[str],
     excluded_patterns: List[str],
     effective_from: date,
     effective_to: Optional[date] = None,
     notes: Optional[str] = None,
     policy_id: Optional[int] = None,
 ):
-    from core.payroll.night import parse_excluded_patterns
+    from core.payroll.night import parse_excluded_patterns, parse_night_basis_codes
     from models.payroll import PayrollNightPolicy
 
     if not membership_type_code:
@@ -674,6 +675,7 @@ def upsert_night_policy(
     if premium_percent < 0:
         raise PayrollPolicyError("درصد شب‌کاری نمی‌تواند منفی باشد")
     patterns = parse_excluded_patterns(",".join(excluded_patterns))
+    codes = parse_night_basis_codes(",".join(basis_codes))
     if policy_id:
         row = db.get(PayrollNightPolicy, policy_id)
         if not row:
@@ -692,6 +694,7 @@ def upsert_night_policy(
             db.add(row)
     row.membership_type_code = membership_type_code
     row.premium_percent = premium_percent
+    row.basis_codes = ",".join(codes)
     row.excluded_patterns = ",".join(patterns)
     row.effective_from = effective_from
     row.effective_to = effective_to
@@ -712,6 +715,80 @@ def delete_night_policy(db: Session, policy_id: int) -> None:
     row = db.get(PayrollNightPolicy, policy_id)
     if not row:
         raise PayrollPolicyError("سیاست شب‌کاری یافت نشد")
+    db.delete(row)
+    db.commit()
+
+
+def list_friday_policies(db: Session):
+    from models.payroll import PayrollFridayPolicy
+
+    return (
+        db.query(PayrollFridayPolicy)
+        .order_by(PayrollFridayPolicy.membership_type_code)
+        .all()
+    )
+
+
+def upsert_friday_policy(
+    db: Session,
+    *,
+    membership_type_code: str,
+    premium_percent: Decimal,
+    basis_codes: List[str],
+    excluded_patterns: List[str],
+    effective_from: date,
+    effective_to: Optional[date] = None,
+    notes: Optional[str] = None,
+    policy_id: Optional[int] = None,
+):
+    from core.payroll.friday import parse_excluded_patterns, parse_friday_basis_codes
+    from models.payroll import PayrollFridayPolicy
+
+    if not membership_type_code:
+        raise PayrollPolicyError("نوع عضویت الزامی است")
+    if premium_percent < 0:
+        raise PayrollPolicyError("درصد جمعه‌کاری نمی‌تواند منفی باشد")
+    patterns = parse_excluded_patterns(",".join(excluded_patterns))
+    codes = parse_friday_basis_codes(",".join(basis_codes))
+    if policy_id:
+        row = db.get(PayrollFridayPolicy, policy_id)
+        if not row:
+            raise PayrollPolicyError("سیاست جمعه‌کاری یافت نشد")
+    else:
+        row = (
+            db.query(PayrollFridayPolicy)
+            .filter(PayrollFridayPolicy.membership_type_code == membership_type_code)
+            .first()
+        )
+        if row is None:
+            row = PayrollFridayPolicy(
+                membership_type_code=membership_type_code,
+                effective_from=effective_from,
+            )
+            db.add(row)
+    row.membership_type_code = membership_type_code
+    row.premium_percent = premium_percent
+    row.basis_codes = ",".join(codes)
+    row.excluded_patterns = ",".join(patterns)
+    row.effective_from = effective_from
+    row.effective_to = effective_to
+    row.notes = notes
+    row.is_active = True
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise PayrollPolicyError("برای این عضویت قبلاً سیاست جمعه‌کاری ثبت شده است") from exc
+    db.refresh(row)
+    return row
+
+
+def delete_friday_policy(db: Session, policy_id: int) -> None:
+    from models.payroll import PayrollFridayPolicy
+
+    row = db.get(PayrollFridayPolicy, policy_id)
+    if not row:
+        raise PayrollPolicyError("سیاست جمعه‌کاری یافت نشد")
     db.delete(row)
     db.commit()
 

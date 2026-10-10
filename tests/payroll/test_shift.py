@@ -150,7 +150,7 @@ def test_selected_codes_filter_and_legacy_means_all():
     wage = D("100000") * 30
     assert _shift(chosen).amount == wage * D("10") / D(100)
     assert _shift(chosen).calc_note == "صبح و عصر"
-    assert all(item.component_code != "SHIFT" for item in blocked.items)
+    assert _shift(blocked).amount == D(0)
     assert _shift(night_pair).amount == wage * D("22.5") / D(100)
     assert "صبح و شب یا عصر و شب" in line_detail(_shift(night_pair))
     only_morning = calculate_employee_payslip(
@@ -165,5 +165,5 @@ def test_selected_codes_filter_and_legacy_means_all():
         RateSettingsInput(),
         [],
     )
-    assert all(item.component_code != "SHIFT" for item in only_morning.items)
-    assert all(item.component_code != "SHIFT" for item in no_rule.items)
+    assert _shift(only_morning).amount == D(0)
+    assert _shift(no_rule).amount == D(0)

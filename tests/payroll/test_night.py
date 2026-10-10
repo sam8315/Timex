@@ -65,21 +65,21 @@ def test_non_shift_worker_gets_percent_of_hourly_wage():
     assert line.amount == D("350000")
     assert line.unit_amount == D("100000")
     assert line.quantity == D("10")
-    assert "ساعت شب" in line_detail(line)
-    assert "۳۵" in line_detail(line)
+    assert line_detail(line) == "۱۰ ساعت، نرخ هر ساعت ۳۵٬۰۰۰ ریال"
     wage = D("800000") * 30
     insurance = next(item for item in draft.items if item.component_code == "INSURANCE_EMPLOYEE")
     assert insurance.amount == (wage + line.amount) * D("7") / D(100)
 
 
-def test_excluded_shift_pattern_omits_line():
+def test_excluded_shift_pattern_shows_zero_line():
     draft = calculate_employee_payslip(
         _emp(shift_pattern=PATTERN_MORNING_EVENING),
         _comps(),
         _rates(),
         [],
     )
-    assert all(item.component_code != "NIGHT_WORK" for item in draft.items)
+    line = _night(draft)
+    assert line.amount == D(0)
 
 
 def test_morning_evening_still_paid_when_only_night_shifts_are_excluded():
@@ -95,14 +95,14 @@ def test_morning_evening_still_paid_when_only_night_shifts_are_excluded():
     assert _night(draft).amount == D("350000")
 
 
-def test_zero_night_hours_omits_line():
+def test_zero_night_hours_shows_zero_line():
     draft = calculate_employee_payslip(_emp(night_hours=D(0)), _comps(), _rates(), [])
-    assert all(item.component_code != "NIGHT_WORK" for item in draft.items)
+    assert _night(draft).amount == D(0)
 
 
-def test_missing_policy_omits_line():
+def test_missing_policy_shows_zero_line():
     draft = calculate_employee_payslip(_emp(night_rule=None), _comps(), _rates(), [])
-    assert all(item.component_code != "NIGHT_WORK" for item in draft.items)
+    assert _night(draft).amount == D(0)
 
 
 def test_assignment_overrides_hourly_rate():
@@ -115,6 +115,37 @@ def test_assignment_overrides_hourly_rate():
     line = _night(draft)
     assert line.amount == D("175000")
     assert line.unit_amount == D("50000")
+
+
+def test_extra_basis_item_raises_hourly_wage():
+    comps = _comps() + [
+        ComponentDef(4, "HOUSING", "مسکن", "earning", "fixed_monthly_prorata", False, False, 30),
+    ]
+    draft = calculate_employee_payslip(
+        _emp(
+            amounts={"DAILY_WAGE": D("800000"), "HOUSING": D("9000000")},
+            night_rule=_rule(basis_codes=("DAILY_WAGE", "HOUSING")),
+        ),
+        comps,
+        _rates(),
+        [],
+    )
+    # ماهانه = 800000×30 + 9000000 = 33000000؛ ساعتی = 33000000 / 240 = 137500
+    line = _night(draft)
+    assert line.unit_amount == D("137500")
+    assert line.amount == D("137500") * D("35") / D("100") * D("10")
+
+
+def test_empty_basis_shows_zero_line():
+    draft = calculate_employee_payslip(
+        _emp(night_rule=_rule(basis_codes=())),
+        _comps(),
+        _rates(),
+        [],
+    )
+    line = _night(draft)
+    assert line.amount == D(0)
+    assert "هیچ آیتمی" in (line.calc_note or "")
 
 
 def test_payslip_order_is_after_friday_and_before_shift():

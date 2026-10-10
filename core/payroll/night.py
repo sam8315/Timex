@@ -31,7 +31,19 @@ DEFAULT_EXCLUDED = (
 @dataclass(frozen=True)
 class NightRule:
     premium_percent: Decimal = D("35")
+    basis_codes: tuple[str, ...] = ("DAILY_WAGE",)
     excluded_patterns: tuple[str, ...] = DEFAULT_EXCLUDED
+
+
+def parse_night_basis_codes(raw: str | None) -> tuple[str, ...]:
+    if not raw:
+        return ()
+    seen: list[str] = []
+    for part in str(raw).split(","):
+        code = part.strip()
+        if code and code not in seen and code not in ("NIGHT_WORK", "WORK_DEFICIT"):
+            seen.append(code)
+    return tuple(seen)
 
 
 def parse_excluded_patterns(raw: str | None) -> tuple[str, ...]:

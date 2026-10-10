@@ -103,14 +103,11 @@ def line_detail(item: Any) -> str:
         rate = money_text(unit) if unit is not None else "—"
         return f"{money_text(qty)} ساعت، هر ساعت عادی {rate} ریال"
 
-    if code == "NIGHT_WORK" and qty is not None:
-        rate = money_text(unit) if unit is not None else "—"
-        percent = money_text(note) if note else "—"
-        return f"{money_text(qty)} ساعت شب، {percent} درصد مزد ساعتی {rate} ریال"
+    if code in ("NIGHT_WORK", "FRIDAY_WORK") and qty is not None:
+        return _hour_rate_detail(qty, _premium_hour_rate(unit, note), note)
 
-    if code in ("FRIDAY_WORK", "OVERTIME", "HOLIDAY_WORK") and qty is not None:
-        rate = money_text(unit) if unit is not None else "—"
-        return f"{money_text(qty)} ساعت، نرخ هر ساعت {rate} ریال"
+    if code in ("OVERTIME", "HOLIDAY_WORK") and qty is not None:
+        return _hour_rate_detail(qty, unit, "")
 
     if code in ("EIDI", "BONUS") and unit is not None and qty is not None:
         return (
@@ -126,9 +123,27 @@ def line_detail(item: Any) -> str:
         return f"{money_text(unit)} در {money_text(qty)}" + _coverage_clause(unit, qty, amount)
 
     if code == "SHIFT":
-        return "مبلغ واردشده به‌صورت دستی"
+        return fa_digits(note) if note else "مبلغ واردشده به‌صورت دستی"
 
     return fa_digits(note)
+
+
+def _premium_hour_rate(unit: Any, note: Any) -> Any:
+    """نرخ قابل پرداخت هر ساعت = مزد ساعتی مبنا ضربدر درصد سیاست."""
+    text = (str(note) if note is not None else "").strip()
+    try:
+        percent = D(text)
+    except Exception:
+        return None
+    basis = D(unit) if unit is not None else D(0)
+    return basis * percent / D(100)
+
+
+def _hour_rate_detail(qty: Any, rate: Any, note: Any) -> str:
+    if rate is None:
+        text = (str(note) if note is not None else "").strip()
+        return fa_digits(text)
+    return f"{money_text(qty)} ساعت، نرخ هر ساعت {money_text(rate)} ریال"
 
 
 def _coverage_clause(unit: Any, qty: Any, amount: Optional[Any]) -> str:

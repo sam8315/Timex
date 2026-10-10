@@ -21,6 +21,7 @@ from core.payroll.overtime import (
     overtime_basis_amount,
     overtime_pay,
 )
+from core.payroll.friday import FridayRule, friday_hourly, friday_pay
 from core.payroll.night import NightRule, night_premium
 from core.payroll.shift import (
     PATTERN_LABELS,
@@ -90,6 +91,7 @@ class EmployeeCalcInput:
     shift_rule: Optional[ShiftRule] = None
     shift_pattern: Optional[str] = None
     night_rule: Optional[NightRule] = None
+    friday_rule: Optional[FridayRule] = None
 
 
 @dataclass
@@ -155,6 +157,20 @@ def _append_overtime_lines(
         if comp.kind != "earning" or comp.calc_mode not in ("overtime_policy", "holiday_work"):
             continue
         if rule is None:
+            lines.append(
+                LineItem(
+                    component_id=comp.id,
+                    component_code=comp.code,
+                    component_name=comp.name,
+                    kind="earning",
+                    amount=D(0),
+                    quantity=D(0),
+                    calc_note="سیاست اضافه‌کار برای این عضویت نیست",
+                    subject_to_insurance=comp.subject_to_insurance,
+                    subject_to_tax=comp.subject_to_tax,
+                    sort_order=comp.sort_order,
+                )
+            )
             continue
         hours = emp.holiday_hours if comp.calc_mode == "holiday_work" else emp.overtime_hours
         basis = _policy_basis(components, lines, rule)
@@ -181,29 +197,34 @@ def _append_shift_line(
     components: Sequence[ComponentDef],
     lines: List[LineItem],
 ) -> None:
+    comps = [
+        comp for comp in components
+        if comp.kind == "earning" and comp.calc_mode == "shift_policy"
+    ]
+    if not comps:
+        return
     rule = emp.shift_rule
+    amount = D(0)
+    percent = D(0)
+    basis = D(0)
+    label = "بدون نوبت‌کاری"
+    pattern = emp.shift_pattern
     if rule is None or not rule.basis_codes:
-        return
-    if emp.shift_pattern == PATTERN_NONE:
-        return
-    pattern = emp.shift_pattern or detect_shift_pattern(
-        emp.morning_hours, emp.evening_hours, emp.night_hours
-    )
-    if not pattern or pattern == PATTERN_NONE:
-        return
-    percent = rule.percent_for(pattern)
-    codes = set(rule.basis_codes)
-    basis = sum(
-        (ln.amount for ln in lines if ln.kind == "earning" and ln.component_code in codes),
-        D(0),
-    )
-    amount = shift_pay(basis, percent)
-    if amount <= 0:
-        return
-    label = PATTERN_LABELS.get(pattern, "نوبت‌کاری")
-    for comp in components:
-        if comp.kind != "earning" or comp.calc_mode != "shift_policy":
-            continue
+        label = "سیاست نوبت‌کاری برای این عضویت نیست"
+    elif pattern != PATTERN_NONE:
+        pattern = pattern or detect_shift_pattern(
+            emp.morning_hours, emp.evening_hours, emp.night_hours
+        )
+        if pattern and pattern != PATTERN_NONE:
+            percent = rule.percent_for(pattern)
+            codes = set(rule.basis_codes)
+            basis = sum(
+                (ln.amount for ln in lines if ln.kind == "earning" and ln.component_code in codes),
+                D(0),
+            )
+            amount = shift_pay(basis, percent)
+            label = PATTERN_LABELS.get(pattern, "نوبت‌کاری")
+    for comp in comps:
         lines.append(
             LineItem(
                 component_id=comp.id,
@@ -211,9 +232,111 @@ def _append_shift_line(
                 component_name=comp.name,
                 kind="earning",
                 amount=amount,
-                quantity=percent,
-                unit_amount=basis,
+                quantity=percent if percent else None,
+                unit_amount=basis if basis else None,
                 calc_note=label,
+                subject_to_insurance=comp.subject_to_insurance,
+                subject_to_tax=comp.subject_to_tax,
+                sort_order=comp.sort_order,
+            )
+        )
+
+
+def _append_night_line(
+    emp: EmployeeCalcInput,
+    components: Sequence[ComponentDef],
+    lines: List[LineItem],
+    rates: RateSettingsInput,
+) -> None:
+    comps = [
+        comp for comp in components
+        if comp.kind == "earning" and comp.calc_mode == "night_work"
+    ]
+    if not comps:
+        return
+    rule = emp.night_rule
+    hours = D(emp.night_hours)
+    pattern = emp.shift_pattern or PATTERN_NONE
+    hours_per_day = D(rates.hours_per_day) or D("7.3333")
+    note = "سیاست شب‌کاری برای این عضویت نیست"
+    hourly = D(0)
+    amount = D(0)
+    if rule is not None and pattern in rule.excluded_patterns:
+        note = "نوبت‌کار — بدون فوق‌العاده شب‌کاری"
+    elif rule is not None and not rule.basis_codes:
+        note = "هیچ آیتمی در مبنای شب‌کاری انتخاب نشده"
+    elif rule is not None and hours <= 0:
+        override = _amt(emp, "NIGHT_WORK")
+        hourly = override if override > 0 else friday_hourly(
+            components, lines, rule.basis_codes, hours_per_day
+        )
+        note = "ساعت شب صفر"
+    elif rule is not None:
+        override = _amt(emp, "NIGHT_WORK")
+        hourly = override if override > 0 else friday_hourly(
+            components, lines, rule.basis_codes, hours_per_day
+        )
+        amount = night_premium(hourly, hours, rule.premium_percent)
+        note = str(rule.premium_percent)
+    for comp in comps:
+        lines.append(
+            LineItem(
+                component_id=comp.id,
+                component_code=comp.code,
+                component_name=comp.name,
+                kind="earning",
+                amount=money_round(amount),
+                quantity=hours,
+                unit_amount=hourly,
+                calc_note=note,
+                subject_to_insurance=comp.subject_to_insurance,
+                subject_to_tax=comp.subject_to_tax,
+                sort_order=comp.sort_order,
+            )
+        )
+
+
+def _append_friday_line(
+    emp: EmployeeCalcInput,
+    components: Sequence[ComponentDef],
+    lines: List[LineItem],
+    rates: RateSettingsInput,
+) -> None:
+    comps = [
+        comp for comp in components
+        if comp.kind == "earning" and comp.calc_mode == "friday_attendance"
+    ]
+    if not comps:
+        return
+    rule = emp.friday_rule
+    hours = D(emp.friday_hours)
+    pattern = emp.shift_pattern or PATTERN_NONE
+    hours_per_day = D(rates.hours_per_day) or D("7.3333")
+    note = "سیاست جمعه‌کاری برای این عضویت نیست"
+    hourly = D(0)
+    amount = D(0)
+    if rule is not None and pattern in rule.excluded_patterns:
+        note = "نوبت‌کار — بدون فوق‌العاده جمعه‌کاری"
+    elif rule is not None and not rule.basis_codes:
+        note = "هیچ آیتمی در مبنای جمعه‌کاری انتخاب نشده"
+    elif rule is not None and hours <= 0:
+        hourly = friday_hourly(components, lines, rule.basis_codes, hours_per_day)
+        note = "ساعت جمعه صفر"
+    elif rule is not None:
+        hourly = friday_hourly(components, lines, rule.basis_codes, hours_per_day)
+        amount = friday_pay(hourly, hours, rule.premium_percent)
+        note = str(rule.premium_percent)
+    for comp in comps:
+        lines.append(
+            LineItem(
+                component_id=comp.id,
+                component_code=comp.code,
+                component_name=comp.name,
+                kind="earning",
+                amount=money_round(amount),
+                quantity=hours,
+                unit_amount=hourly,
+                calc_note=note,
                 subject_to_insurance=comp.subject_to_insurance,
                 subject_to_tax=comp.subject_to_tax,
                 sort_order=comp.sort_order,
@@ -245,6 +368,8 @@ def calculate_employee_payslip(
             "overtime_policy",
             "holiday_work",
             "shift_policy",
+            "friday_attendance",
+            "night_work",
         ):
             continue
         amount = D(0)
@@ -278,39 +403,6 @@ def calculate_employee_payslip(
             amount = daily_s * qty * ratio
             note = f"{daily_s} × {emp.month_days} روز × نسبت {ratio}"
 
-        elif comp.calc_mode == "friday_attendance":
-            hours = D(emp.friday_hours)
-            hours_per_day = D(rates.hours_per_day) or D("7.3333")
-            hourly = (daily_wage / hours_per_day) if hours_per_day else D(0)
-            # اجازه نرخ ساعتی اختصاصی از assignment روی FRIDAY_WORK
-            override = _amt(emp, "FRIDAY_WORK")
-            if override > 0:
-                hourly = override
-            coef = D(rates.friday_coefficient)
-            unit = hourly * coef
-            qty = hours
-            amount = unit * hours
-            note = f"{hours} ساعت × {hourly} × ضریب {coef}"
-
-        elif comp.calc_mode == "night_work":
-            rule = emp.night_rule
-            hours = D(emp.night_hours)
-            pattern = emp.shift_pattern or PATTERN_NONE
-            if rule is None or hours <= 0 or pattern in rule.excluded_patterns:
-                continue
-            hours_per_day = D(rates.hours_per_day) or D("7.3333")
-            hourly = (daily_wage / hours_per_day) if hours_per_day else D(0)
-            override = _amt(emp, "NIGHT_WORK")
-            if override > 0:
-                hourly = override
-            percent = D(rule.premium_percent)
-            amount = night_premium(hourly, hours, percent)
-            if amount <= 0:
-                continue
-            unit = hourly
-            qty = hours
-            note = str(percent)
-
         elif comp.calc_mode == "manual":
             amount = D(emp.manual_amounts.get(comp.code, 0))
             note = "ورود دستی"
@@ -328,7 +420,8 @@ def calculate_employee_payslip(
         elif comp.calc_mode == "child_allowance":
             rule = emp.child_rule
             if rule is None:
-                continue
+                note = "سیاست حق اولاد برای این عضویت نیست"
+                amount = D(0)
             elif (emp.gender or "").upper() == "F" and not rule.applies_to_female:
                 note = "طبق سیاست این عضویت، حق اولاد شامل کارکنان زن نمی‌شود"
             else:
@@ -362,11 +455,6 @@ def calculate_employee_payslip(
                 note = "خارج از ماه پرداخت پاداش / ضریب صفر"
 
         amount = money_round(amount)
-        if amount == 0 and comp.calc_mode in ("policy_eidi", "policy_bonus", "manual"):
-            if amount == 0 and note.startswith("خارج"):
-                continue
-            if comp.calc_mode == "manual" and amount == 0:
-                continue
 
         lines.append(
             LineItem(
@@ -386,6 +474,8 @@ def calculate_employee_payslip(
 
     _append_overtime_lines(emp, components, lines)
     _append_shift_line(emp, components, lines)
+    _append_night_line(emp, components, lines, rates)
+    _append_friday_line(emp, components, lines, rates)
 
     insurance_base = sum(
         (ln.amount for ln in lines if ln.subject_to_insurance), D(0)
@@ -413,18 +503,19 @@ def calculate_employee_payslip(
             note = f"{pct}% از مبنای مشمول مالیات ({tax_base})"
         elif comp.calc_mode == "work_deficit":
             rule = emp.deficit_rule
-            if rule is None:
-                continue
-            basis = _policy_basis(components, lines, rule, rule.basis_days)
-            amount, unit, note = ordinary_hour_pay(basis, emp.deficit_hours, rule)
             qty = D(emp.deficit_hours)
+            if rule is None:
+                amount = D(0)
+                note = "سیاست کسر کار برای این عضویت نیست"
+            else:
+                basis = _policy_basis(components, lines, rule, rule.basis_days)
+                amount, unit, note = ordinary_hour_pay(basis, emp.deficit_hours, rule)
         elif comp.calc_mode == "manual":
             amount = money_round(D(emp.manual_amounts.get(comp.code, 0)))
             note = "ورود دستی"
-            if amount == 0:
-                continue
         else:
-            continue
+            amount = D(0)
+            note = ""
 
         if amount == 0 and comp.calc_mode.startswith("percent") and D(
             getattr(rates, "tax_pct" if "tax" in comp.calc_mode else "insurance_employee_pct", 0)

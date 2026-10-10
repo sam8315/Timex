@@ -3,8 +3,9 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone
 from decimal import Decimal
-from typing import List, Optional
+from typing import List, Optional, Sequence
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session, joinedload
 
 from core.payroll.calendar_utils import jalali_month_bounds, month_day_count
@@ -17,7 +18,8 @@ from core.payroll.calculation_engine import (
 from core.payroll.contract_coverage import best_contract_coverage
 from core.payroll.child_allowance import ChildAllowanceRule, ChildFact, resolve_minimum_daily
 from core.payroll.overtime import DeficitRule, OvertimeRule, parse_basis_codes
-from core.payroll.night import NightRule, parse_excluded_patterns
+from core.payroll.friday import FridayRule, parse_excluded_patterns as parse_friday_excluded, parse_friday_basis_codes
+from core.payroll.night import NightRule, parse_excluded_patterns, parse_night_basis_codes
 from core.payroll.shift import PATTERN_NONE, SHIFT_OPTIONS, ShiftRule, parse_shift_basis_codes
 from core.payroll.money import D
 from core.payroll.seniority import AnnualSeniorityPolicy
@@ -33,6 +35,7 @@ from models.payroll import (
     PayrollDeficitPolicy,
     PayrollShiftPolicy,
     PayrollNightPolicy,
+    PayrollFridayPolicy,
     PayrollShiftChoice,
     PayrollPeriod,
     PayrollResult,
@@ -54,6 +57,85 @@ class PayrollRunError(Exception):
 
 
 EDITABLE_STATUSES = ("draft", "calculated")
+
+_ACQUIRE_CALCULATION_SQL = """
+UPDATE payroll_runs
+SET calculating_by = :uid, calculating_started_at = NOW()
+WHERE id = :id
+  AND status IN ('draft', 'calculated')
+  AND calculating_by IS NULL
+RETURNING id
+"""
+
+
+def calculation_busy_message(
+    *,
+    requester_id: str,
+    creator_id: Optional[str],
+    holder_id: str,
+    holder_label: str,
+) -> str:
+    """پیام وقتی لیست همین حالا در حال محاسبه است."""
+    if requester_id == holder_id:
+        return "محاسبه این لیست هنوز تمام نشده است"
+    label = holder_label or holder_id
+    if creator_id and requester_id == creator_id:
+        return f"لیست در حال محاسبه از طرف {label} است"
+    return f"لیست در حال محاسبه از طرف {label} است"
+
+
+def try_acquire_calculation(db: Session, run_id: int, user_id: str) -> bool:
+    """فقط یک درخواست برنده می‌شود. برنده خودش تراکنش را می‌بندد."""
+    result = db.execute(
+        text(_ACQUIRE_CALCULATION_SQL),
+        {"uid": user_id, "id": run_id},
+    )
+    won = result.first() is not None
+    db.commit()
+    return won
+
+
+def release_calculation(db: Session, run_id: int, user_id: str) -> None:
+    db.execute(
+        text(
+            """
+            UPDATE payroll_runs
+            SET calculating_by = NULL, calculating_started_at = NULL
+            WHERE id = :id AND calculating_by = :uid
+            """
+        ),
+        {"uid": user_id, "id": run_id},
+    )
+    db.commit()
+
+
+def clear_calculation_locks(db: Session) -> None:
+    """قفل‌های جا مانده از پروسهٔ قبلی. فقط هنگام بالا آمدن وب."""
+    db.execute(
+        text(
+            """
+            UPDATE payroll_runs
+            SET calculating_by = NULL, calculating_started_at = NULL
+            WHERE calculating_by IS NOT NULL
+            """
+        )
+    )
+    db.commit()
+
+
+def calculation_lock_state(db: Session, run_id: int) -> tuple[Optional[str], Optional[str]]:
+    row = db.execute(
+        text("SELECT calculating_by, created_by FROM payroll_runs WHERE id = :id"),
+        {"id": run_id},
+    ).first()
+    if row is None:
+        return None, None
+    return row[0], row[1]
+
+
+def ensure_calculation_idle(run: PayrollRun) -> None:
+    if run.calculating_by:
+        raise PayrollRunError("این لیست در حال محاسبه است")
 
 
 def get_or_create_period(db: Session, year_j: int, month_j: int) -> PayrollPeriod:
@@ -295,6 +377,7 @@ def shift_roster(db: Session, run: PayrollRun) -> list[dict]:
 
 def set_shift_choices(db: Session, run_id: int, choices: list[tuple[str, str]]) -> None:
     run = get_run(db, run_id)
+    ensure_calculation_idle(run)
     if run.status not in EDITABLE_STATUSES:
         raise PayrollRunError("فقط در پیش‌نویس یا محاسبه‌شده می‌توان نوع نوبت را تغییر داد")
     allowed = {code for code, _label in SHIFT_OPTIONS}
@@ -312,6 +395,15 @@ def set_shift_choices(db: Session, run_id: int, choices: list[tuple[str, str]]) 
             existing[user_id] = row
         else:
             row.pattern = pattern
+    db.commit()
+
+
+def set_run_components(db: Session, run_id: int, codes: List[str]) -> None:
+    run = get_run(db, run_id)
+    ensure_calculation_idle(run)
+    if run.status not in EDITABLE_STATUSES:
+        raise PayrollRunError("فقط در پیش‌نویس یا محاسبه‌شده می‌توان قلم‌ها را تغییر داد")
+    run.component_codes = _normalize_component_codes(db, codes)
     db.commit()
 
 
@@ -415,7 +507,7 @@ def _shift_rule(db: Session, membership_code: Optional[str], on_date: date):
 class _RunPolicyCache:
     """قوانین عضویت یک‌بار در هر اجرای محاسبه؛ از N×۴ کوئری تکراری جلوگیری می‌کند."""
 
-    __slots__ = ("_db", "_on_date", "_ot", "_deficit", "_shift", "_night", "_child")
+    __slots__ = ("_db", "_on_date", "_ot", "_deficit", "_shift", "_night", "_friday", "_child")
 
     def __init__(self, db: Session, on_date: date) -> None:
         self._db = db
@@ -424,6 +516,7 @@ class _RunPolicyCache:
         self._deficit: dict[Optional[str], object] = {}
         self._shift: dict[Optional[str], object] = {}
         self._night: dict[Optional[str], object] = {}
+        self._friday: dict[Optional[str], object] = {}
         self._child: dict[Optional[str], object] = {}
 
     def overtime(self, membership_code: Optional[str]):
@@ -449,6 +542,12 @@ class _RunPolicyCache:
         if key not in self._night:
             self._night[key] = _night_rule(self._db, membership_code, self._on_date)
         return self._night[key]
+
+    def friday(self, membership_code: Optional[str]):
+        key = membership_code or ""
+        if key not in self._friday:
+            self._friday[key] = _friday_rule(self._db, membership_code, self._on_date)
+        return self._friday[key]
 
     def child(self, membership_code: Optional[str]):
         key = membership_code or ""
@@ -478,7 +577,34 @@ def _night_rule(db: Session, membership_code: Optional[str], on_date: date):
         return None
     return NightRule(
         premium_percent=D(row.premium_percent),
+        basis_codes=parse_night_basis_codes(row.basis_codes),
         excluded_patterns=parse_excluded_patterns(row.excluded_patterns),
+    )
+
+
+def _friday_rule(db: Session, membership_code: Optional[str], on_date: date):
+    if not membership_code:
+        return None
+    row = (
+        db.query(PayrollFridayPolicy)
+        .filter(
+            PayrollFridayPolicy.membership_type_code == membership_code,
+            PayrollFridayPolicy.is_active.is_(True),
+            PayrollFridayPolicy.effective_from <= on_date,
+        )
+        .filter(
+            (PayrollFridayPolicy.effective_to.is_(None))
+            | (PayrollFridayPolicy.effective_to >= on_date)
+        )
+        .order_by(PayrollFridayPolicy.effective_from.desc())
+        .first()
+    )
+    if row is None:
+        return None
+    return FridayRule(
+        premium_percent=D(row.premium_percent),
+        basis_codes=parse_friday_basis_codes(row.basis_codes),
+        excluded_patterns=parse_friday_excluded(row.excluded_patterns),
     )
 
 
@@ -533,6 +659,29 @@ def _children_of(db: Session, user_id: str) -> List[ChildFact]:
     ]
 
 
+def filter_recalc_employees(employees: Sequence, user_ids: Optional[Sequence[str]]):
+    """بدون فهرست، همه. با فهرست، فقط همان نفرهایی که در افراد مجاز هستند."""
+    if not user_ids:
+        return list(employees)
+    wanted = {uid for uid in user_ids if uid}
+    return [row for row in employees if row[0].user_id in wanted]
+
+
+def result_ids_to_replace(result_user_ids: Sequence[str], user_ids: Optional[Sequence[str]]) -> List[str]:
+    """نتیجهٔ نفر بیرون از فهرست انتخاب پاک نمی‌شود."""
+    if not user_ids:
+        return list(result_user_ids)
+    wanted = {uid for uid in user_ids if uid}
+    return [uid for uid in result_user_ids if uid in wanted]
+
+
+def status_after_calculate(previous: str, *, partial: bool) -> str:
+    """محاسبهٔ چند نفر وضعیت پیش‌نویس را به محاسبه‌شده برنمی‌گرداند."""
+    if partial:
+        return previous
+    return "calculated"
+
+
 def calculate_run(db: Session, run_id: int) -> PayrollRun:
     for event in iter_calculate(db, run_id):
         if event.get("error"):
@@ -540,8 +689,13 @@ def calculate_run(db: Session, run_id: int) -> PayrollRun:
     return get_run(db, run_id)
 
 
-def iter_calculate(db: Session, run_id: int):
-    """محاسبه نفر به نفر و گزارش درصد پیشرفت."""
+def iter_calculate(db: Session, run_id: int, user_ids: Optional[Sequence[str]] = None):
+    """محاسبه نفر به نفر و گزارش درصد پیشرفت.
+
+    user_ids خالی یعنی همه. اگر پر باشد فقط همان نفرها از نو حساب می‌شوند.
+    """
+    selected = tuple(uid.strip() for uid in (user_ids or []) if uid and str(uid).strip())
+    partial = bool(selected)
     # بدون ensure_payroll_defaults: ALTER وسط استریم با جلسهٔ باز درخواست قفل می‌شود.
     run = get_run(db, run_id, ensure_defaults=False)
     if run.status not in EDITABLE_STATUSES and run.status != "draft":
@@ -587,20 +741,39 @@ def iter_calculate(db: Session, run_id: int):
         manual_map[(m.user_id, m.component_code)] = D(m.amount)
     choices = {row.user_id: row.pattern for row in run.shift_choices}
 
-    # پاک کردن نتایج قبلی
-    for old in list(run.results):
-        db.delete(old)
-    db.flush()
-
     earn_codes = [c.code for c in components if c.kind == "earning"]
     allowed_codes = payroll_membership_codes_for_employees(db, run.membership_type_code)
-    employees = _eligible_employees(
-        db,
-        month_start,
-        month_end,
-        run.membership_type_code,
-        allowed_membership_codes=allowed_codes,
+    employees = filter_recalc_employees(
+        _eligible_employees(
+            db,
+            month_start,
+            month_end,
+            run.membership_type_code,
+            allowed_membership_codes=allowed_codes,
+        ),
+        selected if partial else None,
     )
+    if partial and not employees:
+        yield {
+            "done": True,
+            "error": "هیچ‌کدام از افراد انتخاب‌شده در این لیست نیستند",
+            "percent": 0,
+            "name": "",
+            "user_id": "",
+            "index": 0,
+            "total": 0,
+        }
+        return
+
+    replace_ids = set(result_ids_to_replace(
+        [old.user_id for old in run.results],
+        selected if partial else None,
+    ))
+    for old in list(run.results):
+        if old.user_id in replace_ids:
+            db.delete(old)
+    db.flush()
+
     total = len(employees)
     policy_cache = _RunPolicyCache(db, payroll_date)
     min_wage_cache: dict[Optional[str], Decimal] = {}
@@ -658,6 +831,7 @@ def iter_calculate(db: Session, run_id: int):
                 deficit_rule=policy_cache.deficit(contract.contract_type_code),
                 shift_rule=policy_cache.shift(contract.contract_type_code),
                 night_rule=policy_cache.night(contract.contract_type_code),
+                friday_rule=policy_cache.friday(contract.contract_type_code),
                 children=_children_of(db, emp.user_id),
                 child_rule=policy_cache.child(contract.contract_type_code),
                 minimum_daily_wage=min_wage_cache.setdefault(
@@ -702,9 +876,14 @@ def iter_calculate(db: Session, run_id: int):
         db.commit()
 
     db.refresh(run)
-    run.status = "calculated"
-    run.calculated_at = datetime.now(timezone.utc)
-    db.commit()
+    new_status = status_after_calculate(run.status, partial=partial)
+    if new_status != run.status:
+        run.status = new_status
+        run.calculated_at = datetime.now(timezone.utc)
+        db.commit()
+    elif partial and run.status == "calculated":
+        run.calculated_at = datetime.now(timezone.utc)
+        db.commit()
     yield {
         "index": total,
         "total": total,
@@ -752,12 +931,14 @@ def set_manual_entry(
 
 def delete_run(db: Session, run_id: int) -> None:
     run = get_run(db, run_id)
+    ensure_calculation_idle(run)
     db.delete(run)
     db.commit()
 
 
 def approve_run(db: Session, run_id: int, user_id: str) -> PayrollRun:
     run = get_run(db, run_id)
+    ensure_calculation_idle(run)
     if run.status != "calculated":
         raise PayrollRunError("فقط اجرای محاسبه‌شده قابل تأیید است")
     run.status = "approved"

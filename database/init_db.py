@@ -1924,6 +1924,9 @@ def create_tables() -> None:
             _pdb = SessionLocal()
             try:
                 ensure_payroll_defaults(_pdb)
+                from web.services.payroll.run_service import clear_calculation_locks
+
+                clear_calculation_locks(_pdb)
             finally:
                 _pdb.close()
         except Exception as _payroll_seed_exc:

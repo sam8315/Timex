@@ -164,6 +164,12 @@ class PayrollRun(TimestampMixin, Base):
     created_by: Mapped[Optional[str]] = mapped_column(
         String(50), ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True
     )
+    calculating_by: Mapped[Optional[str]] = mapped_column(
+        String(50), ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True
+    )
+    calculating_started_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     calculated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     approved_by: Mapped[Optional[str]] = mapped_column(
@@ -376,7 +382,7 @@ class PayrollShiftPolicy(TimestampMixin, Base):
 class PayrollNightPolicy(TimestampMixin, Base):
     """سیاست شب‌کاری به‌ازای نوع عضویت.
 
-    درصد روی مزد ساعتی و نوع نوبت‌هایی که این فوق‌العاده را نمی‌گیرند در سیاست است.
+    درصد روی مزد ساعتی، اقلام مبنا و نوع نوبت‌هایی که این فوق‌العاده را نمی‌گیرند در سیاست است.
     ساعات شب همان بازه ۲۲:۰۰ تا ۰۶:۰۰ گزارش کارکرد است.
     """
 
@@ -387,6 +393,7 @@ class PayrollNightPolicy(TimestampMixin, Base):
     premium_percent: Mapped[Decimal] = mapped_column(
         Numeric(8, 4), nullable=False, default=Decimal("35")
     )
+    basis_codes: Mapped[str] = mapped_column(Text, nullable=False, default="DAILY_WAGE")
     excluded_patterns: Mapped[str] = mapped_column(Text, nullable=False, default="")
     effective_from: Mapped[date] = mapped_column(Date, nullable=False)
     effective_to: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
@@ -396,6 +403,40 @@ class PayrollNightPolicy(TimestampMixin, Base):
     __table_args__ = (
         UniqueConstraint("membership_type_code", name="uq_payroll_night_membership"),
     )
+
+    @property
+    def basis_code_list(self) -> List[str]:
+        return [c.strip() for c in (self.basis_codes or "").split(",") if c.strip()]
+
+    @property
+    def excluded_pattern_list(self) -> List[str]:
+        return [c.strip() for c in (self.excluded_patterns or "").split(",") if c.strip()]
+
+
+class PayrollFridayPolicy(TimestampMixin, Base):
+    """سیاست جمعه‌کاری به‌ازای نوع عضویت. شکل آن مثل شب‌کاری است، با اقلام مبنا."""
+
+    __tablename__ = "payroll_friday_policies"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    membership_type_code: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    premium_percent: Mapped[Decimal] = mapped_column(
+        Numeric(8, 4), nullable=False, default=Decimal("96")
+    )
+    basis_codes: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    excluded_patterns: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    effective_from: Mapped[date] = mapped_column(Date, nullable=False)
+    effective_to: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("membership_type_code", name="uq_payroll_friday_membership"),
+    )
+
+    @property
+    def basis_code_list(self) -> List[str]:
+        return [c.strip() for c in (self.basis_codes or "").split(",") if c.strip()]
 
     @property
     def excluded_pattern_list(self) -> List[str]:

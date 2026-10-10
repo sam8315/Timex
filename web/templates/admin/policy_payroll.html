@@ -17,6 +17,7 @@
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-deficit">کسر کار</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-shift">نوبت‌کاری</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-night">شب‌کاری</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-friday">جمعه‌کاری</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-run-memberships">عضویت حقوق</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-assign">تخصیص مبالغ</button></li>
 </ul>
@@ -171,10 +172,6 @@
                     <div class="col-md-4">
                         <label class="form-label">٪ مالیات</label>
                         <input name="tax_pct" class="form-control" dir="ltr" value="{{ rates.tax_pct|payroll_num }}">
-                    </div>
-                    <div class="col-md-4">
-                        <label class="form-label">ضریب جمعه‌کاری</label>
-                        <input name="friday_coefficient" class="form-control" dir="ltr" value="{{ rates.friday_coefficient|payroll_num }}">
                     </div>
                     <div class="col-md-4">
                         <label class="form-label">ماه پرداخت عیدی</label>
@@ -946,7 +943,8 @@
     <div class="tab-pane fade" id="tab-night">
         <div class="alert alert-light border small">
             فوق‌العاده شب‌کاری برابر است با درصد سیاست ضربدر مزد ساعتی ضربدر ساعات کار بین ۲۲:۰۰ و ۰۶:۰۰.
-            مزد ساعتی همان حقوق روزانه تقسیم بر ساعت کار روزانه است. مزد عادی این ساعت‌ها داخل حقوق روزانه است و این قلم فقط درصد اضافه را می‌سازد.
+            مزد ساعتی از جمع مبلغ ماهانه اقلام انتخاب‌شده (روزانه و سنوات با ۳۰ روز) تقسیم بر ساعت روز ضربدر ۳۰ ساخته می‌شود.
+            مزد عادی این ساعت‌ها داخل حقوق روزانه است و این قلم فقط درصد اضافه را می‌سازد.
             نوع‌های تیک‌خورده شب‌کاری نمی‌گیرند. «بدون نوبت‌کاری» همیشه می‌گیرد.
         </div>
         <div class="card shadow-sm mb-3">
@@ -984,6 +982,17 @@
                             {% endfor %}
                         </div>
                     </div>
+                    <div class="col-12">
+                        <label class="form-label">اقلام داخل مبنا</label>
+                        <div class="d-flex flex-wrap gap-3">
+                            {% for c in components if c.kind == 'earning' and c.code != 'NIGHT_WORK' and c.is_active and not c.deleted_at %}
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="basis_codes" value="{{ c.code }}" id="nb{{ c.code }}" {% if c.code == 'DAILY_WAGE' %}checked{% endif %}>
+                                <label class="form-check-label" for="nb{{ c.code }}">{{ c.name }}</label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
                     <div class="col-12"><button class="btn btn-primary btn-sm">ذخیره سیاست شب‌کاری</button></div>
                 </form>
             </div>
@@ -994,6 +1003,7 @@
                     <tr>
                         <th>عضویت</th>
                         <th>درصد</th>
+                        <th>اقلام مبنا</th>
                         <th>نوع‌های بدون شب‌کاری</th>
                         <th></th>
                     </tr>
@@ -1003,6 +1013,7 @@
                     <tr>
                         <td>{{ p.membership_type_code }}</td>
                         <td dir="ltr">{{ p.premium_percent|payroll_num }}٪</td>
+                        <td>{{ p.basis_codes or '—' }}</td>
                         <td>
                             {% for code in p.excluded_pattern_list %}
                             {{ night_pattern_labels.get(code, code) }}{% if not loop.last %}، {% endif %}
@@ -1018,7 +1029,7 @@
                         </td>
                     </tr>
                 {% else %}
-                    <tr><td colspan="4" class="text-muted text-center">سیاستی ثبت نشده</td></tr>
+                    <tr><td colspan="5" class="text-muted text-center">سیاستی ثبت نشده</td></tr>
                 {% endfor %}
                 </tbody>
             </table>
@@ -1065,6 +1076,179 @@
                                     <div class="form-check">
                                         <input class="form-check-input" type="checkbox" name="excluded_patterns" value="{{ code }}" id="enx{{ p.id }}{{ code }}" {% if code in p.excluded_pattern_list %}checked{% endif %}>
                                         <label class="form-check-label" for="enx{{ p.id }}{{ code }}">{{ label }}</label>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">اقلام داخل مبنا</label>
+                                <div class="d-flex flex-wrap gap-3">
+                                    {% for c in components if c.kind == 'earning' and c.code != 'NIGHT_WORK' and c.is_active and not c.deleted_at %}
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="basis_codes" value="{{ c.code }}" id="enb{{ p.id }}{{ c.code }}" {% if c.code in p.basis_code_list %}checked{% endif %}>
+                                        <label class="form-check-label" for="enb{{ p.id }}{{ c.code }}">{{ c.name }}</label>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">انصراف</button>
+                        <button type="submit" class="btn btn-primary">ذخیره</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="tab-pane fade" id="tab-friday">
+        <div class="alert alert-light border small">
+            فوق‌العاده جمعه‌کاری برابر است با درصد سیاست ضربدر مزد ساعتی ضربدر ساعات جمعه.
+            مزد ساعتی از جمع مبلغ ماهانه اقلام انتخاب‌شده (روزانه و سنوات با ۳۰ روز) تقسیم بر ساعت روز ضربدر ۳۰ ساخته می‌شود.
+            نوع‌های تیک‌خورده جمعه‌کاری نمی‌گیرند. «بدون نوبت‌کاری» همیشه می‌گیرد.
+        </div>
+        <div class="card shadow-sm mb-3">
+            <div class="card-header">سیاست جمعه‌کاری عضویت</div>
+            <div class="card-body">
+                <form method="post" action="/admin/policies/payroll/friday" class="row g-2">
+                    <div class="col-md-3">
+                        <label class="form-label">عضویت</label>
+                        <select name="membership_type_code" class="form-select" required>
+                            {% for mt in memberships %}
+                            <option value="{{ mt.code }}">{{ mt.code }} — {{ mt.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">درصد فوق‌العاده</label>
+                        <input name="premium_percent" class="form-control" dir="ltr" value="96" required>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">از تاریخ</label>
+                        <input name="effective_from" class="form-control" placeholder="1405/01/01" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">یادداشت</label>
+                        <input name="notes" class="form-control">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">نوع نوبتی که جمعه‌کاری نمی‌گیرد</label>
+                        <div class="d-flex flex-wrap gap-3">
+                            {% for code, label in night_exclude_options %}
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="excluded_patterns" value="{{ code }}" id="fx{{ code }}" checked>
+                                <label class="form-check-label" for="fx{{ code }}">{{ label }}</label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">اقلام داخل مبنا</label>
+                        <div class="d-flex flex-wrap gap-3">
+                            {% for c in components if c.kind == 'earning' and c.code != 'FRIDAY_WORK' and c.is_active and not c.deleted_at %}
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="basis_codes" value="{{ c.code }}" id="fb{{ c.code }}" {% if c.code == 'DAILY_WAGE' %}checked{% endif %}>
+                                <label class="form-check-label" for="fb{{ c.code }}">{{ c.name }}</label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="col-12"><button class="btn btn-primary btn-sm">ذخیره سیاست جمعه‌کاری</button></div>
+                </form>
+            </div>
+        </div>
+        <div class="card shadow-sm">
+            <table class="table table-sm mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>عضویت</th>
+                        <th>درصد</th>
+                        <th>اقلام مبنا</th>
+                        <th>نوع‌های بدون جمعه‌کاری</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for p in friday_policies %}
+                    <tr>
+                        <td>{{ p.membership_type_code }}</td>
+                        <td dir="ltr">{{ p.premium_percent|payroll_num }}٪</td>
+                        <td>{{ p.basis_codes or '—' }}</td>
+                        <td>
+                            {% for code in p.excluded_pattern_list %}
+                            {{ night_pattern_labels.get(code, code) }}{% if not loop.last %}، {% endif %}
+                            {% else %}
+                            هیچ نوع نوبتی حذف نشده
+                            {% endfor %}
+                        </td>
+                        <td class="text-nowrap">
+                            <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editFriday{{ p.id }}">ویرایش</button>
+                            <form method="post" action="/admin/policies/payroll/friday/{{ p.id }}/delete" class="d-inline" onsubmit="return confirm('حذف سیاست جمعه‌کاری؟')">
+                                <button type="submit" class="btn btn-sm btn-outline-danger">حذف</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="5" class="text-muted text-center">سیاستی ثبت نشده</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% for p in friday_policies %}
+        <div class="modal fade" id="editFriday{{ p.id }}" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-lg">
+                <form method="post" action="/admin/policies/payroll/friday" class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">ویرایش جمعه‌کاری — عضویت {{ p.membership_type_code }}</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <input type="hidden" name="policy_id" value="{{ p.id }}">
+                        <div class="row g-2">
+                            <div class="col-md-4">
+                                <label class="form-label">عضویت</label>
+                                <select name="membership_type_code" class="form-select" required>
+                                    {% for mt in memberships %}
+                                    <option value="{{ mt.code }}" {% if mt.code == p.membership_type_code %}selected{% endif %}>{{ mt.code }} — {{ mt.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">از تاریخ</label>
+                                <input name="effective_from" class="form-control" value="{{ p.effective_from|jalali }}" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">تا تاریخ</label>
+                                <input name="effective_to" class="form-control" value="{{ p.effective_to|jalali if p.effective_to else '' }}">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">درصد فوق‌العاده</label>
+                                <input name="premium_percent" class="form-control" dir="ltr" value="{{ p.premium_percent|payroll_num }}" required>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">یادداشت</label>
+                                <input name="notes" class="form-control" value="{{ p.notes or '' }}">
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">نوع نوبتی که جمعه‌کاری نمی‌گیرد</label>
+                                <div class="d-flex flex-wrap gap-3">
+                                    {% for code, label in night_exclude_options %}
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="excluded_patterns" value="{{ code }}" id="efx{{ p.id }}{{ code }}" {% if code in p.excluded_pattern_list %}checked{% endif %}>
+                                        <label class="form-check-label" for="efx{{ p.id }}{{ code }}">{{ label }}</label>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">اقلام داخل مبنا</label>
+                                <div class="d-flex flex-wrap gap-3">
+                                    {% for c in components if c.kind == 'earning' and c.code != 'FRIDAY_WORK' and c.is_active and not c.deleted_at %}
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="basis_codes" value="{{ c.code }}" id="efb{{ p.id }}{{ c.code }}" {% if c.code in p.basis_code_list %}checked{% endif %}>
+                                        <label class="form-check-label" for="efb{{ p.id }}{{ c.code }}">{{ c.name }}</label>
                                     </div>
                                     {% endfor %}
                                 </div>
@@ -1199,6 +1383,9 @@ if (tab === 'shift') {
 }
 if (tab === 'night') {
     document.querySelector('[data-bs-target="#tab-night"]')?.click();
+}
+if (tab === 'friday') {
+    document.querySelector('[data-bs-target="#tab-friday"]')?.click();
 }
 if (tab === 'run_memberships') {
     document.querySelector('[data-bs-target="#tab-run-memberships"]')?.click();

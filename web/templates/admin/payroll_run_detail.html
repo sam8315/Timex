@@ -24,15 +24,17 @@
 
 {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
 {% if success %}<div class="alert alert-success">{{ success }}</div>{% endif %}
+{% if calculation_busy %}<div class="alert alert-warning">{{ calculation_busy }}</div>{% endif %}
 
 {% if can_mutate_run or can_manage or (can_approve and run.status == 'calculated') %}
 <div class="mb-3 d-flex flex-wrap gap-2">
     {% if can_mutate_run and run.status in ['draft', 'calculated'] %}
-    <button type="button" class="btn btn-sm {% if run.status == 'draft' %}btn-primary{% else %}btn-outline-primary{% endif %}" id="payrollCalcBtn">{% if run.status == 'draft' %}محاسبه{% else %}محاسبه مجدد{% endif %}</button>
+    <button type="button" class="btn btn-sm {% if run.status == 'draft' %}btn-primary{% else %}btn-outline-primary{% endif %}" id="payrollCalcBtn" {% if calculation_busy %}disabled{% endif %}>{% if run.status == 'draft' %}محاسبه{% else %}محاسبه مجدد{% endif %}</button>
+    <button type="button" class="btn btn-sm btn-outline-primary" id="payrollCalcSelectedBtn" {% if calculation_busy %}disabled{% endif %}>محاسبه انتخاب‌شده‌ها</button>
     {% endif %}
     {% if run.status == 'calculated' and can_approve %}
     <form method="post" action="/admin/payroll/runs/{{ run.id }}/approve">
-        <button class="btn btn-success btn-sm">تأیید</button>
+        <button class="btn btn-success btn-sm" {% if calculation_busy %}disabled{% endif %}>تأیید</button>
     </form>
     {% endif %}
     {% if can_manage and run.status == 'approved' %}
@@ -42,13 +44,29 @@
     {% endif %}
     {% if can_mutate_run %}
     <form method="post" action="/admin/payroll/runs/{{ run.id }}/delete" onsubmit="return confirm('این لیست حقوق و فیش‌های آن حذف شود؟');">
-        <button class="btn btn-outline-danger btn-sm">حذف لیست</button>
+        <button class="btn btn-outline-danger btn-sm" {% if calculation_busy %}disabled{% endif %}>حذف لیست</button>
     </form>
     {% endif %}
 </div>
 {% endif %}
 
 {% if can_mutate_run and run.status in ['draft', 'calculated'] %}
+<div class="card shadow-sm mb-3">
+    <div class="card-header">قلم‌های این محاسبه</div>
+    <div class="card-body">
+        <p class="small text-muted mb-2">قلم‌هایی که تیک ندارند در محاسبهٔ مجدد نمی‌آیند. قلم تیک‌خورده حتی با مبلغ صفر روی فیش می‌ماند.</p>
+        <div class="d-flex flex-wrap gap-3">
+            {% for c in active_components %}
+            <div class="form-check">
+                <input class="form-check-input run-component" type="checkbox" value="{{ c.code }}" id="rc{{ c.code }}"
+                    {% if not components_explicit or c in chosen_components %}checked{% endif %}
+                    {% if calculation_busy %}disabled{% endif %}>
+                <label class="form-check-label" for="rc{{ c.code }}">{{ c.name }}</label>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
 <div class="alert alert-light border small">
     نوع نوبت هر نفر را قبل از محاسبه انتخاب کنید. تا وقتی انتخابی ذخیره نشده باشد، بدون نوبت‌کاری حساب می‌شود.
 </div>
@@ -60,6 +78,12 @@
             <table class="table table-sm table-hover mb-0 align-middle">
                 <thead class="table-light">
                     <tr>
+                        {% if can_mutate_run and run.status in ['draft', 'calculated'] %}
+                        <th class="text-nowrap">
+                            <input class="form-check-input" type="checkbox" id="payrollSelectAll" {% if calculation_busy %}disabled{% endif %}>
+                            <label class="form-check-label small" for="payrollSelectAll">انتخاب همه</label>
+                        </th>
+                        {% endif %}
                         <th>کد</th>
                         <th>نام</th>
                         <th>عضویت</th>
@@ -78,6 +102,11 @@
                 <tbody>
                 {% for r in roster %}
                     <tr data-user-id="{{ r.user_id }}">
+                        {% if can_mutate_run and run.status in ['draft', 'calculated'] %}
+                        <td>
+                            <input class="form-check-input recalc-user" type="checkbox" value="{{ r.user_id }}" {% if calculation_busy %}disabled{% endif %}>
+                        </td>
+                        {% endif %}
                         <td>{{ r.user_id }}</td>
                         <td>{{ r.name }}</td>
                         <td>{{ r.membership or '—' }}</td>
@@ -87,7 +116,7 @@
                         <td class="fw-bold">{% if r.net is not none %}{{ '{:,.0f}'.format(r.net) }}{% else %}—{% endif %}</td>
                         {% if can_mutate_run and run.status in ['draft', 'calculated'] %}
                         <td style="min-width: 190px">
-                            <select class="form-select form-select-sm shift-pattern" data-user-id="{{ r.user_id }}">
+                            <select class="form-select form-select-sm shift-pattern" data-user-id="{{ r.user_id }}" {% if calculation_busy %}disabled{% endif %}>
                                 {% for code, label in shift_options %}
                                 <option value="{{ code }}" {% if r.pattern == code %}selected{% endif %}>{{ label }}</option>
                                 {% endfor %}
@@ -103,7 +132,7 @@
                         </td>
                     </tr>
                 {% else %}
-                    <tr><td colspan="9" class="text-center text-muted py-4">فردی برای این دوره نیست.</td></tr>
+                    <tr><td colspan="10" class="text-center text-muted py-4">فردی برای این دوره نیست.</td></tr>
                 {% endfor %}
                 </tbody>
             </table>
@@ -176,7 +205,10 @@ tr.payroll-row-active { background: #e8f7ee !important; }
 (function () {
     const runId = {{ run.id }};
     const auto = {{ 'true' if auto_calc else 'false' }};
+    const lockedOnLoad = {{ 'true' if calculation_busy else 'false' }};
     const btn = document.getElementById('payrollCalcBtn');
+    const selectedBtn = document.getElementById('payrollCalcSelectedBtn');
+    const selectAll = document.getElementById('payrollSelectAll');
     const box = document.getElementById('payrollProgress');
     const bar = document.getElementById('payrollProgressBar');
     const pct = document.getElementById('payrollProgressPct');
@@ -209,6 +241,28 @@ tr.payroll-row-active { background: #e8f7ee !important; }
         if (row) row.classList.add('payroll-row-active');
     }
 
+    async function saveComponents() {
+        const boxes = [...document.querySelectorAll('.run-component')];
+        if (!boxes.length) return;
+        const codes = boxes.filter((box) => box.checked).map((box) => box.value);
+        const saved = await fetch('/admin/payroll/runs/' + runId + '/components', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({codes}),
+        });
+        if (!saved.ok) {
+            let message = 'ذخیره قلم‌ها ناموفق بود';
+            try {
+                const body = await saved.json();
+                if (body.error) message = body.error;
+            } catch (err) { /* پاسخ متنی */ }
+            const error = new Error(message);
+            error.busy = saved.status === 409;
+            throw error;
+        }
+    }
+
     async function saveChoices() {
         const choices = [...document.querySelectorAll('.shift-pattern')].map((sel) => ({
             user_id: sel.dataset.userId,
@@ -227,25 +281,54 @@ tr.payroll-row-active { background: #e8f7ee !important; }
                 const body = await saved.json();
                 if (body.error) message = body.error;
             } catch (err) { /* پاسخ متنی */ }
-            throw new Error(message);
+            const error = new Error(message);
+            error.busy = saved.status === 409;
+            throw error;
         }
     }
 
-    async function start() {
-        if (btn) btn.disabled = true;
+    function selectedUserIds() {
+        return [...document.querySelectorAll('.recalc-user:checked')].map((box) => box.value);
+    }
+
+    function setCalcButtonsDisabled(disabled) {
+        if (btn) btn.disabled = disabled;
+        if (selectedBtn) selectedBtn.disabled = disabled;
+    }
+
+    let running = false;
+
+    async function start(userIds) {
+        if (running || lockedOnLoad) return;
+        if (userIds && !userIds.length) {
+            show({percent: 0, error: 'حداقل یک نفر را انتخاب کنید', done: true});
+            return;
+        }
+        running = true;
+        setCalcButtonsDisabled(true);
         errEl.classList.add('d-none');
-        show({percent: 0, name: 'ذخیره نوع نوبت…', index: 0, total: 0, done: false});
+        show({percent: 0, name: 'ذخیره قلم‌ها…', index: 0, total: 0, done: false});
         let failed = false;
+        let stayLocked = false;
         try {
+            await saveComponents();
+            show({percent: 0, name: 'ذخیره نوع نوبت…', index: 0, total: 0, done: false});
             await saveChoices();
             show({percent: 0, name: 'آماده‌سازی…', index: 0, total: 0, done: false});
-            const response = await fetch('/admin/payroll/runs/' + runId + '/calculate-stream', {
-                method: 'POST',
-                credentials: 'same-origin',
-                headers: {Accept: 'text/event-stream'},
-            });
+            const headers = {Accept: 'text/event-stream'};
+            const init = {method: 'POST', credentials: 'same-origin', headers};
+            if (userIds) {
+                headers['Content-Type'] = 'application/json';
+                init.body = JSON.stringify({user_ids: userIds});
+            }
+            const response = await fetch('/admin/payroll/runs/' + runId + '/calculate-stream', init);
             if (!response.ok || !response.body) {
-                show({percent: 0, error: 'شروع محاسبه ناموفق بود', done: true});
+                let message = 'شروع محاسبه ناموفق بود';
+                try {
+                    const body = await response.json();
+                    if (body.error) message = body.error;
+                } catch (err) { /* پاسخ متنی */ }
+                show({percent: 0, error: message, done: true});
                 failed = true;
             } else {
                 const reader = response.body.getReader();
@@ -262,18 +345,23 @@ tr.payroll-row-active { background: #e8f7ee !important; }
                         if (!line) continue;
                         const event = JSON.parse(line.slice(6));
                         show(event);
-                        if (event.error) failed = true;
+                        if (event.error) {
+                            failed = true;
+                            if (event.busy) stayLocked = true;
+                        }
                     }
                 }
             }
         } catch (err) {
             show({percent: 0, error: (err && err.message) || 'ارتباط با سرور قطع شد', done: true});
             failed = true;
+            if (err && err.busy) stayLocked = true;
         }
         if (!failed) {
             window.location = '/admin/payroll/runs/' + runId + '?success=' + encodeURIComponent('محاسبه انجام شد');
-        } else if (btn) {
-            btn.disabled = false;
+        } else if (!stayLocked) {
+            setCalcButtonsDisabled(false);
+            running = false;
         }
     }
 
@@ -282,8 +370,23 @@ tr.payroll-row-active { background: #e8f7ee !important; }
             saveChoices().catch(() => {});
         });
     });
-    if (btn) btn.addEventListener('click', start);
-    if (auto && btn) start();
+    if (selectAll) {
+        selectAll.addEventListener('change', () => {
+            document.querySelectorAll('.recalc-user').forEach((box) => {
+                box.checked = selectAll.checked;
+            });
+        });
+    }
+    document.querySelectorAll('.recalc-user').forEach((box) => {
+        box.addEventListener('change', () => {
+            if (!selectAll) return;
+            const boxes = [...document.querySelectorAll('.recalc-user')];
+            selectAll.checked = boxes.length > 0 && boxes.every((item) => item.checked);
+        });
+    });
+    if (btn) btn.addEventListener('click', () => start());
+    if (selectedBtn) selectedBtn.addEventListener('click', () => start(selectedUserIds()));
+    if (auto && btn && !lockedOnLoad) start();
 })();
 </script>
 {% endblock %}

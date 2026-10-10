@@ -132,6 +132,33 @@ def _can_mutate_run(user: User, run: PayrollRun) -> bool:
 _MUTATE_DENIED = "فقط ایجادکنندهٔ این لیست می‌تواند آن را تغییر دهد"
 
 
+def _calculation_block(db: Session, user: User, run: PayrollRun) -> Optional[str]:
+    holder = run.calculating_by
+    if not holder:
+        return None
+    labels = _actor_names(db, [holder])
+    return run_service.calculation_busy_message(
+        requester_id=user.user_id,
+        creator_id=run.created_by,
+        holder_id=holder,
+        holder_label=labels.get(holder) or holder,
+    )
+
+
+def _calc_event(*, error: str = "", busy: bool = False) -> str:
+    payload = {
+        "done": True,
+        "error": error,
+        "busy": busy,
+        "percent": 0,
+        "name": "",
+        "user_id": "",
+        "index": 0,
+        "total": 0,
+    }
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
 def _can_manage(db: Session, user: User) -> bool:
     return has_permission(db, user, "manage_payroll")
 
@@ -304,6 +331,7 @@ async def payroll_run_detail(
             "run": run,
             "roster": run_service.shift_roster(db, run),
             "chosen_components": chosen_components,
+            "active_components": active_components,
             "components_explicit": chosen_codes is not None,
             "shift_options": SHIFT_OPTIONS,
             "shift_labels": PATTERN_LABELS,
@@ -315,6 +343,7 @@ async def payroll_run_detail(
             "is_super_admin": user.role == "super_admin",
             "creator_name": names.get(run.created_by) if run.created_by else None,
             "approver_name": names.get(run.approved_by) if run.approved_by else None,
+            "calculation_busy": _calculation_block(db, user, run),
             "error": request.query_params.get("error"),
             "success": request.query_params.get("success"),
             "auto_calc": request.query_params.get("calc") == "1",
@@ -325,11 +354,26 @@ async def payroll_run_detail(
 @router.post("/admin/payroll/runs/{run_id}/calculate-stream")
 async def payroll_calculate_stream(
     run_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     if not _can_manage(db, user):
         return _deny()
+    user_ids = None
+    if "application/json" in request.headers.get("content-type", ""):
+        try:
+            payload = await request.json()
+        except Exception:
+            payload = {}
+        if isinstance(payload, dict) and "user_ids" in payload:
+            raw = payload.get("user_ids") or []
+            user_ids = [str(item).strip() for item in raw if str(item).strip()]
+            if not user_ids:
+                return JSONResponse(
+                    {"ok": False, "error": "حداقل یک نفر را انتخاب کنید"},
+                    status_code=400,
+                )
     try:
         run = run_service.get_run(db, run_id)
     except PayrollRunError as exc:
@@ -341,28 +385,63 @@ async def payroll_calculate_stream(
 
     def events():
         stream_db = SessionLocal()
+        acquired = False
         try:
-            for event in run_service.iter_calculate(stream_db, run_id):
+            if not run_service.try_acquire_calculation(stream_db, run_id, user.user_id):
+                holder, creator = run_service.calculation_lock_state(stream_db, run_id)
+                if holder:
+                    labels = _actor_names(stream_db, [holder])
+                    message = run_service.calculation_busy_message(
+                        requester_id=user.user_id,
+                        creator_id=creator,
+                        holder_id=holder,
+                        holder_label=labels.get(holder) or holder,
+                    )
+                    yield _calc_event(error=message, busy=True)
+                    return
+            else:
+                acquired = True
+            for event in run_service.iter_calculate(stream_db, run_id, user_ids):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except Exception as exc:
-            payload = {
-                "done": True,
-                "error": str(exc),
-                "percent": 0,
-                "name": "",
-                "user_id": "",
-                "index": 0,
-                "total": 0,
-            }
-            yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+            yield _calc_event(error=str(exc))
         finally:
-            stream_db.close()
+            try:
+                if acquired:
+                    stream_db.rollback()
+                    run_service.release_calculation(stream_db, run_id, user.user_id)
+            finally:
+                stream_db.close()
 
     return StreamingResponse(
         iterate_in_threadpool(events()),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.post("/admin/payroll/runs/{run_id}/components")
+async def payroll_run_components(
+    run_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not _can_manage(db, user):
+        return JSONResponse({"ok": False, "error": "دسترسی ندارید"}, status_code=403)
+    try:
+        run = run_service.get_run(db, run_id)
+        if not _can_mutate_run(user, run):
+            return JSONResponse({"ok": False, "error": _MUTATE_DENIED}, status_code=403)
+        busy = _calculation_block(db, user, run)
+        if busy:
+            return JSONResponse({"ok": False, "error": busy}, status_code=409)
+        payload = await request.json()
+        codes = [str(item) for item in (payload.get("codes") or [])]
+        run_service.set_run_components(db, run_id, codes)
+        return JSONResponse({"ok": True})
+    except PayrollRunError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
 
 
 @router.post("/admin/payroll/runs/{run_id}/shift-choices")
@@ -378,6 +457,9 @@ async def payroll_shift_choices(
         run = run_service.get_run(db, run_id)
         if not _can_mutate_run(user, run):
             return JSONResponse({"ok": False, "error": _MUTATE_DENIED}, status_code=403)
+        busy = _calculation_block(db, user, run)
+        if busy:
+            return JSONResponse({"ok": False, "error": busy}, status_code=409)
         payload = await request.json()
         raw = payload.get("choices") or []
         pairs = [(str(item.get("user_id") or ""), str(item.get("pattern") or "")) for item in raw]
@@ -399,6 +481,9 @@ async def payroll_recalculate(
         run = run_service.get_run(db, run_id)
         if not _can_mutate_run(user, run):
             return _redirect(f"/admin/payroll/runs/{run_id}", error=_MUTATE_DENIED)
+        busy = _calculation_block(db, user, run)
+        if busy:
+            return _redirect(f"/admin/payroll/runs/{run_id}", error=busy)
     except PayrollRunError as exc:
         return _redirect("/admin/payroll", error=str(exc))
     return _redirect(f"/admin/payroll/runs/{run_id}?calc=1")
@@ -416,6 +501,9 @@ async def payroll_delete(
         run = run_service.get_run(db, run_id)
         if not _can_mutate_run(user, run):
             return _redirect("/admin/payroll", error=_MUTATE_DENIED)
+        busy = _calculation_block(db, user, run)
+        if busy:
+            return _redirect(f"/admin/payroll/runs/{run_id}", error=busy)
         run_service.delete_run(db, run_id)
         return _redirect("/admin/payroll", success="لیست حقوق حذف شد")
     except PayrollRunError as exc:
@@ -431,6 +519,10 @@ async def payroll_approve(
     if not _can_approve(db, user):
         return _deny()
     try:
+        run = run_service.get_run(db, run_id)
+        busy = _calculation_block(db, user, run)
+        if busy:
+            return _redirect(f"/admin/payroll/runs/{run_id}", error=busy)
         run_service.approve_run(db, run_id, user.user_id)
         return _redirect(f"/admin/payroll/runs/{run_id}", success="تأیید شد")
     except PayrollRunError as exc:
@@ -568,6 +660,7 @@ async def payroll_policy_page(
             "deficit_policies": policy_service.list_deficit_policies(db),
             "shift_policies": policy_service.list_shift_policies(db),
             "night_policies": policy_service.list_night_policies(db),
+            "friday_policies": policy_service.list_friday_policies(db),
             "night_exclude_options": [
                 (code, label) for code, label in SHIFT_OPTIONS if code != PATTERN_NONE
             ],
@@ -657,7 +750,6 @@ async def payroll_component_delete(
 async def payroll_rates_save(
     insurance_employee_pct: str = Form("7"),
     tax_pct: str = Form("0"),
-    friday_coefficient: str = Form("1.96"),
     eidi_payment_month: int = Form(12),
     bonus_payment_month: int = Form(12),
     eidi_day_factor: str = Form("60"),
@@ -673,7 +765,6 @@ async def payroll_rates_save(
             db,
             insurance_employee_pct=_dec(insurance_employee_pct, "درصد بیمه"),
             tax_pct=_dec(tax_pct, "درصد مالیات"),
-            friday_coefficient=_dec(friday_coefficient, "ضریب جمعه"),
             eidi_payment_month=eidi_payment_month,
             bonus_payment_month=bonus_payment_month,
             eidi_day_factor=_dec(eidi_day_factor, "ضریب عیدی"),
@@ -1066,10 +1157,12 @@ async def payroll_night_policy_save(
     try:
         form = await request.form()
         patterns = [str(item) for item in form.getlist("excluded_patterns")]
+        codes = [str(item) for item in form.getlist("basis_codes")]
         policy_service.upsert_night_policy(
             db,
             membership_type_code=membership_type_code.strip(),
             premium_percent=_dec(premium_percent, "درصد شب‌کاری"),
+            basis_codes=codes,
             excluded_patterns=patterns,
             effective_from=_parse_date(effective_from),
             effective_to=_parse_date(effective_to) if effective_to.strip() else None,
@@ -1094,6 +1187,55 @@ async def payroll_night_policy_delete(
         return _redirect("/admin/policies/payroll?tab=night", success="سیاست شب‌کاری حذف شد")
     except PayrollPolicyError as exc:
         return _redirect("/admin/policies/payroll?tab=night", error=str(exc))
+
+
+@router.post("/admin/policies/payroll/friday")
+async def payroll_friday_policy_save(
+    request: Request,
+    membership_type_code: str = Form(...),
+    premium_percent: str = Form("96"),
+    effective_from: str = Form(...),
+    effective_to: str = Form(""),
+    notes: str = Form(""),
+    policy_id: str = Form(""),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not _can_manage(db, user) and not has_permission(db, user, "manage_users"):
+        return _deny()
+    try:
+        form = await request.form()
+        patterns = [str(item) for item in form.getlist("excluded_patterns")]
+        codes = [str(item) for item in form.getlist("basis_codes")]
+        policy_service.upsert_friday_policy(
+            db,
+            membership_type_code=membership_type_code.strip(),
+            premium_percent=_dec(premium_percent, "درصد جمعه‌کاری"),
+            basis_codes=codes,
+            excluded_patterns=patterns,
+            effective_from=_parse_date(effective_from),
+            effective_to=_parse_date(effective_to) if effective_to.strip() else None,
+            notes=notes.strip() or None,
+            policy_id=int(policy_id) if policy_id.strip() else None,
+        )
+        return _redirect("/admin/policies/payroll?tab=friday", success="سیاست جمعه‌کاری ذخیره شد")
+    except (PayrollPolicyError, ValueError) as exc:
+        return _redirect("/admin/policies/payroll?tab=friday", error=str(exc))
+
+
+@router.post("/admin/policies/payroll/friday/{policy_id}/delete")
+async def payroll_friday_policy_delete(
+    policy_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not _can_manage(db, user) and not has_permission(db, user, "manage_users"):
+        return _deny()
+    try:
+        policy_service.delete_friday_policy(db, policy_id)
+        return _redirect("/admin/policies/payroll?tab=friday", success="سیاست جمعه‌کاری حذف شد")
+    except PayrollPolicyError as exc:
+        return _redirect("/admin/policies/payroll?tab=friday", error=str(exc))
 
 
 @router.post("/admin/policies/payroll/run-memberships")

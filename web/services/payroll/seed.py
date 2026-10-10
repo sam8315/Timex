@@ -19,6 +19,7 @@ from models.payroll import (
     PayrollDeficitPolicy,
     PayrollShiftPolicy,
     PayrollNightPolicy,
+    PayrollFridayPolicy,
     PayrollEnabledMembership,
     PayrollRateSettings,
 )
@@ -323,6 +324,7 @@ def ensure_night_defaults(db: Session) -> None:
             id SERIAL PRIMARY KEY,
             membership_type_code VARCHAR(10) NOT NULL,
             premium_percent NUMERIC(8, 4) NOT NULL DEFAULT 35,
+            basis_codes TEXT NOT NULL DEFAULT 'DAILY_WAGE',
             excluded_patterns TEXT NOT NULL DEFAULT '',
             effective_from DATE NOT NULL,
             effective_to DATE NULL,
@@ -333,6 +335,14 @@ def ensure_night_defaults(db: Session) -> None:
             CONSTRAINT uq_payroll_night_membership UNIQUE (membership_type_code)
         )
         """
+    ))
+    db.execute(text(
+        "ALTER TABLE payroll_night_policies "
+        "ADD COLUMN IF NOT EXISTS basis_codes TEXT NOT NULL DEFAULT 'DAILY_WAGE'"
+    ))
+    db.execute(text(
+        "UPDATE payroll_night_policies SET basis_codes = 'DAILY_WAGE' "
+        "WHERE basis_codes IS NULL OR btrim(basis_codes) = ''"
     ))
     db.commit()
     if db.query(PayrollNightPolicy).count() > 0:
@@ -347,10 +357,54 @@ def ensure_night_defaults(db: Session) -> None:
             PayrollNightPolicy(
                 membership_type_code=mt.code,
                 premium_percent=Decimal("35"),
+                basis_codes="DAILY_WAGE",
                 excluded_patterns=excluded,
                 effective_from=start,
                 is_active=True,
                 notes="درصد اولیه ۳۵ است. نوبت‌کارها در مقدار اولیه شب‌کاری نمی‌گیرند",
+            )
+        )
+    db.commit()
+
+
+def ensure_friday_defaults(db: Session) -> None:
+    """سیاست اولیه جمعه‌کاری گروه قراردادی. حذف کاربر دوباره ساخته نمی‌شود."""
+    db.execute(text(
+        """
+        CREATE TABLE IF NOT EXISTS payroll_friday_policies (
+            id SERIAL PRIMARY KEY,
+            membership_type_code VARCHAR(10) NOT NULL,
+            premium_percent NUMERIC(8, 4) NOT NULL DEFAULT 96,
+            basis_codes TEXT NOT NULL DEFAULT '',
+            excluded_patterns TEXT NOT NULL DEFAULT '',
+            effective_from DATE NOT NULL,
+            effective_to DATE NULL,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            notes TEXT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT uq_payroll_friday_membership UNIQUE (membership_type_code)
+        )
+        """
+    ))
+    db.commit()
+    if db.query(PayrollFridayPolicy).count() > 0:
+        return
+    start = jdatetime.date(1405, 1, 1).togregorian()
+    excluded = ",".join(DEFAULT_EXCLUDED)
+    types = db.query(MembershipType).filter(MembershipType.is_active.is_(True)).all()
+    for mt in types:
+        if "قرارداد" not in (mt.name or ""):
+            continue
+        db.add(
+            PayrollFridayPolicy(
+                membership_type_code=mt.code,
+                premium_percent=Decimal("96"),
+                basis_codes="DAILY_WAGE",
+                excluded_patterns=excluded,
+                effective_from=start,
+                is_active=True,
+                notes="درصد اولیه ۹۶ است. فقط بخش اضافه است. نوبت‌کارها جمعه‌کاری نمی‌گیرند",
             )
         )
     db.commit()
@@ -375,6 +429,13 @@ def ensure_payroll_defaults(db: Session) -> None:
     ))
     db.execute(text(
         "ALTER TABLE payroll_runs ADD COLUMN IF NOT EXISTS component_codes TEXT NULL"
+    ))
+    db.execute(text(
+        "ALTER TABLE payroll_runs ADD COLUMN IF NOT EXISTS calculating_by VARCHAR(50) NULL"
+    ))
+    db.execute(text(
+        "ALTER TABLE payroll_runs "
+        "ADD COLUMN IF NOT EXISTS calculating_started_at TIMESTAMPTZ NULL"
     ))
     db.commit()
     existing = {c.code for c in db.query(PayrollComponent).all()}
@@ -408,3 +469,4 @@ def ensure_payroll_defaults(db: Session) -> None:
     ensure_deficit_defaults(db)
     ensure_shift_defaults(db)
     ensure_night_defaults(db)
+    ensure_friday_defaults(db)
