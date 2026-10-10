@@ -43,6 +43,7 @@ from web.services.payroll.friday_adapter import get_attendance_hour_buckets
 from web.services.payroll.policy_service import (
     get_rate_settings,
     list_components,
+    payroll_membership_codes_for_employees,
     resolve_amount,
 )
 from web.services.payroll.seed import ensure_payroll_defaults
@@ -201,10 +202,15 @@ def _eligible_employees(
     month_start: date,
     month_end: date,
     membership_type_code: Optional[str],
+    allowed_membership_codes: Optional[set[str]] = None,
 ) -> List[tuple[Employee, Contract, int]]:
     q = db.query(Contract).filter(Contract.start_date <= month_end)
     if membership_type_code:
         q = q.filter(Contract.contract_type_code == membership_type_code)
+    elif allowed_membership_codes is not None:
+        if not allowed_membership_codes:
+            return []
+        q = q.filter(Contract.contract_type_code.in_(allowed_membership_codes))
     contracts = q.all()
 
     # گروه‌بندی بر اساس user
@@ -237,8 +243,13 @@ def shift_roster(db: Session, run: PayrollRun) -> list[dict]:
     results = {row.user_id: row for row in run.results}
     rows = []
     seen = set()
+    allowed_codes = payroll_membership_codes_for_employees(db, run.membership_type_code)
     for emp, contract, covered in _eligible_employees(
-        db, month_start, month_end, run.membership_type_code
+        db,
+        month_start,
+        month_end,
+        run.membership_type_code,
+        allowed_membership_codes=allowed_codes,
     ):
         seen.add(emp.user_id)
         result = results.get(emp.user_id)
@@ -522,8 +533,13 @@ def iter_calculate(db: Session, run_id: int):
     db.flush()
 
     earn_codes = [c.code for c in components if c.kind == "earning"]
+    allowed_codes = payroll_membership_codes_for_employees(db, run.membership_type_code)
     employees = _eligible_employees(
-        db, month_start, month_end, run.membership_type_code
+        db,
+        month_start,
+        month_end,
+        run.membership_type_code,
+        allowed_membership_codes=allowed_codes,
     )
     total = len(employees)
 

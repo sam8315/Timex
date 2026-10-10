@@ -741,6 +741,18 @@ def is_payroll_membership_allowed(db: Session, code: str) -> bool:
     return any(mt.code == code for mt in list_enabled_payroll_memberships(db))
 
 
+def payroll_membership_codes_for_employees(
+    db: Session, run_membership_code: Optional[str]
+) -> Optional[set[str]]:
+    """کدهای عضویت واجد شرایط در محاسبه. None یعنی بدون محدودیت (همه قراردادها)."""
+    if (run_membership_code or "").strip():
+        return {run_membership_code.strip()}
+    selected = payroll_membership_selection_codes(db)
+    if selected is None:
+        return None
+    return selected
+
+
 def save_payroll_enabled_memberships(db: Session, codes: List[str]) -> None:
     ensure_payroll_defaults(db)
     active = {

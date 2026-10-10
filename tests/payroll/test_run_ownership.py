@@ -60,6 +60,22 @@ def test_actor_names_appends_role_label():
     assert labels["10"] == "کاربر — حسابدار"
 
 
+def test_payroll_membership_codes_for_employees_specific_run(monkeypatch):
+    from web.services.payroll import policy_service as ps
+
+    monkeypatch.setattr(ps, "payroll_membership_selection_codes", lambda _db: {"4", "7"})
+    codes = ps.payroll_membership_codes_for_employees(MagicMock(), "4")
+    assert codes == {"4"}
+
+
+def test_payroll_membership_codes_for_employees_all_run_uses_policy(monkeypatch):
+    from web.services.payroll import policy_service as ps
+
+    monkeypatch.setattr(ps, "payroll_membership_selection_codes", lambda _db: {"4", "7"})
+    codes = ps.payroll_membership_codes_for_employees(MagicMock(), None)
+    assert codes == {"4", "7"}
+
+
 def test_is_payroll_membership_allowed(monkeypatch):
     from web.services.payroll import policy_service as ps
 
