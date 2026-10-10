@@ -221,9 +221,14 @@ def _eligible_employees(
             continue
         by_user.setdefault(c.user_id, []).append(c)
 
+    employees_by_id = {
+        row.user_id: row
+        for row in db.query(Employee).filter(Employee.user_id.in_(by_user.keys())).all()
+    } if by_user else {}
+
     out = []
     for user_id, user_contracts in by_user.items():
-        emp = db.query(Employee).filter(Employee.user_id == user_id).first()
+        emp = employees_by_id.get(user_id)
         if not emp or not emp.is_active:
             continue
         covered, best = best_contract_coverage(month_start, month_end, user_contracts)
@@ -406,6 +411,51 @@ def _shift_rule(db: Session, membership_code: Optional[str], on_date: date):
     )
 
 
+class _RunPolicyCache:
+    """قوانین عضویت یک‌بار در هر اجرای محاسبه؛ از N×۴ کوئری تکراری جلوگیری می‌کند."""
+
+    __slots__ = ("_db", "_on_date", "_ot", "_deficit", "_shift", "_night", "_child")
+
+    def __init__(self, db: Session, on_date: date) -> None:
+        self._db = db
+        self._on_date = on_date
+        self._ot: dict[Optional[str], object] = {}
+        self._deficit: dict[Optional[str], object] = {}
+        self._shift: dict[Optional[str], object] = {}
+        self._night: dict[Optional[str], object] = {}
+        self._child: dict[Optional[str], object] = {}
+
+    def overtime(self, membership_code: Optional[str]):
+        key = membership_code or ""
+        if key not in self._ot:
+            self._ot[key] = _overtime_rule(self._db, membership_code, self._on_date)
+        return self._ot[key]
+
+    def deficit(self, membership_code: Optional[str]):
+        key = membership_code or ""
+        if key not in self._deficit:
+            self._deficit[key] = _deficit_rule(self._db, membership_code, self._on_date)
+        return self._deficit[key]
+
+    def shift(self, membership_code: Optional[str]):
+        key = membership_code or ""
+        if key not in self._shift:
+            self._shift[key] = _shift_rule(self._db, membership_code, self._on_date)
+        return self._shift[key]
+
+    def night(self, membership_code: Optional[str]):
+        key = membership_code or ""
+        if key not in self._night:
+            self._night[key] = _night_rule(self._db, membership_code, self._on_date)
+        return self._night[key]
+
+    def child(self, membership_code: Optional[str]):
+        key = membership_code or ""
+        if key not in self._child:
+            self._child[key] = _child_rule(self._db, membership_code, self._on_date)
+        return self._child[key]
+
+
 def _night_rule(db: Session, membership_code: Optional[str], on_date: date):
     if not membership_code:
         return None
@@ -504,6 +554,14 @@ def iter_calculate(db: Session, run_id: int):
                 "total": 0,
             }
             return
+    yield {
+        "index": 0,
+        "total": 0,
+        "percent": 0,
+        "name": "آماده‌سازی…",
+        "user_id": "",
+        "done": False,
+    }
     period = run.period
     month_start, month_end = jalali_month_bounds(period.year_j, period.month_j)
     month_days = month_day_count(period.year_j, period.month_j)
@@ -542,6 +600,8 @@ def iter_calculate(db: Session, run_id: int):
         allowed_membership_codes=allowed_codes,
     )
     total = len(employees)
+    policy_cache = _RunPolicyCache(db, payroll_date)
+    min_wage_cache: dict[Optional[str], Decimal] = {}
 
     for index, (emp, contract, covered) in enumerate(employees, start=1):
         yield {
@@ -592,14 +652,15 @@ def iter_calculate(db: Session, run_id: int):
                 evening_hours=evening_hours,
                 night_hours=night_hours,
                 shift_pattern=choices.get(emp.user_id, PATTERN_NONE),
-                overtime_rule=_overtime_rule(db, contract.contract_type_code, payroll_date),
-                deficit_rule=_deficit_rule(db, contract.contract_type_code, payroll_date),
-                shift_rule=_shift_rule(db, contract.contract_type_code, payroll_date),
-                night_rule=_night_rule(db, contract.contract_type_code, payroll_date),
+                overtime_rule=policy_cache.overtime(contract.contract_type_code),
+                deficit_rule=policy_cache.deficit(contract.contract_type_code),
+                shift_rule=policy_cache.shift(contract.contract_type_code),
+                night_rule=policy_cache.night(contract.contract_type_code),
                 children=_children_of(db, emp.user_id),
-                child_rule=_child_rule(db, contract.contract_type_code, payroll_date),
-                minimum_daily_wage=_minimum_daily_wage(
-                    db, period.year_j, contract.contract_type_code
+                child_rule=policy_cache.child(contract.contract_type_code),
+                minimum_daily_wage=min_wage_cache.setdefault(
+                    contract.contract_type_code,
+                    _minimum_daily_wage(db, period.year_j, contract.contract_type_code),
                 ),
             ),
             components,
@@ -636,7 +697,9 @@ def iter_calculate(db: Session, run_id: int):
                     sort_order=ln.sort_order,
                 )
             )
+        db.commit()
 
+    db.refresh(run)
     run.status = "calculated"
     run.calculated_at = datetime.now(timezone.utc)
     db.commit()

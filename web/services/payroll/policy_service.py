@@ -718,7 +718,6 @@ def delete_night_policy(db: Session, policy_id: int) -> None:
 
 def payroll_membership_selection_codes(db: Session) -> Optional[set[str]]:
     """کدهای انتخاب‌شده برای ایجاد حقوق؛ None یعنی همهٔ عضویت‌های فعال."""
-    ensure_payroll_defaults(db)
     rows = db.query(PayrollEnabledMembership.membership_type_code).all()
     if not rows:
         return None
