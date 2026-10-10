@@ -18,8 +18,8 @@ except ImportError:
 
 
 class PayslipPDF(FPDF):
-    def __init__(self):
-        super().__init__(orientation="P", unit="mm", format="A4")
+    def __init__(self, orientation: str = "P"):
+        super().__init__(orientation=orientation, unit="mm", format="A4")
         self.font_path = self._find_persian_font()
         if self.font_path:
             self.add_font("PayFont", "", self.font_path)

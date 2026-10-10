@@ -25,7 +25,14 @@ from web.permissions import has_permission, role_label_map
 from web.services.payroll import policy_service, run_service
 from web.services.payroll.policy_service import PayrollPolicyError
 from web.services.payroll.run_service import PayrollRunError
+from web.services.payroll.run_report import (
+    build_run_report,
+    load_report_people,
+    parse_report_form,
+    report_choices,
+)
 from core.payroll.pdf_payslip import build_payslip_pdf
+from core.payroll.pdf_run_report import build_run_report_pdf
 from core.payroll.payslip_present import fa_digits, line_detail, money_text, payslip_sort
 from core.payroll.shift import PATTERN_LABELS, PATTERN_NONE, SHIFT_OPTIONS
 from web.services.payroll.payslip_profile import load_payslip_profile
@@ -347,6 +354,7 @@ async def payroll_run_detail(
             "error": request.query_params.get("error"),
             "success": request.query_params.get("success"),
             "auto_calc": request.query_params.get("calc") == "1",
+            "report_choices": report_choices(load_report_people(db, run)),
         },
     )
 
@@ -621,6 +629,77 @@ async def admin_payslip_pdf(
         content=data,
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="payslip_{result_id}.pdf"'},
+    )
+
+
+def _run_report_payload(db: Session, run_id: int, form):
+    run = run_service.get_run(db, run_id)
+    people = load_report_people(db, run)
+    posted = parse_report_form(form)
+    report = build_run_report(
+        people,
+        membership_codes=posted["membership_codes"],
+        department_ids=posted["department_ids"],
+        position_ids=posted["position_ids"],
+        user_ids=posted["user_ids"],
+        column_codes=posted["column_codes"],
+        extra_columns=posted["extra_columns"],
+        department_totals=posted["department_totals"],
+    )
+    period = run.period
+    return run, posted, report, f"{period.year_j}/{period.month_j:02d}"
+
+
+@router.post("/admin/payroll/runs/{run_id}/report", response_class=HTMLResponse)
+async def payroll_run_report(
+    run_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not _can_view(db, user):
+        return _deny()
+    try:
+        run, posted, report, period_label = _run_report_payload(db, run_id, await request.form())
+    except PayrollRunError as exc:
+        return _redirect("/admin/payroll", error=str(exc))
+    return templates.TemplateResponse(
+        request,
+        "admin/payroll_run_report.html",
+        {
+            "user": user,
+            "is_admin": True,
+            "run": run,
+            "posted": posted,
+            "report": report,
+            "period_label": period_label,
+        },
+    )
+
+
+@router.post("/admin/payroll/runs/{run_id}/report.pdf")
+async def payroll_run_report_pdf(
+    run_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not _can_view(db, user):
+        return _deny()
+    try:
+        run, posted, report, period_label = _run_report_payload(db, run_id, await request.form())
+    except PayrollRunError as exc:
+        return _redirect("/admin/payroll", error=str(exc))
+    data = build_run_report_pdf(
+        report,
+        title=f"گزارش لیست حقوق شماره {run.id}",
+        period_label=period_label,
+        monochrome=posted["monochrome"],
+    )
+    return Response(
+        content=data,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="payroll_report_{run_id}.pdf"'},
     )
 
 

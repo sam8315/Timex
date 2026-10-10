@@ -7,7 +7,10 @@
         {{ run.period.year_j }}/{{ '%02d'|format(run.period.month_j) }}
         <span class="badge bg-secondary">{{ status_labels.get(run.status, run.status) }}</span>
     </h4>
-    <a href="/admin/payroll" class="btn btn-outline-secondary btn-sm">لیست</a>
+    <div class="d-flex gap-2">
+        <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#reportSettingsModal" {% if not report_choices.people %}disabled{% endif %}>تنظیمات گزارش</button>
+        <a href="/admin/payroll" class="btn btn-outline-secondary btn-sm">لیست</a>
+    </div>
 </div>
 <div class="text-muted small mb-3">
     ایجادکننده: {{ creator_name or run.created_by or '—' }}
@@ -25,6 +28,108 @@
 {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
 {% if success %}<div class="alert alert-success">{{ success }}</div>{% endif %}
 {% if calculation_busy %}<div class="alert alert-warning">{{ calculation_busy }}</div>{% endif %}
+
+<div class="modal fade" id="reportSettingsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <form method="post" action="/admin/payroll/runs/{{ run.id }}/report" class="modal-content" id="reportSettingsForm">
+            <div class="modal-header">
+                <h5 class="modal-title">تنظیمات گزارش</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                {% if report_choices.people %}
+                <p class="small text-muted">اگر عضویت، دپارتمان یا سمتی تیک نخورد، همه می‌آیند. نفرها و اقلام از تیک‌های همین صفحه خوانده می‌شوند. اگر هیچ نفری تیک نخورده باشد، همهٔ کسانی که از فیلترها رد می‌شوند در گزارش هستند.</p>
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <div class="form-label">عضویت</div>
+                        {% for item in report_choices.memberships %}
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="membership_codes" value="{{ item.code }}" id="rm{{ item.code }}">
+                            <label class="form-check-label" for="rm{{ item.code }}">{{ item.name }}</label>
+                        </div>
+                        {% else %}
+                        <div class="text-muted small">عضویتی در فیش‌ها نیست</div>
+                        {% endfor %}
+                    </div>
+                    <div class="col-md-4">
+                        <div class="form-label">دپارتمان</div>
+                        {% for item in report_choices.departments %}
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="department_ids" value="{{ item.id }}" id="rd{{ item.id }}">
+                            <label class="form-check-label" for="rd{{ item.id }}">{{ item.name }}</label>
+                        </div>
+                        {% else %}
+                        <div class="text-muted small">دپارتمانی ثبت نشده</div>
+                        {% endfor %}
+                    </div>
+                    <div class="col-md-4">
+                        <div class="form-label">سمت</div>
+                        {% for item in report_choices.positions %}
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="position_ids" value="{{ item.id }}" id="rp{{ item.id }}">
+                            <label class="form-check-label" for="rp{{ item.id }}">{{ item.name }}</label>
+                        </div>
+                        {% else %}
+                        <div class="text-muted small">سمتی ثبت نشده</div>
+                        {% endfor %}
+                    </div>
+                    <div class="col-12">
+                        <div class="form-label">نمایش ستون‌ها</div>
+                        <p class="small text-muted mb-2">این‌ها در فهرست اقلام صفحه نیستند. کد و نام همیشه نشان داده می‌شوند.</p>
+                        <input type="hidden" name="extras_from_page" value="1">
+                        <div class="d-flex flex-wrap gap-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="extra_columns" value="membership" id="rxMembership" checked>
+                                <label class="form-check-label" for="rxMembership">عضویت</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="extra_columns" value="department" id="rxDepartment" checked>
+                                <label class="form-check-label" for="rxDepartment">دپارتمان</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="extra_columns" value="position" id="rxPosition" checked>
+                                <label class="form-check-label" for="rxPosition">سمت</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="extra_columns" value="__WORK_DAYS__" id="rxWorkDays" checked>
+                                <label class="form-check-label" for="rxWorkDays">روزهای کارکرد</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="extra_columns" value="__GROSS__" id="rxGross" checked>
+                                <label class="form-check-label" for="rxGross">ناخالص</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="extra_columns" value="__DEDUCTIONS__" id="rxDeductions" checked>
+                                <label class="form-check-label" for="rxDeductions">کسورات</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="extra_columns" value="__NET__" id="rxNet" checked>
+                                <label class="form-check-label" for="rxNet">خالص</label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-12 d-flex flex-wrap gap-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="department_totals" value="1" id="reportDeptTotals" checked>
+                            <label class="form-check-label" for="reportDeptTotals">جمع هر دپارتمان</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="monochrome" value="1" id="reportMono">
+                            <label class="form-check-label" for="reportMono">چاپ سیاه‌وسفید</label>
+                        </div>
+                    </div>
+                </div>
+                {% else %}
+                <div class="text-muted">پس از محاسبهٔ لیست می‌توان گزارش گرفت.</div>
+                {% endif %}
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">بستن</button>
+                <button type="submit" class="btn btn-primary" {% if not report_choices.people %}disabled{% endif %}>مشاهده گزارش</button>
+            </div>
+        </form>
+    </div>
+</div>
 
 {% if can_mutate_run or can_manage or (can_approve and run.status == 'calculated') %}
 <div class="mb-3 d-flex flex-wrap gap-2">
@@ -387,6 +492,36 @@ tr.payroll-row-active { background: #e8f7ee !important; }
     if (btn) btn.addEventListener('click', () => start());
     if (selectedBtn) selectedBtn.addEventListener('click', () => start(selectedUserIds()));
     if (auto && btn && !lockedOnLoad) start();
+    const reportForm = document.getElementById('reportSettingsForm');
+    if (reportForm) {
+        reportForm.addEventListener('submit', () => {
+            reportForm.querySelectorAll('input[data-copied]').forEach((el) => el.remove());
+            document.querySelectorAll('.recalc-user:checked').forEach((box) => {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'user_ids';
+                input.value = box.value;
+                input.dataset.copied = '1';
+                reportForm.appendChild(input);
+            });
+            const components = [...document.querySelectorAll('.run-component')];
+            if (!components.length) return;
+            const flag = document.createElement('input');
+            flag.type = 'hidden';
+            flag.name = 'columns_from_page';
+            flag.value = '1';
+            flag.dataset.copied = '1';
+            reportForm.appendChild(flag);
+            components.filter((box) => box.checked).forEach((box) => {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'column_codes';
+                input.value = box.value;
+                input.dataset.copied = '1';
+                reportForm.appendChild(input);
+            });
+        });
+    }
 })();
 </script>
 {% endblock %}

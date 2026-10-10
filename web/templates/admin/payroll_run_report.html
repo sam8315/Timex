@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+{% block title %}گزارش لیست حقوق #{{ run.id }}{% endblock %}
+{% block extra_css %}
+<style>
+#reportSheet { width: 100%; }
+#reportSheet th, #reportSheet td { white-space: nowrap; }
+#reportSheet tr.report-subtotal { background: #e8f4ec; font-weight: 700; }
+#reportSheet tr.report-grand { background: #d6e8dc; font-weight: 700; }
+body.report-bw #reportSheet,
+body.report-bw #reportSheet th,
+body.report-bw #reportSheet td,
+body.report-bw #reportSheet tr.report-subtotal,
+body.report-bw #reportSheet tr.report-grand {
+    background: #fff !important;
+    color: #000 !important;
+    border-color: #000 !important;
+}
+@page {
+    size: A4 landscape;
+    margin: 12mm 10mm 14mm;
+}
+@page report-pages {
+    size: A4 landscape;
+    margin: 12mm 10mm 16mm;
+    @bottom-center {
+        content: "صفحه " counter(page) " از " counter(pages);
+        font-size: 10pt;
+    }
+}
+@media print {
+    .app-sidebar, .app-topbar, .sidebar-overlay, .no-print { display: none !important; }
+    .app-content { margin: 0 !important; padding: 0 !important; width: 100% !important; max-width: 100% !important; }
+    #reportSheet, #reportSheet .table-responsive { overflow: visible !important; width: 100% !important; max-width: 100% !important; }
+    #reportSheet table { width: 100% !important; table-layout: fixed !important; }
+    #reportSheet th, #reportSheet td {
+        white-space: normal !important;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+    }
+    #reportSheet table.report-tight { font-size: 8pt; }
+    #reportSheet table.report-dense { font-size: 6.5pt; }
+    body.print-multipage #reportSheet { page: report-pages; }
+    body.report-bw #reportSheet,
+    body.report-bw #reportSheet th,
+    body.report-bw #reportSheet td {
+        background: #fff !important;
+        color: #000 !important;
+        -webkit-print-color-adjust: economy;
+        print-color-adjust: economy;
+    }
+}
+</style>
+{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 no-print">
+    <h4 class="mb-0">گزارش لیست حقوق — {{ period_label }}</h4>
+    <a href="/admin/payroll/runs/{{ run.id }}" class="btn btn-outline-secondary btn-sm">بازگشت به لیست</a>
+</div>
+<form method="post" action="/admin/payroll/runs/{{ run.id }}/report.pdf" class="d-flex flex-wrap gap-2 align-items-center mb-3 no-print">
+    {% for code in posted.membership_codes %}
+    <input type="hidden" name="membership_codes" value="{{ code }}">
+    {% endfor %}
+    {% for item in posted.department_ids %}
+    <input type="hidden" name="department_ids" value="{{ item }}">
+    {% endfor %}
+    {% for item in posted.position_ids %}
+    <input type="hidden" name="position_ids" value="{{ item }}">
+    {% endfor %}
+    {% for item in posted.user_ids %}
+    <input type="hidden" name="user_ids" value="{{ item }}">
+    {% endfor %}
+    {% if posted.column_codes is not none %}
+    <input type="hidden" name="columns_from_page" value="1">
+    {% for code in posted.column_codes %}
+    <input type="hidden" name="column_codes" value="{{ code }}">
+    {% endfor %}
+    {% endif %}
+    {% if posted.extra_columns is not none %}
+    <input type="hidden" name="extras_from_page" value="1">
+    {% for code in posted.extra_columns %}
+    <input type="hidden" name="extra_columns" value="{{ code }}">
+    {% endfor %}
+    {% endif %}
+    {% if posted.department_totals %}
+    <input type="hidden" name="department_totals" value="1">
+    {% endif %}
+    <button type="button" class="btn btn-outline-secondary btn-sm" id="printReport">چاپ</button>
+    <button type="submit" class="btn btn-outline-primary btn-sm">PDF</button>
+    <div class="form-check mb-0">
+        <input class="form-check-input" type="checkbox" name="monochrome" value="1" id="reportMonoView" {% if posted.monochrome %}checked{% endif %}>
+        <label class="form-check-label" for="reportMonoView">چاپ سیاه‌وسفید</label>
+    </div>
+</form>
+
+<div id="reportSheet">
+    <div class="mb-2">
+        <div class="fw-bold">گزارش لیست حقوق شماره {{ run.id }}</div>
+        <div class="small text-muted">دوره {{ period_label }}</div>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm table-bordered align-middle mb-0 {% if report.columns|length > 9 %}report-dense{% elif report.columns|length > 4 %}report-tight{% endif %}">
+            <thead class="table-light">
+                <tr>
+                    {% for field in report.fields %}
+                    <th>{{ field.name }}</th>
+                    {% endfor %}
+                    {% for column in report.columns %}
+                    <th>{{ column.name }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+            {% for section in report.sections %}
+                {% for row in section.rows %}
+                <tr>
+                    {% for field in report.fields %}
+                    <td>{{ row[field.code] if field.code != 'user_id' else row.user_id }}</td>
+                    {% endfor %}
+                    {% for column in report.columns %}
+                    <td>{{ row.amounts[column.code]|money_text }}</td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+                {% if section.subtotal %}
+                <tr class="report-subtotal">
+                    {% for field in report.fields %}
+                    <td>{% if field.code == 'name' %}{{ section.subtotal.label }}{% endif %}</td>
+                    {% endfor %}
+                    {% for column in report.columns %}
+                    <td>{{ section.subtotal.amounts[column.code]|money_text }}</td>
+                    {% endfor %}
+                </tr>
+                {% endif %}
+            {% else %}
+                <tr><td colspan="{{ report.fields|length + report.columns|length }}" class="text-center text-muted">کسی با این فیلتر در فیش‌ها نیست.</td></tr>
+            {% endfor %}
+            {% if report.grand_total %}
+                <tr class="report-grand">
+                    {% for field in report.fields %}
+                    <td>{% if field.code == 'name' %}{{ report.grand_total.label }}{% endif %}</td>
+                    {% endfor %}
+                    {% for column in report.columns %}
+                    <td>{{ report.grand_total.amounts[column.code]|money_text }}</td>
+                    {% endfor %}
+                </tr>
+            {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+(function () {
+    const mono = document.getElementById('reportMonoView');
+    const sheet = document.getElementById('reportSheet');
+    function syncMono() {
+        document.body.classList.toggle('report-bw', !!(mono && mono.checked));
+    }
+    function markPages() {
+        if (!sheet) return;
+        const probe = sheet.cloneNode(true);
+        probe.style.width = '277mm';
+        probe.style.position = 'absolute';
+        probe.style.left = '-10000px';
+        probe.style.top = '0';
+        document.body.appendChild(probe);
+        const usable = 182 * 96 / 25.4;
+        const pages = Math.ceil(probe.scrollHeight / usable);
+        probe.remove();
+        document.body.classList.toggle('print-multipage', pages > 1);
+    }
+    if (mono) mono.addEventListener('change', syncMono);
+    syncMono();
+    document.getElementById('printReport')?.addEventListener('click', () => {
+        markPages();
+        window.print();
+    });
+    window.addEventListener('beforeprint', markPages);
+})();
+</script>
+{% endblock %}
