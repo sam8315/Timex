@@ -41,6 +41,7 @@ CALC_MODES = (
     "holiday_work",
     "work_deficit",
     "shift_policy",
+    "night_work",
 )
 RUN_STATUSES = ("draft", "calculated", "approved", "published")
 
@@ -370,6 +371,47 @@ class PayrollShiftPolicy(TimestampMixin, Base):
     @property
     def basis_code_list(self) -> List[str]:
         return [c.strip() for c in (self.basis_codes or "").split(",") if c.strip()]
+
+
+class PayrollNightPolicy(TimestampMixin, Base):
+    """سیاست شب‌کاری به‌ازای نوع عضویت.
+
+    درصد روی مزد ساعتی و نوع نوبت‌هایی که این فوق‌العاده را نمی‌گیرند در سیاست است.
+    ساعات شب همان بازه ۲۲:۰۰ تا ۰۶:۰۰ گزارش کارکرد است.
+    """
+
+    __tablename__ = "payroll_night_policies"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    membership_type_code: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    premium_percent: Mapped[Decimal] = mapped_column(
+        Numeric(8, 4), nullable=False, default=Decimal("35")
+    )
+    excluded_patterns: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    effective_from: Mapped[date] = mapped_column(Date, nullable=False)
+    effective_to: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("membership_type_code", name="uq_payroll_night_membership"),
+    )
+
+    @property
+    def excluded_pattern_list(self) -> List[str]:
+        return [c.strip() for c in (self.excluded_patterns or "").split(",") if c.strip()]
+
+
+class PayrollEnabledMembership(Base):
+    """عضویت‌هایی که در فرم «حقوق جدید» قابل انتخاب‌اند. خالی = همهٔ فعال."""
+
+    __tablename__ = "payroll_enabled_memberships"
+
+    membership_type_code: Mapped[str] = mapped_column(
+        String(10),
+        ForeignKey("membership_types.code", ondelete="CASCADE"),
+        primary_key=True,
+    )
 
 
 class PayrollShiftChoice(TimestampMixin, Base):

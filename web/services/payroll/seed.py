@@ -7,6 +7,7 @@ import jdatetime
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from core.payroll.night import DEFAULT_EXCLUDED
 from core.payroll.official_seniority_laws import OFFICIAL_SENIORITY_LAWS
 from models.membership_type import BEHAVIOR_PERMANENT, MembershipType
 from models.payroll import (
@@ -17,6 +18,8 @@ from models.payroll import (
     PayrollOvertimePolicy,
     PayrollDeficitPolicy,
     PayrollShiftPolicy,
+    PayrollNightPolicy,
+    PayrollEnabledMembership,
     PayrollRateSettings,
 )
 
@@ -30,6 +33,7 @@ DEFAULT_COMPONENTS = [
     ("OVERTIME", "اضافه‌کار", "earning", "overtime_policy", True, True, 70),
     ("HOLIDAY_WORK", "تعطیل‌کاری", "earning", "holiday_work", True, True, 75),
     ("FRIDAY_WORK", "جمعه‌کاری", "earning", "friday_attendance", True, True, 80),
+    ("NIGHT_WORK", "شب‌کاری", "earning", "night_work", True, True, 85),
     ("SHIFT", "نوبت‌کاری", "earning", "shift_policy", True, True, 90),
     ("BONUS", "پاداش", "earning", "policy_bonus", True, True, 100),
     ("EIDI", "عیدی", "earning", "policy_eidi", True, True, 110),
@@ -311,7 +315,61 @@ def ensure_shift_defaults(db: Session) -> None:
     db.commit()
 
 
+def ensure_night_defaults(db: Session) -> None:
+    """سیاست اولیه شب‌کاری گروه قراردادی. حذف کاربر دوباره ساخته نمی‌شود."""
+    db.execute(text(
+        """
+        CREATE TABLE IF NOT EXISTS payroll_night_policies (
+            id SERIAL PRIMARY KEY,
+            membership_type_code VARCHAR(10) NOT NULL,
+            premium_percent NUMERIC(8, 4) NOT NULL DEFAULT 35,
+            excluded_patterns TEXT NOT NULL DEFAULT '',
+            effective_from DATE NOT NULL,
+            effective_to DATE NULL,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            notes TEXT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT uq_payroll_night_membership UNIQUE (membership_type_code)
+        )
+        """
+    ))
+    db.commit()
+    if db.query(PayrollNightPolicy).count() > 0:
+        return
+    start = jdatetime.date(1405, 1, 1).togregorian()
+    types = db.query(MembershipType).filter(MembershipType.is_active.is_(True)).all()
+    excluded = ",".join(DEFAULT_EXCLUDED)
+    for mt in types:
+        if "قرارداد" not in (mt.name or ""):
+            continue
+        db.add(
+            PayrollNightPolicy(
+                membership_type_code=mt.code,
+                premium_percent=Decimal("35"),
+                excluded_patterns=excluded,
+                effective_from=start,
+                is_active=True,
+                notes="درصد اولیه ۳۵ است. نوبت‌کارها در مقدار اولیه شب‌کاری نمی‌گیرند",
+            )
+        )
+    db.commit()
+
+
+def ensure_payroll_enabled_memberships_table(db: Session) -> None:
+    db.execute(text(
+        """
+        CREATE TABLE IF NOT EXISTS payroll_enabled_memberships (
+            membership_type_code VARCHAR(10) NOT NULL
+                PRIMARY KEY REFERENCES membership_types(code) ON DELETE CASCADE
+        )
+        """
+    ))
+    db.commit()
+
+
 def ensure_payroll_defaults(db: Session) -> None:
+    ensure_payroll_enabled_memberships_table(db)
     db.execute(text(
         "ALTER TABLE payroll_components DROP CONSTRAINT IF EXISTS ck_payroll_components_calc_mode"
     ))
@@ -349,3 +407,4 @@ def ensure_payroll_defaults(db: Session) -> None:
     ensure_overtime_defaults(db)
     ensure_deficit_defaults(db)
     ensure_shift_defaults(db)
+    ensure_night_defaults(db)

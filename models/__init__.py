@@ -68,6 +68,8 @@ from models.payroll import (
     PayrollOvertimePolicy,
     PayrollDeficitPolicy,
     PayrollShiftPolicy,
+    PayrollNightPolicy,
+    PayrollEnabledMembership,
 )
 
 __all__ = [
@@ -98,4 +100,5 @@ __all__ = [
     'PayrollResult', 'PayrollResultItem', 'PayrollManualEntry',
     'PayrollMinimumWage', 'PayrollChildAllowancePolicy',
     'PayrollOvertimePolicy', 'PayrollDeficitPolicy', 'PayrollShiftPolicy',
+    'PayrollNightPolicy', 'PayrollEnabledMembership',
 ]

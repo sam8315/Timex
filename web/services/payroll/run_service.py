@@ -17,6 +17,7 @@ from core.payroll.calculation_engine import (
 from core.payroll.contract_coverage import best_contract_coverage
 from core.payroll.child_allowance import ChildAllowanceRule, ChildFact, resolve_minimum_daily
 from core.payroll.overtime import DeficitRule, OvertimeRule, parse_basis_codes
+from core.payroll.night import NightRule, parse_excluded_patterns
 from core.payroll.shift import PATTERN_NONE, SHIFT_OPTIONS, ShiftRule, parse_shift_basis_codes
 from core.payroll.money import D
 from core.payroll.seniority import AnnualSeniorityPolicy
@@ -31,6 +32,7 @@ from models.payroll import (
     PayrollOvertimePolicy,
     PayrollDeficitPolicy,
     PayrollShiftPolicy,
+    PayrollNightPolicy,
     PayrollShiftChoice,
     PayrollPeriod,
     PayrollResult,
@@ -393,6 +395,31 @@ def _shift_rule(db: Session, membership_code: Optional[str], on_date: date):
     )
 
 
+def _night_rule(db: Session, membership_code: Optional[str], on_date: date):
+    if not membership_code:
+        return None
+    row = (
+        db.query(PayrollNightPolicy)
+        .filter(
+            PayrollNightPolicy.membership_type_code == membership_code,
+            PayrollNightPolicy.is_active.is_(True),
+            PayrollNightPolicy.effective_from <= on_date,
+        )
+        .filter(
+            (PayrollNightPolicy.effective_to.is_(None))
+            | (PayrollNightPolicy.effective_to >= on_date)
+        )
+        .order_by(PayrollNightPolicy.effective_from.desc())
+        .first()
+    )
+    if row is None:
+        return None
+    return NightRule(
+        premium_percent=D(row.premium_percent),
+        excluded_patterns=parse_excluded_patterns(row.excluded_patterns),
+    )
+
+
 def _child_rule(db: Session, membership_code: Optional[str], on_date: date):
     if not membership_code:
         return None
@@ -552,6 +579,7 @@ def iter_calculate(db: Session, run_id: int):
                 overtime_rule=_overtime_rule(db, contract.contract_type_code, payroll_date),
                 deficit_rule=_deficit_rule(db, contract.contract_type_code, payroll_date),
                 shift_rule=_shift_rule(db, contract.contract_type_code, payroll_date),
+                night_rule=_night_rule(db, contract.contract_type_code, payroll_date),
                 children=_children_of(db, emp.user_id),
                 child_rule=_child_rule(db, contract.contract_type_code, payroll_date),
                 minimum_daily_wage=_minimum_daily_wage(

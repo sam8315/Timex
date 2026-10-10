@@ -16,6 +16,8 @@
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-overtime">اضافه‌کار</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-deficit">کسر کار</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-shift">نوبت‌کاری</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-night">شب‌کاری</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-run-memberships">عضویت حقوق</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-assign">تخصیص مبالغ</button></li>
 </ul>
 
@@ -47,6 +49,7 @@
                             <option value="holiday_work">تعطیل‌کاری</option>
                             <option value="work_deficit">کسر کار</option>
                             <option value="shift_policy">نوبت‌کاری</option>
+                            <option value="night_work">شب‌کاری</option>
                             <option value="percent_insurance">٪ بیمه</option>
                             <option value="percent_tax">٪ مالیات</option>
                         </select>
@@ -940,6 +943,170 @@
         {% endfor %}
     </div>
 
+    <div class="tab-pane fade" id="tab-night">
+        <div class="alert alert-light border small">
+            فوق‌العاده شب‌کاری برابر است با درصد سیاست ضربدر مزد ساعتی ضربدر ساعات کار بین ۲۲:۰۰ و ۰۶:۰۰.
+            مزد ساعتی همان حقوق روزانه تقسیم بر ساعت کار روزانه است. مزد عادی این ساعت‌ها داخل حقوق روزانه است و این قلم فقط درصد اضافه را می‌سازد.
+            نوع‌های تیک‌خورده شب‌کاری نمی‌گیرند. «بدون نوبت‌کاری» همیشه می‌گیرد.
+        </div>
+        <div class="card shadow-sm mb-3">
+            <div class="card-header">سیاست شب‌کاری عضویت</div>
+            <div class="card-body">
+                <form method="post" action="/admin/policies/payroll/night" class="row g-2">
+                    <div class="col-md-3">
+                        <label class="form-label">عضویت</label>
+                        <select name="membership_type_code" class="form-select" required>
+                            {% for mt in memberships %}
+                            <option value="{{ mt.code }}">{{ mt.code }} — {{ mt.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">درصد فوق‌العاده</label>
+                        <input name="premium_percent" class="form-control" dir="ltr" value="35" required>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">از تاریخ</label>
+                        <input name="effective_from" class="form-control" placeholder="1405/01/01" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">یادداشت</label>
+                        <input name="notes" class="form-control">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">نوع نوبتی که شب‌کاری نمی‌گیرد</label>
+                        <div class="d-flex flex-wrap gap-3">
+                            {% for code, label in night_exclude_options %}
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="excluded_patterns" value="{{ code }}" id="nx{{ code }}" checked>
+                                <label class="form-check-label" for="nx{{ code }}">{{ label }}</label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="col-12"><button class="btn btn-primary btn-sm">ذخیره سیاست شب‌کاری</button></div>
+                </form>
+            </div>
+        </div>
+        <div class="card shadow-sm">
+            <table class="table table-sm mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>عضویت</th>
+                        <th>درصد</th>
+                        <th>نوع‌های بدون شب‌کاری</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for p in night_policies %}
+                    <tr>
+                        <td>{{ p.membership_type_code }}</td>
+                        <td dir="ltr">{{ p.premium_percent|payroll_num }}٪</td>
+                        <td>
+                            {% for code in p.excluded_pattern_list %}
+                            {{ night_pattern_labels.get(code, code) }}{% if not loop.last %}، {% endif %}
+                            {% else %}
+                            هیچ نوع نوبتی حذف نشده
+                            {% endfor %}
+                        </td>
+                        <td class="text-nowrap">
+                            <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editNight{{ p.id }}">ویرایش</button>
+                            <form method="post" action="/admin/policies/payroll/night/{{ p.id }}/delete" class="d-inline" onsubmit="return confirm('حذف سیاست شب‌کاری؟')">
+                                <button type="submit" class="btn btn-sm btn-outline-danger">حذف</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="4" class="text-muted text-center">سیاستی ثبت نشده</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% for p in night_policies %}
+        <div class="modal fade" id="editNight{{ p.id }}" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-lg">
+                <form method="post" action="/admin/policies/payroll/night" class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">ویرایش شب‌کاری — عضویت {{ p.membership_type_code }}</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <input type="hidden" name="policy_id" value="{{ p.id }}">
+                        <div class="row g-2">
+                            <div class="col-md-4">
+                                <label class="form-label">عضویت</label>
+                                <select name="membership_type_code" class="form-select" required>
+                                    {% for mt in memberships %}
+                                    <option value="{{ mt.code }}" {% if mt.code == p.membership_type_code %}selected{% endif %}>{{ mt.code }} — {{ mt.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">از تاریخ</label>
+                                <input name="effective_from" class="form-control" value="{{ p.effective_from|jalali }}" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">تا تاریخ</label>
+                                <input name="effective_to" class="form-control" value="{{ p.effective_to|jalali if p.effective_to else '' }}">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">درصد فوق‌العاده</label>
+                                <input name="premium_percent" class="form-control" dir="ltr" value="{{ p.premium_percent|payroll_num }}" required>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">یادداشت</label>
+                                <input name="notes" class="form-control" value="{{ p.notes or '' }}">
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">نوع نوبتی که شب‌کاری نمی‌گیرد</label>
+                                <div class="d-flex flex-wrap gap-3">
+                                    {% for code, label in night_exclude_options %}
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="excluded_patterns" value="{{ code }}" id="enx{{ p.id }}{{ code }}" {% if code in p.excluded_pattern_list %}checked{% endif %}>
+                                        <label class="form-check-label" for="enx{{ p.id }}{{ code }}">{{ label }}</label>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">انصراف</button>
+                        <button type="submit" class="btn btn-primary">ذخیره</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="tab-pane fade" id="tab-run-memberships">
+        <div class="alert alert-light border small">
+            فقط عضویت‌های تیک‌خورده در فرم «حقوق جدید» برای انتخاب نشان داده می‌شوند.
+            اگر هیچ موردی ذخیره نشده باشد (یا همه را بردارید و ذخیره کنید)، همهٔ عضویت‌های فعال قابل انتخاب‌اند.
+        </div>
+        <div class="card shadow-sm">
+            <div class="card-header">عضویت‌های مجاز برای ایجاد لیست حقوق</div>
+            <div class="card-body">
+                <form method="post" action="/admin/policies/payroll/run-memberships">
+                    <div class="d-flex flex-wrap gap-3 mb-3">
+                        {% for mt in memberships %}
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="membership_codes" value="{{ mt.code }}" id="prm{{ mt.code }}"
+                                {% if payroll_run_membership_codes is none or mt.code in payroll_run_membership_codes %}checked{% endif %}>
+                            <label class="form-check-label" for="prm{{ mt.code }}">{{ mt.code }} — {{ mt.name }}</label>
+                        </div>
+                        {% else %}
+                        <p class="text-muted mb-0">عضویت فعالی در سیستم نیست.</p>
+                        {% endfor %}
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-sm">ذخیره</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <div class="tab-pane fade" id="tab-assign">
         <div class="card shadow-sm mb-3">
             <div class="card-header">تخصیص مبلغ (عضویت یا فرد)</div>
@@ -1028,6 +1195,12 @@ if (tab === 'deficit') {
 }
 if (tab === 'shift') {
     document.querySelector('[data-bs-target="#tab-shift"]')?.click();
+}
+if (tab === 'night') {
+    document.querySelector('[data-bs-target="#tab-night"]')?.click();
+}
+if (tab === 'run_memberships') {
+    document.querySelector('[data-bs-target="#tab-run-memberships"]')?.click();
 }
 document.getElementById('assignScope')?.addEventListener('change', function () {
     const isUser = this.value === 'user';

@@ -19,6 +19,7 @@ EARNING_DISPLAY_ORDER = (
     "OVERTIME",
     "HOLIDAY_WORK",
     "FRIDAY_WORK",
+    "NIGHT_WORK",
     "SHIFT",
 )
 _EARNING_RANK = {code: index for index, code in enumerate(EARNING_DISPLAY_ORDER)}
@@ -101,6 +102,11 @@ def line_detail(item: Any) -> str:
     if code == "WORK_DEFICIT" and qty is not None:
         rate = money_text(unit) if unit is not None else "—"
         return f"{money_text(qty)} ساعت، هر ساعت عادی {rate} ریال"
+
+    if code == "NIGHT_WORK" and qty is not None:
+        rate = money_text(unit) if unit is not None else "—"
+        percent = money_text(note) if note else "—"
+        return f"{money_text(qty)} ساعت شب، {percent} درصد مزد ساعتی {rate} ریال"
 
     if code in ("FRIDAY_WORK", "OVERTIME", "HOLIDAY_WORK") and qty is not None:
         rate = money_text(unit) if unit is not None else "—"

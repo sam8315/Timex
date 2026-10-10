@@ -21,6 +21,7 @@ from core.payroll.overtime import (
     overtime_basis_amount,
     overtime_pay,
 )
+from core.payroll.night import NightRule, night_premium
 from core.payroll.shift import (
     PATTERN_LABELS,
     PATTERN_NONE,
@@ -88,6 +89,7 @@ class EmployeeCalcInput:
     night_hours: Decimal = D(0)
     shift_rule: Optional[ShiftRule] = None
     shift_pattern: Optional[str] = None
+    night_rule: Optional[NightRule] = None
 
 
 @dataclass
@@ -289,6 +291,25 @@ def calculate_employee_payslip(
             qty = hours
             amount = unit * hours
             note = f"{hours} ساعت × {hourly} × ضریب {coef}"
+
+        elif comp.calc_mode == "night_work":
+            rule = emp.night_rule
+            hours = D(emp.night_hours)
+            pattern = emp.shift_pattern or PATTERN_NONE
+            if rule is None or hours <= 0 or pattern in rule.excluded_patterns:
+                continue
+            hours_per_day = D(rates.hours_per_day) or D("7.3333")
+            hourly = (daily_wage / hours_per_day) if hours_per_day else D(0)
+            override = _amt(emp, "NIGHT_WORK")
+            if override > 0:
+                hourly = override
+            percent = D(rule.premium_percent)
+            amount = night_premium(hourly, hours, percent)
+            if amount <= 0:
+                continue
+            unit = hourly
+            qty = hours
+            note = str(percent)
 
         elif comp.calc_mode == "manual":
             amount = D(emp.manual_amounts.get(comp.code, 0))

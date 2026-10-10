@@ -25,9 +25,9 @@
 {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
 {% if success %}<div class="alert alert-success">{{ success }}</div>{% endif %}
 
-{% if can_manage or (can_approve and run.status == 'calculated') %}
+{% if can_mutate_run or can_manage or (can_approve and run.status == 'calculated') %}
 <div class="mb-3 d-flex flex-wrap gap-2">
-    {% if can_manage and run.status in ['draft', 'calculated'] %}
+    {% if can_mutate_run and run.status in ['draft', 'calculated'] %}
     <button type="button" class="btn btn-sm {% if run.status == 'draft' %}btn-primary{% else %}btn-outline-primary{% endif %}" id="payrollCalcBtn">{% if run.status == 'draft' %}محاسبه{% else %}محاسبه مجدد{% endif %}</button>
     {% endif %}
     {% if run.status == 'calculated' and can_approve %}
@@ -40,21 +40,15 @@
         <button class="btn btn-warning btn-sm">انتشار برای کارکنان</button>
     </form>
     {% endif %}
-    {% if user and 'manage_payroll' in user.effective_permissions %}
+    {% if can_mutate_run %}
     <form method="post" action="/admin/payroll/runs/{{ run.id }}/delete" onsubmit="return confirm('این لیست حقوق و فیش‌های آن حذف شود؟');">
         <button class="btn btn-outline-danger btn-sm">حذف لیست</button>
     </form>
     {% endif %}
 </div>
-{% elif user and 'manage_payroll' in user.effective_permissions %}
-<div class="mb-3">
-    <form method="post" action="/admin/payroll/runs/{{ run.id }}/delete" onsubmit="return confirm('این لیست حقوق و فیش‌های آن حذف شود؟');">
-        <button class="btn btn-outline-danger btn-sm">حذف لیست</button>
-    </form>
-</div>
 {% endif %}
 
-{% if can_manage and run.status in ['draft', 'calculated'] %}
+{% if can_mutate_run and run.status in ['draft', 'calculated'] %}
 <div class="alert alert-light border small">
     نوع نوبت هر نفر را قبل از محاسبه انتخاب کنید. تا وقتی انتخابی ذخیره نشده باشد، بدون نوبت‌کاری حساب می‌شود.
 </div>
@@ -73,7 +67,7 @@
                         <th>ناخالص</th>
                         <th>کسورات</th>
                         <th>خالص</th>
-                        {% if can_manage and run.status in ['draft', 'calculated'] %}
+                        {% if can_mutate_run and run.status in ['draft', 'calculated'] %}
                         <th>نوع نوبت</th>
                         {% elif run.status in ['approved', 'published'] %}
                         <th>نوع نوبت</th>
@@ -91,7 +85,7 @@
                         <td>{% if r.gross is not none %}{{ '{:,.0f}'.format(r.gross) }}{% else %}—{% endif %}</td>
                         <td>{% if r.deductions is not none %}{{ '{:,.0f}'.format(r.deductions) }}{% else %}—{% endif %}</td>
                         <td class="fw-bold">{% if r.net is not none %}{{ '{:,.0f}'.format(r.net) }}{% else %}—{% endif %}</td>
-                        {% if can_manage and run.status in ['draft', 'calculated'] %}
+                        {% if can_mutate_run and run.status in ['draft', 'calculated'] %}
                         <td style="min-width: 190px">
                             <select class="form-select form-select-sm shift-pattern" data-user-id="{{ r.user_id }}">
                                 {% for code, label in shift_options %}

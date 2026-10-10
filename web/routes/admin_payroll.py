@@ -17,15 +17,16 @@ from sqlalchemy.orm import Session
 from database.engine import SessionLocal
 from models.employee import Employee
 from models.membership_type import MembershipType
+from models.payroll import PayrollRun
 from models.user import User
 from web.dependencies import get_current_user, get_db
-from web.permissions import has_permission
+from web.permissions import has_permission, role_label_map
 from web.services.payroll import policy_service, run_service
 from web.services.payroll.policy_service import PayrollPolicyError
 from web.services.payroll.run_service import PayrollRunError
 from core.payroll.pdf_payslip import build_payslip_pdf
 from core.payroll.payslip_present import fa_digits, line_detail, money_text, payslip_sort
-from core.payroll.shift import PATTERN_LABELS, SHIFT_OPTIONS
+from core.payroll.shift import PATTERN_LABELS, PATTERN_NONE, SHIFT_OPTIONS
 from web.services.payroll.payslip_profile import load_payslip_profile
 
 router = APIRouter(tags=["Admin Payroll"])
@@ -75,6 +76,7 @@ CALC_MODE_LABELS = {
     "holiday_work": "تعطیل‌کاری",
     "work_deficit": "کسر کار",
     "shift_policy": "نوبت‌کاری",
+    "night_work": "شب‌کاری",
 }
 
 STATUS_LABELS = {
@@ -90,20 +92,43 @@ def _can_view(db: Session, user: User) -> bool:
 
 
 def _actor_names(db: Session, user_ids) -> dict:
-    ids = [item for item in user_ids if item]
+    ids = list(dict.fromkeys(item for item in user_ids if item))
     if not ids:
         return {}
-    employees = db.query(Employee).filter(Employee.user_id.in_(ids)).all()
+    employees = {
+        row.user_id: row
+        for row in db.query(Employee).filter(Employee.user_id.in_(ids)).all()
+    }
+    users = {
+        row.user_id: row for row in db.query(User).filter(User.user_id.in_(ids)).all()
+    }
+    roles = role_label_map(db)
     labels = {}
-    for row in employees:
-        full = f"{(row.first_name or '').strip()} {(row.last_name or '').strip()}".strip()
-        if full:
-            labels[row.user_id] = full
-    missing = [item for item in ids if item not in labels]
-    if missing:
-        for row in db.query(User).filter(User.user_id.in_(missing)).all():
-            labels[row.user_id] = (row.name or "").strip() or row.user_id
+    for uid in ids:
+        emp = employees.get(uid)
+        full = ""
+        if emp:
+            full = f"{(emp.first_name or '').strip()} {(emp.last_name or '').strip()}".strip()
+        if not full:
+            user_row = users.get(uid)
+            full = (user_row.name or "").strip() if user_row else ""
+        if not full:
+            full = uid
+        role_label = roles.get(users[uid].role, "") if uid in users else ""
+        labels[uid] = f"{full} — {role_label}" if role_label else full
     return labels
+
+
+def _can_mutate_run(user: User, run: PayrollRun) -> bool:
+    """حذف و محاسبه فقط برای ایجادکننده؛ مدیر ارشد همیشه."""
+    if user.role == "super_admin":
+        return True
+    if not run.created_by:
+        return True
+    return run.created_by == user.user_id
+
+
+_MUTATE_DENIED = "فقط ایجادکنندهٔ این لیست می‌تواند آن را تغییر دهد"
 
 
 def _can_manage(db: Session, user: User) -> bool:
@@ -171,6 +196,7 @@ async def payroll_list(
             "actor_names": names,
             "status_labels": STATUS_LABELS,
             "can_manage": _can_manage(db, user),
+            "mutable_run_ids": {run.id for run in runs if _can_mutate_run(user, run)},
             "is_super_admin": user.role == "super_admin",
             "error": request.query_params.get("error"),
             "success": request.query_params.get("success"),
@@ -187,7 +213,7 @@ async def payroll_new_form(
     if not _can_manage(db, user):
         return _deny()
     today = jdatetime.date.today()
-    memberships = db.query(MembershipType).order_by(MembershipType.code).all()
+    memberships = policy_service.list_enabled_payroll_memberships(db)
     components = [
         comp
         for comp in policy_service.list_components(db)
@@ -223,11 +249,16 @@ async def payroll_new_submit(
     try:
         form = await request.form()
         codes = [str(item) for item in form.getlist("component_codes")]
+        membership_code = membership_type_code.strip() or None
+        if membership_code and not policy_service.is_payroll_membership_allowed(
+            db, membership_code
+        ):
+            raise PayrollRunError("نوع عضویت انتخاب‌شده برای ایجاد حقوق مجاز نیست")
         run = run_service.create_run(
             db,
             year_j=year_j,
             month_j=month_j,
-            membership_type_code=membership_type_code.strip() or None,
+            membership_type_code=membership_code,
             created_by=user.user_id,
             notes=notes.strip() or None,
             component_codes=codes,
@@ -278,6 +309,7 @@ async def payroll_run_detail(
             "status_labels": STATUS_LABELS,
             "manuals": manuals,
             "can_manage": _can_manage(db, user),
+            "can_mutate_run": _can_mutate_run(user, run),
             "can_approve": _can_approve(db, user),
             "is_super_admin": user.role == "super_admin",
             "creator_name": names.get(run.created_by) if run.created_by else None,
@@ -297,6 +329,12 @@ async def payroll_calculate_stream(
 ):
     if not _can_manage(db, user):
         return _deny()
+    try:
+        run = run_service.get_run(db, run_id)
+    except PayrollRunError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=404)
+    if not _can_mutate_run(user, run):
+        return JSONResponse({"ok": False, "error": _MUTATE_DENIED}, status_code=403)
 
     def events():
         stream_db = SessionLocal()
@@ -334,6 +372,9 @@ async def payroll_shift_choices(
     if not _can_manage(db, user):
         return JSONResponse({"ok": False, "error": "دسترسی ندارید"}, status_code=403)
     try:
+        run = run_service.get_run(db, run_id)
+        if not _can_mutate_run(user, run):
+            return JSONResponse({"ok": False, "error": _MUTATE_DENIED}, status_code=403)
         payload = await request.json()
         raw = payload.get("choices") or []
         pairs = [(str(item.get("user_id") or ""), str(item.get("pattern") or "")) for item in raw]
@@ -351,6 +392,12 @@ async def payroll_recalculate(
 ):
     if not _can_manage(db, user):
         return _deny()
+    try:
+        run = run_service.get_run(db, run_id)
+        if not _can_mutate_run(user, run):
+            return _redirect(f"/admin/payroll/runs/{run_id}", error=_MUTATE_DENIED)
+    except PayrollRunError as exc:
+        return _redirect("/admin/payroll", error=str(exc))
     return _redirect(f"/admin/payroll/runs/{run_id}?calc=1")
 
 
@@ -363,6 +410,9 @@ async def payroll_delete(
     if not has_permission(db, user, "manage_payroll"):
         return _redirect("/admin/payroll", error="حذف لیست حقوق مجاز نیست")
     try:
+        run = run_service.get_run(db, run_id)
+        if not _can_mutate_run(user, run):
+            return _redirect("/admin/payroll", error=_MUTATE_DENIED)
         run_service.delete_run(db, run_id)
         return _redirect("/admin/payroll", success="لیست حقوق حذف شد")
     except PayrollRunError as exc:
@@ -489,7 +539,12 @@ async def payroll_policy_page(
 ):
     if not _can_manage(db, user) and not has_permission(db, user, "manage_users"):
         return _deny()
-    memberships = db.query(MembershipType).order_by(MembershipType.code).all()
+    memberships = (
+        db.query(MembershipType)
+        .filter(MembershipType.is_active.is_(True))
+        .order_by(MembershipType.sort_order, MembershipType.code)
+        .all()
+    )
     return templates.TemplateResponse(
         request,
         "admin/policy_payroll.html",
@@ -497,6 +552,7 @@ async def payroll_policy_page(
             "user": user,
             "is_admin": True,
             "is_super_admin": user.role == "super_admin",
+            "payroll_run_membership_codes": policy_service.payroll_membership_selection_codes(db),
             "components": policy_service.list_components(db),
             "annual_laws": policy_service.list_annual_laws(db),
             "rates": policy_service.get_rate_settings(db),
@@ -508,6 +564,11 @@ async def payroll_policy_page(
             "overtime_policies": policy_service.list_overtime_policies(db),
             "deficit_policies": policy_service.list_deficit_policies(db),
             "shift_policies": policy_service.list_shift_policies(db),
+            "night_policies": policy_service.list_night_policies(db),
+            "night_exclude_options": [
+                (code, label) for code, label in SHIFT_OPTIONS if code != PATTERN_NONE
+            ],
+            "night_pattern_labels": PATTERN_LABELS,
             "error": request.query_params.get("error"),
             "success": request.query_params.get("success"),
         },
@@ -983,3 +1044,70 @@ async def payroll_shift_policy_delete(
         return _redirect("/admin/policies/payroll?tab=shift", success="سیاست نوبت‌کاری حذف شد")
     except PayrollPolicyError as exc:
         return _redirect("/admin/policies/payroll?tab=shift", error=str(exc))
+
+
+@router.post("/admin/policies/payroll/night")
+async def payroll_night_policy_save(
+    request: Request,
+    membership_type_code: str = Form(...),
+    premium_percent: str = Form("35"),
+    effective_from: str = Form(...),
+    effective_to: str = Form(""),
+    notes: str = Form(""),
+    policy_id: str = Form(""),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not _can_manage(db, user) and not has_permission(db, user, "manage_users"):
+        return _deny()
+    try:
+        form = await request.form()
+        patterns = [str(item) for item in form.getlist("excluded_patterns")]
+        policy_service.upsert_night_policy(
+            db,
+            membership_type_code=membership_type_code.strip(),
+            premium_percent=_dec(premium_percent, "درصد شب‌کاری"),
+            excluded_patterns=patterns,
+            effective_from=_parse_date(effective_from),
+            effective_to=_parse_date(effective_to) if effective_to.strip() else None,
+            notes=notes.strip() or None,
+            policy_id=int(policy_id) if policy_id.strip() else None,
+        )
+        return _redirect("/admin/policies/payroll?tab=night", success="سیاست شب‌کاری ذخیره شد")
+    except (PayrollPolicyError, ValueError) as exc:
+        return _redirect("/admin/policies/payroll?tab=night", error=str(exc))
+
+
+@router.post("/admin/policies/payroll/night/{policy_id}/delete")
+async def payroll_night_policy_delete(
+    policy_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not _can_manage(db, user) and not has_permission(db, user, "manage_users"):
+        return _deny()
+    try:
+        policy_service.delete_night_policy(db, policy_id)
+        return _redirect("/admin/policies/payroll?tab=night", success="سیاست شب‌کاری حذف شد")
+    except PayrollPolicyError as exc:
+        return _redirect("/admin/policies/payroll?tab=night", error=str(exc))
+
+
+@router.post("/admin/policies/payroll/run-memberships")
+async def payroll_run_memberships_save(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not _can_manage(db, user) and not has_permission(db, user, "manage_users"):
+        return _deny()
+    try:
+        form = await request.form()
+        codes = [str(item) for item in form.getlist("membership_codes")]
+        policy_service.save_payroll_enabled_memberships(db, codes)
+        return _redirect(
+            "/admin/policies/payroll?tab=run_memberships",
+            success="عضویت‌های مجاز برای ایجاد حقوق ذخیره شد",
+        )
+    except PayrollPolicyError as exc:
+        return _redirect("/admin/policies/payroll?tab=run_memberships", error=str(exc))

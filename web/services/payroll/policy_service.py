@@ -8,10 +8,12 @@ from typing import List, Optional
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from models.membership_type import MembershipType
 from models.payroll import (
     PayrollAnnualLaw,
     PayrollAssignment,
     PayrollComponent,
+    PayrollEnabledMembership,
     PayrollRateSettings,
 )
 from web.services.payroll.seed import ensure_payroll_defaults
@@ -640,4 +642,119 @@ def delete_shift_policy(db: Session, policy_id: int) -> None:
     if not row:
         raise PayrollPolicyError("سیاست نوبت‌کاری یافت نشد")
     db.delete(row)
+    db.commit()
+
+
+def list_night_policies(db: Session):
+    from models.payroll import PayrollNightPolicy
+
+    return (
+        db.query(PayrollNightPolicy)
+        .order_by(PayrollNightPolicy.membership_type_code)
+        .all()
+    )
+
+
+def upsert_night_policy(
+    db: Session,
+    *,
+    membership_type_code: str,
+    premium_percent: Decimal,
+    excluded_patterns: List[str],
+    effective_from: date,
+    effective_to: Optional[date] = None,
+    notes: Optional[str] = None,
+    policy_id: Optional[int] = None,
+):
+    from core.payroll.night import parse_excluded_patterns
+    from models.payroll import PayrollNightPolicy
+
+    if not membership_type_code:
+        raise PayrollPolicyError("نوع عضویت الزامی است")
+    if premium_percent < 0:
+        raise PayrollPolicyError("درصد شب‌کاری نمی‌تواند منفی باشد")
+    patterns = parse_excluded_patterns(",".join(excluded_patterns))
+    if policy_id:
+        row = db.get(PayrollNightPolicy, policy_id)
+        if not row:
+            raise PayrollPolicyError("سیاست شب‌کاری یافت نشد")
+    else:
+        row = (
+            db.query(PayrollNightPolicy)
+            .filter(PayrollNightPolicy.membership_type_code == membership_type_code)
+            .first()
+        )
+        if row is None:
+            row = PayrollNightPolicy(
+                membership_type_code=membership_type_code,
+                effective_from=effective_from,
+            )
+            db.add(row)
+    row.membership_type_code = membership_type_code
+    row.premium_percent = premium_percent
+    row.excluded_patterns = ",".join(patterns)
+    row.effective_from = effective_from
+    row.effective_to = effective_to
+    row.notes = notes
+    row.is_active = True
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise PayrollPolicyError("برای این عضویت قبلاً سیاست شب‌کاری ثبت شده است") from exc
+    db.refresh(row)
+    return row
+
+
+def delete_night_policy(db: Session, policy_id: int) -> None:
+    from models.payroll import PayrollNightPolicy
+
+    row = db.get(PayrollNightPolicy, policy_id)
+    if not row:
+        raise PayrollPolicyError("سیاست شب‌کاری یافت نشد")
+    db.delete(row)
+    db.commit()
+
+
+def payroll_membership_selection_codes(db: Session) -> Optional[set[str]]:
+    """کدهای انتخاب‌شده برای ایجاد حقوق؛ None یعنی همهٔ عضویت‌های فعال."""
+    ensure_payroll_defaults(db)
+    rows = db.query(PayrollEnabledMembership.membership_type_code).all()
+    if not rows:
+        return None
+    return {item[0] for item in rows}
+
+
+def list_enabled_payroll_memberships(db: Session) -> List[MembershipType]:
+    ensure_payroll_defaults(db)
+    selected = payroll_membership_selection_codes(db)
+    query = db.query(MembershipType).filter(MembershipType.is_active.is_(True))
+    if selected is not None:
+        query = query.filter(MembershipType.code.in_(selected))
+    return query.order_by(MembershipType.sort_order, MembershipType.code).all()
+
+
+def is_payroll_membership_allowed(db: Session, code: str) -> bool:
+    if not (code or "").strip():
+        return True
+    code = code.strip()
+    return any(mt.code == code for mt in list_enabled_payroll_memberships(db))
+
+
+def save_payroll_enabled_memberships(db: Session, codes: List[str]) -> None:
+    ensure_payroll_defaults(db)
+    active = {
+        row.code
+        for row in db.query(MembershipType)
+        .filter(MembershipType.is_active.is_(True))
+        .all()
+    }
+    cleaned: List[str] = []
+    for raw in codes:
+        code = (raw or "").strip()
+        if code in active and code not in cleaned:
+            cleaned.append(code)
+    db.query(PayrollEnabledMembership).delete()
+    for code in cleaned:
+        db.add(PayrollEnabledMembership(membership_type_code=code))
     db.commit()
