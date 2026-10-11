@@ -1,5 +1,5 @@
 """
-مدل جدول وضعیت روزانه (مأموریت و استراحت)
+مدل جدول وضعیت روزانه (مأموریت، استراحت و غیبت)
 """
 from datetime import date
 from typing import Optional
@@ -12,11 +12,12 @@ from models.base import Base, TimestampMixin
 STATUS_CODES = {
     'M': 'مأموریت',
     'R': 'استراحت',
+    'A': 'غیبت',
 }
 
 
 class DailyStatus(TimestampMixin, Base):
-    """مدل جدول وضعیت روزانه - فقط مأموریت و استراحت"""
+    """مدل جدول وضعیت روزانه: مأموریت، استراحت و غیبت"""
     __tablename__ = "daily_statuses"
 
     # 🆕 جلوگیری از ثبت چند وضعیت برای یک روز
@@ -35,7 +36,7 @@ class DailyStatus(TimestampMixin, Base):
 
     status_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
 
-    # 🆕 فقط M (مأموریت) یا R (استراحت)
+    # M مأموریت، R استراحت، A غیبت
     status_code: Mapped[str] = mapped_column(String(1), nullable=False, index=True)
 
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

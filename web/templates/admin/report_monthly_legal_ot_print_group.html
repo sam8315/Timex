@@ -572,7 +572,7 @@
                         {% elif day.person_status == 'SL' %}
                         <span class="badge bg-info status-pill">استعلاجی</span>
                         {% elif day.person_status == 'A' %}
-                        <span class="badge bg-danger status-pill">عدم حضور</span>
+                        <span class="badge bg-danger status-pill">غیبت</span>
                         {% elif day.person_status == 'N' %}
                         <span class="badge bg-secondary status-pill">بدون تردد</span>
                         {% elif day.person_status == 'R' %}
@@ -717,7 +717,7 @@
             <div class="meta-chip"><span class="chip-label">مرخصی ساعتی</span><span class="chip-value"><span class="num">{{ report.summary.hourly_leave_hours | hhmm }}</span></span></div>
             <div class="meta-chip"><span class="chip-label">مأموریت</span><span class="chip-value"><span class="num">{{ report.summary.mission_days }}</span></span></div>
             <div class="meta-chip"><span class="chip-label">مأموریت ساعتی</span><span class="chip-value"><span class="num">{{ report.summary.hourly_mission_hours | hhmm }}</span></span></div>
-            <div class="meta-chip"><span class="chip-label">عدم حضور</span><span class="chip-value"><span class="num">{{ report.summary.absent_days }}</span></span></div>
+            <div class="meta-chip"><span class="chip-label">غیبت</span><span class="chip-value"><span class="num">{{ report.summary.absent_days }}</span></span></div>
             <div class="meta-chip"><span class="chip-label">بدون تردد</span><span class="chip-value"><span class="num">{{ report.summary.no_punch_days }}</span></span></div>
             <div class="meta-chip"><span class="chip-label">استراحت</span><span class="chip-value"><span class="num">{{ report.summary.rest_days }}</span></span></div>
             <div class="meta-chip"><span class="chip-label">تعطیل</span><span class="chip-value"><span class="num">{{ report.summary.holiday_days }}</span></span></div>

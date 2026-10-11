@@ -44,6 +44,56 @@ def test_add_rejects_unknown_code(client, make_user):
     assert "error=" in resp.headers["location"]
 
 
+def test_register_absence_lists_on_daily_status_page(client, db, make_user):
+    """غیبت تک‌روزه ثبت می‌شود و در لیست وضعیت روزانه دیده می‌شود."""
+    boss = make_user(role="super_admin", balance_al=None)
+    target = make_user(role="user", balance_al=None)
+    login_as(client, boss["national_code"])
+    from_str, _ = jalali_range(1, 0)
+
+    resp = _add_status_as_admin(client, target["user_id"], from_str, "A")
+    assert resp.status_code == 302
+    assert "success=" in resp.headers["location"]
+
+    db.expire_all()
+    rows = db.query(DailyStatus).filter(
+        DailyStatus.user_id == target["user_id"]).all()
+    assert len(rows) == 1
+    assert rows[0].status_code == "A"
+    assert rows[0].status_name == "غیبت"
+
+    listing = client.get("/admin/daily-status?show_all=1")
+    assert listing.status_code == 200
+    assert "وضعیت روزانه" in listing.text
+    assert listing.text.count('<span class="badge bg-danger">غیبت</span>') == 1
+
+
+def test_absence_badge_on_user_and_admin_attendance(client, db, make_user):
+    """روز غیبت ثبت‌شده در تردد کاربر و ادمین نشان داده می‌شود."""
+    boss = make_user(role="super_admin", balance_al=None)
+    target = make_user(role="user", balance_al=None)
+    day_j = jdatetime.date.today()
+    db.add(DailyStatus(
+        user_id=target["user_id"],
+        status_date=day_j.togregorian(),
+        status_code="A",
+    ))
+    db.commit()
+
+    badge = '<span class="badge bg-danger mb-1">❌ غیبت</span>'
+    login_as(client, target["national_code"])
+    user_page = client.get(f"/attendance?year={day_j.year}&month={day_j.month}")
+    assert user_page.status_code == 200
+    assert user_page.text.count(badge) == 1
+
+    login_as(client, boss["national_code"])
+    admin_page = client.get(
+        f"/admin/attendance/user/{target['user_id']}?year={day_j.year}&month={day_j.month}"
+    )
+    assert admin_page.status_code == 200
+    assert admin_page.text.count(badge) == 1
+
+
 def test_model_validator_strips_on_assignment(db, make_user):
     target = make_user(role="user", balance_al=None)
     row = DailyStatus(user_id=target["user_id"],

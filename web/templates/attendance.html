@@ -473,6 +473,9 @@
                             {% if day.is_rest %}
                             <span class="badge bg-info mb-1">😴 استراحت</span><br>
                             {% endif %}
+                            {% if day.is_absence %}
+                            <span class="badge bg-danger mb-1">❌ غیبت</span><br>
+                            {% endif %}
                             <span class="badge bg-{{ day.status.main_color }}">{{ day.status.main_label }}</span>
                             {% if day.status.sick_coverage_note %}
                             <br><span class="badge bg-info mt-1">{{ day.status.sick_coverage_note }}</span>
@@ -562,7 +565,7 @@
         <small class="text-muted">
              <strong>راهنمای وضعیت‌ها:</strong>
              ✅ کامل | 🌙 شیفت شب | ⬅️ ورود بدون خروج | ➡️ خروج بدون ورود |
-             ❌ خطای ترتیب | ⚠️ عدم تعادل | ⚪ بدون تردد | 🚗 مأموریت | 😴 استراحت |
+             ❌ خطای ترتیب | ⚠️ عدم تعادل | ⚪ بدون تردد | 🚗 مأموریت | 😴 استراحت | ❌ غیبت |
              🕐 مرخصی ساعتی | 🚗 مأموریت ساعتی
             <br>
             <strong>هشدارها:</strong>

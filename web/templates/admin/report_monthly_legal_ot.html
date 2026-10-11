@@ -748,7 +748,7 @@
                             <span class="badge bg-info status-pill">استعلاجی</span>
                             {% if day.employer_pay_label %}<br><span class="small">{{ day.employer_pay_label }}</span>{% endif %}
                             {% elif day.person_status == 'A' %}
-                            <span class="badge bg-danger status-pill">عدم حضور</span>
+                            <span class="badge bg-danger status-pill">غیبت</span>
                             {% elif day.person_status == 'N' %}
                             <span class="badge bg-secondary status-pill">بدون تردد</span>
                             {% elif day.person_status == 'R' %}
@@ -929,7 +929,7 @@
                 <span class="chip-value"><span class="num">{{ report.summary.hourly_mission_hours | hhmm }}</span></span>
             </div>
             <div class="meta-chip">
-                <span class="chip-label">عدم حضور</span>
+                <span class="chip-label">غیبت</span>
                 <span class="chip-value"><span class="num">{{ report.summary.absent_days }}</span> روز</span>
             </div>
             <div class="meta-chip">

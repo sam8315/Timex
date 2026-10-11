@@ -1,4 +1,4 @@
-"""پنل مدیریت مأموریت و استراحت"""
+"""پنل مدیریت وضعیت روزانه"""
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from urllib.parse import urlencode
@@ -149,7 +149,7 @@ async def daily_status_page(
     user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    """لیست مأموریت‌ها و استراحت‌ها"""
+    """لیست مأموریت، استراحت و غیبت"""
     enforce_permission(db, user, "view_all_attendance")
 
     today_j = jdatetime.date.today()
@@ -292,6 +292,7 @@ async def daily_status_page(
             "status_codes": STATUS_CODES,
             "mission_count": status_counts.get("M", 0),
             "rest_count": status_counts.get("R", 0),
+            "absence_count": status_counts.get("A", 0),
             "employees": employees,
             "is_admin": True,
             "hourly_missions": hourly_missions_data,
@@ -313,7 +314,7 @@ async def add_daily_status(
     user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    """ثبت مأموریت/استراحت روزانه یا مأموریت ساعتی"""
+    """ثبت مأموریت، استراحت، غیبت یا مأموریت ساعتی"""
     enforce_permission(db, user, "view_all_attendance")
     referer = request.headers.get("referer", "/admin/daily-status")
 
@@ -413,7 +414,7 @@ async def edit_daily_status(
     user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    """ویرایش مأموریت یا استراحت"""
+    """ویرایش وضعیت روزانه"""
     enforce_permission(db, user, "view_all_attendance")
     referer = request.headers.get("referer", "/admin/daily-status")
 
@@ -472,7 +473,7 @@ async def delete_daily_status(
     user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    """حذف مأموریت یا استراحت"""
+    """حذف وضعیت روزانه"""
     enforce_permission(db, user, "view_all_attendance")
     status = db.query(DailyStatus).filter(DailyStatus.id == status_id).first()
     if not status:

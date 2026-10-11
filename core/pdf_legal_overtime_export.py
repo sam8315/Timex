@@ -266,7 +266,7 @@ class LegalOvertimePDFExporter(DetailedPDFExporterV2):
             f"مرخصی‌ساعتی {self._fmt_hours(summary.get('hourly_leave_hours') or 0)} | "
             f"مأموریت {summary.get('mission_days', 0)} | "
             f"مأموریت‌ساعتی {self._fmt_hours(summary.get('hourly_mission_hours') or 0)} | "
-            f"عدم‌حضور {summary.get('absent_days', 0)} | "
+            f"غیبت {summary.get('absent_days', 0)} | "
             f"استراحت {summary.get('rest_days', 0)} | "
             f"تعطیل {summary.get('holiday_days', 0)} | "
             f"تعطیل‌کاری {self._fmt_hours(summary.get('holiday_work_hours') or 0)} | "

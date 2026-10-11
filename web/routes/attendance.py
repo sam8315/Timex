@@ -232,6 +232,7 @@ async def attendance_page(
     ).all()
     rest_dates = {ds.status_date for ds in daily_statuses if ds.status_code == 'R'}
     mission_dates = {ds.status_date for ds in daily_statuses if ds.status_code == 'M'}
+    absence_dates = {ds.status_date for ds in daily_statuses if ds.status_code == 'A'}
 
     # گروه‌بندی بر اساس روز
     days_dict = {}
@@ -331,6 +332,7 @@ async def attendance_page(
              'is_night_shift': status_info['main_status'] == STATUS_NIGHT_SHIFT,
              'is_mission': current in mission_dates,
              'is_rest': current in rest_dates,
+             'is_absence': current in absence_dates,
             # 🕐 HL تایید شده برای نمایش (بدون تاثیر روی وضعیت اصلی/محاسبات)
             'hourly_leave_minutes': hourly_leave_minutes_by_date.get(current, 0),
             'hourly_leave_display': format_hl_display(hourly_leave_minutes_by_date.get(current, 0)),

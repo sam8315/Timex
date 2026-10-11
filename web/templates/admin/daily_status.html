@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}مأموریت و استراحت | پنل مدیریت{% endblock %}
+{% block title %}وضعیت روزانه | پنل مدیریت{% endblock %}
 {% block content %}
 
 {% if request.query_params.get('success') %}
@@ -16,7 +16,7 @@
 {% endif %}
 
 <div class="d-flex justify-content-between align-items-center gap-2 mb-4">
-    <h4 class="mb-0"><i class="bi bi-briefcase"></i> مأموریت و استراحت</h4>
+    <h4 class="mb-0"><i class="bi bi-calendar-day"></i> وضعیت روزانه</h4>
     <a href="/admin/" class="btn btn-outline-primary btn-sm">
         <i class="bi bi-arrow-right"></i> پنل مدیریت
     </a>
@@ -36,6 +36,14 @@
             <div class="card-body text-center py-2 px-1">
                 <div class="fs-5 fw-bold text-info">{{ rest_count }}</div>
                 <small class="text-muted">استراحت</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-4 col-md-2">
+        <div class="card border-danger shadow-sm h-100">
+            <div class="card-body text-center py-2 px-1">
+                <div class="fs-5 fw-bold text-danger">{{ absence_count }}</div>
+                <small class="text-muted">غیبت</small>
             </div>
         </div>
     </div>
@@ -81,7 +89,7 @@
 
 <div class="card mb-4">
     <div class="card-header bg-white">
-        <h6 class="mb-0"><i class="bi bi-plus-circle"></i> ثبت مأموریت یا استراحت</h6>
+        <h6 class="mb-0"><i class="bi bi-plus-circle"></i> ثبت وضعیت روزانه</h6>
     </div>
     <div class="card-body">
         <form method="post" action="/admin/daily-status/add" class="row g-2 align-items-end" id="dailyStatusForm">
@@ -131,7 +139,7 @@
             </div>
             <div class="col-12 col-md-3 hm-description">
                 <label class="form-label" for="description">توضیحات</label>
-                <input type="text" id="description" name="description" class="form-control" placeholder="مقصد مأموریت، دلیل استراحت و...">
+                <input type="text" id="description" name="description" class="form-control" placeholder="مقصد مأموریت، دلیل استراحت یا غیبت">
             </div>
             <div class="col-6 col-md-1 hm-submit">
                 <button type="submit" class="btn btn-success w-100" title="ثبت برای تمام روزهای بازه انتخاب شده">
@@ -321,7 +329,7 @@
 {% else %}
 <div class="card">
     <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
-        <h6 class="mb-0"><i class="bi bi-list-ul"></i> مأموریت‌ها و استراحت‌ها</h6>
+        <h6 class="mb-0"><i class="bi bi-list-ul"></i> وضعیت‌های روزانه</h6>
         <div class="d-flex align-items-center gap-2">
             <span class="badge bg-primary fs-6">{{ total_count }} مورد</span>
             <small class="text-muted">صفحه {{ page }} از {{ total_pages }}</small>
@@ -354,6 +362,8 @@
                             <span class="badge bg-primary">مأموریت</span>
                             {% elif item.status.status_code.strip() == 'R' %}
                             <span class="badge bg-info text-dark">استراحت</span>
+                            {% elif item.status.status_code.strip() == 'A' %}
+                            <span class="badge bg-danger">غیبت</span>
                             {% else %}
                             <span class="badge bg-secondary">{{ item.status.status_code }}</span>
                             {% endif %}

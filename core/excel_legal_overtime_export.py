@@ -171,7 +171,7 @@ class LegalOvertimeExcelExporter(DetailedExcelExporterV2):
         entry('مرخصی ساعتی', self._fmt_hours(summary.get('hourly_leave_hours') or 0))
         entry('مأموریت روزانه', summary.get('mission_days', 0))
         entry('مأموریت ساعتی', self._fmt_hours(summary.get('hourly_mission_hours') or 0))
-        entry('عدم حضور', summary.get('absent_days', 0))
+        entry('غیبت', summary.get('absent_days', 0))
         entry('استراحت', summary.get('rest_days', 0))
         entry('تعطیل', summary.get('holiday_days', 0))
         entry('کسر کار ماهانه', self._fmt_hours(summary.get('monthly_deficit') or 0))
