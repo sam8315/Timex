@@ -24,6 +24,8 @@ from core.payroll.shift import PATTERN_NONE, SHIFT_OPTIONS, ShiftRule, parse_shi
 from core.payroll.money import D
 from core.payroll.seniority import AnnualSeniorityPolicy
 from models.contract import Contract
+from models.leave_financial_order import LeaveFinancialOrder
+from models.leave_request import LeaveRequest
 from models.employee import Employee
 from models.employee_relative import EmployeeRelative
 from models.payroll import (
@@ -42,7 +44,8 @@ from models.payroll import (
     PayrollResultItem,
     PayrollRun,
 )
-from web.services.payroll.friday_adapter import get_attendance_hour_buckets
+from web.services.payroll.friday_adapter import get_payroll_attendance_context
+from web.services.sick_leave_finance import carry_deltas_for_user, mark_applied
 from web.services.payroll.policy_service import (
     get_rate_settings,
     list_components,
@@ -274,6 +277,9 @@ def _component_defs(db: Session, selected: Optional[set[str]] = None) -> List[Co
             subject_to_insurance=c.subject_to_insurance,
             subject_to_tax=c.subject_to_tax,
             sort_order=c.sort_order,
+            sick_mode=c.sick_mode,
+            absence_mode=c.absence_mode,
+            day_basis=c.day_basis,
         )
         for c in comps
         if selected is None or c.code in selected
@@ -769,8 +775,12 @@ def iter_calculate(db: Session, run_id: int, user_ids: Optional[Sequence[str]] =
         [old.user_id for old in run.results],
         selected if partial else None,
     ))
+    previous_amounts: dict[str, dict] = {}
     for old in list(run.results):
         if old.user_id in replace_ids:
+            previous_amounts[old.user_id] = {
+                item.component_code: str(item.amount) for item in old.items
+            }
             db.delete(old)
     db.flush()
 
@@ -801,8 +811,11 @@ def iter_calculate(db: Session, run_id: int, user_ids: Optional[Sequence[str]] =
             for (uid, code), amt in manual_map.items()
             if uid == emp.user_id
         }
-        friday_hours, overtime_hours, holiday_hours, deficit_hours, morning_hours, evening_hours, night_hours = (
-            get_attendance_hour_buckets(db, emp.user_id, period.year_j, period.month_j)
+        attendance = get_payroll_attendance_context(
+            db, emp.user_id, period.year_j, period.month_j, contract
+        )
+        carry, carry_orders = carry_deltas_for_user(
+            db, emp.user_id, period.year_j, period.month_j
         )
         draft = calculate_employee_payslip(
             EmployeeCalcInput(
@@ -819,13 +832,19 @@ def iter_calculate(db: Session, run_id: int, user_ids: Optional[Sequence[str]] =
                 payroll_date=payroll_date,
                 amounts=amounts,
                 manual_amounts=manuals,
-                friday_hours=friday_hours,
-                overtime_hours=overtime_hours,
-                holiday_hours=holiday_hours,
-                deficit_hours=deficit_hours,
-                morning_hours=morning_hours,
-                evening_hours=evening_hours,
-                night_hours=night_hours,
+                friday_hours=attendance.friday_hours,
+                overtime_hours=attendance.overtime_hours,
+                holiday_hours=attendance.holiday_hours,
+                deficit_hours=attendance.deficit_hours,
+                morning_hours=attendance.morning_hours,
+                evening_hours=attendance.evening_hours,
+                night_hours=attendance.night_hours,
+                excluded_sick_days=attendance.excluded_sick_days,
+                normal_absence_days=attendance.normal_absence_days,
+                not_yet_days=attendance.not_yet_days,
+                absence_duty_hours=attendance.absence_duty_hours,
+                scheduled_work_days=attendance.scheduled_work_days,
+                carry_adjustments=carry,
                 shift_pattern=choices.get(emp.user_id, PATTERN_NONE),
                 overtime_rule=policy_cache.overtime(contract.contract_type_code),
                 deficit_rule=policy_cache.deficit(contract.contract_type_code),
@@ -873,6 +892,44 @@ def iter_calculate(db: Session, run_id: int, user_ids: Optional[Sequence[str]] =
                     sort_order=ln.sort_order,
                 )
             )
+        after_map = {
+            ln.component_code: {"amount": str(ln.amount), "kind": ln.kind, "name": ln.component_name}
+            for ln in draft.items
+        }
+        recalc_orders = (
+            db.query(LeaveFinancialOrder)
+            .filter(
+                LeaveFinancialOrder.user_id == emp.user_id,
+                LeaveFinancialOrder.year_j == period.year_j,
+                LeaveFinancialOrder.month_j == period.month_j,
+                LeaveFinancialOrder.status == "pending",
+                LeaveFinancialOrder.resolution == "recalc",
+            )
+            .all()
+        )
+        for order in recalc_orders:
+            mark_applied(
+                db,
+                order,
+                order.actor,
+                previous_amounts.get(emp.user_id),
+                {code: item["amount"] for code, item in after_map.items()},
+            )
+        if carry_orders:
+            after_map = {
+                ln.component_code: {"amount": str(ln.amount)}
+                for ln in draft.items
+            }
+            for order in carry_orders:
+                mark_applied(db, order, order.applied_by or order.actor, None, after_map)
+                leave = db.query(LeaveRequest).filter(
+                    LeaveRequest.id == order.leave_request_id
+                ).first()
+                if leave is not None:
+                    from web.services.sick_leave_finance import write_leave_audit
+                    write_leave_audit(
+                        db, leave, "financial_apply", None, after_map, order.actor, order.reason
+                    )
         db.commit()
 
     db.refresh(run)
@@ -944,6 +1001,21 @@ def approve_run(db: Session, run_id: int, user_id: str) -> PayrollRun:
     run.status = "approved"
     run.approved_at = datetime.now(timezone.utc)
     run.approved_by = user_id
+    db.commit()
+    return get_run(db, run_id)
+
+
+def reopen_run(db: Session, run_id: int, user_id: str, reason: str) -> PayrollRun:
+    """بازگشت اجرای تأیید یا منتشرشده به محاسبه‌شده. فیش تا انتشار مجدد پنهان می‌ماند."""
+    if not (reason or "").strip():
+        raise PayrollRunError("دلیل بازگشایی الزامی است")
+    run = get_run(db, run_id)
+    ensure_calculation_idle(run)
+    if run.status not in ("approved", "published"):
+        raise PayrollRunError("فقط اجرای تأیید یا منتشرشده قابل بازگشایی است")
+    note = f"reopen by {user_id}: {reason.strip()}"
+    run.notes = f"{run.notes}\n{note}" if run.notes else note
+    run.status = "calculated"
     db.commit()
     return get_run(db, run_id)
 

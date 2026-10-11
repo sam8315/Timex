@@ -34,6 +34,12 @@ from core.payroll.seniority import (
     AnnualSeniorityPolicy,
     calculate_accumulated_seniority_daily,
 )
+from core.payroll.day_adjustment import (
+    HOUR_CALC_MODES,
+    DayAdjustmentRule,
+    adjust_amount,
+    guarded_deficit_hours,
+)
 
 
 @dataclass(frozen=True)
@@ -46,6 +52,9 @@ class ComponentDef:
     subject_to_insurance: bool
     subject_to_tax: bool
     sort_order: int = 100
+    sick_mode: str = "keep"
+    absence_mode: str = "keep"
+    day_basis: str = "fixed_30"
 
 
 @dataclass(frozen=True)
@@ -92,6 +101,13 @@ class EmployeeCalcInput:
     shift_pattern: Optional[str] = None
     night_rule: Optional[NightRule] = None
     friday_rule: Optional[FridayRule] = None
+    excluded_sick_days: int = 0
+    normal_absence_days: int = 0
+    not_yet_days: int = 0
+    absence_duty_hours: Decimal = D(0)
+    scheduled_work_days: int = 0
+    day_rules: Sequence[DayAdjustmentRule] = field(default_factory=tuple)
+    carry_adjustments: Mapping[str, Mapping] = field(default_factory=dict)
 
 
 @dataclass
@@ -218,8 +234,19 @@ def _append_shift_line(
         if pattern and pattern != PATTERN_NONE:
             percent = rule.percent_for(pattern)
             codes = set(rule.basis_codes)
+            modes = {c.code: c.calc_mode for c in components}
             basis = sum(
-                (ln.amount for ln in lines if ln.kind == "earning" and ln.component_code in codes),
+                (
+                    overtime_basis_amount(
+                        "monthly_div",
+                        modes.get(ln.component_code, ""),
+                        ln.amount,
+                        ln.unit_amount,
+                        D(30),
+                    )
+                    for ln in lines
+                    if ln.kind == "earning" and ln.component_code in codes
+                ),
                 D(0),
             )
             amount = shift_pay(basis, percent)
@@ -352,6 +379,99 @@ def _amt(emp: EmployeeCalcInput, code: str, default: Decimal = D(0)) -> Decimal:
     return D(emp.amounts.get(code, default))
 
 
+_PAYABLE_DAY_MODES = frozenset({
+    "daily_x_covered",
+    "seniority_chain",
+    "fixed_monthly_prorata",
+    "child_allowance",
+    "policy_eidi",
+    "policy_bonus",
+})
+
+
+def _payable_days(emp: EmployeeCalcInput, comp: ComponentDef) -> int:
+    """استعلاجی بدون پرداخت و غیبت ثبت‌شده کم می‌شوند، مگر قلم صریحاً keep باشد. بدون تردد کم نمی‌شود."""
+    days = int(emp.covered_days)
+    if comp.sick_mode != "keep":
+        days -= max(int(emp.excluded_sick_days or 0), 0)
+    if comp.absence_mode != "keep":
+        days -= max(int(emp.normal_absence_days or 0), 0)
+    return max(days, 0)
+
+
+def _apply_payable_days(
+    emp: EmployeeCalcInput,
+    comp: ComponentDef,
+    amount: Decimal,
+    qty,
+    unit,
+    note: str,
+) -> tuple[Decimal, object, object, str, bool]:
+    """مبلغ و تعداد روز قلم‌های روزشمار و ماهانه را یک‌بار با روز قابل پرداخت عوض می‌کند."""
+    if comp.calc_mode not in _PAYABLE_DAY_MODES:
+        return amount, qty, unit, note, False
+    if D(amount) == 0 and comp.calc_mode in ("fixed_monthly_prorata", "policy_eidi", "policy_bonus", "child_allowance"):
+        return amount, qty, unit, note, True
+    payable = _payable_days(emp, comp)
+    month = max(int(emp.month_days or 0), 1)
+    if comp.calc_mode in ("daily_x_covered", "seniority_chain") and unit is not None:
+        qty = D(payable)
+        amount = D(unit) * qty
+        return amount, qty, unit, f"{unit} × {payable} روز", True
+    if comp.calc_mode == "fixed_monthly_prorata" and unit is not None:
+        qty = D(payable)
+        amount = D(unit) * qty / D(month)
+        return amount, qty, unit, f"{unit} × {payable} از {month} روز", True
+    covered = max(int(emp.covered_days or 0), 1)
+    amount = D(amount) * D(payable) / D(covered)
+    extra = f"{payable} روز از {month}"
+    note = f"{note} | {extra}" if note else extra
+    return amount, qty, unit, note, True
+
+
+def _rule_from_component(comp: ComponentDef) -> DayAdjustmentRule:
+    return DayAdjustmentRule(
+        component_code=comp.code,
+        sick_mode=comp.sick_mode or "keep",
+        absence_mode=comp.absence_mode or "keep",
+        basis=comp.day_basis or "fixed_30",
+        effective_from=date.min,
+        scope="default",
+    )
+
+
+def _apply_day_rule(emp: EmployeeCalcInput, comp: ComponentDef, amount: Decimal, note: str) -> tuple[Decimal, str]:
+    if comp.calc_mode in HOUR_CALC_MODES or str(comp.calc_mode).startswith("percent"):
+        return amount, note
+    rule = _rule_from_component(comp)
+    adjusted, extra = adjust_amount(
+        amount,
+        rule,
+        excluded_sick_days=emp.excluded_sick_days,
+        absence_days=emp.normal_absence_days,
+        month_days=emp.month_days,
+        scheduled_work_days=emp.scheduled_work_days,
+    )
+    if extra:
+        note = f"{note} | {extra}" if note else extra
+    return adjusted, note
+
+
+def _apply_carry(lines: List[LineItem], carry: Mapping[str, Mapping], kind: str) -> None:
+    for line in lines:
+        if line.kind != kind:
+            continue
+        item = carry.get(line.component_code)
+        if not item:
+            continue
+        delta = D(item.get("delta", 0))
+        if delta == 0:
+            continue
+        line.amount = money_round(D(line.amount) + delta)
+        suffix = "تعدیل دوره قبل استعلاجی"
+        line.calc_note = f"{line.calc_note} | {suffix}" if line.calc_note else suffix
+
+
 def calculate_employee_payslip(
     emp: EmployeeCalcInput,
     components: Sequence[ComponentDef],
@@ -454,6 +574,11 @@ def calculate_employee_payslip(
             else:
                 note = "خارج از ماه پرداخت پاداش / ضریب صفر"
 
+        amount, qty, unit, note, scaled = _apply_payable_days(
+            emp, comp, amount, qty, unit, note
+        )
+        if not scaled:
+            amount, note = _apply_day_rule(emp, comp, amount, note)
         amount = money_round(amount)
 
         lines.append(
@@ -476,6 +601,7 @@ def calculate_employee_payslip(
     _append_shift_line(emp, components, lines)
     _append_night_line(emp, components, lines, rates)
     _append_friday_line(emp, components, lines, rates)
+    _apply_carry(lines, emp.carry_adjustments, "earning")
 
     insurance_base = sum(
         (ln.amount for ln in lines if ln.subject_to_insurance), D(0)
@@ -503,13 +629,18 @@ def calculate_employee_payslip(
             note = f"{pct}% از مبنای مشمول مالیات ({tax_base})"
         elif comp.calc_mode == "work_deficit":
             rule = emp.deficit_rule
-            qty = D(emp.deficit_hours)
+            deficit_hours = guarded_deficit_hours(
+                emp.deficit_hours,
+                emp.absence_duty_hours,
+                tuple(_rule_from_component(item) for item in components),
+            )
+            qty = deficit_hours
             if rule is None:
                 amount = D(0)
                 note = "سیاست کسر کار برای این عضویت نیست"
             else:
                 basis = _policy_basis(components, lines, rule, rule.basis_days)
-                amount, unit, note = ordinary_hour_pay(basis, emp.deficit_hours, rule)
+                amount, unit, note = ordinary_hour_pay(basis, deficit_hours, rule)
         elif comp.calc_mode == "manual":
             amount = money_round(D(emp.manual_amounts.get(comp.code, 0)))
             note = "ورود دستی"
@@ -538,6 +669,8 @@ def calculate_employee_payslip(
                 sort_order=comp.sort_order,
             )
         )
+
+    _apply_carry(lines, emp.carry_adjustments, "deduction")
 
     gross = money_round(sum((ln.amount for ln in lines if ln.kind == "earning"), D(0)))
     deductions = money_round(

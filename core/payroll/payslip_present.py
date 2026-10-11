@@ -90,8 +90,9 @@ def line_detail(item: Any) -> str:
         return f"هر روز {money_text(unit)} ریال، به مدت {money_text(qty)} روز"
 
     if code in ("HOUSING", "MARRIAGE", "WORKER_VOUCHER") and unit is not None:
-        text = f"مبلغ ماهانه {money_text(unit)} ریال"
-        return text + _coverage_clause(unit, qty if qty is not None else 1, amount)
+        if qty is not None:
+            return f"مبلغ ماهانه {money_text(unit)} ریال، به مدت {money_text(qty)} روز"
+        return f"مبلغ ماهانه {money_text(unit)} ریال"
 
     if code == "SENIORITY" and unit is not None and qty is not None:
         return (

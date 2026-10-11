@@ -474,6 +474,9 @@
                             <span class="badge bg-info mb-1">😴 استراحت</span><br>
                             {% endif %}
                             <span class="badge bg-{{ day.status.main_color }}">{{ day.status.main_label }}</span>
+                            {% if day.status.sick_coverage_note %}
+                            <br><span class="badge bg-info mt-1">{{ day.status.sick_coverage_note }}</span>
+                            {% endif %}
                             {% for w in day.status.warnings %}
                             <br><span class="badge bg-{{ w.color }} mt-1">{{ w.label }}</span>
                             {% endfor %}

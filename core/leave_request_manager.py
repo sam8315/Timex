@@ -151,7 +151,12 @@ class LeaveRequestManager:
             self.db.rollback()
             return {'success': False, 'message': f'❌ خطا: {e}'}
 
-    def approve_request(self, request_id: int, approved_by: str = "admin") -> Dict:
+    def approve_request(
+        self,
+        request_id: int,
+        approved_by: str = "admin",
+        employer_pays_wages: Optional[bool] = None,
+    ) -> Dict:
         """تایید درخواست مرخصی"""
         import jdatetime
 
@@ -165,6 +170,23 @@ class LeaveRequestManager:
 
         if request.status == self.STATUS_REJECTED:
             return {'success': False, 'message': '⚠️  این درخواست قبلاً رد شده است'}
+
+        if request.leave_type == 'SL':
+            if employer_pays_wages is None:
+                return {
+                    'success': False,
+                    'message': '❌ تأیید استعلاجی بدون تعیین وضعیت پرداخت حقوق ممکن نیست',
+                }
+            from web.services.sick_leave_conflicts import (
+                find_sick_leave_conflicts,
+                format_conflict_message,
+            )
+            conflicts = find_sick_leave_conflicts(
+                self.db, request.user_id, request.from_date, request.to_date,
+                exclude_request_id=request.id,
+            )
+            if conflicts:
+                return {'success': False, 'message': '❌ ' + format_conflict_message(conflicts)}
 
         # ✅ تبدیل تاریخ میلادی به شمسی برای دریافت سال صحیح
         try:
@@ -187,10 +209,12 @@ class LeaveRequestManager:
             request.status = self.STATUS_APPROVED
             request.approved_by = approved_by
             request.approved_at = func.now()
+            if request.leave_type == 'SL':
+                request.employer_pays_wages = employer_pays_wages
 
             # به‌روزرسانی وضعیت روزانه
             current = request.from_date
-            while current <= request.to_date:
+            while request.leave_type != 'SL' and current <= request.to_date:
                 if current.weekday() != 4 and not self.holiday_manager.is_holiday(current):
                     existing = self.db.query(DailyStatus).filter(
                         and_(

@@ -329,6 +329,7 @@ async def payroll_run_detail(
         chosen_components = active_components
     else:
         chosen_components = [comp for comp in active_components if comp.code in chosen_codes]
+    from web.services.sick_leave_finance import pending_orders_for_period
     return templates.TemplateResponse(
         request,
         "admin/payroll_run_detail.html",
@@ -344,6 +345,9 @@ async def payroll_run_detail(
             "shift_labels": PATTERN_LABELS,
             "status_labels": STATUS_LABELS,
             "manuals": manuals,
+            "sick_orders": pending_orders_for_period(
+                db, run.period.year_j, run.period.month_j
+            ),
             "can_manage": _can_manage(db, user),
             "can_mutate_run": _can_mutate_run(user, run),
             "can_approve": _can_approve(db, user),
@@ -759,6 +763,9 @@ async def payroll_component_update(
     sort_order: int = Form(100),
     is_active: Optional[str] = Form(None),
     calc_mode: str = Form(""),
+    sick_mode: str = Form("keep"),
+    absence_mode: str = Form("keep"),
+    day_basis: str = Form("fixed_30"),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -774,6 +781,9 @@ async def payroll_component_update(
             sort_order=sort_order,
             is_active=is_active == "on",
             calc_mode=calc_mode.strip() or None,
+            sick_mode=sick_mode,
+            absence_mode=absence_mode,
+            day_basis=day_basis,
         )
         return _redirect("/admin/policies/payroll", success="آیتم به‌روز شد")
     except PayrollPolicyError as exc:
@@ -789,6 +799,9 @@ async def payroll_component_add(
     subject_to_insurance: Optional[str] = Form(None),
     subject_to_tax: Optional[str] = Form(None),
     sort_order: int = Form(100),
+    sick_mode: str = Form("keep"),
+    absence_mode: str = Form("keep"),
+    day_basis: str = Form("fixed_30"),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -804,6 +817,9 @@ async def payroll_component_add(
             subject_to_insurance=subject_to_insurance == "on",
             subject_to_tax=subject_to_tax == "on",
             sort_order=sort_order,
+            sick_mode=sick_mode,
+            absence_mode=absence_mode,
+            day_basis=day_basis,
         )
         return _redirect("/admin/policies/payroll", success="آیتم افزوده شد")
     except PayrollPolicyError as exc:

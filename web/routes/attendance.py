@@ -15,6 +15,13 @@ from models.user import User
 from models.attendance import Attendance
 from models.holiday import Holiday
 from models.leave_request import LeaveRequest  # 🆕
+from core.sick_leave_facts import (
+    coverage_note,
+    effect_for_span,
+    index_spans,
+    sick_status_dict,
+    spans_from_leaves,
+)
 from models.daily_status import DailyStatus
 from web.services.attendance_policy_service import (
     compute_required_minutes_for_range,
@@ -144,6 +151,9 @@ async def attendance_page(
             LeaveRequest.to_date >= month_start_g
         )
     ).all()
+    sick_by_date = index_spans(
+        spans_from_leaves(approved_leaves), month_start_g, month_end_g
+    )
 
     # دریافت تعطیلات: نه فقط ماه جاری، بلکه کل بازه مرخصی‌های مورد نیاز
     holiday_start = month_start_g
@@ -256,12 +266,24 @@ async def attendance_page(
         # 🆕 بررسی مرخصی تایید شده
         # ⚠️ فقط اگر روز تعطیل یا جمعه نباشد (تعطیلات اولویت دارند)
         # (در لایه route می‌ماند — سیاست/موظفی از Policy است)
+        sick_effect = effect_for_span(
+            sick_by_date.get(current),
+            is_friday=is_friday,
+            is_holiday=holiday_title is not None,
+            is_weekly_rest=current in rest_dates,
+            is_mission=current in mission_dates,
+        )
         leave_type = leaves_by_date.get(current)
-        if leave_type and not is_friday and holiday_title is None:
+        if sick_effect.display_as_sick:
+            status_info.update(sick_status_dict(sick_effect))
+        elif leave_type and leave_type != 'SL' and not is_friday and holiday_title is None:
             type_name = LEAVE_TYPE_NAMES_LOCAL.get(leave_type, '')
             status_info['main_status'] = STATUS_LEAVE
             status_info['main_label'] = f'🌴 مرخصی {type_name}'
             status_info['main_color'] = 'info'
+        note = coverage_note(sick_effect)
+        if note:
+            status_info['sick_coverage_note'] = note
 
         # 🆕 محاسبه کارکرد با در نظر گرفتن شیفت شب
         is_night_shift = status_info['main_status'] == STATUS_NIGHT_SHIFT
@@ -276,6 +298,8 @@ async def attendance_page(
                 day_records,
                 is_night_shift=is_night_shift
             )
+        if sick_effect.covered:
+            work_hours = 0
 
         resolved = resolve_policy(db, emp, current)
         late_early = compute_late_early_for_day(
@@ -286,6 +310,7 @@ async def attendance_page(
             skip=(
                 status_info['main_status'] == STATUS_LEAVE
                 or current in rest_dates
+                or sick_effect.covered
             ),
             hl_intervals=hl_intervals_by_date.get(current),
         )

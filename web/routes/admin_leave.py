@@ -596,6 +596,7 @@ async def leave_requests_page(
                 confirm_negative_request = {
                     'id': target.id,
                     'full_name': get_employee_name(db, target.user_id),
+                    'leave_type': target.leave_type,
                     'leave_type_name': LEAVE_TYPES.get(
                         target.leave_type, target.leave_type),
                     'from_j': jdatetime.date.fromgregorian(
@@ -632,6 +633,7 @@ async def approve_leave_request(
         request: Request,
         request_id: int,
         allow_negative: str = Form("off"),
+        employer_pays_wages: str = Form(""),
         user: User = Depends(require_admin),
         db: Session = Depends(get_db)
 ):
@@ -683,6 +685,32 @@ async def approve_leave_request(
             return RedirectResponse(
                 url=build_redirect_url(referer, "error", f"خطا: {str(e)}"),
                 status_code=302
+            )
+
+    pays = None
+    if leave_req.leave_type == 'SL':
+        from web.services.sick_leave_conflicts import (
+            find_sick_leave_conflicts,
+            format_conflict_message,
+            parse_employer_pays,
+        )
+        try:
+            pays = parse_employer_pays(employer_pays_wages, required=True)
+        except ValueError as exc:
+            referer = request.headers.get("referer", "/admin/leave-requests")
+            return RedirectResponse(
+                url=build_redirect_url(referer, "error", str(exc)),
+                status_code=302,
+            )
+        conflicts = find_sick_leave_conflicts(
+            db, leave_req.user_id, leave_req.from_date, leave_req.to_date,
+            exclude_request_id=leave_req.id,
+        )
+        if conflicts:
+            referer = request.headers.get("referer", "/admin/leave-requests")
+            return RedirectResponse(
+                url=build_redirect_url(referer, "error", format_conflict_message(conflicts)),
+                status_code=302,
             )
 
     # بررسی مانده کافی (for non-HL types)
@@ -745,10 +773,18 @@ async def approve_leave_request(
             )
 
     try:
+        from web.services.sick_leave_finance import (
+            queue_financial_orders,
+            snapshot_leave,
+            write_leave_audit,
+        )
+        before_snapshot = snapshot_leave(leave_req)
         # ۱. تایید درخواست
         leave_req.status = 'A'
         leave_req.approved_by = user.user_id
         leave_req.approved_at = datetime.now()
+        if leave_req.leave_type == 'SL':
+            leave_req.employer_pays_wages = pays
 
         # ۲. کسر از مانده (برای AL: غیرقابل‌بازخرید CW → AL → قابل‌بازخرید CW)
         if leave_req.leave_type == 'AL':
@@ -816,6 +852,11 @@ async def approve_leave_request(
             if tl_detail:
                 tl_detail.approved_at = datetime.now()
 
+        write_leave_audit(
+            db, leave_req, "approve", before_snapshot, snapshot_leave(leave_req), user.user_id
+        )
+        if leave_req.leave_type == "SL":
+            queue_financial_orders(db, leave_req, "initial", user.user_id)
         db.commit()
 
         # 🆕 ۴. ارسال پیامک تایید (async - بدون کندی، فقط اگر فعال باشد)
@@ -1016,7 +1057,19 @@ async def delete_leave_request(
         db.add(tx)
 
         # ۴. تغییر وضعیت به حذف شده
+        from web.services.sick_leave_finance import (
+            queue_financial_orders,
+            snapshot_leave,
+            write_leave_audit,
+        )
+        before_snapshot = snapshot_leave(leave_req)
+        leave_req.employer_pays_wages = None
         leave_req.status = 'D'
+        write_leave_audit(
+            db, leave_req, "cancel", before_snapshot, snapshot_leave(leave_req), user.user_id
+        )
+        if before_snapshot.get("leave_type") == "SL":
+            queue_financial_orders(db, leave_req, "cancel", user.user_id)
         db.commit()
 
         type_name = LEAVE_TYPES.get(leave_req.leave_type, '')
@@ -1437,7 +1490,17 @@ async def register_leave_for_user(
                     LeaveRequest.to_date >= from_date,
                 )
             ).first()
-            if overlaps:
+            if leave_type == 'SL':
+                from web.services.sick_leave_conflicts import (
+                    find_sick_leave_conflicts,
+                    format_conflict_message,
+                )
+                conflicts = find_sick_leave_conflicts(
+                    db, target_user_id, from_date, to_date,
+                )
+                if conflicts:
+                    raise ValueError(format_conflict_message(conflicts))
+            elif overlaps:
                 raise ValueError("کاربر در این بازه، درخواست مرخصی دیگری دارد")
 
             # مرخصی توراهی فقط با مرخصی استحقاقی (AL)
@@ -1571,6 +1634,7 @@ async def edit_leave_request_form(
         'AL' if leave_request.leave_type == 'CW' else leave_request.leave_type
     )
 
+    from web.services.sick_leave_finance import orders_for_request
     return templates.TemplateResponse(request, "admin/leave_request_edit.html", {
         "user": user,
         "leave_request": leave_request,
@@ -1593,6 +1657,7 @@ async def edit_leave_request_form(
         "is_travel_leave": travel_detail is not None,
         "hl_start_time": leave_request.start_time.strftime('%H:%M') if leave_request.start_time else '',
         "hl_end_time": leave_request.end_time.strftime('%H:%M') if leave_request.end_time else '',
+        "financial_orders": orders_for_request(db, leave_request.id),
     })
 
 
@@ -1619,6 +1684,7 @@ async def edit_leave_request_submit(
         to_date_str: str = Form(...),
         reason: str = Form(""),
         status: str = Form('P'),
+        employer_pays_wages: str = Form(""),
         start_time_str: str = Form(""),
         end_time_str: str = Form(""),
         travel_leave_enabled: str = Form("off"),
@@ -1701,13 +1767,32 @@ async def edit_leave_request_submit(
             )
         ).first()
 
-        if overlapping:
+        if overlapping and leave_type != 'SL':
             raise ValueError("کاربر در این بازه، درخواست مرخصی دیگری دارد")
+        pays = None
+        if leave_type == 'SL' and status in ('P', 'A'):
+            from web.services.sick_leave_conflicts import (
+                find_sick_leave_conflicts,
+                format_conflict_message,
+                parse_employer_pays,
+            )
+            conflicts = find_sick_leave_conflicts(
+                db, target_user_id, from_date, to_date, exclude_request_id=request_id,
+            )
+            if conflicts:
+                raise ValueError(format_conflict_message(conflicts))
+            pays = parse_employer_pays(employer_pays_wages, required=(status == 'A'))
         old_travel_detail = db.query(TravelLeaveDetail).filter(
             TravelLeaveDetail.leave_request_id == request_id
         ).first()
         old_final_travel_days = old_travel_detail.final_travel_days if old_travel_detail else 0
 
+        from web.services.sick_leave_finance import (
+            queue_financial_orders,
+            snapshot_leave,
+            write_leave_audit,
+        )
+        before_snapshot = snapshot_leave(leave_request)
         # مرحله ۱: اگر درخواست قبلاً تایید شده، کسر قبلی را برمی‌گردانیم
         if old_status == 'A':
             # مقدار واقعی کسر شده از سالانه = کل روزها منهای روز توراهی
@@ -1752,7 +1837,10 @@ async def edit_leave_request_submit(
         leave_request.to_date = to_date
         leave_request.days_count = days_count
         leave_request.reason = reason.strip()
+        leave_request.employer_pays_wages = None
         leave_request.status = status
+        if leave_type == 'SL' and status == 'A':
+            leave_request.employer_pays_wages = pays
 
         # Travel Leave detail — rebuild/replace when AL and enabled; preserve override if appropriate
         if leave_type == 'AL' and tl_enabled:
@@ -1859,6 +1947,21 @@ async def edit_leave_request_submit(
             leave_request.approved_by = None
             leave_request.approved_at = None
 
+        write_leave_audit(
+            db, leave_request, "edit", before_snapshot, snapshot_leave(leave_request),
+            user.user_id,
+        )
+        from datetime import date as date_cls
+        if before_snapshot.get("leave_type") == "SL" and before_snapshot.get("status") == "A":
+            queue_financial_orders(
+                db, leave_request, "change", user.user_id, "ویرایش بازه یا وضعیت پرداخت",
+                date_from=date_cls.fromisoformat(before_snapshot["from_date"]),
+                date_to=date_cls.fromisoformat(before_snapshot["to_date"]),
+            )
+        if leave_request.leave_type == "SL" and leave_request.status == "A":
+            queue_financial_orders(
+                db, leave_request, "change", user.user_id, "ویرایش بازه یا وضعیت پرداخت"
+            )
         db.commit()
 
         type_name = LEAVE_TYPES.get(leave_type, '')
@@ -1878,6 +1981,142 @@ async def edit_leave_request_submit(
             url=f"/admin/leave-requests/{request_id}/edit?error=خطا: {str(e)}",
             status_code=302
         )
+
+
+@router.post("/leave-financial-orders/{order_id}/apply")
+async def apply_leave_financial_order(
+    request: Request,
+    order_id: int,
+    resolution: str = Form(...),
+    reason: str = Form(...),
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """دستور اثر مالی با مجوز مرخصی ثبت می‌شود. اجرا به مجوز حقوق و قفل موجود وابسته است."""
+    enforce_permission(db, user, "approve_leave")
+    from web.services.sick_leave_finance import (
+        choose_resolution,
+        mark_applied,
+        result_amount_map,
+        write_leave_audit,
+    )
+    from web.services.payroll.run_service import (
+        PayrollRunError,
+        iter_calculate,
+        reopen_run,
+    )
+    from models.leave_financial_order import LeaveFinancialOrder
+    from models.payroll import PayrollResult
+    from core.payroll.day_adjustment import HOUR_CALC_MODES, DayAdjustmentRule, adjust_amount
+    from models.payroll import PayrollComponent
+    import jdatetime
+
+    referer = request.headers.get("referer", "/admin/leave-requests")
+    try:
+        order = choose_resolution(db, order_id, resolution, user.user_id, reason)
+    except ValueError as exc:
+        return RedirectResponse(url=build_redirect_url(referer, "error", str(exc)), status_code=302)
+
+    if not has_permission(db, user, "manage_payroll"):
+        db.commit()
+        return RedirectResponse(
+            url=build_redirect_url(referer, "success", "دستور مالی ثبت شد و منتظر اعمال حقوق است"),
+            status_code=302,
+        )
+
+    try:
+        if order.resolution == "next_period":
+            result = None
+            if order.run_id:
+                result = (
+                    db.query(PayrollResult)
+                    .filter(
+                        PayrollResult.run_id == order.run_id,
+                        PayrollResult.user_id == order.user_id,
+                    )
+                    .first()
+                )
+            before = result_amount_map(result)
+            deltas = {}
+            if result is not None:
+                from core.payroll.calendar_utils import jalali_month_bounds
+                _month_start, month_end = jalali_month_bounds(order.year_j, order.month_j)
+                components = {
+                    row.code: row
+                    for row in db.query(PayrollComponent).all()
+                }
+                leave = db.query(LeaveRequest).filter(LeaveRequest.id == order.leave_request_id).first()
+                excluded = 0
+                if leave and leave.employer_pays_wages is False:
+                    excluded = max((leave.to_date - leave.from_date).days + 1, 0)
+                for item in result.items:
+                    comp = components.get(item.component_code)
+                    if comp is None or comp.calc_mode in HOUR_CALC_MODES or str(comp.calc_mode).startswith("percent"):
+                        continue
+                    rule = DayAdjustmentRule(
+                        component_code=comp.code,
+                        sick_mode=comp.sick_mode,
+                        absence_mode=comp.absence_mode,
+                        basis=comp.day_basis,
+                        effective_from=month_end,
+                        scope="default",
+                    )
+                    adjusted, _note = adjust_amount(
+                        item.amount,
+                        rule,
+                        excluded_sick_days=excluded,
+                        absence_days=0,
+                        month_days=result.month_days,
+                        scheduled_work_days=result.month_days,
+                    )
+                    delta = adjusted - item.amount
+                    if delta != 0:
+                        deltas[item.component_code] = {
+                            "delta": str(delta),
+                            "kind": item.kind,
+                            "name": item.component_name,
+                        }
+            import json
+            order.before_amounts_json = json.dumps(before, ensure_ascii=False)
+            order.after_amounts_json = json.dumps(deltas, ensure_ascii=False)
+            nxt = jdatetime.date(order.year_j, order.month_j, 1)
+            if nxt.month == 12:
+                order.year_j, order.month_j = nxt.year + 1, 1
+            else:
+                order.year_j, order.month_j = nxt.year, nxt.month + 1
+            order.run_id = None
+            if not deltas:
+                mark_applied(db, order, user.user_id, before, {})
+            db.commit()
+            return RedirectResponse(
+                url=build_redirect_url(referer, "success", "تعدیل دوره بعد ثبت شد"),
+                status_code=302,
+            )
+
+        if order.run_id is None:
+            raise PayrollRunError("اجرای حقوق برای این دستور مشخص نیست")
+        if order.resolution == "reopen":
+            if not has_permission(db, user, "approve_payroll"):
+                raise PayrollRunError("بازگشایی دوره به مجوز تأیید حقوق نیاز دارد")
+            reopen_run(db, order.run_id, user.user_id, reason)
+        events = list(iter_calculate(db, order.run_id, [order.user_id]))
+        error = next((event.get("error") for event in events if event.get("error")), None)
+        if error:
+            raise PayrollRunError(error)
+        leave = db.query(LeaveRequest).filter(LeaveRequest.id == order.leave_request_id).first()
+        if leave is not None:
+            write_leave_audit(db, leave, "financial_apply", None, {"order_id": order.id}, user.user_id, reason)
+        fresh = db.query(LeaveFinancialOrder).filter(LeaveFinancialOrder.id == order.id).first()
+        if fresh is not None and fresh.status == "pending" and fresh.resolution in ("recalc", "reopen"):
+            mark_applied(db, fresh, user.user_id)
+        db.commit()
+    except (PayrollRunError, ValueError) as exc:
+        db.rollback()
+        return RedirectResponse(url=build_redirect_url(referer, "error", str(exc)), status_code=302)
+    return RedirectResponse(
+        url=build_redirect_url(referer, "success", "اثر مالی استعلاجی اعمال شد"),
+        status_code=302,
+    )
 
 
 # ============================================

@@ -114,6 +114,8 @@ from database.init_db import (  # noqa: E402
     migrate_employee_relative_history,
     migrate_membership_foundation_hardening,
     migrate_missing_columns,
+    migrate_sick_leave_pay_status,
+    migrate_component_sick_behavior,
     seed_membership_types,
     seed_role_permissions,
     seed_roles,
@@ -212,6 +214,8 @@ with test_engine.connect() as _conn:
 
 Base.metadata.create_all(bind=test_engine)
 migrate_missing_columns(bind_engine=test_engine)
+migrate_sick_leave_pay_status(bind_engine=test_engine)
+migrate_component_sick_behavior(bind_engine=test_engine)
 migrate_users_role_length(bind_engine=test_engine)
 seed_roles(bind_engine=test_engine)
 migrate_employee_document_types(bind_engine=test_engine)

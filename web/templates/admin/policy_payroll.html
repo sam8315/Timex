@@ -64,6 +64,30 @@
                         <input class="form-check-input" type="checkbox" name="subject_to_tax" id="newTax">
                         <label class="form-check-label" for="newTax">مالیات</label>
                     </div>
+                    <div class="col-md-2">
+                        <label class="form-label">استعلاجی</label>
+                        <select name="sick_mode" class="form-select">
+                            <option value="keep">حفظ رفتار فعلی</option>
+                            <option value="prorate">تعدیل متناسب</option>
+                            <option value="exclude">خروج از پرداخت کارفرما</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">غیبت عادی</label>
+                        <select name="absence_mode" class="form-select">
+                            <option value="keep">حفظ قانون فعلی</option>
+                            <option value="prorate">کسر متناسب</option>
+                            <option value="ignore">بی‌اثر</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">مبنا</label>
+                        <select name="day_basis" class="form-select">
+                            <option value="fixed_30">۳۰ روز</option>
+                            <option value="calendar_month">روزهای تقویمی ماه</option>
+                            <option value="scheduled_work">روزهای کاری برنامه‌ریزی‌شده</option>
+                        </select>
+                    </div>
                     <div class="col-12"><button class="btn btn-primary btn-sm">افزودن</button></div>
                 </form>
             </div>
@@ -79,6 +103,7 @@
                             <th>حالت</th>
                             <th>بیمه</th>
                             <th>مالیات</th>
+                            <th>استعلاجی / غیبت</th>
                             <th>ترتیب</th>
                             <th>فعال</th>
                             <th>عملیات</th>
@@ -93,6 +118,11 @@
                             <td>{{ calc_mode_labels.get(c.calc_mode, c.calc_mode) }}</td>
                             <td>{% if c.subject_to_insurance %}بله{% else %}خیر{% endif %}</td>
                             <td>{% if c.subject_to_tax %}بله{% else %}خیر{% endif %}</td>
+                            <td>
+                                {% if c.sick_mode == 'prorate' %}استعلاجی متناسب{% elif c.sick_mode == 'exclude' %}استعلاجی خارج{% else %}استعلاجی حفظ{% endif %}
+                                /
+                                {% if c.absence_mode == 'prorate' %}غیبت متناسب{% elif c.absence_mode == 'ignore' %}غیبت بی‌اثر{% else %}غیبت حفظ{% endif %}
+                            </td>
                             <td>{{ c.sort_order }}</td>
                             <td>{% if c.is_active %}<span class="badge bg-success">فعال</span>{% else %}<span class="badge bg-secondary">غیرفعال</span>{% endif %}</td>
                             <td class="text-nowrap">
@@ -145,6 +175,30 @@
                         <div class="form-check">
                             <input class="form-check-input" type="checkbox" name="subject_to_tax" id="tax{{ c.id }}" {% if c.subject_to_tax %}checked{% endif %}>
                             <label class="form-check-label" for="tax{{ c.id }}">مشمول مالیات</label>
+                        </div>
+                        <div class="mb-2 mt-2">
+                            <label class="form-label">استعلاجی</label>
+                            <select name="sick_mode" class="form-select">
+                                <option value="keep" {% if c.sick_mode == 'keep' %}selected{% endif %}>حفظ رفتار فعلی</option>
+                                <option value="prorate" {% if c.sick_mode == 'prorate' %}selected{% endif %}>تعدیل متناسب</option>
+                                <option value="exclude" {% if c.sick_mode == 'exclude' %}selected{% endif %}>خروج از پرداخت کارفرما</option>
+                            </select>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">غیبت عادی</label>
+                            <select name="absence_mode" class="form-select">
+                                <option value="keep" {% if c.absence_mode == 'keep' %}selected{% endif %}>حفظ قانون فعلی</option>
+                                <option value="prorate" {% if c.absence_mode == 'prorate' %}selected{% endif %}>کسر متناسب</option>
+                                <option value="ignore" {% if c.absence_mode == 'ignore' %}selected{% endif %}>بی‌اثر</option>
+                            </select>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">مبنا</label>
+                            <select name="day_basis" class="form-select">
+                                <option value="fixed_30" {% if c.day_basis == 'fixed_30' %}selected{% endif %}>۳۰ روز</option>
+                                <option value="calendar_month" {% if c.day_basis == 'calendar_month' %}selected{% endif %}>روزهای تقویمی ماه</option>
+                                <option value="scheduled_work" {% if c.day_basis == 'scheduled_work' %}selected{% endif %}>روزهای کاری برنامه‌ریزی‌شده</option>
+                            </select>
                         </div>
                         <div class="form-check">
                             <input class="form-check-input" type="checkbox" name="is_active" id="act{{ c.id }}" {% if c.is_active %}checked{% endif %}>

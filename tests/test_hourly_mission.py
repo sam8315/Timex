@@ -2796,7 +2796,7 @@ class TestMonthlyReportEffectiveRequired:
             monday = _p6c_day(report, MONDAY)
             assert monday["daily_duty"] == 8.0
             assert monday["has_duty"] is True
-            assert monday["person_status"] == "A"   # بدون تردد → غایب
+            assert monday["person_status"] == "N"   # بدون تردد، نه غیبت
             # تک‌منبع: همان عدد از compute_required_minutes_for_range
             assert _hm_required(db, emp) == 480
 
@@ -2832,8 +2832,8 @@ class TestMonthlyReportEffectiveRequired:
             assert monday["daily_duty"] == 6.0
             assert monday["hourly_mission_display"] == \
                 "مأموریت ساعتی 09:00 تا 11:00"
-            # وضعیت فرد دست نمی‌خورد (بدون تردد → A، نه مأموریت کامل)
-            assert monday["person_status"] == "A"
+            # وضعیت فرد دست نمی‌خورد (بدون تردد، نه مأموریت کامل و نه غیبت)
+            assert monday["person_status"] == "N"
             # خلاصه: 176 − 2 = 174 ساعت
             assert report["summary"]["duty_hours"] == 174.0
             assert report["summary"]["duty_days"] == P6C_WORKDAYS
@@ -2918,8 +2918,8 @@ class TestMonthlyReportEffectiveRequired:
             assert monday["hourly_leave_minutes"] == 60
             assert monday["hourly_mission_minutes"] == 120
             assert monday["daily_duty"] == 5.0
-            # HL روز را مرخصی کامل نمی‌کند
-            assert monday["person_status"] == "A"
+            # HL روز را مرخصی کامل نمی‌کند و بدون تردد را غیبت نمی‌کند
+            assert monday["person_status"] == "N"
         finally:
             _p6c_teardown(db, creds["user_id"])
 
@@ -2938,7 +2938,8 @@ class TestMonthlyReportEffectiveRequired:
 
             s = report["summary"]
             assert s["mission_days"] == 1
-            assert s["absent_days"] == P6C_WORKDAYS - 1
+            assert s["absent_days"] == 0
+            assert s["no_punch_days"] == P6C_WORKDAYS - 1
             assert s["duty_days"] == P6C_WORKDAYS - 1
             assert s["duty_hours"] == P6C_DUTY_HOURS - 8
             assert _hm_required(db, emp, mission_dates={MONDAY}) == 0
@@ -2957,7 +2958,8 @@ class TestMonthlyReportEffectiveRequired:
             assert monday["person_status_name"] == "استراحت"
             assert monday["daily_duty"] == 0.0
             assert report["summary"]["rest_days"] == 1
-            assert report["summary"]["absent_days"] == P6C_WORKDAYS - 1
+            assert report["summary"]["absent_days"] == 0
+            assert report["summary"]["no_punch_days"] == P6C_WORKDAYS - 1
             assert _hm_required(db, emp, rest_dates={MONDAY}) == 0
         finally:
             _p6c_teardown(db, creds["user_id"])
@@ -2973,13 +2975,19 @@ class TestMonthlyReportEffectiveRequired:
             report = _p6c_report(monkeypatch, creds["user_id"])
 
             monday = _p6c_day(report, MONDAY)
-            assert monday["person_status"] == "L"
-            assert monday["person_status_name"] == "مرخصی"
+            if leave_type == "SL":
+                assert monday["person_status"] == "SL"
+                assert monday["person_status_name"] == "استعلاجی"
+                assert monday["work_hours"] == 0.0
+            else:
+                assert monday["person_status"] == "L"
+                assert monday["person_status_name"] == "مرخصی"
             assert monday["daily_duty"] == 0.0
 
             s = report["summary"]
             assert s["leave_days"] == 1
-            assert s["absent_days"] == P6C_WORKDAYS - 1
+            assert s["absent_days"] == 0
+            assert s["no_punch_days"] == P6C_WORKDAYS - 1
             assert s["duty_days"] == P6C_WORKDAYS - 1
             assert s["duty_hours"] == P6C_DUTY_HOURS - 8
             assert _hm_required(
@@ -3007,7 +3015,8 @@ class TestMonthlyReportEffectiveRequired:
             assert s["holiday_days"] == 10
             assert s["duty_days"] == P6C_WORKDAYS - 1
             assert s["duty_hours"] == P6C_DUTY_HOURS - 8
-            assert s["absent_days"] == P6C_WORKDAYS - 1
+            assert s["absent_days"] == 0
+            assert s["no_punch_days"] == P6C_WORKDAYS - 1
             assert _hm_required(db, emp, holiday_dates={MONDAY: None}) == 0
         finally:
             _p6c_teardown(db, creds["user_id"])
@@ -3033,7 +3042,7 @@ class TestMonthlyReportSummaryAndShifts:
             assert _p6c_day(report, MONDAY)["surplus"] == 0.0
             assert _p6c_day(report, MONDAY)["deficit"] == 0.0
             assert _p6c_day(report, P6C_TUESDAY)["surplus"] == 2.0
-            assert _p6c_day(report, P6C_WEDNESDAY)["deficit"] == 2.0
+            assert _p6c_day(report, P6C_WEDNESDAY)["deficit"] == 4.0
             assert _p6c_day(report, P6C_THURSDAY)["person_status"] == "L"
             assert _p6c_day(report, P6C_THURSDAY)["daily_duty"] == 0.0
 
@@ -3042,16 +3051,18 @@ class TestMonthlyReportSummaryAndShifts:
             assert s["duty_hours"] == P6C_DUTY_HOURS - 8
             assert s["present_days"] == 3
             assert s["leave_days"] == 1
-            # 21 روز کاری − ۳ حضور − ۱ مرخصی
-            assert s["absent_days"] == P6C_WORKDAYS - 4
+            # ۲۱ روز کاری − ۳ حضور − ۱ مرخصی = بدون تردد، نه غیبت
+            assert s["absent_days"] == 0
+            assert s["no_punch_days"] == P6C_WORKDAYS - 4
             assert s["rest_days"] == 0
             assert s["mission_days"] == 0
             # 4 جمعه + 5 یکشنبه (بدون Holiday)
             assert s["holiday_days"] == 9
             assert s["total_surplus"] == 2.0
-            # کسری: 17 روز بدون تردد (17×8) + کسری چهارشنبه (2)
-            assert s["total_deficit"] == (P6C_WORKDAYS - 4) * 8 + 2.0
-            assert s["net_balance"] == 2.0 - s["total_deficit"]
+            # کسری فقط روز حضور ناقص است؛ بدون تردد کسری نمی‌سازد.
+            # چهارشنبهٔ ۶ساعته: ۲ ساعت کمبود کارکرد + ۲ ساعت تخلف تعجیل.
+            assert s["total_deficit"] == 4.0
+            assert s["net_balance"] == -2.0
             assert s["overall_status"] == "کسری"
             # تفکیک شیفت فقط از attendance: 7+7+6 صبح، 1+3+0 عصر
             assert s["total_morning"] == 20.0

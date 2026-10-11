@@ -223,7 +223,10 @@ class DetailedMonthlyReportGenerator:
                 return {'code': 'P', 'name': 'حاضر (تعطیل کاری)'}
             return {'code': 'P', 'name': 'حاضر'}
 
-        return {'code': 'A', 'name': 'غایب'}
+        if is_day_off:
+            return {'code': 'H', 'name': 'تعطیل'}
+
+        return {'code': 'N', 'name': 'بدون تردد'}
 
     def _compute_day_actual(
         self,
@@ -337,9 +340,9 @@ class DetailedMonthlyReportGenerator:
         """تعیین اینکه آیا روز موظفی دارد"""
         if is_day_off:
             return False
-        if person_status['code'] in ['L', 'R']:  # مرخصی یا استراحت
+        if person_status['code'] in ['L', 'R', 'N']:
             return False
-        if person_status['code'] == 'A':  # غیبت
+        if person_status['code'] == 'A':  # غیبت ثبت‌شده
             return True
         return True
 
@@ -349,6 +352,7 @@ class DetailedMonthlyReportGenerator:
         present_days = sum(1 for d in days if d['person_status'] == 'P' and not d['is_day_off'])
         leave_days = sum(1 for d in days if d['person_status'] == 'L')
         absent_days = sum(1 for d in days if d['person_status'] == 'A')
+        no_punch_days = sum(1 for d in days if d['person_status'] == 'N')
         rest_days = sum(1 for d in days if d['person_status'] == 'R')
         friday_work_days = sum(1 for d in days if d['is_friday'] and d['person_status'] == 'P')
 
@@ -383,6 +387,7 @@ class DetailedMonthlyReportGenerator:
             'present_days': present_days,
             'leave_days': leave_days,
             'absent_days': absent_days,
+            'no_punch_days': no_punch_days,
             'rest_days': rest_days,
             'friday_work_days': friday_work_days,
             'total_work_hours': round(total_work_hours, 2),

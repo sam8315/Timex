@@ -76,6 +76,23 @@ def test_surplus_deficit_adds_late_early_violations():
     assert _hours_to_minutes(deficit) == 100
 
 
+def test_no_punch_is_not_absence_and_has_no_deficit():
+    gen = DetailedMonthlyReportGeneratorV2.__new__(DetailedMonthlyReportGeneratorV2)
+    day = date(2024, 4, 2)
+    recorded = gen._determine_person_status(day, {day: "A"}, {}, is_day_off=False)
+    assert recorded == {"code": "A", "name": "غایب"}
+    missing = gen._determine_person_status(day, {}, {}, is_day_off=False)
+    assert missing == {"code": "N", "name": "بدون تردد"}
+    surplus, deficit = gen._calculate_surplus_deficit(
+        0.0,
+        False,
+        missing,
+        daily_required_hours=_minutes_to_hours(440),
+    )
+    assert surplus == 0.0
+    assert deficit == 0.0
+
+
 def test_leave_on_day_off_counts_as_holiday_not_leave():
     """مرخصی روی جمعه/تعطیل → وضعیت H؛ فقط روز کاری به‌عنوان L شمرده می‌شود."""
     gen = DetailedMonthlyReportGeneratorV2.__new__(DetailedMonthlyReportGeneratorV2)

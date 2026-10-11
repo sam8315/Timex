@@ -28,6 +28,11 @@
 {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
 {% if success %}<div class="alert alert-success">{{ success }}</div>{% endif %}
 {% if calculation_busy %}<div class="alert alert-warning">{{ calculation_busy }}</div>{% endif %}
+{% if sick_orders %}
+<div class="alert alert-warning">
+    دستور مالی استعلاجی معلق برای این دوره وجود دارد و نتیجه نهایی تا اعمال صریح عوض نمی‌شود.
+</div>
+{% endif %}
 
 <div class="modal fade" id="reportSettingsModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg">

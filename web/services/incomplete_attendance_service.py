@@ -167,6 +167,27 @@ def find_incomplete_attendances(
     if not user_ids:
         return []
 
+    from models.leave_request import LeaveRequest
+    from core.sick_leave_facts import index_spans, spans_from_leaves
+
+    sick_rows = (
+        db.query(LeaveRequest)
+        .filter(
+            LeaveRequest.user_id.in_(list(user_ids)),
+            LeaveRequest.leave_type == "SL",
+            LeaveRequest.status == "A",
+            LeaveRequest.from_date <= to_date,
+            LeaveRequest.to_date >= from_date,
+        )
+        .all()
+    )
+    sick_by_user: Dict[str, dict] = {}
+    grouped: Dict[str, list] = defaultdict(list)
+    for row in sick_rows:
+        grouped[row.user_id].append(row)
+    for uid, rows in grouped.items():
+        sick_by_user[uid] = index_spans(spans_from_leaves(rows), from_date, to_date)
+
     employees = (
         db.query(Employee)
         .filter(Employee.user_id.in_(list(user_ids)))
@@ -190,6 +211,9 @@ def find_incomplete_attendances(
         if wanted and code != wanted:
             continue
         if department_id is not None and (emp is None or emp.department_id != department_id):
+            continue
+
+        if sick_by_user.get(user_id, {}).get(day) is not None:
             continue
 
         day_records = by_user_day.get((user_id, day), [])

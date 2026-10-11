@@ -6,16 +6,21 @@ from decimal import Decimal
 from typing import List, Optional
 
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from models.membership_type import MembershipType
 from models.payroll import (
+    ABSENCE_DAY_MODES,
+    DAY_ADJUSTMENT_BASES,
     PayrollAnnualLaw,
     PayrollAssignment,
     PayrollComponent,
+    PayrollDayAdjustmentRule,
     PayrollEnabledMembership,
     PayrollRateSettings,
+    SICK_DAY_MODES,
 )
+from core.payroll.day_adjustment import DayAdjustmentRule as DayRuleView
 from web.services.payroll.seed import ensure_payroll_defaults
 
 
@@ -31,6 +36,13 @@ def list_components(db: Session, include_deleted: bool = False) -> List[PayrollC
     return q.order_by(PayrollComponent.sort_order, PayrollComponent.id).all()
 
 
+def _require_day_behavior(sick_mode: str, absence_mode: str, day_basis: str) -> None:
+    if sick_mode not in SICK_DAY_MODES or absence_mode not in ABSENCE_DAY_MODES:
+        raise PayrollPolicyError("حالت استعلاجی یا غیبت نامعتبر است")
+    if day_basis not in DAY_ADJUSTMENT_BASES:
+        raise PayrollPolicyError("مبنای تعدیل نامعتبر است")
+
+
 def update_component(
     db: Session,
     component_id: int,
@@ -41,6 +53,9 @@ def update_component(
     sort_order: Optional[int] = None,
     is_active: Optional[bool] = None,
     calc_mode: Optional[str] = None,
+    sick_mode: Optional[str] = None,
+    absence_mode: Optional[str] = None,
+    day_basis: Optional[str] = None,
 ) -> PayrollComponent:
     comp = db.get(PayrollComponent, component_id)
     if not comp or comp.deleted_at:
@@ -64,6 +79,14 @@ def update_component(
         if calc_mode not in CALC_MODES:
             raise PayrollPolicyError("حالت محاسبه نامعتبر است")
         comp.calc_mode = calc_mode
+    if sick_mode is not None or absence_mode is not None or day_basis is not None:
+        next_sick = sick_mode if sick_mode is not None else comp.sick_mode
+        next_absence = absence_mode if absence_mode is not None else comp.absence_mode
+        next_basis = day_basis if day_basis is not None else comp.day_basis
+        _require_day_behavior(next_sick, next_absence, next_basis)
+        comp.sick_mode = next_sick
+        comp.absence_mode = next_absence
+        comp.day_basis = next_basis
     db.commit()
     db.refresh(comp)
     return comp
@@ -79,6 +102,9 @@ def create_component(
     subject_to_insurance: bool = False,
     subject_to_tax: bool = False,
     sort_order: int = 100,
+    sick_mode: str = "keep",
+    absence_mode: str = "keep",
+    day_basis: str = "fixed_30",
 ) -> PayrollComponent:
     code = (code or "").strip().upper()
     name = (name or "").strip()
@@ -88,6 +114,7 @@ def create_component(
         raise PayrollPolicyError("کد آیتم تکراری است")
     if kind not in ("earning", "deduction"):
         raise PayrollPolicyError("نوع آیتم نامعتبر است")
+    _require_day_behavior(sick_mode, absence_mode, day_basis)
     comp = PayrollComponent(
         code=code,
         name=name,
@@ -96,6 +123,9 @@ def create_component(
         subject_to_insurance=subject_to_insurance,
         subject_to_tax=subject_to_tax,
         sort_order=sort_order,
+        sick_mode=sick_mode,
+        absence_mode=absence_mode,
+        day_basis=day_basis,
     )
     db.add(comp)
     db.commit()
@@ -846,3 +876,162 @@ def save_payroll_enabled_memberships(db: Session, codes: List[str]) -> None:
     for code in cleaned:
         db.add(PayrollEnabledMembership(membership_type_code=code))
     db.commit()
+
+
+def list_day_adjustment_rules(db: Session) -> List[PayrollDayAdjustmentRule]:
+    return (
+        db.query(PayrollDayAdjustmentRule)
+        .options(joinedload(PayrollDayAdjustmentRule.component))
+        .filter(PayrollDayAdjustmentRule.is_active.is_(True))
+        .order_by(
+            PayrollDayAdjustmentRule.component_id,
+            PayrollDayAdjustmentRule.effective_from,
+        )
+        .all()
+    )
+
+
+def create_day_adjustment_rule(
+    db: Session,
+    *,
+    component_id: int,
+    effective_from: date,
+    sick_mode: str,
+    absence_mode: str,
+    basis: str,
+    membership_type_code: Optional[str] = None,
+    user_id: Optional[str] = None,
+    effective_to: Optional[date] = None,
+    notes: Optional[str] = None,
+) -> PayrollDayAdjustmentRule:
+    if sick_mode not in SICK_DAY_MODES or absence_mode not in ABSENCE_DAY_MODES:
+        raise PayrollPolicyError("حالت استعلاجی یا غیبت نامعتبر است")
+    if basis not in DAY_ADJUSTMENT_BASES:
+        raise PayrollPolicyError("مبنای تعدیل نامعتبر است")
+    membership = (membership_type_code or "").strip() or None
+    employee = (user_id or "").strip() or None
+    if membership and employee:
+        raise PayrollPolicyError("قانون قلم یا برای عضویت است یا برای کارمند")
+    row = PayrollDayAdjustmentRule(
+        component_id=component_id,
+        membership_type_code=membership,
+        user_id=employee,
+        effective_from=effective_from,
+        effective_to=effective_to,
+        sick_mode=sick_mode,
+        absence_mode=absence_mode,
+        basis=basis,
+        notes=(notes or "").strip() or None,
+        is_active=True,
+    )
+    db.add(row)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise PayrollPolicyError("این قانون برای همین تاریخ اعتبار قبلاً ثبت شده است") from exc
+    db.refresh(row)
+    return row
+
+
+def create_day_adjustment_rules(
+    db: Session,
+    *,
+    component_ids: List[int],
+    effective_from: date,
+    sick_mode: str,
+    absence_mode: str,
+    basis: str,
+    membership_type_code: Optional[str] = None,
+    user_id: Optional[str] = None,
+) -> tuple[int, int]:
+    """همان قانون را برای چند قلم در یک تراکنش می‌سازد. ردیف موجود همان دامنه و تاریخ رد می‌شود."""
+    if sick_mode not in SICK_DAY_MODES or absence_mode not in ABSENCE_DAY_MODES:
+        raise PayrollPolicyError("حالت استعلاجی یا غیبت نامعتبر است")
+    if basis not in DAY_ADJUSTMENT_BASES:
+        raise PayrollPolicyError("مبنای تعدیل نامعتبر است")
+    membership = (membership_type_code or "").strip() or None
+    employee = (user_id or "").strip() or None
+    if membership and employee:
+        raise PayrollPolicyError("قانون قلم یا برای عضویت است یا برای کارمند")
+    if not component_ids:
+        raise PayrollPolicyError("قلمی برای ثبت وجود ندارد")
+
+    existing_query = db.query(PayrollDayAdjustmentRule.component_id).filter(
+        PayrollDayAdjustmentRule.component_id.in_(component_ids),
+        PayrollDayAdjustmentRule.effective_from == effective_from,
+    )
+    if membership is None:
+        existing_query = existing_query.filter(PayrollDayAdjustmentRule.membership_type_code.is_(None))
+    else:
+        existing_query = existing_query.filter(
+            PayrollDayAdjustmentRule.membership_type_code == membership
+        )
+    if employee is None:
+        existing_query = existing_query.filter(PayrollDayAdjustmentRule.user_id.is_(None))
+    else:
+        existing_query = existing_query.filter(PayrollDayAdjustmentRule.user_id == employee)
+    taken = {row[0] for row in existing_query.all()}
+
+    created = 0
+    for component_id in component_ids:
+        if component_id in taken:
+            continue
+        db.add(PayrollDayAdjustmentRule(
+            component_id=component_id,
+            membership_type_code=membership,
+            user_id=employee,
+            effective_from=effective_from,
+            sick_mode=sick_mode,
+            absence_mode=absence_mode,
+            basis=basis,
+            is_active=True,
+        ))
+        created += 1
+    if created:
+        db.commit()
+    return created, len(taken)
+
+
+def resolve_day_rules(
+    db: Session,
+    *,
+    user_id: str,
+    membership_type_code: Optional[str],
+    on_date: date,
+) -> List[DayRuleView]:
+    """همه قانون‌های معتبر را برمی‌گرداند تا انتخاب اختصاصی‌ترین در موتور انجام شود."""
+    rows = (
+        db.query(PayrollDayAdjustmentRule, PayrollComponent.code)
+        .join(PayrollComponent, PayrollComponent.id == PayrollDayAdjustmentRule.component_id)
+        .filter(
+            PayrollDayAdjustmentRule.is_active.is_(True),
+            PayrollDayAdjustmentRule.effective_from <= on_date,
+        )
+        .all()
+    )
+    views: List[DayRuleView] = []
+    for rule, code in rows:
+        if rule.effective_to is not None and rule.effective_to < on_date:
+            continue
+        if rule.user_id:
+            if rule.user_id != user_id:
+                continue
+            scope = "employee"
+        elif rule.membership_type_code:
+            if rule.membership_type_code != membership_type_code:
+                continue
+            scope = "membership"
+        else:
+            scope = "default"
+        views.append(
+            DayRuleView(
+                component_code=code,
+                sick_mode=rule.sick_mode,
+                absence_mode=rule.absence_mode,
+                basis=rule.basis,
+                effective_from=rule.effective_from,
+                scope=scope,
+            )
+        )
+    return views

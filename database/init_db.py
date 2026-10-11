@@ -1993,6 +1993,135 @@ def migrate_drop_employee_department(bind_engine=None) -> None:
     )
 
 
+def migrate_sick_leave_pay_status(bind_engine=None) -> None:
+    """ستون و قید پرداخت استعلاجی را بدون پر کردن سوابق قدیمی اضافه می‌کند."""
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
+    if "leave_requests" not in inspector.get_table_names():
+        return
+    with target.begin() as conn:
+        conn.execute(text(
+            "ALTER TABLE leave_requests "
+            "ADD COLUMN IF NOT EXISTS employer_pays_wages BOOLEAN NULL"
+        ))
+        conn.execute(text(
+            """
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'ck_leave_requests_employer_pays_sl'
+                ) THEN
+                    ALTER TABLE leave_requests
+                        ADD CONSTRAINT ck_leave_requests_employer_pays_sl
+                        CHECK (
+                            employer_pays_wages IS NULL
+                            OR (leave_type = 'SL' AND status = 'A')
+                        );
+                END IF;
+            END $$
+            """
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_leave_requests_sick_pay "
+            "ON leave_requests (leave_type, status, employer_pays_wages)"
+        ))
+        if "payroll_day_adjustment_rules" in inspector.get_table_names():
+            conn.execute(text(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_payroll_day_rules_scope
+                ON payroll_day_adjustment_rules (
+                    component_id,
+                    COALESCE(membership_type_code, ''),
+                    COALESCE(user_id, ''),
+                    effective_from
+                )
+                """
+            ))
+    logger.info(
+        "Sick leave pay status schema ready",
+        extra={"event": "database.ready"},
+    )
+
+
+def migrate_component_sick_behavior(bind_engine=None) -> None:
+    """رفتار استعلاجی را روی قلم می‌گذارد و قانون پیش‌فرض قبلی را یک‌بار کپی می‌کند."""
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
+    if "payroll_components" not in inspector.get_table_names():
+        return
+    with target.begin() as conn:
+        conn.execute(text(
+            "ALTER TABLE payroll_components "
+            "ADD COLUMN IF NOT EXISTS sick_mode VARCHAR(20) NOT NULL DEFAULT 'keep'"
+        ))
+        conn.execute(text(
+            "ALTER TABLE payroll_components "
+            "ADD COLUMN IF NOT EXISTS absence_mode VARCHAR(20) NOT NULL DEFAULT 'keep'"
+        ))
+        conn.execute(text(
+            "ALTER TABLE payroll_components "
+            "ADD COLUMN IF NOT EXISTS day_basis VARCHAR(30) NOT NULL DEFAULT 'fixed_30'"
+        ))
+        conn.execute(text(
+            """
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'ck_payroll_components_sick_mode'
+                ) THEN
+                    ALTER TABLE payroll_components
+                        ADD CONSTRAINT ck_payroll_components_sick_mode
+                        CHECK (sick_mode IN ('keep', 'prorate', 'exclude'));
+                END IF;
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'ck_payroll_components_absence_mode'
+                ) THEN
+                    ALTER TABLE payroll_components
+                        ADD CONSTRAINT ck_payroll_components_absence_mode
+                        CHECK (absence_mode IN ('keep', 'prorate', 'ignore'));
+                END IF;
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'ck_payroll_components_day_basis'
+                ) THEN
+                    ALTER TABLE payroll_components
+                        ADD CONSTRAINT ck_payroll_components_day_basis
+                        CHECK (day_basis IN ('fixed_30', 'calendar_month', 'scheduled_work'));
+                END IF;
+            END $$
+            """
+        ))
+        if "payroll_day_adjustment_rules" in inspector.get_table_names():
+            conn.execute(text(
+                """
+                UPDATE payroll_components AS component
+                SET sick_mode = rule.sick_mode,
+                    absence_mode = rule.absence_mode,
+                    day_basis = rule.basis
+                FROM (
+                    SELECT DISTINCT ON (component_id)
+                        component_id, sick_mode, absence_mode, basis
+                    FROM payroll_day_adjustment_rules
+                    WHERE is_active
+                      AND membership_type_code IS NULL
+                      AND user_id IS NULL
+                    ORDER BY component_id, effective_from DESC
+                ) AS rule
+                WHERE component.id = rule.component_id
+                  AND component.sick_mode = 'keep'
+                  AND component.absence_mode = 'keep'
+                  AND component.day_basis = 'fixed_30'
+                """
+            ))
+    logger.info(
+        "Component sick behavior columns ready",
+        extra={"event": "database.ready"},
+    )
+
+
 def create_tables() -> None:
     """
     ساخت تمام جداول تعریف شده در مدل‌ها
@@ -2002,6 +2131,8 @@ def create_tables() -> None:
         # اول جداول جدید، بعد ستون‌های جدید روی جداول موجود
         Base.metadata.create_all(bind=engine)
         migrate_missing_columns()
+        migrate_sick_leave_pay_status()
+        migrate_component_sick_behavior()
         migrate_users_role_length()
         migrate_city_region_code()
         migrate_employee_position_id()

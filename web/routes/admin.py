@@ -1075,6 +1075,19 @@ async def admin_attendance(
 
     from web.services.membership_resolve import holiday_applies, membership_code_for
 
+    from core.sick_leave_facts import SickSpan, coverage_note, effect_for_span
+    sick_rows = []
+    employee_ids = [emp.user_id for emp in employees]
+    if employee_ids:
+        sick_rows = db.query(LeaveRequest).filter(
+            LeaveRequest.user_id.in_(employee_ids),
+            LeaveRequest.leave_type == 'SL',
+            LeaveRequest.status == 'A',
+            LeaveRequest.from_date <= target_date,
+            LeaveRequest.to_date >= target_date,
+        ).all()
+    sick_by_user = {row.user_id: row for row in sick_rows}
+
     # ساخت لیست نتایج
     results = []
     for emp in employees:
@@ -1164,6 +1177,27 @@ async def admin_attendance(
         else:
             status_label = '⚠️ ناقص'
             status_color = 'danger'
+
+        sick_row = sick_by_user.get(emp.user_id)
+        if sick_row is not None:
+            sick_effect = effect_for_span(
+                SickSpan(
+                    request_id=sick_row.id,
+                    from_date=sick_row.from_date,
+                    to_date=sick_row.to_date,
+                    status=sick_row.status,
+                    employer_pays_wages=sick_row.employer_pays_wages,
+                ),
+                is_friday=is_friday,
+                is_holiday=holiday is not None,
+                is_weekly_rest=daily_status == 'R',
+                is_mission=daily_status == 'M',
+            )
+            if sick_effect.display_as_sick:
+                status_label = f'🌴 مرخصی استعلاجی — {sick_effect.payment_label}'
+                status_color = 'info'
+            elif sick_effect.covered:
+                status_label = f'{status_label} | {coverage_note(sick_effect)}'
 
         results.append({
             'user_id': emp.user_id,
@@ -1418,6 +1452,16 @@ async def admin_user_attendance(
     leaves_by_date = build_leave_days_by_date(
         approved_leaves, holiday_dates, month_start_g, month_end_g
     )
+    from core.sick_leave_facts import (
+        coverage_note,
+        effect_for_span,
+        index_spans,
+        sick_status_dict,
+        spans_from_leaves,
+    )
+    sick_by_date = index_spans(
+        spans_from_leaves(approved_leaves), month_start_g, month_end_g
+    )
 
     # Phase 7: Fetch approved hourly leave minutes by date
     hourly_leave_minutes_by_date = get_approved_hl_minutes(
@@ -1489,12 +1533,24 @@ async def admin_user_attendance(
 
         # بررسی مرخصی تایید شده (فقط در روزهای کاری - تعطیلات اولویت دارند)
         # (در لایه route می‌ماند — سیاست/موظفی از Policy است)
+        sick_effect = effect_for_span(
+            sick_by_date.get(current),
+            is_friday=is_friday,
+            is_holiday=holiday_title is not None,
+            is_weekly_rest=current in rest_dates,
+            is_mission=current in mission_dates,
+        )
         leave_type = leaves_by_date.get(current)
-        if leave_type and not is_friday and holiday_title is None:
+        if sick_effect.display_as_sick:
+            status_info.update(sick_status_dict(sick_effect))
+        elif leave_type and leave_type != 'SL' and not is_friday and holiday_title is None:
             type_name = LEAVE_TYPE_NAMES_LOCAL.get(leave_type, '')
             status_info['main_status'] = STATUS_LEAVE
             status_info['main_label'] = f'🌴 مرخصی {type_name}'
             status_info['main_color'] = 'info'
+        note = coverage_note(sick_effect)
+        if note:
+            status_info['sick_coverage_note'] = note
 
         # محاسبه کارکرد با در نظر گرفتن شیفت شب
         is_night_shift = status_info['main_status'] == STATUS_NIGHT_SHIFT
@@ -1509,6 +1565,8 @@ async def admin_user_attendance(
                 day_records,
                 is_night_shift=is_night_shift
             )
+        if sick_effect.covered:
+            work_hours = 0
 
         resolved = resolve_policy(db, target_employee, current)
         late_early = compute_late_early_for_day(
@@ -1519,6 +1577,7 @@ async def admin_user_attendance(
             skip=(
                 status_info['main_status'] == STATUS_LEAVE
                 or current in rest_dates
+                or sick_effect.covered
             ),
             hl_intervals=hl_intervals_by_date.get(current),
         )

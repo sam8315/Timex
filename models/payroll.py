@@ -58,6 +58,9 @@ class PayrollComponent(TimestampMixin, Base):
     subject_to_tax: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    sick_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="keep", server_default="keep")
+    absence_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="keep", server_default="keep")
+    day_basis: Mapped[str] = mapped_column(String(30), nullable=False, default="fixed_30", server_default="fixed_30")
     deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     assignments: Mapped[List["PayrollAssignment"]] = relationship(
@@ -66,6 +69,18 @@ class PayrollComponent(TimestampMixin, Base):
 
     __table_args__ = (
         CheckConstraint("kind IN ('earning', 'deduction')", name="ck_payroll_components_kind"),
+        CheckConstraint(
+            "sick_mode IN ('keep', 'prorate', 'exclude')",
+            name="ck_payroll_components_sick_mode",
+        ),
+        CheckConstraint(
+            "absence_mode IN ('keep', 'prorate', 'ignore')",
+            name="ck_payroll_components_absence_mode",
+        ),
+        CheckConstraint(
+            "day_basis IN ('fixed_30', 'calendar_month', 'scheduled_work')",
+            name="ck_payroll_components_day_basis",
+        ),
     )
 
 
@@ -496,4 +511,52 @@ class PayrollManualEntry(TimestampMixin, Base):
     __table_args__ = (
         UniqueConstraint("run_id", "user_id", "component_code", name="uq_payroll_manual_run_user_comp"),
         Index("ix_payroll_manual_run_user", "run_id", "user_id"),
+    )
+
+
+SICK_DAY_MODES = ("keep", "prorate", "exclude")
+ABSENCE_DAY_MODES = ("keep", "prorate", "ignore")
+DAY_ADJUSTMENT_BASES = ("fixed_30", "calendar_month", "scheduled_work")
+
+
+class PayrollDayAdjustmentRule(TimestampMixin, Base):
+    """قانون تاریخ‌دار اثر استعلاجی و غیبت عادی بر یک قلم، جدا از calc_mode."""
+
+    __tablename__ = "payroll_day_adjustment_rules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    component_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("payroll_components.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    membership_type_code: Mapped[Optional[str]] = mapped_column(String(10), nullable=True, index=True)
+    user_id: Mapped[Optional[str]] = mapped_column(
+        String(50), ForeignKey("users.user_id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    effective_from: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    effective_to: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    sick_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="keep")
+    absence_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="keep")
+    basis: Mapped[str] = mapped_column(String(30), nullable=False, default="fixed_30")
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    component: Mapped["PayrollComponent"] = relationship()
+
+    __table_args__ = (
+        CheckConstraint(
+            "user_id IS NULL OR membership_type_code IS NULL",
+            name="ck_payroll_day_rules_one_scope",
+        ),
+        CheckConstraint(
+            "sick_mode IN ('keep', 'prorate', 'exclude')",
+            name="ck_payroll_day_rules_sick_mode",
+        ),
+        CheckConstraint(
+            "absence_mode IN ('keep', 'prorate', 'ignore')",
+            name="ck_payroll_day_rules_absence_mode",
+        ),
+        CheckConstraint(
+            "basis IN ('fixed_30', 'calendar_month', 'scheduled_work')",
+            name="ck_payroll_day_rules_basis",
+        ),
     )

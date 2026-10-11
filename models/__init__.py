@@ -18,6 +18,8 @@ from models.service_duty_region import ServiceDutyRegion
 from models.leave_balance import LeaveBalance
 from models.leave_transaction import LeaveTransaction
 from models.leave_request import LeaveRequest
+from models.leave_request_audit import LeaveRequestAudit
+from models.leave_financial_order import LeaveFinancialOrder
 from models.holiday import Holiday
 from models.daily_status import DailyStatus
 from models.hourly_mission import HourlyMission, HourlyMissionPolicy
@@ -72,6 +74,7 @@ from models.payroll import (
     PayrollNightPolicy,
     PayrollFridayPolicy,
     PayrollEnabledMembership,
+    PayrollDayAdjustmentRule,
 )
 
 __all__ = [
@@ -82,7 +85,8 @@ __all__ = [
     'MembershipRuleChangeRequest', 'MembershipRuleChangeAudit',
     'ServiceAdjustment', 'ServiceDutyRegion',
     'LeaveBalance', 'LeaveTransaction',
-    'LeaveRequest', 'LeaveCarryForwardRequest', 'LeaveBuybackQuota',
+    'LeaveRequest', 'LeaveRequestAudit', 'LeaveFinancialOrder',
+    'LeaveCarryForwardRequest', 'LeaveBuybackQuota',
     'LeaveSettlementCapPeriod',
     'Holiday', 'DailyStatus',
     'HourlyMission', 'HourlyMissionPolicy',
@@ -103,4 +107,5 @@ __all__ = [
     'PayrollMinimumWage', 'PayrollChildAllowancePolicy',
     'PayrollOvertimePolicy', 'PayrollDeficitPolicy', 'PayrollShiftPolicy',
     'PayrollNightPolicy', 'PayrollFridayPolicy', 'PayrollEnabledMembership',
+    'PayrollDayAdjustmentRule',
 ]

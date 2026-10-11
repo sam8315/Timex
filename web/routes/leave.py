@@ -452,7 +452,15 @@ async def submit_leave_request(
                 type_name = LEAVE_TYPES.get(leave_type, '')
                 raise ValueError(f"مانده کافی نیست! مانده {type_name}: {current_balance} روز، درخواست: {days_count} روز")
 
-        if leave_type != 'HL':
+        if leave_type == 'SL':
+            from web.services.sick_leave_conflicts import (
+                find_sick_leave_conflicts,
+                format_conflict_message,
+            )
+            conflicts = find_sick_leave_conflicts(db, user.user_id, from_date, to_date)
+            if conflicts:
+                raise ValueError(format_conflict_message(conflicts))
+        elif leave_type != 'HL':
             overlapping = db.query(LeaveRequest).filter(and_(LeaveRequest.user_id == user.user_id, LeaveRequest.status.in_(['P', 'A']), LeaveRequest.from_date <= to_date, LeaveRequest.to_date >= from_date)).first()
             if overlapping:
                 raise ValueError("در این بازه، درخواست مرخصی دیگری دارید")

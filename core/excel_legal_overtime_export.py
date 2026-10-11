@@ -89,7 +89,10 @@ class LegalOvertimeExcelExporter(DetailedExcelExporterV2):
                 day['jalali_date'],
                 day['day_name'],
                 day['day_status'],
-                day['person_status_name'],
+                (
+                    f"{day.get('person_status_name') or ''} ({day['employer_pay_label']})"
+                    if day.get('employer_pay_label') else day.get('person_status_name')
+                ),
                 enter1, exit1,
                 enter2, exit2,
                 enter3, exit3,

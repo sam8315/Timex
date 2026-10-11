@@ -11,6 +11,7 @@ METHOD_HOURLY_X_FACTOR = "hourly_x_factor"
 OVERTIME_METHODS = (METHOD_MONTHLY_DIV, METHOD_HOURLY_X_FACTOR)
 OVERTIME_BASIS_DAYS = D(30)
 _DAY_BASIS_MODES = frozenset({"daily_x_covered", "seniority_chain"})
+_MONTHLY_BASIS_MODES = frozenset({"fixed_monthly_prorata"})
 
 
 @dataclass(frozen=True)
@@ -53,6 +54,8 @@ def overtime_basis_amount(
     )
     if days is not None and calc_mode in _DAY_BASIS_MODES and unit_amount is not None:
         return D(unit_amount) * D(days)
+    if days is not None and calc_mode in _MONTHLY_BASIS_MODES and unit_amount is not None:
+        return D(unit_amount)
     return D(amount)
 
 

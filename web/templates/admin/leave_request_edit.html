@@ -91,6 +91,53 @@
                     {% endif %}
                 </div>
 
+                <div class="col-12" id="sickPayBox">
+                    <label class="form-label">آیا حقوق روزهای این مرخصی بر عهده کارفرماست؟</label>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="employer_pays_wages" value="true"
+                               {% if leave_request.employer_pays_wages is sameas true %}checked{% endif %}>
+                        <label class="form-check-label">بله</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="employer_pays_wages" value="false"
+                               {% if leave_request.employer_pays_wages is sameas false %}checked{% endif %}>
+                        <label class="form-check-label">خیر</label>
+                    </div>
+                    {% if leave_request.leave_type == 'SL' and leave_request.employer_pays_wages is none %}
+                    <small class="text-warning">وضعیت پرداخت نامشخص است و محاسبه مالی قبلی حفظ شده.</small>
+                    {% endif %}
+                </div>
+                {% if financial_orders %}
+                <div class="col-12">
+                    <div class="alert alert-warning">
+                        <div class="fw-bold mb-2">اثر مالی این استعلاجی</div>
+                        {% for order in financial_orders %}
+                        <div class="mb-2">
+                            دوره {{ order.year_j }}/{{ '%02d'|format(order.month_j) }}
+                            — {{ order.status }} / {{ order.resolution }}
+                            {% if order.status == 'pending' %}
+                            <form method="post" action="/admin/leave-financial-orders/{{ order.id }}/apply" class="d-inline">
+                                <input type="hidden" name="resolution" value="recalc">
+                                <input name="reason" class="form-control form-control-sm d-inline w-auto" placeholder="دلیل" required>
+                                <button class="btn btn-sm btn-outline-primary" type="submit">اعمال در همین دوره</button>
+                            </form>
+                            <form method="post" action="/admin/leave-financial-orders/{{ order.id }}/apply" class="d-inline">
+                                <input type="hidden" name="resolution" value="next_period">
+                                <input name="reason" class="form-control form-control-sm d-inline w-auto" placeholder="دلیل" required>
+                                <button class="btn btn-sm btn-outline-secondary" type="submit">تعدیل دوره بعد</button>
+                            </form>
+                            <form method="post" action="/admin/leave-financial-orders/{{ order.id }}/apply" class="d-inline">
+                                <input type="hidden" name="resolution" value="reopen">
+                                <input name="reason" class="form-control form-control-sm d-inline w-auto" placeholder="دلیل" required>
+                                <button class="btn btn-sm btn-outline-danger" type="submit">بازگشایی دوره</button>
+                            </form>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+
                 <!-- تاریخ شروع -->
                 <div class="col-md-6">
                     <label class="form-label">📅 از تاریخ <span class="text-danger">*</span></label>

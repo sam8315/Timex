@@ -3,7 +3,7 @@
 """
 from datetime import date, datetime, time
 from typing import Optional
-from sqlalchemy import Integer, String, Date, DateTime, Time, ForeignKey, Text
+from sqlalchemy import Boolean, CheckConstraint, Index, Integer, String, Date, DateTime, Time, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from models.base import Base, TimestampMixin
 
@@ -54,6 +54,24 @@ class LeaveRequest(TimestampMixin, Base):
     approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     rejection_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
+    # NULL = نامشخص (سوابق قدیمی یا هنوز تأیید نشده)
+    # TRUE = حقوق روزهای این استعلاجی بر عهده کارفرماست
+    # FALSE = بر عهده کارفرما نیست
+    employer_pays_wages: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "employer_pays_wages IS NULL OR (leave_type = 'SL' AND status = 'A')",
+            name="ck_leave_requests_employer_pays_sl",
+        ),
+        Index(
+            "ix_leave_requests_sick_pay",
+            "leave_type",
+            "status",
+            "employer_pays_wages",
+        ),
+    )
+
     # Relationships
     user = relationship("User", backref="leave_requests")
     travel_leave_detail = relationship(
@@ -100,4 +118,5 @@ class LeaveRequest(TimestampMixin, Base):
             'approved_by': self.approved_by,
             'approved_at': self.approved_at.isoformat() if self.approved_at else None,
             'rejection_reason': self.rejection_reason,
+            'employer_pays_wages': self.employer_pays_wages,
         }

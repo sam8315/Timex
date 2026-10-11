@@ -447,12 +447,17 @@
                     </tr>
                 </thead>
                 <tbody>
+                    {% if report.sick_warnings %}
+                    <tr><td colspan="20"><div class="alert alert-warning mb-0">{{ report.sick_warnings | join(' ') }}</div></td></tr>
+                    {% endif %}
                     {% for day in report.days %}
                     {% set row_class = '' %}
-                    {% if day.person_status == 'L' %}
+                    {% if day.person_status == 'L' or day.person_status == 'SL' %}
                     {% set row_class = 'row-leave' %}
                     {% elif day.person_status == 'A' %}
                     {% set row_class = 'row-absent' %}
+                    {% elif day.person_status == 'N' %}
+                    {% set row_class = '' %}
                     {% elif day.is_holiday %}
                     {% set row_class = 'row-holiday' %}
                     {% elif day.is_friday %}
@@ -473,8 +478,13 @@
                             <span class="badge bg-success status-pill">حاضر</span>
                             {% elif day.person_status == 'L' %}
                             <span class="badge bg-info status-pill">مرخصی</span>
+                            {% elif day.person_status == 'SL' %}
+                            <span class="badge bg-info status-pill">استعلاجی</span>
+                            {% if day.employer_pay_label %}<br><span class="small">{{ day.employer_pay_label }}</span>{% endif %}
                             {% elif day.person_status == 'A' %}
                             <span class="badge bg-danger status-pill">غایب</span>
+                            {% elif day.person_status == 'N' %}
+                            <span class="badge bg-secondary status-pill">بدون تردد</span>
                             {% elif day.person_status == 'R' %}
                             <span class="badge bg-secondary status-pill">استراحت</span>
                             {% elif day.person_status == 'H' %}
@@ -586,6 +596,10 @@
             <div class="summary-item">
                 <span>❌ غیبت:</span>
                 <span class="value">{{ report.summary.absent_days }}</span>
+            </div>
+            <div class="summary-item">
+                <span>⚪ بدون تردد:</span>
+                <span class="value">{{ report.summary.no_punch_days }}</span>
             </div>
             <div class="summary-item">
                 <span>😴 استراحت:</span>

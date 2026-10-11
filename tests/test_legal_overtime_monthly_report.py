@@ -103,6 +103,14 @@ class TestWeeklyDutyFromDailyDuty:
         assert weekly_required_minutes(days) == 5 * 480
         assert proportional_weekly_required_minutes(days) == 5 * 480
 
+    def test_no_punch_day_is_outside_weekly_duty(self):
+        days = _full_week([
+            8,
+            (0, {'person_status': 'N', 'daily_duty': 7.3333}),
+            8, 8, 8, 8, 0,
+        ])
+        assert weekly_required_minutes(days) == 5 * WORKING_DAY_DUTY_MINUTES
+
 
 class TestArticle51WithFridayInBase:
     def test_redistribution_not_overtime(self):

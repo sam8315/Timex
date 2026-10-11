@@ -23,6 +23,13 @@ from models.daily_status import DailyStatus
 from models.leave_request import LeaveRequest
 from models.holiday import Holiday
 from core.time_calculator import sum_shift_hours_from_pairs
+from core.sick_leave_facts import (
+    apply_work_hours,
+    effect_for_span,
+    index_spans,
+    is_full_day_leave_status,
+    spans_from_leaves,
+)
 from core.attendance_calculator import (
     STATUS_NIGHT_SHIFT,
     STATUS_NO_ATTENDANCE,
@@ -226,6 +233,17 @@ class DetailedMonthlyReportGeneratorV2:
             if leave_date not in statuses_by_date:
                 statuses_by_date[leave_date] = leave_type
 
+        sick_by_date = index_spans(spans_from_leaves(approved_leaves), g_start, g_end)
+        pending_sick = self.db.query(LeaveRequest).filter(
+            and_(
+                LeaveRequest.user_id == user_id,
+                LeaveRequest.status == 'P',
+                LeaveRequest.leave_type == 'SL',
+                LeaveRequest.from_date <= g_end,
+                LeaveRequest.to_date >= g_start,
+            )
+        ).count()
+
         # ساخت لیست روزها
         days = []
         current = g_start
@@ -252,6 +270,15 @@ class DetailedMonthlyReportGeneratorV2:
             person_status = self._determine_person_status(
                 current, statuses_by_date, attendances_by_day, is_day_off
             )
+            sick_effect = effect_for_span(
+                sick_by_date.get(current),
+                is_friday=is_friday,
+                is_holiday=is_holiday,
+                is_weekly_rest=statuses_by_date.get(current) == 'R',
+                is_mission=person_status['code'] == 'M',
+            )
+            if sick_effect.display_as_sick:
+                person_status = {'code': 'SL', 'name': 'استعلاجی'}
 
             # Actual Attendance فقط از Central Engine (Phase 5) —
             # با context روز قبل/بعد (روزهای حاشیه ماه هم fetch شده‌اند)
@@ -281,7 +308,7 @@ class DetailedMonthlyReportGeneratorV2:
                 resolved=resolved,
                 target_date=current,
                 is_holiday=is_holiday,
-                is_leave=person_status['code'] == 'L',
+                is_leave=is_full_day_leave_status(person_status['code']),
                 is_mission=person_status['code'] == 'M',
                 is_rest=person_status['code'] == 'R',
                 is_friday=is_friday,
@@ -297,7 +324,7 @@ class DetailedMonthlyReportGeneratorV2:
                 target_date=current,
                 first_enter=day_data.get('first_enter'),
                 last_exit=day_data.get('last_exit'),
-                skip=person_status['code'] in ('L', 'R'),
+                skip=person_status['code'] in ('L', 'SL', 'R', 'N') or sick_effect.covered,
                 hl_intervals=hl_intervals_by_date.get(current),
             )
 
@@ -310,6 +337,15 @@ class DetailedMonthlyReportGeneratorV2:
                 and getattr(resolved.policy, 'include_grace_in_work', False)
             )
             work_hours = effective_work_hours(punch_hours, grace_m, include_grace)
+            shift_hours = day_data.get('shift_hours') or {
+                'morning': 0.0, 'evening': 0.0, 'night': 0.0,
+            }
+            counted = apply_work_hours(float(work_hours), sick_effect, shift_hours)
+            work_hours = counted['work_hours']
+            if sick_effect.suppress_incomplete:
+                has_incomplete = False
+                if sick_effect.display_as_sick:
+                    attendance_status = 'استعلاجی'
 
             # محاسبه اضافی/کسری بر اساس موظفی روز + تخلف تأخیر/تعجیل
             surplus, deficit = self._calculate_surplus_deficit(
@@ -323,10 +359,6 @@ class DetailedMonthlyReportGeneratorV2:
 
             # تفکیک صبح/عصر/شب روی *همه* جفت‌های موتور (نه first→last و
             # نه فقط pairهای سقف‌خورده‌ی نمایشی). فاصله بین جفت‌ها کار نیست.
-            shift_hours = day_data.get('shift_hours') or {
-                'morning': 0.0, 'evening': 0.0, 'night': 0.0,
-            }
-
             # تعیین موظفی روز
             has_duty = daily_required_hours > 0
             daily_duty = daily_required_hours
@@ -347,11 +379,19 @@ class DetailedMonthlyReportGeneratorV2:
                 'punch_hours': punch_hours,
                 'grace_credit_minutes': grace_m,
                 'work_hours': float(work_hours),
+                'payroll_work_hours': counted['payroll_work_hours'],
                 'surplus': surplus,
                 'deficit': deficit,
-                'morning_hours': shift_hours['morning'],
-                'evening_hours': shift_hours['evening'],
-                'night_hours': shift_hours['night'],
+                'morning_hours': counted['morning_hours'],
+                'evening_hours': counted['evening_hours'],
+                'night_hours': counted['night_hours'],
+                'payroll_morning_hours': counted['payroll_morning_hours'],
+                'payroll_evening_hours': counted['payroll_evening_hours'],
+                'payroll_night_hours': counted['payroll_night_hours'],
+                'sick_covered': sick_effect.covered,
+                'employer_pays_wages': sick_effect.employer_pays_wages,
+                'employer_pay_label': sick_effect.payment_label,
+                'sick_payment_unknown': sick_effect.payment_unknown,
                 'has_duty': has_duty,
                 'daily_duty': daily_duty,
                 # 🕐 HL تأییدشده برای نمایش (از Effective Required کم شده)
@@ -376,6 +416,15 @@ class DetailedMonthlyReportGeneratorV2:
 
         # محاسبه خلاصه ماهانه
         summary = self._calculate_monthly_summary(days)
+        sick_warnings = []
+        if pending_sick:
+            sick_warnings.append(
+                "درخواست استعلاجی تأییدنشده در این ماه است و قانون مالی جدید اعمال نشده."
+            )
+        if any(d.get('sick_payment_unknown') for d in days):
+            sick_warnings.append(
+                "وضعیت پرداخت استعلاجی نامشخص است و محاسبه مالی قبلی حفظ شده."
+            )
 
         return {
             'success': True,
@@ -391,7 +440,8 @@ class DetailedMonthlyReportGeneratorV2:
             'month': month,
             'month_name': self._get_jalali_month_name(month),
             'days': days,
-            'summary': summary
+            'summary': summary,
+            'sick_warnings': sick_warnings,
         }
 
     def _determine_person_status(
@@ -413,6 +463,8 @@ class DetailedMonthlyReportGeneratorV2:
             if status_code in ['AL', 'SL', 'RL', 'UL', 'CW', 'TL', 'L']:
                 if is_day_off:
                     return {'code': 'H', 'name': 'تعطیل'}
+                if status_code == 'SL':
+                    return {'code': 'SL', 'name': 'استعلاجی'}
                 return {'code': 'L', 'name': 'مرخصی'}
             # ✅ مأموریت روزانه (DailyStatus 'M') — موظفی روز صفر است
             elif status_code == 'M':
@@ -435,7 +487,8 @@ class DetailedMonthlyReportGeneratorV2:
         if is_day_off:
             return {'code': 'H', 'name': 'تعطیل'}
 
-        return {'code': 'A', 'name': 'غایب'}
+        # غیبت فقط با وضعیت روزانهٔ ثبت‌شده (A) است. نبودن تردد خودش غیبت نیست.
+        return {'code': 'N', 'name': 'بدون تردد'}
 
     def _compute_day_actual(
         self,
@@ -558,7 +611,10 @@ class DetailedMonthlyReportGeneratorV2:
         if is_day_off and person_status['code'] == 'P':
             return _minutes_to_hours(work_m), _minutes_to_hours(violation_m)
 
-        if person_status['code'] in ['L', 'R']:
+        if person_status['code'] == 'N':
+            return 0.0, 0.0
+
+        if person_status['code'] in ['L', 'SL', 'R']:
             if work_m > 0:
                 return _minutes_to_hours(work_m), _minutes_to_hours(violation_m)
             return 0.0, _minutes_to_hours(violation_m)
@@ -585,8 +641,9 @@ class DetailedMonthlyReportGeneratorV2:
             1 for d in days if d['is_holiday'] and not d['is_friday'] and d['person_status'] == 'P'
         )
 
-        leave_days = sum(1 for d in days if d['person_status'] == 'L')
+        leave_days = sum(1 for d in days if d['person_status'] in ('L', 'SL'))
         absent_days = sum(1 for d in days if d['person_status'] == 'A')
+        no_punch_days = sum(1 for d in days if d['person_status'] == 'N')
         rest_days = sum(1 for d in days if d['person_status'] == 'R')
         holiday_days = sum(1 for d in days if d['person_status'] == 'H')
         mission_days = sum(1 for d in days if d['person_status'] == 'M')
@@ -650,6 +707,7 @@ class DetailedMonthlyReportGeneratorV2:
             'present_days': present_days,
             'leave_days': leave_days,
             'absent_days': absent_days,
+            'no_punch_days': no_punch_days,
             'rest_days': rest_days,
             'holiday_days': holiday_days,
             'mission_days': mission_days,

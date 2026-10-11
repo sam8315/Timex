@@ -213,6 +213,9 @@ class PdfReportExporter:
             elif person_status == 'A':
                 pdf.set_fill_color(254, 226, 226)  # قرمز روشن - غیبت
                 fill = True
+            elif person_status == 'N':
+                pdf.set_fill_color(226, 232, 240)  # خاکستری - بدون تردد
+                fill = True
             elif is_friday:
                 pdf.set_fill_color(241, 245, 249)  # خاکستری روشن - جمعه
                 fill = True

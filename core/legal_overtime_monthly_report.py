@@ -57,7 +57,11 @@ def weekly_required_minutes(week_days: List[Dict]) -> int:
     مرخصی روزانه، HL، مأموریت، HM، استراحت، تعطیل رسمی و روز غیرکاری Policy
     موظفی همان روز را صفر یا کم می‌کنند.
     """
-    total = sum(_hours_to_minutes(d.get('daily_duty') or 0) for d in week_days)
+    total = sum(
+        _hours_to_minutes(d.get('daily_duty') or 0)
+        for d in week_days
+        if d.get('person_status') != 'N'
+    )
     if total > 0:
         return total
 
@@ -66,7 +70,7 @@ def weekly_required_minutes(week_days: List[Dict]) -> int:
     for d in week_days:
         if d.get('is_friday') or d.get('is_holiday') or d.get('is_day_off'):
             continue
-        if d.get('person_status') in ('L', 'R', 'M', 'H'):
+        if d.get('person_status') in ('L', 'R', 'M', 'H', 'N'):
             continue
         n += 1
     return n * WORKING_DAY_DUTY_MINUTES
@@ -225,7 +229,12 @@ def build_legal_ot_summary(days: List[Dict], base_summary: Dict) -> Dict:
         _hours_to_minutes(summary['total_punch_hours'])
         + _hours_to_minutes(summary['total_grace_hours'])
     )
-    duty_m = _hours_to_minutes(summary.get('duty_hours') or 0)
+    nopunch_duty_m = sum(
+        _hours_to_minutes(d.get('daily_duty') or 0)
+        for d in days
+        if d.get('person_status') == 'N'
+    )
+    duty_m = max(0, _hours_to_minutes(summary.get('duty_hours') or 0) - nopunch_duty_m)
     work_m = _hours_to_minutes(summary.get('total_work_hours') or 0)
     late_v_m = sum(int(d.get('late_violation_minutes') or 0) for d in days)
     early_v_m = sum(int(d.get('early_leave_violation_minutes') or 0) for d in days)
@@ -234,13 +243,14 @@ def build_legal_ot_summary(days: List[Dict], base_summary: Dict) -> Dict:
 
     # حضور = هر روز با وضعیت P (جمعه/تعطیل‌کاری هم شمرده می‌شود)
     present_days = sum(1 for d in days if d.get('person_status') == 'P')
-    leave_days = sum(1 for d in days if d.get('person_status') == 'L')
+    leave_days = sum(1 for d in days if d.get('person_status') in ('L', 'SL'))
     absent_days = sum(1 for d in days if d.get('person_status') == 'A')
+    no_punch_days = sum(1 for d in days if d.get('person_status') == 'N')
     rest_days = sum(1 for d in days if d.get('person_status') == 'R')
     holiday_days = sum(1 for d in days if d.get('person_status') == 'H')
     mission_days = sum(1 for d in days if d.get('person_status') == 'M')
     status_days_total = (
-        present_days + leave_days + absent_days
+        present_days + leave_days + absent_days + no_punch_days
         + rest_days + holiday_days + mission_days
     )
 
@@ -294,6 +304,7 @@ def build_legal_ot_summary(days: List[Dict], base_summary: Dict) -> Dict:
         'present_days': present_days,
         'leave_days': leave_days,
         'absent_days': absent_days,
+        'no_punch_days': no_punch_days,
         'rest_days': rest_days,
         'holiday_days': holiday_days,
         'mission_days': mission_days,
