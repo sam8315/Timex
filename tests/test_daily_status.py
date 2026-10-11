@@ -80,18 +80,30 @@ def test_absence_badge_on_user_and_admin_attendance(client, db, make_user):
     ))
     db.commit()
 
-    badge = '<span class="badge bg-danger mb-1">❌ غیبت</span>'
+    badge = '<span class="badge bg-danger">❌ غیبت</span>'
+    jalali = day_j.strftime("%Y/%m/%d")
+
+    def _status_cell(html: str) -> str:
+        start = html.find(jalali)
+        assert start != -1
+        row_end = html.find("</tr>", start)
+        return html[start:row_end]
+
     login_as(client, target["national_code"])
     user_page = client.get(f"/attendance?year={day_j.year}&month={day_j.month}")
     assert user_page.status_code == 200
-    assert user_page.text.count(badge) == 1
+    user_cell = _status_cell(user_page.text)
+    assert user_cell.count(badge) == 1
+    assert "بدون تردد" not in user_cell
 
     login_as(client, boss["national_code"])
     admin_page = client.get(
         f"/admin/attendance/user/{target['user_id']}?year={day_j.year}&month={day_j.month}"
     )
     assert admin_page.status_code == 200
-    assert admin_page.text.count(badge) == 1
+    admin_cell = _status_cell(admin_page.text)
+    assert admin_cell.count(badge) == 1
+    assert "بدون تردد" not in admin_cell
 
 
 def test_model_validator_strips_on_assignment(db, make_user):

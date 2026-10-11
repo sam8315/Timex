@@ -615,9 +615,12 @@
                             <span class="badge bg-info mb-1">😴 استراحت</span><br>
                             {% endif %}
                             {% if day.is_absence %}
-                            <span class="badge bg-danger mb-1">❌ غیبت</span><br>
+                            <span class="badge bg-danger{% if day.status.main_status != 'no_attendance' %} mb-1{% endif %}">❌ غیبت</span>
+                            {% if day.status.main_status != 'no_attendance' %}<br>{% endif %}
                             {% endif %}
+                            {% if not day.is_absence or day.status.main_status != 'no_attendance' %}
                             <span class="badge bg-{{ day.status.main_color }}">{{ day.status.main_label }}</span>
+                            {% endif %}
                             {% if day.status.sick_coverage_note %}
                             <br><span class="badge bg-info mt-1">{{ day.status.sick_coverage_note }}</span>
                             {% endif %}
