@@ -78,7 +78,10 @@ def line_detail(item: Any) -> str:
     note = (getattr(item, "calc_note", None) or "").strip()
 
     if code in ("INSURANCE_EMPLOYEE", "TAX") and (unit is not None or qty is not None):
-        return f"{money_text(unit)} درصد از مبنای {money_text(qty)} ریال"
+        text = f"{money_text(unit)} درصد از مبنای {money_text(qty)} ریال"
+        if code == "INSURANCE_EMPLOYEE" and "معاف" in note:
+            return f"{text}، معاف از بیمه سهم کارمند"
+        return text
 
     if code == "CHILD_ALLOWANCE" and unit is not None and qty is not None:
         return (

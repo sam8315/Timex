@@ -251,6 +251,59 @@
                 </form>
             </div>
         </div>
+        <div class="card shadow-sm col-lg-9 mt-3">
+            <div class="card-header">معاف از بیمه سهم کارمند</div>
+            <div class="card-body">
+                <form method="post" action="/admin/policies/payroll/insurance-exemptions" class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label">کارمند</label>
+                        <select name="user_id" class="form-select" required>
+                            <option value="">انتخاب کنید</option>
+                            {% for emp in employees %}
+                            <option value="{{ emp.user_id }}">{{ emp.last_name }} {{ emp.first_name }} — {{ emp.user_id }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">شروع</label>
+                        <input name="effective_from" class="form-control jalali-date" placeholder="1405/01/01" autocomplete="off" required>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">پایان</label>
+                        <input name="effective_to" class="form-control jalali-date" placeholder="خالی = بدون پایان" autocomplete="off">
+                    </div>
+                    <div class="col-md-8">
+                        <label class="form-label">یادداشت</label>
+                        <input name="notes" class="form-control">
+                    </div>
+                    <div class="col-12"><button class="btn btn-outline-primary">ثبت معافیت</button></div>
+                </form>
+            </div>
+            <table class="table table-sm mb-0">
+                <thead class="table-light">
+                    <tr><th>کارمند</th><th>از</th><th>تا</th><th>وضعیت</th><th></th></tr>
+                </thead>
+                <tbody>
+                {% for row in insurance_exemptions %}
+                    <tr>
+                        <td>{{ employee_names.get(row.user_id, row.user_id) }} — {{ row.user_id }}</td>
+                        <td>{{ row.effective_from|jalali }}</td>
+                        <td>{{ row.effective_to|jalali if row.effective_to else '—' }}</td>
+                        <td>{% if row.is_active %}فعال{% else %}غیرفعال{% endif %}</td>
+                        <td>
+                            {% if row.is_active %}
+                            <form method="post" action="/admin/policies/payroll/insurance-exemptions/{{ row.id }}/deactivate">
+                                <button class="btn btn-sm btn-outline-danger">غیرفعال</button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="5" class="text-muted text-center">معافیتی ثبت نشده</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
 
     <div class="tab-pane fade" id="tab-seniority">

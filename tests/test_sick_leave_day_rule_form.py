@@ -15,3 +15,6 @@ def test_sick_behavior_lives_on_the_component_form(client, db, make_user):
     assert 'name="day_basis"' in page.text
     assert "خروج از پرداخت کارفرما" in page.text
     assert "مشمول بیمه" in page.text
+    assert "معاف از بیمه سهم کارمند" in page.text
+    assert 'action="/admin/policies/payroll/insurance-exemptions"' in page.text
+    assert "jalali-date" in page.text

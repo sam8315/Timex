@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from models.membership_type import MembershipType
+from models.employee import Employee
 from models.payroll import (
     ABSENCE_DAY_MODES,
     DAY_ADJUSTMENT_BASES,
@@ -17,6 +18,7 @@ from models.payroll import (
     PayrollComponent,
     PayrollDayAdjustmentRule,
     PayrollEnabledMembership,
+    PayrollInsuranceExemption,
     PayrollRateSettings,
     SICK_DAY_MODES,
 )
@@ -206,6 +208,70 @@ def delete_annual_law(db: Session, law_id: int) -> None:
     if not law:
         raise PayrollPolicyError("قانون سالانه یافت نشد")
     db.delete(law)
+    db.commit()
+
+
+def list_insurance_exemptions(db: Session, *, active_only: bool = False) -> List[PayrollInsuranceExemption]:
+    query = db.query(PayrollInsuranceExemption)
+    if active_only:
+        query = query.filter(PayrollInsuranceExemption.is_active.is_(True))
+    return query.order_by(
+        PayrollInsuranceExemption.is_active.desc(),
+        PayrollInsuranceExemption.effective_from.desc(),
+        PayrollInsuranceExemption.id.desc(),
+    ).all()
+
+
+def exemption_applies(rows, user_id: str, on_date: date) -> bool:
+    """معافیت فعال است اگر در تاریخ محاسبه داخل بازه باشد."""
+    for row in rows:
+        if row.user_id != user_id or not row.is_active:
+            continue
+        if row.effective_from > on_date:
+            continue
+        if row.effective_to is not None and row.effective_to < on_date:
+            continue
+        return True
+    return False
+
+
+def create_insurance_exemption(
+    db: Session,
+    *,
+    user_id: str,
+    effective_from: date,
+    effective_to: Optional[date] = None,
+    notes: Optional[str] = None,
+) -> PayrollInsuranceExemption:
+    user_id = (user_id or "").strip()
+    if not user_id:
+        raise PayrollPolicyError("کارمند را انتخاب کنید")
+    if db.query(Employee).filter(Employee.user_id == user_id).one_or_none() is None:
+        raise PayrollPolicyError("کارمند پیدا نشد")
+    if effective_to is not None and effective_to < effective_from:
+        raise PayrollPolicyError("تاریخ پایان قبل از شروع است")
+    db.query(PayrollInsuranceExemption).filter(
+        PayrollInsuranceExemption.user_id == user_id,
+        PayrollInsuranceExemption.is_active.is_(True),
+    ).update({"is_active": False}, synchronize_session=False)
+    row = PayrollInsuranceExemption(
+        user_id=user_id,
+        effective_from=effective_from,
+        effective_to=effective_to,
+        is_active=True,
+        notes=(notes or "").strip() or None,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def deactivate_insurance_exemption(db: Session, exemption_id: int) -> None:
+    row = db.get(PayrollInsuranceExemption, exemption_id)
+    if row is None:
+        raise PayrollPolicyError("معافیت پیدا نشد")
+    row.is_active = False
     db.commit()
 
 

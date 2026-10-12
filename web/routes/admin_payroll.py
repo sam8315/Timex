@@ -723,6 +723,12 @@ async def payroll_policy_page(
         .order_by(MembershipType.sort_order, MembershipType.code)
         .all()
     )
+    employees = (
+        db.query(Employee)
+        .filter(Employee.is_active.is_(True))
+        .order_by(Employee.last_name, Employee.first_name)
+        .all()
+    )
     return templates.TemplateResponse(
         request,
         "admin/policy_payroll.html",
@@ -734,6 +740,11 @@ async def payroll_policy_page(
             "components": policy_service.list_components(db),
             "annual_laws": policy_service.list_annual_laws(db),
             "rates": policy_service.get_rate_settings(db),
+            "insurance_exemptions": policy_service.list_insurance_exemptions(db),
+            "employees": employees,
+            "employee_names": {
+                emp.user_id: f"{emp.last_name} {emp.first_name}" for emp in employees
+            },
             "assignments": policy_service.list_assignments(db),
             "memberships": memberships,
             "calc_mode_labels": CALC_MODE_LABELS,
@@ -867,6 +878,45 @@ async def payroll_rates_save(
             hours_per_day=_dec(hours_per_day, "ساعت روزانه"),
         )
         return _redirect("/admin/policies/payroll", success="نرخ‌ها ذخیره شد")
+    except PayrollPolicyError as exc:
+        return _redirect("/admin/policies/payroll", error=str(exc))
+
+
+@router.post("/admin/policies/payroll/insurance-exemptions")
+async def payroll_insurance_exemption_add(
+    user_id: str = Form(...),
+    effective_from: str = Form(...),
+    effective_to: str = Form(""),
+    notes: str = Form(""),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not _can_manage(db, user) and not has_permission(db, user, "manage_users"):
+        return _deny()
+    try:
+        policy_service.create_insurance_exemption(
+            db,
+            user_id=user_id,
+            effective_from=_parse_date(effective_from),
+            effective_to=_parse_date(effective_to) if effective_to.strip() else None,
+            notes=notes,
+        )
+        return _redirect("/admin/policies/payroll", success="معافیت بیمه ثبت شد")
+    except PayrollPolicyError as exc:
+        return _redirect("/admin/policies/payroll", error=str(exc))
+
+
+@router.post("/admin/policies/payroll/insurance-exemptions/{exemption_id}/deactivate")
+async def payroll_insurance_exemption_deactivate(
+    exemption_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not _can_manage(db, user) and not has_permission(db, user, "manage_users"):
+        return _deny()
+    try:
+        policy_service.deactivate_insurance_exemption(db, exemption_id)
+        return _redirect("/admin/policies/payroll", success="معافیت بیمه غیرفعال شد")
     except PayrollPolicyError as exc:
         return _redirect("/admin/policies/payroll", error=str(exc))
 

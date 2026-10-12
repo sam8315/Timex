@@ -19,6 +19,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     Index,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -125,6 +126,30 @@ class PayrollRateSettings(TimestampMixin, Base):
     )
     hours_per_day: Mapped[Decimal] = mapped_column(
         Numeric(8, 4), nullable=False, default=Decimal("7.3333")
+    )
+
+
+class PayrollInsuranceExemption(TimestampMixin, Base):
+    """معافیت بیمه سهم کارمند برای یک نفر، در بازهٔ تاریخ."""
+
+    __tablename__ = "payroll_insurance_exemptions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(
+        String(50), ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    effective_from: Mapped[date] = mapped_column(Date, nullable=False)
+    effective_to: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        Index(
+            "uq_payroll_insurance_exemptions_active_user",
+            "user_id",
+            unique=True,
+            postgresql_where=text("is_active"),
+        ),
     )
 
 

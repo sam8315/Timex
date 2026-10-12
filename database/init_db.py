@@ -2122,6 +2122,43 @@ def migrate_component_sick_behavior(bind_engine=None) -> None:
     )
 
 
+def migrate_insurance_exemptions(bind_engine=None) -> None:
+    """جدول معافیت بیمه سهم کارمند را در صورت نبودن می‌سازد."""
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
+    if "users" not in inspector.get_table_names():
+        return
+    if "payroll_insurance_exemptions" in inspector.get_table_names():
+        return
+    with target.begin() as conn:
+        conn.execute(text(
+            """
+            CREATE TABLE payroll_insurance_exemptions (
+                id SERIAL PRIMARY KEY,
+                user_id VARCHAR(50) NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                effective_from DATE NOT NULL,
+                effective_to DATE,
+                is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                notes TEXT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+            """
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_payroll_insurance_exemptions_user_id "
+            "ON payroll_insurance_exemptions (user_id)"
+        ))
+        conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_payroll_insurance_exemptions_active_user "
+            "ON payroll_insurance_exemptions (user_id) WHERE is_active"
+        ))
+    logger.info(
+        "Payroll insurance exemptions table ready",
+        extra={"event": "database.ready"},
+    )
+
+
 def create_tables() -> None:
     """
     ساخت تمام جداول تعریف شده در مدل‌ها
@@ -2133,6 +2170,7 @@ def create_tables() -> None:
         migrate_missing_columns()
         migrate_sick_leave_pay_status()
         migrate_component_sick_behavior()
+        migrate_insurance_exemptions()
         migrate_users_role_length()
         migrate_city_region_code()
         migrate_employee_position_id()

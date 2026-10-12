@@ -108,6 +108,7 @@ class EmployeeCalcInput:
     scheduled_work_days: int = 0
     day_rules: Sequence[DayAdjustmentRule] = field(default_factory=tuple)
     carry_adjustments: Mapping[str, Mapping] = field(default_factory=dict)
+    insurance_exempt: bool = False
 
 
 @dataclass
@@ -617,10 +618,14 @@ def calculate_employee_payslip(
         unit = None
         if comp.calc_mode == "percent_insurance":
             pct = D(rates.insurance_employee_pct)
-            amount = money_round(insurance_base * pct / D(100))
             unit = pct
             qty = insurance_base
-            note = f"{pct}% از مبنای مشمول بیمه ({insurance_base})"
+            if emp.insurance_exempt:
+                amount = D(0)
+                note = "معاف از بیمه سهم کارمند"
+            else:
+                amount = money_round(insurance_base * pct / D(100))
+                note = f"{pct}% از مبنای مشمول بیمه ({insurance_base})"
         elif comp.calc_mode == "percent_tax":
             pct = D(rates.tax_pct)
             amount = money_round(tax_base * pct / D(100))

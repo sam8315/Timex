@@ -24,6 +24,10 @@ from core.payroll.shift import PATTERN_NONE, SHIFT_OPTIONS, ShiftRule, parse_shi
 from core.payroll.money import D
 from core.payroll.seniority import AnnualSeniorityPolicy
 from models.contract import Contract
+from web.services.payroll.policy_service import (
+    exemption_applies,
+    list_insurance_exemptions,
+)
 from models.leave_financial_order import LeaveFinancialOrder
 from models.leave_request import LeaveRequest
 from models.employee import Employee
@@ -741,6 +745,7 @@ def iter_calculate(db: Session, run_id: int, user_ids: Optional[Sequence[str]] =
     components = _component_defs(db, selected_component_codes(run))
     annual = _active_annual_laws(db)
     payroll_date = month_end
+    insurance_exemptions = list_insurance_exemptions(db, active_only=True)
 
     manual_map: dict[tuple[str, str], Decimal] = {}
     for m in run.manual_entries:
@@ -845,6 +850,9 @@ def iter_calculate(db: Session, run_id: int, user_ids: Optional[Sequence[str]] =
                 absence_duty_hours=attendance.absence_duty_hours,
                 scheduled_work_days=attendance.scheduled_work_days,
                 carry_adjustments=carry,
+                insurance_exempt=exemption_applies(
+                    insurance_exemptions, emp.user_id, payroll_date
+                ),
                 shift_pattern=choices.get(emp.user_id, PATTERN_NONE),
                 overtime_rule=policy_cache.overtime(contract.contract_type_code),
                 deficit_rule=policy_cache.deficit(contract.contract_type_code),
