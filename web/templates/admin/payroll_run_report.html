@@ -4,6 +4,8 @@
 <style>
 #reportSheet { width: 100%; }
 #reportSheet th, #reportSheet td { white-space: nowrap; }
+#reportSheet th { white-space: normal; overflow-wrap: normal; word-break: normal; }
+#reportSheet td.num { white-space: nowrap !important; overflow-wrap: normal !important; word-break: keep-all !important; }
 #reportSheet tr.report-subtotal { background: #e8f4ec; font-weight: 700; }
 #reportSheet tr.report-grand { background: #d6e8dc; font-weight: 700; }
 body.report-bw #reportSheet,
@@ -14,6 +16,22 @@ body.report-bw #reportSheet tr.report-grand {
     background: #fff !important;
     color: #000 !important;
     border-color: #000 !important;
+}
+/* چاپ سیاه‌وسفید: همهٔ خطوط افقی و عمودی (سرستون، ردیف‌ها و جمع‌ها) مشکی با ضخامت صریح */
+body.report-bw #reportSheet table {
+    --bs-border-color: #000;
+    --bs-table-border-color: #000;
+    border-collapse: collapse !important;
+    border: 0.35mm solid #000 !important;
+}
+body.report-bw #reportSheet table > thead > tr > th,
+body.report-bw #reportSheet table > tbody > tr > td,
+body.report-bw #reportSheet table > tbody > tr.report-subtotal > td,
+body.report-bw #reportSheet table > tbody > tr.report-grand > td {
+    border-style: solid !important;
+    border-color: #000 !important;
+    border-width: 0.35mm !important;
+    box-shadow: none !important;
 }
 @page {
     size: A4 landscape;
@@ -31,14 +49,15 @@ body.report-bw #reportSheet tr.report-grand {
     .app-sidebar, .app-topbar, .sidebar-overlay, .no-print { display: none !important; }
     .app-content { margin: 0 !important; padding: 0 !important; width: 100% !important; max-width: 100% !important; }
     #reportSheet, #reportSheet .table-responsive { overflow: visible !important; width: 100% !important; max-width: 100% !important; }
-    #reportSheet table { width: 100% !important; table-layout: fixed !important; }
+    #reportSheet table { width: 100% !important; max-width: 100% !important; table-layout: fixed !important; font-size: {{ report.layout.font_pt }}pt !important; }
     #reportSheet th, #reportSheet td {
-        white-space: normal !important;
-        overflow-wrap: anywhere;
-        word-break: break-word;
+        white-space: normal;
+        overflow-wrap: normal;
+        word-break: normal;
+        padding: 0.5mm 0.8mm !important;
+        overflow: hidden;
     }
-    #reportSheet table.report-tight { font-size: 8pt; }
-    #reportSheet table.report-dense { font-size: 6.5pt; }
+    #reportSheet td.num { white-space: nowrap !important; overflow-wrap: normal !important; word-break: keep-all !important; overflow: visible; }
     body.print-multipage #reportSheet { page: report-pages; }
     body.report-bw #reportSheet,
     body.report-bw #reportSheet th,
@@ -52,6 +71,7 @@ body.report-bw #reportSheet tr.report-grand {
 </style>
 {% endblock %}
 {% block content %}
+{% set numeric_fields = ['row', 'user_id'] %}
 <div class="d-flex justify-content-between align-items-center mb-3 no-print">
     <h4 class="mb-0">گزارش لیست حقوق — {{ period_label }}</h4>
     <a href="/admin/payroll/runs/{{ run.id }}" class="btn btn-outline-secondary btn-sm">بازگشت به لیست</a>
@@ -98,7 +118,12 @@ body.report-bw #reportSheet tr.report-grand {
         <div class="small text-muted">دوره {{ period_label }}</div>
     </div>
     <div class="table-responsive">
-        <table class="table table-sm table-bordered align-middle mb-0 {% if report.columns|length > 9 %}report-dense{% elif report.columns|length > 4 %}report-tight{% endif %}">
+        <table class="table table-sm table-bordered align-middle mb-0">
+            <colgroup>
+                {% for width in report.layout.widths_pct %}
+                <col style="width: {{ width }}%">
+                {% endfor %}
+            </colgroup>
             <thead class="table-light">
                 <tr>
                     {% for field in report.fields %}
@@ -114,10 +139,10 @@ body.report-bw #reportSheet tr.report-grand {
                 {% for row in section.rows %}
                 <tr>
                     {% for field in report.fields %}
-                    <td>{{ row[field.code] if field.code != 'user_id' else row.user_id }}</td>
+                    <td{% if field.code in numeric_fields %} class="num"{% endif %}>{{ row[field.code] }}</td>
                     {% endfor %}
                     {% for column in report.columns %}
-                    <td>{{ row.amounts[column.code]|money_text }}</td>
+                    <td class="num">{{ row.amounts[column.code]|money_text }}</td>
                     {% endfor %}
                 </tr>
                 {% endfor %}
@@ -127,7 +152,7 @@ body.report-bw #reportSheet tr.report-grand {
                     <td>{% if field.code == 'name' %}{{ section.subtotal.label }}{% endif %}</td>
                     {% endfor %}
                     {% for column in report.columns %}
-                    <td>{{ section.subtotal.amounts[column.code]|money_text }}</td>
+                    <td class="num">{{ section.subtotal.amounts[column.code]|money_text }}</td>
                     {% endfor %}
                 </tr>
                 {% endif %}
@@ -140,7 +165,7 @@ body.report-bw #reportSheet tr.report-grand {
                     <td>{% if field.code == 'name' %}{{ report.grand_total.label }}{% endif %}</td>
                     {% endfor %}
                     {% for column in report.columns %}
-                    <td>{{ report.grand_total.amounts[column.code]|money_text }}</td>
+                    <td class="num">{{ report.grand_total.amounts[column.code]|money_text }}</td>
                     {% endfor %}
                 </tr>
             {% endif %}

@@ -1,13 +1,20 @@
 """گزارش لیست حقوق از فیش‌های ذخیره‌شده. محاسبهٔ جدید انجام نمی‌شود."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 from typing import Optional, Sequence
 
 from sqlalchemy.orm import Session, joinedload
 
 from core.payroll.money import D
+from core.payroll.pdf_run_report import (
+    A4_LANDSCAPE_USABLE_MM,
+    estimate_measure,
+    plan_layout,
+    report_fields,
+    report_specs,
+)
 from core.payroll.payslip_present import payslip_sort_key
 
 NO_DEPARTMENT = "بدون دپارتمان"
@@ -18,6 +25,11 @@ MEMBERSHIP = "membership"
 DEPARTMENT = "department"
 POSITION = "position"
 WORK_DAYS = "__WORK_DAYS__"
+ROW_NUMBER = "row"
+USER_ID = "user_id"
+WORK_DAYS_LABEL = "کارکرد"
+# عنوان نمایشی؛ کد قلم و فیش‌های ذخیره‌شده تغییری نمی‌کنند.
+DISPLAY_NAMES = {"DAILY_WAGE": "حقوق ماهیانه"}
 
 _TEXT_EXTRAS = (
     (MEMBERSHIP, "عضویت"),
@@ -65,6 +77,12 @@ def catalog_columns(people: Sequence[ReportPerson]) -> list[ReportLine]:
         for line in person.lines:
             found.setdefault(line.component_code, line)
     columns = sorted(found.values(), key=payslip_sort_key)
+    columns = [
+        replace(column, component_name=DISPLAY_NAMES[column.component_code])
+        if column.component_code in DISPLAY_NAMES
+        else column
+        for column in columns
+    ]
     columns.extend(
         ReportLine(code, name, "total", order, D(0))
         for code, name, order in _TOTALS
@@ -150,7 +168,25 @@ def _department_label(person: ReportPerson) -> str:
     return person.department_name or NO_DEPARTMENT
 
 
-def build_run_report(
+def html_layout(report: dict) -> dict:
+    """عرض ستون‌ها (درصد) و اندازهٔ فونت چاپ A4 افقی."""
+    fields = report_fields(report)
+    columns = report.get("columns") or []
+    specs = report_specs(report, fields, columns)
+    plan = plan_layout(specs, A4_LANDSCAPE_USABLE_MM, estimate_measure)
+    return {
+        "font_pt": plan["font_pt"],
+        "widths_pct": [round(width / A4_LANDSCAPE_USABLE_MM * 100, 3) for width in plan["widths"]],
+    }
+
+
+def build_run_report(*args, **kwargs) -> dict:
+    report = _build_run_report(*args, **kwargs)
+    report["layout"] = html_layout(report)
+    return report
+
+
+def _build_run_report(
     people: Sequence[ReportPerson],
     *,
     membership_codes: Optional[Sequence[str]] = None,
@@ -186,7 +222,13 @@ def build_run_report(
             return selected_codes is None or code in selected_codes
         return code in shown_extra
 
-    fields = [{"code": "user_id", "name": "کد"}, {"code": "name", "name": "نام"}]
+    # ردیف پیش‌فرض خاموش، کد پرسنلی پیش‌فرض روشن؛ نام همیشه نمایش داده می‌شود.
+    fields = []
+    if shown_extra is not None and ROW_NUMBER in shown_extra:
+        fields.append({"code": ROW_NUMBER, "name": "ردیف"})
+    if shown_extra is None or USER_ID in shown_extra:
+        fields.append({"code": USER_ID, "name": "کد"})
+    fields.append({"code": "name", "name": "نام"})
     fields.extend(
         {"code": code, "name": label}
         for code, label in _TEXT_EXTRAS
@@ -194,7 +236,7 @@ def build_run_report(
     )
     columns: list[ReportLine] = []
     if shown(WORK_DAYS):
-        columns.append(ReportLine(WORK_DAYS, "روزهای کارکرد", "days", 0, D(0)))
+        columns.append(ReportLine(WORK_DAYS, WORK_DAYS_LABEL, "days", 0, D(0)))
     columns.extend(components)
     columns.extend(
         ReportLine(code, name, "total", order, D(0))
@@ -244,6 +286,11 @@ def build_run_report(
         rows = [_person_row(person, columns) for person in ordered]
         sections.append({"title": None, "rows": rows, "subtotal": None})
         grand = None
+    number = 0
+    for section in sections:
+        for row in section["rows"]:
+            number += 1
+            row["row"] = number
     return {
         "fields": fields,
         "columns": column_view,

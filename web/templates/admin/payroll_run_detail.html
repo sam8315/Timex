@@ -80,9 +80,17 @@
                     </div>
                     <div class="col-12">
                         <div class="form-label">نمایش ستون‌ها</div>
-                        <p class="small text-muted mb-2">این‌ها در فهرست اقلام صفحه نیستند. کد و نام همیشه نشان داده می‌شوند.</p>
+                        <p class="small text-muted mb-2">این‌ها در فهرست اقلام صفحه نیستند. نام همیشه نشان داده می‌شود.</p>
                         <input type="hidden" name="extras_from_page" value="1">
                         <div class="d-flex flex-wrap gap-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="extra_columns" value="row" id="rxRow">
+                                <label class="form-check-label" for="rxRow">ردیف</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="extra_columns" value="user_id" id="rxUserId" checked>
+                                <label class="form-check-label" for="rxUserId">کد پرسنلی</label>
+                            </div>
                             <div class="form-check">
                                 <input class="form-check-input" type="checkbox" name="extra_columns" value="membership" id="rxMembership" checked>
                                 <label class="form-check-label" for="rxMembership">عضویت</label>
@@ -97,7 +105,7 @@
                             </div>
                             <div class="form-check">
                                 <input class="form-check-input" type="checkbox" name="extra_columns" value="__WORK_DAYS__" id="rxWorkDays" checked>
-                                <label class="form-check-label" for="rxWorkDays">روزهای کارکرد</label>
+                                <label class="form-check-label" for="rxWorkDays">کارکرد</label>
                             </div>
                             <div class="form-check">
                                 <input class="form-check-input" type="checkbox" name="extra_columns" value="__GROSS__" id="rxGross" checked>
@@ -171,7 +179,7 @@
                 <input class="form-check-input run-component" type="checkbox" value="{{ c.code }}" id="rc{{ c.code }}"
                     {% if not components_explicit or c in chosen_components %}checked{% endif %}
                     {% if calculation_busy %}disabled{% endif %}>
-                <label class="form-check-label" for="rc{{ c.code }}">{{ c.name }}</label>
+                <label class="form-check-label" for="rc{{ c.code }}">{{ 'حقوق ماهیانه' if c.code == 'DAILY_WAGE' else c.name }}</label>
             </div>
             {% endfor %}
         </div>
