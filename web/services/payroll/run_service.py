@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import List, Optional, Sequence
 
 from sqlalchemy import text
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from core.payroll.calendar_utils import jalali_month_bounds, month_day_count
 from core.payroll.calculation_engine import (
@@ -48,6 +48,7 @@ from models.payroll import (
     PayrollResultItem,
     PayrollRun,
 )
+from web.services.payroll import approval_service
 from web.services.payroll.friday_adapter import get_payroll_attendance_context
 from web.services.sick_leave_finance import carry_deltas_for_user, mark_applied
 from web.services.payroll.policy_service import (
@@ -163,7 +164,11 @@ def get_or_create_period(db: Session, year_j: int, month_j: int) -> PayrollPerio
 def list_runs(db: Session) -> List[PayrollRun]:
     return (
         db.query(PayrollRun)
-        .options(joinedload(PayrollRun.period), joinedload(PayrollRun.results))
+        .options(
+            joinedload(PayrollRun.period),
+            joinedload(PayrollRun.results),
+            selectinload(PayrollRun.approval_steps),
+        )
         .order_by(PayrollRun.id.desc())
         .all()
     )
@@ -179,6 +184,7 @@ def get_run(db: Session, run_id: int, *, ensure_defaults: bool = True) -> Payrol
             joinedload(PayrollRun.results).joinedload(PayrollResult.items),
             joinedload(PayrollRun.manual_entries),
             joinedload(PayrollRun.shift_choices),
+            selectinload(PayrollRun.approval_steps),
         )
         .filter(PayrollRun.id == run_id)
         .first()
@@ -728,6 +734,17 @@ def iter_calculate(db: Session, run_id: int, user_ids: Optional[Sequence[str]] =
         "user_id": "",
         "done": False,
     }
+    if approval_service.has_started(run):
+        yield {
+            "done": True,
+            "error": "گردش تأیید این لیست شروع شده؛ برای محاسبه مجدد ابتدا لیست را بازگشایی کنید",
+            "percent": 0,
+            "name": "",
+            "user_id": "",
+            "index": 0,
+            "total": 0,
+        }
+        return
     period = run.period
     month_start, month_end = jalali_month_bounds(period.year_j, period.month_j)
     month_days = month_day_count(period.year_j, period.month_j)
@@ -949,6 +966,10 @@ def iter_calculate(db: Session, run_id: int, user_ids: Optional[Sequence[str]] =
     elif partial and run.status == "calculated":
         run.calculated_at = datetime.now(timezone.utc)
         db.commit()
+    if run.status == "calculated":
+        # شروع گردش: مراحل و عنوان‌ها همین حالا برای همین لیست ثبت می‌شود.
+        approval_service.snapshot_run(db, run, refresh=True)
+        db.commit()
     yield {
         "index": total,
         "total": total,
@@ -1002,14 +1023,15 @@ def delete_run(db: Session, run_id: int) -> None:
 
 
 def approve_run(db: Session, run_id: int, user_id: str) -> PayrollRun:
+    """تأیید مرحلهٔ جاری گردش برای همین کاربر؛ پس از آخرین مرحله لیست تأییدشده می‌شود."""
     run = get_run(db, run_id)
     ensure_calculation_idle(run)
     if run.status != "calculated":
         raise PayrollRunError("فقط اجرای محاسبه‌شده قابل تأیید است")
-    run.status = "approved"
-    run.approved_at = datetime.now(timezone.utc)
-    run.approved_by = user_id
-    db.commit()
+    try:
+        approval_service.approve_next_step(db, run_id, user_id)
+    except approval_service.PayrollApprovalError as exc:
+        raise PayrollRunError(str(exc)) from exc
     return get_run(db, run_id)
 
 
@@ -1021,7 +1043,10 @@ def reopen_run(db: Session, run_id: int, user_id: str, reason: str) -> PayrollRu
     ensure_calculation_idle(run)
     if run.status not in ("approved", "published"):
         raise PayrollRunError("فقط اجرای تأیید یا منتشرشده قابل بازگشایی است")
+    previous = approval_service.reset_for_reopen(db, run)
     note = f"reopen by {user_id}: {reason.strip()}"
+    if previous:
+        note += f" | previous approvals: {previous}"
     run.notes = f"{run.notes}\n{note}" if run.notes else note
     run.status = "calculated"
     db.commit()
@@ -1032,6 +1057,8 @@ def publish_run(db: Session, run_id: int, user_id: str) -> PayrollRun:
     run = get_run(db, run_id)
     if run.status != "approved":
         raise PayrollRunError("فقط اجرای تأییدشده قابل انتشار است")
+    if not approval_service.is_complete(run):
+        raise PayrollRunError("همهٔ مراحل گردش تأیید باید تکمیل شده باشد")
     run.status = "published"
     run.published_at = datetime.now(timezone.utc)
     run.published_by = user_id

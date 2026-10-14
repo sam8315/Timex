@@ -229,6 +229,11 @@ class PayrollRun(TimestampMixin, Base):
     shift_choices: Mapped[List["PayrollShiftChoice"]] = relationship(
         back_populates="run", cascade="all, delete-orphan"
     )
+    approval_steps: Mapped[List["PayrollRunApprovalStep"]] = relationship(
+        back_populates="run",
+        cascade="all, delete-orphan",
+        order_by="PayrollRunApprovalStep.step_order",
+    )
 
 
 class PayrollResult(TimestampMixin, Base):
@@ -584,4 +589,56 @@ class PayrollDayAdjustmentRule(TimestampMixin, Base):
             "basis IN ('fixed_30', 'calendar_month', 'scheduled_work')",
             name="ck_payroll_day_rules_basis",
         ),
+    )
+
+
+class PayrollApprovalStepSetting(TimestampMixin, Base):
+    """مرحلهٔ تنظیم‌شدهٔ گردش تأیید حقوق. فقط برای لیست‌های بعدی الگو می‌شود."""
+
+    __tablename__ = "payroll_approval_step_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    step_order: Mapped[int] = mapped_column(Integer, nullable=False)
+    title: Mapped[str] = mapped_column(String(120), nullable=False)
+    approver_user_id: Mapped[Optional[str]] = mapped_column(
+        String(50), ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "step_order",
+            name="uq_payroll_approval_step_settings_order",
+            deferrable=True,
+            initially="DEFERRED",
+        ),
+        CheckConstraint("step_order >= 1", name="ck_payroll_approval_step_settings_order"),
+        CheckConstraint("length(trim(title)) > 0", name="ck_payroll_approval_step_settings_title"),
+    )
+
+
+class PayrollRunApprovalStep(TimestampMixin, Base):
+    """نسخهٔ ثابت مراحل تأیید یک لیست حقوق و سابقهٔ تأیید هر مرحله."""
+
+    __tablename__ = "payroll_run_approval_steps"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("payroll_runs.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    step_order: Mapped[int] = mapped_column(Integer, nullable=False)
+    title: Mapped[str] = mapped_column(String(120), nullable=False)
+    approver_user_id: Mapped[Optional[str]] = mapped_column(
+        String(50), ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    approved_by: Mapped[Optional[str]] = mapped_column(
+        String(50), ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True
+    )
+    approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    run: Mapped["PayrollRun"] = relationship(back_populates="approval_steps")
+
+    __table_args__ = (
+        UniqueConstraint("run_id", "step_order", name="uq_payroll_run_approval_steps_order"),
+        CheckConstraint("step_order >= 1", name="ck_payroll_run_approval_steps_order"),
+        CheckConstraint("length(trim(title)) > 0", name="ck_payroll_run_approval_steps_title"),
     )

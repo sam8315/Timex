@@ -33,6 +33,24 @@ body.report-bw #reportSheet table > tbody > tr.report-grand > td {
     border-width: 0.35mm !important;
     box-shadow: none !important;
 }
+body.report-bw .report-approval-role { color: #000; }
+.report-approvals { margin-top: 8mm; }
+.report-approvals-title { font-weight: 700; margin-bottom: 2mm; break-after: avoid; page-break-after: avoid; }
+.report-approvals-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4mm; }
+.report-approval-box {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    border: 0.3mm solid #000;
+    border-radius: 1mm;
+    padding: 2mm 2.5mm;
+    min-height: 36mm;
+    overflow-wrap: break-word;
+}
+.report-approval-name { font-weight: 700; }
+.report-approval-role { font-size: 0.875em; color: #444; }
+.report-approval-time { margin-top: 1.5mm; font-size: 0.9em; }
+@media (max-width: 991px) { .report-approvals-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media print { .report-approvals-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 @page {
     size: A4 landscape;
     margin: 12mm 10mm 14mm;
@@ -172,6 +190,20 @@ body.report-bw #reportSheet table > tbody > tr.report-grand > td {
             </tbody>
         </table>
     </div>
+    {% if approvals %}
+    <section class="report-approvals" id="reportApprovals">
+        <div class="report-approvals-title">تأییدکنندگان</div>
+        <div class="report-approvals-grid">
+            {% for box in approvals %}
+            <div class="report-approval-box{% if box.approved %} is-done{% endif %}" data-approved="{{ 1 if box.approved else 0 }}">
+                <div class="report-approval-name">{{ box.name }}</div>
+                {% if box.role %}<div class="report-approval-role">{{ box.role }}</div>{% endif %}
+                {% if box.time %}<div class="report-approval-time">{{ box.time }}</div>{% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
 </div>
 {% endblock %}
 {% block extra_js %}

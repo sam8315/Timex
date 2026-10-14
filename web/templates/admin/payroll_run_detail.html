@@ -5,7 +5,11 @@
     <h4>
         اجرای شماره {{ run.id }} —
         {{ run.period.year_j }}/{{ '%02d'|format(run.period.month_j) }}
+        {% if run.status == 'calculated' and workflow.started %}
+        <span class="badge bg-info text-dark">در حال تأیید</span>
+        {% else %}
         <span class="badge bg-secondary">{{ status_labels.get(run.status, run.status) }}</span>
+        {% endif %}
     </h4>
     <div class="d-flex gap-2">
         <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#reportSettingsModal" {% if not report_choices.people %}disabled{% endif %}>تنظیمات گزارش</button>
@@ -15,7 +19,8 @@
 <div class="text-muted small mb-3">
     ایجادکننده: {{ creator_name or run.created_by or '—' }}
     <span class="mx-2">|</span>
-    تأییدکننده: {{ approver_name or run.approved_by or '—' }}
+    گردش تأیید:
+    {% if workflow.total %}{{ ('%d از %d مرحله'|format(workflow.done, workflow.total))|fa_digits }}{% else %}—{% endif %}
     <span class="mx-2">|</span>
     آیتم‌ها:
     {% if components_explicit %}
@@ -150,10 +155,12 @@
     <button type="button" class="btn btn-sm {% if run.status == 'draft' %}btn-primary{% else %}btn-outline-primary{% endif %}" id="payrollCalcBtn" {% if calculation_busy %}disabled{% endif %}>{% if run.status == 'draft' %}محاسبه{% else %}محاسبه مجدد{% endif %}</button>
     <button type="button" class="btn btn-sm btn-outline-primary" id="payrollCalcSelectedBtn" {% if calculation_busy %}disabled{% endif %}>محاسبه انتخاب‌شده‌ها</button>
     {% endif %}
-    {% if run.status == 'calculated' and can_approve %}
+    {% if run.status == 'calculated' and can_approve_now %}
     <form method="post" action="/admin/payroll/runs/{{ run.id }}/approve">
-        <button class="btn btn-success btn-sm" {% if calculation_busy %}disabled{% endif %}>تأیید</button>
+        <button class="btn btn-success btn-sm" {% if calculation_busy %}disabled{% endif %}>تأیید مرحله</button>
     </form>
+    {% elif run.status == 'calculated' and can_approve and approve_reason %}
+    <span class="small text-muted align-self-center">{{ approve_reason }}</span>
     {% endif %}
     {% if can_manage and run.status == 'approved' %}
     <form method="post" action="/admin/payroll/runs/{{ run.id }}/publish">
@@ -258,6 +265,46 @@
     </div>
 </div>
 
+{% if workflow.steps %}
+<style>
+.wf-box {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid #ced4da;
+    border-radius: 10px;
+    background: #fff;
+    padding: 12px 14px;
+    min-height: 190px;
+}
+.wf-box.is-done { border-color: #198754; }
+.wf-box-name { font-weight: 700; overflow-wrap: anywhere; }
+.wf-box-role { color: #6c757d; font-size: .875rem; overflow-wrap: anywhere; }
+.wf-box-time { margin-top: 8px; font-size: .875rem; }
+.wf-box-sign { flex: 1 1 auto; min-height: 80px; }
+</style>
+<div class="mt-4" id="approvalBoxes">
+    <h6 class="mb-3">تأییدکنندگان</h6>
+    <div class="row g-3 row-cols-1 row-cols-sm-2 row-cols-lg-3 row-cols-xxl-4">
+        {% for step in workflow.steps %}
+        <div class="col">
+            <div class="wf-box {% if step.approved %}is-done{% endif %}" data-step-order="{{ step.order }}">
+                <div class="wf-box-name">{{ step.approved_by_name or step.approver_name or step.title }}</div>
+                {% if step.approved_by_name or step.approver_name %}
+                <div class="wf-box-role">{{ step.title }}</div>
+                {% endif %}
+                {% if step.approved and step.approved_at %}
+                <div class="wf-box-time">{{ step.approved_at|jalali_datetime }}</div>
+                {% elif not step.approved %}
+                <div class="wf-box-time"><span class="badge bg-warning text-dark">در انتظار تأیید</span></div>
+                {% endif %}
+                <div class="wf-box-sign"></div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
 <style>
 .payroll-progress-backdrop {
     position: fixed;

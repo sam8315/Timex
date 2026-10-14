@@ -76,6 +76,8 @@ from models.payroll import (
     PayrollFridayPolicy,
     PayrollEnabledMembership,
     PayrollDayAdjustmentRule,
+    PayrollApprovalStepSetting,
+    PayrollRunApprovalStep,
 )
 
 __all__ = [
@@ -108,5 +110,5 @@ __all__ = [
     'PayrollMinimumWage', 'PayrollChildAllowancePolicy',
     'PayrollOvertimePolicy', 'PayrollDeficitPolicy', 'PayrollShiftPolicy',
     'PayrollNightPolicy', 'PayrollFridayPolicy', 'PayrollEnabledMembership',
-    'PayrollDayAdjustmentRule',
+    'PayrollDayAdjustmentRule', 'PayrollApprovalStepSetting', 'PayrollRunApprovalStep',
 ]

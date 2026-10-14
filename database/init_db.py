@@ -2159,6 +2159,50 @@ def migrate_insurance_exemptions(bind_engine=None) -> None:
     )
 
 
+def migrate_payroll_approval_workflow(bind_engine=None) -> None:
+    """جداول گردش تأیید حقوق، مراحل پیش‌فرض و سابقهٔ تک‌تأییدی اجراهای قدیمی (030)."""
+    from models.payroll import PayrollApprovalStepSetting, PayrollRunApprovalStep
+
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
+    if "users" not in inspector.get_table_names() or "payroll_runs" not in inspector.get_table_names():
+        return
+    Base.metadata.create_all(
+        bind=target,
+        tables=[PayrollApprovalStepSetting.__table__, PayrollRunApprovalStep.__table__],
+    )
+    with target.begin() as conn:
+        conn.execute(text(
+            """
+            INSERT INTO payroll_approval_step_settings (step_order, title)
+            SELECT v.step_order, v.title
+            FROM (VALUES
+                (1, 'نیروی انسانی'),
+                (2, 'حسابدار'),
+                (3, 'مدیر مالی'),
+                (4, 'مدیر درمانگاه')
+            ) AS v(step_order, title)
+            WHERE NOT EXISTS (SELECT 1 FROM payroll_approval_step_settings)
+            """
+        ))
+        conn.execute(text(
+            """
+            INSERT INTO payroll_run_approval_steps
+                (run_id, step_order, title, approver_user_id, approved_by, approved_at)
+            SELECT r.id, 1, 'تأیید', r.approved_by, r.approved_by, r.approved_at
+            FROM payroll_runs r
+            WHERE r.status IN ('approved', 'published')
+              AND NOT EXISTS (
+                  SELECT 1 FROM payroll_run_approval_steps s WHERE s.run_id = r.id
+              )
+            """
+        ))
+    logger.info(
+        "Payroll approval workflow tables ready",
+        extra={"event": "database.ready"},
+    )
+
+
 def create_tables() -> None:
     """
     ساخت تمام جداول تعریف شده در مدل‌ها
@@ -2171,6 +2215,7 @@ def create_tables() -> None:
         migrate_sick_leave_pay_status()
         migrate_component_sick_behavior()
         migrate_insurance_exemptions()
+        migrate_payroll_approval_workflow()
         migrate_users_role_length()
         migrate_city_region_code()
         migrate_employee_position_id()

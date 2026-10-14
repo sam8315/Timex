@@ -1,12 +1,13 @@
 """مسیرهای مدیریت عملیات حقوق و سیاست حقوق."""
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 import json
 from pathlib import Path
 from typing import Optional
 from urllib.parse import quote
+from zoneinfo import ZoneInfo
 
 import jdatetime
 from fastapi import APIRouter, Depends, Form, Request
@@ -22,7 +23,8 @@ from models.payroll import PayrollRun
 from models.user import User
 from web.dependencies import get_current_user, get_db
 from web.permissions import has_permission, role_label_map
-from web.services.payroll import policy_service, run_service
+from web.services.payroll import approval_service, policy_service, run_service
+from web.services.payroll.approval_service import PayrollApprovalError
 from web.services.payroll.policy_service import PayrollPolicyError
 from web.services.payroll.run_service import PayrollRunError
 from web.services.payroll.run_report import (
@@ -43,6 +45,7 @@ templates.env.filters["line_detail"] = line_detail
 templates.env.filters["money_text"] = money_text
 templates.env.filters["fa_digits"] = fa_digits
 templates.env.filters["payslip_sort"] = payslip_sort
+_TEHRAN = ZoneInfo("Asia/Tehran")
 
 
 def _fmt_num(value) -> str:
@@ -66,8 +69,22 @@ def _fmt_jalali(value) -> str:
     return str(value)
 
 
+def _fmt_jalali_datetime(value) -> str:
+    """تاریخ و ساعت واقعی ثبت‌شده، به وقت تهران: ۱۴۰۵/۰۷/۲۲ ۱۴:۰۵."""
+    if not value:
+        return ""
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        local = value.astimezone(_TEHRAN)
+        stamp = jdatetime.datetime.fromgregorian(datetime=local.replace(tzinfo=None))
+        return fa_digits(stamp.strftime("%Y/%m/%d %H:%M"))
+    return str(value)
+
+
 templates.env.filters["payroll_num"] = _fmt_num
 templates.env.filters["jalali"] = _fmt_jalali
+templates.env.filters["jalali_datetime"] = _fmt_jalali_datetime
 
 CALC_MODE_LABELS = {
     "manual": "دستی",
@@ -217,10 +234,7 @@ async def payroll_list(
     if not _can_view(db, user):
         return _deny()
     runs = run_service.list_runs(db)
-    names = _actor_names(
-        db,
-        [run.created_by for run in runs] + [run.approved_by for run in runs],
-    )
+    names = _actor_names(db, [run.created_by for run in runs])
     return templates.TemplateResponse(
         request,
         "admin/payroll_list.html",
@@ -229,6 +243,7 @@ async def payroll_list(
             "is_admin": True,
             "runs": runs,
             "actor_names": names,
+            "workflows": approval_service.build_workflows(db, runs),
             "status_labels": STATUS_LABELS,
             "can_manage": _can_manage(db, user),
             "mutable_run_ids": {run.id for run in runs if _can_mutate_run(user, run)},
@@ -330,6 +345,7 @@ async def payroll_run_detail(
     else:
         chosen_components = [comp for comp in active_components if comp.code in chosen_codes]
     from web.services.sick_leave_finance import pending_orders_for_period
+    can_approve_now, approve_reason = approval_service.approval_state_for(db, run, user)
     return templates.TemplateResponse(
         request,
         "admin/payroll_run_detail.html",
@@ -351,6 +367,9 @@ async def payroll_run_detail(
             "can_manage": _can_manage(db, user),
             "can_mutate_run": _can_mutate_run(user, run),
             "can_approve": _can_approve(db, user),
+            "can_approve_now": can_approve_now,
+            "approve_reason": approve_reason,
+            "workflow": approval_service.build_workflows(db, [run])[run.id],
             "is_super_admin": user.role == "super_admin",
             "creator_name": names.get(run.created_by) if run.created_by else None,
             "approver_name": names.get(run.approved_by) if run.approved_by else None,
@@ -535,8 +554,9 @@ async def payroll_approve(
         busy = _calculation_block(db, user, run)
         if busy:
             return _redirect(f"/admin/payroll/runs/{run_id}", error=busy)
-        run_service.approve_run(db, run_id, user.user_id)
-        return _redirect(f"/admin/payroll/runs/{run_id}", success="تأیید شد")
+        run = run_service.approve_run(db, run_id, user.user_id)
+        message = "تأیید نهایی شد" if run.status == "approved" else "تأیید مرحله ثبت شد"
+        return _redirect(f"/admin/payroll/runs/{run_id}", success=message)
     except PayrollRunError as exc:
         return _redirect(f"/admin/payroll/runs/{run_id}", error=str(exc))
 
@@ -654,6 +674,12 @@ def _run_report_payload(db: Session, run_id: int, form):
     return run, posted, report, f"{period.year_j}/{period.month_j:02d}"
 
 
+def _report_approvals(db: Session, run: PayrollRun) -> list:
+    """کادرهای تأییدکنندگان چاپ/PDF؛ از همان مراحل ثبت‌شدهٔ همین لیست."""
+    workflow = approval_service.build_workflows(db, [run])[run.id]
+    return approval_service.signature_boxes(workflow, _fmt_jalali_datetime)
+
+
 @router.post("/admin/payroll/runs/{run_id}/report", response_class=HTMLResponse)
 async def payroll_run_report(
     run_id: int,
@@ -677,6 +703,7 @@ async def payroll_run_report(
             "posted": posted,
             "report": report,
             "period_label": period_label,
+            "approvals": _report_approvals(db, run),
         },
     )
 
@@ -699,6 +726,7 @@ async def payroll_run_report_pdf(
         title=f"گزارش لیست حقوق شماره {run.id}",
         period_label=period_label,
         monochrome=posted["monochrome"],
+        approvals=_report_approvals(db, run),
     )
     return Response(
         content=data,
@@ -729,6 +757,7 @@ async def payroll_policy_page(
         .order_by(Employee.last_name, Employee.first_name)
         .all()
     )
+    approval_steps = approval_service.list_settings(db)
     return templates.TemplateResponse(
         request,
         "admin/policy_payroll.html",
@@ -759,6 +788,11 @@ async def payroll_policy_page(
                 (code, label) for code, label in SHIFT_OPTIONS if code != PATTERN_NONE
             ],
             "night_pattern_labels": PATTERN_LABELS,
+            "approval_steps": approval_steps,
+            "approval_names": approval_service.display_names(
+                db, [row.approver_user_id for row in approval_steps]
+            ),
+            "approval_approvers": approval_service.list_eligible_approvers(db),
             "error": request.query_params.get("error"),
             "success": request.query_params.get("success"),
         },
@@ -1401,3 +1435,78 @@ async def payroll_run_memberships_save(
         )
     except PayrollPolicyError as exc:
         return _redirect("/admin/policies/payroll?tab=run_memberships", error=str(exc))
+
+
+# ---------- Approval workflow settings ----------
+
+_APPROVAL_TAB = "/admin/policies/payroll?tab=approval"
+
+
+def _can_edit_policy(db: Session, user: User) -> bool:
+    return _can_manage(db, user) or has_permission(db, user, "manage_users")
+
+
+@router.post("/admin/policies/payroll/approval-steps")
+async def payroll_approval_step_add(
+    title: str = Form(...),
+    approver_user_id: str = Form(""),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not _can_edit_policy(db, user):
+        return _deny()
+    try:
+        approval_service.add_step(db, title=title, approver_user_id=approver_user_id)
+        return _redirect(_APPROVAL_TAB, success="مرحله افزوده شد")
+    except PayrollApprovalError as exc:
+        return _redirect(_APPROVAL_TAB, error=str(exc))
+
+
+@router.post("/admin/policies/payroll/approval-steps/{step_id}/update")
+async def payroll_approval_step_update(
+    step_id: int,
+    title: str = Form(...),
+    approver_user_id: str = Form(""),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not _can_edit_policy(db, user):
+        return _deny()
+    try:
+        approval_service.update_step(
+            db, step_id, title=title, approver_user_id=approver_user_id
+        )
+        return _redirect(_APPROVAL_TAB, success="مرحله به‌روز شد")
+    except PayrollApprovalError as exc:
+        return _redirect(_APPROVAL_TAB, error=str(exc))
+
+
+@router.post("/admin/policies/payroll/approval-steps/{step_id}/move")
+async def payroll_approval_step_move(
+    step_id: int,
+    direction: str = Form(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not _can_edit_policy(db, user):
+        return _deny()
+    try:
+        approval_service.move_step(db, step_id, direction)
+        return _redirect(_APPROVAL_TAB, success="ترتیب مراحل ذخیره شد")
+    except PayrollApprovalError as exc:
+        return _redirect(_APPROVAL_TAB, error=str(exc))
+
+
+@router.post("/admin/policies/payroll/approval-steps/{step_id}/delete")
+async def payroll_approval_step_delete(
+    step_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not _can_edit_policy(db, user):
+        return _deny()
+    try:
+        approval_service.delete_step(db, step_id)
+        return _redirect(_APPROVAL_TAB, success="مرحله حذف شد")
+    except PayrollApprovalError as exc:
+        return _redirect(_APPROVAL_TAB, error=str(exc))

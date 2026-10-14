@@ -24,7 +24,7 @@
                         <th>عضویت</th>
                         <th>وضعیت</th>
                         <th>ایجادکننده</th>
-                        <th>تأییدکننده</th>
+                        <th>گردش تأیید</th>
                         <th>تعداد فیش</th>
                         <th></th>
                     </tr>
@@ -35,9 +35,46 @@
                         <td>{{ run.id }}</td>
                         <td>{{ run.period.year_j }}/{{ '%02d'|format(run.period.month_j) }}</td>
                         <td>{{ run.membership_type_code or 'همه' }}</td>
-                        <td><span class="badge bg-secondary">{{ status_labels.get(run.status, run.status) }}</span></td>
+                        {% set wf = workflows.get(run.id) %}
+                        <td>
+                            {% if run.status == 'calculated' and wf and wf.started %}
+                            <span class="badge bg-info text-dark">در حال تأیید</span>
+                            {% else %}
+                            <span class="badge bg-secondary">{{ status_labels.get(run.status, run.status) }}</span>
+                            {% endif %}
+                        </td>
                         <td>{{ actor_names.get(run.created_by) or run.created_by or '—' }}</td>
-                        <td>{{ actor_names.get(run.approved_by) or run.approved_by or '—' }}</td>
+                        <td>
+                            {% if wf and wf.total %}
+                            <span class="wf-wrap">
+                                <button type="button" class="btn btn-sm btn-link p-0 wf-trigger {% if wf.done == wf.total %}text-success{% endif %}" aria-haspopup="true" aria-expanded="false">
+                                    {{ ('%d از %d مرحله'|format(wf.done, wf.total))|fa_digits }}
+                                </button>
+                                <div class="wf-pop d-none" role="tooltip">
+                                    {% for step in wf.steps %}
+                                    <div class="wf-step">
+                                        <div class="d-flex justify-content-between align-items-center gap-2">
+                                            <div class="fw-bold">{{ step.approved_by_name or step.approver_name or step.title }}</div>
+                                            {% if step.approved %}
+                                            <span class="badge bg-success">تأیید شد</span>
+                                            {% else %}
+                                            <span class="badge bg-warning text-dark">در انتظار</span>
+                                            {% endif %}
+                                        </div>
+                                        {% if step.approved_by_name or step.approver_name %}
+                                        <div class="text-muted small">{{ step.title }}</div>
+                                        {% endif %}
+                                        {% if step.approved and step.approved_at %}
+                                        <div class="small" dir="ltr" style="text-align:right">{{ step.approved_at|jalali_datetime }}</div>
+                                        {% endif %}
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </span>
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
                         <td>{{ run.results|length }}</td>
                         <td class="text-end">
                             <a class="btn btn-sm btn-outline-primary" href="/admin/payroll/runs/{{ run.id }}">جزئیات</a>
@@ -56,4 +93,63 @@
         </div>
     </div>
 </div>
+<style>
+.wf-pop {
+    position: fixed;
+    z-index: 1060;
+    width: 280px;
+    max-width: calc(100vw - 16px);
+    max-height: 70vh;
+    overflow-y: auto;
+    background: #fff;
+    border: 1px solid #dee2e6;
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+    padding: 8px 12px;
+}
+.wf-step { padding: 8px 0; border-bottom: 1px solid #eef1f4; }
+.wf-step:last-child { border-bottom: 0; }
+</style>
+<script>
+(function () {
+    let openWrap = null;
+    function hide() {
+        if (!openWrap) return;
+        openWrap.querySelector('.wf-pop').classList.add('d-none');
+        openWrap.querySelector('.wf-trigger').setAttribute('aria-expanded', 'false');
+        openWrap = null;
+    }
+    function show(wrap) {
+        if (openWrap === wrap) return;
+        hide();
+        const pop = wrap.querySelector('.wf-pop');
+        const trigger = wrap.querySelector('.wf-trigger');
+        pop.classList.remove('d-none');
+        const rect = trigger.getBoundingClientRect();
+        const width = pop.offsetWidth;
+        const height = pop.offsetHeight;
+        let left = rect.left + rect.width / 2 - width / 2;
+        left = Math.max(8, Math.min(left, window.innerWidth - width - 8));
+        let top = rect.bottom + 6;
+        if (top + height > window.innerHeight - 8) top = Math.max(8, rect.top - height - 6);
+        pop.style.left = left + 'px';
+        pop.style.top = top + 'px';
+        trigger.setAttribute('aria-expanded', 'true');
+        openWrap = wrap;
+    }
+    document.querySelectorAll('.wf-wrap').forEach((wrap) => {
+        wrap.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse') show(wrap); });
+        wrap.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') hide(); });
+        wrap.querySelector('.wf-trigger').addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (openWrap === wrap && e.pointerType !== 'mouse' && e.detail !== 0) hide();
+            else show(wrap);
+        });
+    });
+    document.addEventListener('click', (e) => { if (openWrap && !openWrap.contains(e.target)) hide(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hide(); });
+    window.addEventListener('scroll', hide, true);
+    window.addEventListener('resize', hide);
+})();
+</script>
 {% endblock %}

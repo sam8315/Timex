@@ -19,6 +19,7 @@
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-night">شب‌کاری</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-friday">جمعه‌کاری</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-run-memberships">عضویت حقوق</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-approval">گردش تأیید</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-assign">تخصیص مبالغ</button></li>
 </ul>
 
@@ -1399,6 +1400,83 @@
         </div>
     </div>
 
+    <div class="tab-pane fade" id="tab-approval">
+        <div class="alert alert-light border small">
+            لیست حقوق مرحله‌به‌مرحله و به ترتیب همین جدول تأیید می‌شود و پس از تأیید همهٔ مراحل قابل انتشار است.
+            تأییدکننده هر مرحله باید کاربر ثبت‌شدهٔ Timex با مجوز «تأیید حقوق» باشد (لازم نیست در فهرست کارکنان یا حقوق باشد).
+            اگر تأییدکننده انتخاب نشود، هر کاربر دارای این مجوز می‌تواند همان مرحله را تأیید کند.
+            تغییر این تنظیمات فقط روی لیست‌هایی اثر دارد که از این پس محاسبه می‌شوند؛ مراحل لیست‌های موجود ثابت می‌ماند.
+        </div>
+        <div class="card shadow-sm mb-3">
+            <div class="card-header">مراحل گردش تأیید</div>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead class="table-light">
+                        <tr><th style="width:60px">ترتیب</th><th>عنوان مرحله</th><th>تأییدکننده</th><th style="width:300px"></th></tr>
+                    </thead>
+                    <tbody>
+                    {% for s in approval_steps %}
+                        <tr>
+                            <td>{{ loop.index }}</td>
+                            <td>
+                                <form id="apStep{{ s.id }}" method="post" action="/admin/policies/payroll/approval-steps/{{ s.id }}/update"></form>
+                                <input form="apStep{{ s.id }}" class="form-control form-control-sm" name="title" value="{{ s.title }}" maxlength="120" required>
+                            </td>
+                            <td>
+                                <select form="apStep{{ s.id }}" class="form-select form-select-sm" name="approver_user_id">
+                                    <option value="">— بدون تأییدکننده مشخص —</option>
+                                    {% set ns = namespace(found=false) %}
+                                    {% for a in approval_approvers %}
+                                    <option value="{{ a.user_id }}" {% if a.user_id == s.approver_user_id %}selected{% set ns.found = true %}{% endif %}>{{ a.name }} ({{ a.user_id }})</option>
+                                    {% endfor %}
+                                    {% if s.approver_user_id and not ns.found %}
+                                    <option value="{{ s.approver_user_id }}" selected>{{ approval_names.get(s.approver_user_id, s.approver_user_id) }} — بدون مجوز فعلی</option>
+                                    {% endif %}
+                                </select>
+                            </td>
+                            <td class="text-nowrap">
+                                <button form="apStep{{ s.id }}" class="btn btn-sm btn-primary">ذخیره</button>
+                                <form method="post" action="/admin/policies/payroll/approval-steps/{{ s.id }}/move" class="d-inline">
+                                    <input type="hidden" name="direction" value="up">
+                                    <button class="btn btn-sm btn-outline-secondary" title="بالا" {% if loop.first %}disabled{% endif %}>▲</button>
+                                </form>
+                                <form method="post" action="/admin/policies/payroll/approval-steps/{{ s.id }}/move" class="d-inline">
+                                    <input type="hidden" name="direction" value="down">
+                                    <button class="btn btn-sm btn-outline-secondary" title="پایین" {% if loop.last %}disabled{% endif %}>▼</button>
+                                </form>
+                                <form method="post" action="/admin/policies/payroll/approval-steps/{{ s.id }}/delete" class="d-inline" onsubmit="return confirm('این مرحله حذف شود؟');">
+                                    <button class="btn btn-sm btn-outline-danger" {% if approval_steps|length <= 1 %}disabled{% endif %}>حذف</button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="card shadow-sm">
+            <div class="card-header">افزودن مرحله</div>
+            <div class="card-body">
+                <form method="post" action="/admin/policies/payroll/approval-steps" class="row g-2">
+                    <div class="col-md-4">
+                        <input class="form-control form-control-sm" name="title" placeholder="عنوان مرحله، مثلاً حسابدار" maxlength="120" required>
+                    </div>
+                    <div class="col-md-5">
+                        <select class="form-select form-select-sm" name="approver_user_id">
+                            <option value="">— بدون تأییدکننده مشخص —</option>
+                            {% for a in approval_approvers %}
+                            <option value="{{ a.user_id }}">{{ a.name }} ({{ a.user_id }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <button class="btn btn-primary btn-sm">افزودن</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <div class="tab-pane fade" id="tab-assign">
         <div class="card shadow-sm mb-3">
             <div class="card-header">تخصیص مبلغ (عضویت یا فرد)</div>
@@ -1496,6 +1574,9 @@ if (tab === 'friday') {
 }
 if (tab === 'run_memberships') {
     document.querySelector('[data-bs-target="#tab-run-memberships"]')?.click();
+}
+if (tab === 'approval') {
+    document.querySelector('[data-bs-target="#tab-approval"]')?.click();
 }
 document.getElementById('assignScope')?.addEventListener('change', function () {
     const isUser = this.value === 'user';
