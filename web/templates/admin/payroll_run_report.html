@@ -34,23 +34,26 @@ body.report-bw #reportSheet table > tbody > tr.report-grand > td {
     box-shadow: none !important;
 }
 body.report-bw .report-approval-role { color: #000; }
-.report-approvals { margin-top: 8mm; }
+.report-approvals { margin-top: 6mm; break-inside: auto; }
 .report-approvals-title { font-weight: 700; margin-bottom: 2mm; break-after: avoid; page-break-after: avoid; }
-.report-approvals-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4mm; }
-.report-approval-box {
+#reportSheet table.report-approvals-table { width: 100% !important; max-width: 100% !important; table-layout: fixed !important; border-collapse: separate !important; border-spacing: 3mm; border: 0 !important; font-size: 9pt !important; }
+table.report-approvals-table tr { break-inside: avoid; page-break-inside: avoid; }
+td.report-approval-box {
     break-inside: avoid;
     page-break-inside: avoid;
     border: 0.3mm solid #000;
-    border-radius: 1mm;
     padding: 2mm 2.5mm;
-    min-height: 36mm;
+    height: 28mm;
+    vertical-align: top;
     overflow-wrap: break-word;
+    background: #fff;
 }
+#reportSheet td.report-approval-box { padding: 2mm 2.5mm !important; white-space: normal !important; overflow: visible !important; border: 0.3mm solid #000 !important; }
+#reportSheet table.report-approvals-table > tbody > tr > td.report-approval-empty,
+body.report-bw #reportSheet table.report-approvals-table > tbody > tr > td.report-approval-empty { border: 0 !important; }
 .report-approval-name { font-weight: 700; }
 .report-approval-role { font-size: 0.875em; color: #444; }
 .report-approval-time { margin-top: 1.5mm; font-size: 0.9em; }
-@media (max-width: 991px) { .report-approvals-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media print { .report-approvals-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 @page {
     size: A4 landscape;
     margin: 12mm 10mm 14mm;
@@ -193,15 +196,23 @@ body.report-bw .report-approval-role { color: #000; }
     {% if approvals %}
     <section class="report-approvals" id="reportApprovals">
         <div class="report-approvals-title">تأییدکنندگان</div>
-        <div class="report-approvals-grid">
-            {% for box in approvals %}
-            <div class="report-approval-box{% if box.approved %} is-done{% endif %}" data-approved="{{ 1 if box.approved else 0 }}">
-                <div class="report-approval-name">{{ box.name }}</div>
-                {% if box.role %}<div class="report-approval-role">{{ box.role }}</div>{% endif %}
-                {% if box.time %}<div class="report-approval-time">{{ box.time }}</div>{% endif %}
-            </div>
+        <table class="report-approvals-table">
+            {% for row in approvals|batch(4, none) %}
+            <tr>
+                {% for box in row %}
+                {% if box %}
+                <td class="report-approval-box{% if box.approved %} is-done{% endif %}" data-approved="{{ 1 if box.approved else 0 }}">
+                    <div class="report-approval-name">{{ box.name }}</div>
+                    {% if box.role %}<div class="report-approval-role">{{ box.role }}</div>{% endif %}
+                    {% if box.time %}<div class="report-approval-time">{{ box.time }}</div>{% endif %}
+                </td>
+                {% else %}
+                <td class="report-approval-empty"></td>
+                {% endif %}
+                {% endfor %}
+            </tr>
             {% endfor %}
-        </div>
+        </table>
     </section>
     {% endif %}
 </div>

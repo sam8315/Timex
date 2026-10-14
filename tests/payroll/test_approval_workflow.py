@@ -493,7 +493,7 @@ def test_print_html_shows_boxes_in_order_with_times_only_for_approved(client, db
     assert block.count('class="report-approval-box') == 3
     assert block.count('data-approved="1"') == 1
     assert block.count("report-approval-time") == 1 + 0  # فقط مرحلهٔ تأییدشده (به‌علاوه تعریف CSS در بالا)
-    assert "break-inside: avoid" in html and "min-height: 36mm" in html
+    assert "break-inside: avoid" in html and "height: 28mm" in html
     assert "<img" not in block and 'type="file"' not in block
     assert "تاریخ:" not in block and "ساعت:" not in block
 
