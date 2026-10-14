@@ -59,7 +59,11 @@ def _payroll_summary(report: dict) -> dict:
         shadow.append(copied)
     summary["total_work_hours"] = sum(float(day.get("work_hours") or 0) for day in shadow)
     from core.legal_overtime_monthly_report import build_legal_ot_summary
-    return build_legal_ot_summary(shadow, summary)
+    return build_legal_ot_summary(
+        shadow, summary,
+        reference_at=report.get("reference_at"),
+        policy=report.get("report_policy"),
+    )
 
 
 def _count_sick_inputs(report: dict, contract) -> dict:

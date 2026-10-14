@@ -1,4 +1,4 @@
-"""
+﻿"""
 گزارش ماهانه اضافه‌کار قانونی — تبصره ۱ ماده ۵۱ قانون کار.
 
 اضافه‌کار پرداختی = max(0, کارکرد هفته − موظفی هفته)
@@ -10,9 +10,16 @@
 """
 from __future__ import annotations
 
-from datetime import timedelta
-from typing import Dict, List
+from datetime import datetime, time, timedelta
+from typing import Dict, List, Optional
 
+from web.services.report_policy_service import (
+    DEFICIT_METHOD_LEGACY,
+    LEGAL_OT_DEFAULTS,
+    LEGAL_OVERTIME_MONTHLY,
+    month_end,
+    resolve_report_policy,
+)
 from core.detailed_monthly_report_v2 import (
     DetailedMonthlyReportGeneratorV2,
     _hours_to_minutes,
@@ -23,6 +30,8 @@ from core.detailed_monthly_report_v2 import (
 WEEKLY_REQUIRED_HOURS = 44.0
 # Fallback وقتی daily_duty روی روز نباشد (تست‌های واحد / داده ناقص)
 WORKING_DAY_DUTY_MINUTES = 440
+# شروع پیش‌فرض موظفی وقتی Policy ساعت شروع ندارد
+DEFAULT_DUTY_START = time(7, 0)
 # ضرایب پرداختی (نمایش در گزارش)
 OVERTIME_COEFFICIENT = 1.4
 FRIDAY_WORK_COEFFICIENT = 1.96
@@ -183,8 +192,95 @@ def calculate_weekly_overtime(days: List[Dict]) -> float:
     return _minutes_to_hours(weekly_m)
 
 
-def build_legal_ot_summary(days: List[Dict], base_summary: Dict) -> Dict:
-    """خلاصهٔ پرداختی — overtime_total = جمع weekly_overtime."""
+def _unelapsed_duty_minutes(day: Dict, ref: datetime) -> int:
+    """موظفی روز که تا زمان مرجع هنوز سپری نشده است."""
+    duty_m = _hours_to_minutes(day.get('daily_duty') or 0)
+    if duty_m <= 0:
+        return 0
+    d = day['date']
+    if d < ref.date():
+        return 0
+    if d > ref.date():
+        return duty_m
+    start = day.get('duty_start_time') or DEFAULT_DUTY_START
+    elapsed_m = int((ref - datetime.combine(d, start)).total_seconds() // 60)
+    return duty_m - min(duty_m, max(0, elapsed_m))
+
+
+def _monthly_deficit_minutes(
+    days: List[Dict], summary: Dict, settings: Dict, ref: datetime,
+) -> Dict:
+    """کسر کار ماهانهٔ تجمیعی (یا روش legacy) — فقط عدد؛ بدون تغییر روزها."""
+    late_v_m = sum(int(d.get('late_violation_minutes') or 0) for d in days)
+    early_v_m = sum(int(d.get('early_leave_violation_minutes') or 0) for d in days)
+    base_duty_m = _hours_to_minutes(summary.get('duty_hours') or 0)
+    work_m = _hours_to_minutes(summary.get('total_work_hours') or 0)
+
+    if settings.get('deficit_method') == DEFICIT_METHOD_LEGACY:
+        nopunch_m = sum(
+            _hours_to_minutes(d.get('daily_duty') or 0)
+            for d in days if d.get('person_status') == 'N'
+        )
+        duty_m = max(0, base_duty_m - nopunch_m)
+        total = max(0, duty_m - work_m) + late_v_m + early_v_m
+        return {'total_m': total, 'late_v_m': late_v_m, 'early_v_m': early_v_m}
+
+    # موظفی سپری‌شده تا زمان مرجع؛ N گذشته موظفی خود را حفظ می‌کند.
+    unelapsed = {id(d): _unelapsed_duty_minutes(d, ref) for d in days}
+    duty_m = max(0, base_duty_m - sum(unelapsed.values()))
+
+    # کارکرد قابل احتساب: سطل‌های هفته (جمعه‌کاری F، تعطیل‌کاری H، پایهٔ B=C+OT)
+    # از هم جدا هستند؛ پس هر ساعت دقیقاً یک‌بار شمرده می‌شود.
+    friday_m = holiday_m = ot_m = base_m = 0
+    for d in days:
+        block = d.get('week_block')
+        if not block:
+            continue
+        friday_m += _hours_to_minutes(block['friday_hours'])
+        holiday_m += _hours_to_minutes(block['holiday_work_hours'])
+        ot_m += _hours_to_minutes(block['weekly_overtime'])
+        base_m += _hours_to_minutes(block['work_base_hours'])
+    creditable_m = base_m - ot_m
+    if settings.get('deficit_adjust_friday_work'):
+        creditable_m += friday_m
+    if settings.get('deficit_adjust_holiday_work'):
+        creditable_m += holiday_m
+    if settings.get('deficit_adjust_ordinary_overtime'):
+        creditable_m += ot_m
+    shortfall_m = max(0, duty_m - creditable_m)
+
+    # تأخیر/تعجیل: فقط بخشی که در کمبود کارکرد همان روز نیامده
+    extra_v_m = 0
+    for d in days:
+        v = int(d.get('late_violation_minutes') or 0) + int(
+            d.get('early_leave_violation_minutes') or 0
+        )
+        if v <= 0:
+            continue
+        elapsed_duty = _hours_to_minutes(d.get('daily_duty') or 0) - unelapsed[id(d)]
+        day_short = max(0, elapsed_duty - _hours_to_minutes(d.get('work_hours') or 0))
+        extra_v_m += max(0, v - day_short)
+    return {
+        'total_m': shortfall_m + extra_v_m,
+        'late_v_m': late_v_m,
+        'early_v_m': early_v_m,
+    }
+
+
+def build_legal_ot_summary(
+    days: List[Dict],
+    base_summary: Dict,
+    reference_at: Optional[datetime] = None,
+    policy=None,
+) -> Dict:
+    """خلاصهٔ پرداختی — overtime_total = جمع weekly_overtime.
+
+    policy: ResolvedReportPolicy یا dict تنظیمات؛ پیش‌فرض = پیش‌فرض‌های کد.
+    """
+    settings = {
+        **LEGAL_OT_DEFAULTS,
+        **dict(getattr(policy, 'settings', policy) or {}),
+    }
     for day in days:
         day['week_overtime'] = 0.0
         day['week_rowspan'] = 0
@@ -229,18 +325,11 @@ def build_legal_ot_summary(days: List[Dict], base_summary: Dict) -> Dict:
         _hours_to_minutes(summary['total_punch_hours'])
         + _hours_to_minutes(summary['total_grace_hours'])
     )
-    nopunch_duty_m = sum(
-        _hours_to_minutes(d.get('daily_duty') or 0)
-        for d in days
-        if d.get('person_status') == 'N'
-    )
-    duty_m = max(0, _hours_to_minutes(summary.get('duty_hours') or 0) - nopunch_duty_m)
-    work_m = _hours_to_minutes(summary.get('total_work_hours') or 0)
-    late_v_m = sum(int(d.get('late_violation_minutes') or 0) for d in days)
-    early_v_m = sum(int(d.get('early_leave_violation_minutes') or 0) for d in days)
-    # کسری ماهانه = کمبود کارکرد نسبت به موظفی + تخلف تأخیر/تعجیل
-    monthly_deficit = _minutes_to_hours(max(0, duty_m - work_m) + late_v_m + early_v_m)
-
+    ref = reference_at or datetime.now()
+    deficit = _monthly_deficit_minutes(days, summary, settings, ref)
+    monthly_deficit = _minutes_to_hours(deficit['total_m'])
+    late_v_m = deficit['late_v_m']
+    early_v_m = deficit['early_v_m']
     # حضور = هر روز با وضعیت P (جمعه/تعطیل‌کاری هم شمرده می‌شود)
     present_days = sum(1 for d in days if d.get('person_status') == 'P')
     leave_days = sum(1 for d in days if d.get('person_status') in ('L', 'SL'))
@@ -321,6 +410,9 @@ def build_legal_ot_summary(days: List[Dict], base_summary: Dict) -> Dict:
         'total_late_violation_minutes': late_v_m,
         'total_early_leave_violation_minutes': early_v_m,
         'total_surplus': overtime_total,
+        'report_policy_source': getattr(policy, 'source', 'default'),
+        'report_policy_label': getattr(policy, 'label', 'پیش‌فرض سیستم'),
+        'report_reference_at': ref.isoformat(timespec='minutes'),
         'overtime_coefficient': OVERTIME_COEFFICIENT,
         'friday_work_coefficient': FRIDAY_WORK_COEFFICIENT,
         'holiday_work_coefficient': HOLIDAY_WORK_COEFFICIENT,
@@ -337,13 +429,25 @@ class LegalOvertimeMonthlyReportGenerator:
     def close(self):
         self._v2.close()
 
-    def generate_report(self, user_id: str, year: int, month: int) -> Dict:
+    def generate_report(
+        self, user_id: str, year: int, month: int,
+        reference_at: Optional[datetime] = None,
+    ) -> Dict:
         report = self._v2.generate_detailed_report(user_id, year, month)
         if not report.get('success'):
             return report
 
         days = report.get('days') or []
-        report['summary'] = build_legal_ot_summary(days, report.get('summary') or {})
+        reference_at = reference_at or datetime.now()
+        policy = resolve_report_policy(
+            self._v2.db, LEGAL_OVERTIME_MONTHLY, month_end(year, month),
+        )
+        report['report_policy'] = policy
+        report['reference_at'] = reference_at
+        report['summary'] = build_legal_ot_summary(
+            days, report.get('summary') or {},
+            reference_at=reference_at, policy=policy,
+        )
         report['report_kind'] = 'legal_ot'
         report['report_title'] = 'گزارش اضافه‌کار قانونی'
         return report

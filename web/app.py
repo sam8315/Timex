@@ -117,6 +117,8 @@ app.include_router(employee_relatives.router)
 app.include_router(admin_verifications.router)
 app.include_router(reports.router)
 app.include_router(admin_policy.router)
+from web.routes import admin_report_policy
+app.include_router(admin_report_policy.router)
 app.include_router(admin_payroll.router)
 app.include_router(payroll.router)
 app.include_router(admin_service_duty_regions.router)

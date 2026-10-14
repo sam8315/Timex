@@ -949,6 +949,10 @@
                 <span class="chip-value" style="color:#f87171;"><span class="num">{{ report.summary.monthly_deficit | hhmm }}</span></span>
             </div>
             <div class="meta-chip">
+                <span class="chip-label">سیاست گزارش</span>
+                <span class="chip-value">{{ report.summary.report_policy_label }} | مرجع {{ report.summary.report_reference_at }}</span>
+            </div>
+            <div class="meta-chip">
                 <span class="chip-label">تخلف تأخیر</span>
                 <span class="chip-value" style="color:#f59e0b;"><span class="num">{{ report.summary.total_late_violation | hhmm }}</span></span>
             </div>

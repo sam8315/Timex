@@ -79,6 +79,7 @@ from models.payroll import (
     PayrollApprovalStepSetting,
     PayrollRunApprovalStep,
 )
+from models.report_policy import ReportPolicy
 
 __all__ = [
     'Base', 'User', 'Attendance', 'MissedAttendanceRequest',
@@ -111,4 +112,5 @@ __all__ = [
     'PayrollOvertimePolicy', 'PayrollDeficitPolicy', 'PayrollShiftPolicy',
     'PayrollNightPolicy', 'PayrollFridayPolicy', 'PayrollEnabledMembership',
     'PayrollDayAdjustmentRule', 'PayrollApprovalStepSetting', 'PayrollRunApprovalStep',
+    'ReportPolicy',
 ]

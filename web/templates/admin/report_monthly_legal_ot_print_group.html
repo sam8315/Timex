@@ -722,6 +722,7 @@
             <div class="meta-chip"><span class="chip-label">استراحت</span><span class="chip-value"><span class="num">{{ report.summary.rest_days }}</span></span></div>
             <div class="meta-chip"><span class="chip-label">تعطیل</span><span class="chip-value"><span class="num">{{ report.summary.holiday_days }}</span></span></div>
             <div class="meta-chip"><span class="chip-label">کسر کار</span><span class="chip-value" style="color:#f87171;"><span class="num">{{ report.summary.monthly_deficit | hhmm }}</span></span></div>
+            <div class="meta-chip"><span class="chip-label">سیاست گزارش</span><span class="chip-value">{{ report.summary.report_policy_label }}</span></div>
             <div class="meta-chip"><span class="chip-label">تأخیر</span><span class="chip-value" style="color:#f59e0b;"><span class="num">{{ report.summary.total_late_violation | hhmm }}</span></span></div>
             <div class="meta-chip"><span class="chip-label">تعجیل</span><span class="chip-value" style="color:#f59e0b;"><span class="num">{{ report.summary.total_early_leave_violation | hhmm }}</span></span></div>
         </div>

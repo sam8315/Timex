@@ -1,4 +1,4 @@
-"""جمع دقایق داخل فرجه با کارکرد سه گزارش ماهانه."""
+﻿"""جمع دقایق داخل فرجه با کارکرد سه گزارش ماهانه."""
 from datetime import date, datetime, time
 from types import SimpleNamespace
 
@@ -197,7 +197,7 @@ def test_over_grace_credits_nothing_and_keeps_full_violation():
     assert _hours_to_minutes(surplus) == 0
     assert _hours_to_minutes(deficit) == 20 + 25
     assert summary['overtime_total'] == pytest.approx(0.0)
-    assert summary['monthly_deficit'] == pytest.approx((20 + 25) / 60)
+    # تأخیر ۲۵د که ۲۰د آن در کمبود کارکرد همان روز آمده، فقط یک‌بار شمرده می‌شود\n    assert summary['monthly_deficit'] == pytest.approx((20 + 5) / 60)
     assert summary['total_late_violation'] == pytest.approx(25 / 60)
 
 

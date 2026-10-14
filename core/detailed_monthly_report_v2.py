@@ -394,6 +394,8 @@ class DetailedMonthlyReportGeneratorV2:
                 'sick_payment_unknown': sick_effect.payment_unknown,
                 'has_duty': has_duty,
                 'daily_duty': daily_duty,
+                # شروع موظفی Policy (برای موظفی سپری‌شدهٔ روز جاری)
+                'duty_start_time': policy_day.start_time if policy_day else None,
                 # 🕐 HL تأییدشده برای نمایش (از Effective Required کم شده)
                 'hourly_leave_minutes': hl_mins,
                 'hourly_leave_display': format_hl_display(hl_mins),

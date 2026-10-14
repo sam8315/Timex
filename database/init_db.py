@@ -2203,6 +2203,15 @@ def migrate_payroll_approval_workflow(bind_engine=None) -> None:
     )
 
 
+def migrate_report_policies(bind_engine=None) -> None:
+    """جدول سیاست گزارش (031) را در صورت نبودن می‌سازد؛ بدون seed و بدون بازنویسی داده."""
+    from models.report_policy import ReportPolicy
+
+    target = bind_engine if bind_engine is not None else engine
+    Base.metadata.create_all(bind=target, tables=[ReportPolicy.__table__])
+    logger.info("Report policies table ready", extra={"event": "database.ready"})
+
+
 def create_tables() -> None:
     """
     ساخت تمام جداول تعریف شده در مدل‌ها
@@ -2216,6 +2225,7 @@ def create_tables() -> None:
         migrate_component_sick_behavior()
         migrate_insurance_exemptions()
         migrate_payroll_approval_workflow()
+        migrate_report_policies()
         migrate_users_role_length()
         migrate_city_region_code()
         migrate_employee_position_id()

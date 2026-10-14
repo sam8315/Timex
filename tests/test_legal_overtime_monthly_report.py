@@ -1,4 +1,4 @@
-"""تست اضافه‌کار قانونی — موظفی Σdaily_duty، کارکرد شامل جمعه."""
+﻿"""تست اضافه‌کار قانونی — موظفی Σdaily_duty، کارکرد شامل جمعه."""
 from datetime import date, timedelta
 from typing import Optional
 
@@ -346,3 +346,129 @@ class TestStatusDayCounts:
         assert summary['total_early_leave_violation'] == pytest.approx(10 / 60)
         # فرمول OT نباید به‌خاطر تأخیر/تعجیل عوض شود
         assert summary['overtime_total'] == pytest.approx(summary_no_late['overtime_total'])
+
+
+class TestMonthlyDeficitElapsedDuty:
+    """کسر کار: روز گذشته بدون تردد، روز جاری و آینده نسبت به زمان مرجع."""
+
+    from datetime import datetime as _dt  # noqa: E402
+
+    @staticmethod
+    def _summary(days, ref, work_hours=0.0):
+        duty = _minutes_to_hours(sum(_hours_to_minutes(d['daily_duty']) for d in days))
+        return build_legal_ot_summary(
+            days,
+            {'duty_hours': duty, 'total_work_hours': work_hours},
+            reference_at=ref,
+        )
+
+    def test_past_no_punch_day_counts_as_deficit(self):
+        day = _day(date(2024, 3, 16), 0, person_status='N')
+        s = self._summary([day], self._dt(2024, 3, 20, 12, 0))
+        assert _hours_to_minutes(s['monthly_deficit']) == WORKING_DAY_DUTY_MINUTES
+
+    def test_past_no_punch_with_leave_has_no_deficit(self):
+        day = _day(date(2024, 3, 16), 0, person_status='L')
+        s = self._summary([day], self._dt(2024, 3, 20, 12, 0))
+        assert s['monthly_deficit'] == 0
+
+    def test_current_day_only_elapsed_duty(self):
+        from datetime import time
+        day = _day(date(2024, 3, 16), 0, person_status='N')
+        day['duty_start_time'] = time(7, 0)
+        s = self._summary([day], self._dt(2024, 3, 16, 10, 0))
+        assert _hours_to_minutes(s['monthly_deficit']) == 180
+
+    def test_current_day_after_duty_end_is_full(self):
+        day = _day(date(2024, 3, 16), 0, person_status='N')
+        s = self._summary([day], self._dt(2024, 3, 16, 23, 0))
+        assert _hours_to_minutes(s['monthly_deficit']) == WORKING_DAY_DUTY_MINUTES
+
+    def test_future_day_excluded(self):
+        day = _day(date(2024, 3, 25), 0, person_status='N')
+        s = self._summary([day], self._dt(2024, 3, 20, 12, 0))
+        assert s['monthly_deficit'] == 0
+
+    def test_190_40_vs_158_39_is_not_zero(self):
+        """۲۶ روز کاری × ۷:۲۰ = ۱۹۰:۴۰؛ کارکرد ۱۵۸:۳۹ بدون مجوز → کسری ۳۲:۰۱."""
+        start = date(2024, 3, 16)  # شنبه
+        days, work_total = [], 0
+        for i in range(30):
+            d = start + timedelta(days=i)
+            if d.weekday() == 4:
+                days.append(_day(d, 0, is_friday=True))
+                continue
+            minutes = 369 if i == 0 else 366
+            work_total += minutes
+            days.append(_day(d, _minutes_to_hours(minutes)))
+        assert work_total == 158 * 60 + 39
+        s = build_legal_ot_summary(
+            days,
+            {'duty_hours': _minutes_to_hours(190 * 60 + 40),
+             'total_work_hours': _minutes_to_hours(work_total)},
+            reference_at=self._dt(2024, 4, 30),
+        )
+        assert _hours_to_minutes(s['monthly_deficit']) == 32 * 60 + 1
+
+    def test_default_excludes_friday_holiday_overtime_from_deficit(self):
+        """جمعه‌کاری/اضافه‌کار هفتگی کسر کار را پوشش نمی‌دهد (پیش‌فرض False)."""
+        days = _full_week([0, 0, 0, 0, 0, 0, 10])  # فقط جمعه‌کاری ۱۰ ساعت
+        base = {'duty_hours': 44.0, 'total_work_hours': 10.0}
+        ref = self._dt(2024, 4, 30)
+        s = build_legal_ot_summary(days, dict(base), reference_at=ref)
+        assert s['monthly_deficit'] == pytest.approx(44.0)
+        days = _full_week([0, 0, 0, 0, 0, 0, 10])
+        s2 = build_legal_ot_summary(
+            days, dict(base), reference_at=ref,
+            policy={'deficit_adjust_friday_work': True},
+        )
+        assert s2['monthly_deficit'] == pytest.approx(34.0)
+
+    def test_ordinary_overtime_extracted_from_real_surplus_only(self):
+        """هفته ۴۸ ساعت کار، موظفی ۴۴: فقط ۴ ساعت مازاد از اعتبار کسر می‌شود."""
+        ref = self._dt(2024, 4, 30)
+        base = {'duty_hours': 44.0 + 44.0, 'total_work_hours': 48.0}
+        # هفته دوم بدون کارکرد → کمبود ۴۴ حتی با مازاد هفتهٔ اول
+        wk1 = _full_week([8, 8, 8, 8, 8, 8, 0])
+        sat2 = date(2024, 3, 23)
+        wk2 = [
+            _day(sat2 + timedelta(days=i), 0, is_friday=i == 6,
+                 daily_duty=0.0 if i == 6 else None)
+            for i in range(7)
+        ]
+        s = build_legal_ot_summary(wk1 + wk2, dict(base), reference_at=ref)
+        assert s['overtime_total'] == pytest.approx(4.0)
+        assert s['monthly_deficit'] == pytest.approx(44.0)
+        for d in wk1 + wk2:
+            d['week_block'] = None
+        s2 = build_legal_ot_summary(
+            wk1 + wk2, dict(base), reference_at=ref,
+            policy={'deficit_adjust_ordinary_overtime': True},
+        )
+        assert s2['monthly_deficit'] == pytest.approx(40.0)
+
+    def test_legacy_method_keeps_old_behavior(self):
+        day = _day(date(2024, 3, 16), 0, person_status='N')
+        s = build_legal_ot_summary(
+            [day], {'duty_hours': 7 + 20 / 60, 'total_work_hours': 0.0},
+            reference_at=self._dt(2024, 3, 30),
+            policy={'deficit_method': 'legacy'},
+        )
+        assert s['monthly_deficit'] == 0
+
+    def test_late_early_counted_once_with_shortfall(self):
+        day = _day(date(2024, 3, 16), 6 + 40 / 60, late_violation_minutes=25)
+        s = build_legal_ot_summary(
+            [day], {'duty_hours': 7 + 20 / 60, 'total_work_hours': 6 + 40 / 60},
+            reference_at=self._dt(2024, 3, 30),
+        )
+        # موظفی ۷:۲۰، کارکرد ۶:۴۰ → کمبود ۴۰د؛ تخلف ۲۵د داخل آن است و اضافه نمی‌شود
+        assert _hours_to_minutes(s['monthly_deficit']) == 40
+    def test_late_early_violation_stays_additive_not_changed_by_reference(self):
+        days = [_day(date(2024, 3, 16), 8.0, late_violation_minutes=20,
+                     early_leave_violation_minutes=10)]
+        s = build_legal_ot_summary(
+            days, {'duty_hours': 7 + 20 / 60, 'total_work_hours': 8.0},
+            reference_at=self._dt(2024, 3, 30),
+        )
+        assert _hours_to_minutes(s['monthly_deficit']) == 30
