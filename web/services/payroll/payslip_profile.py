@@ -42,5 +42,6 @@ def load_payslip_profile(db: Session, result) -> dict:
         "hire_date": jalali_text(employee.hire_date) if employee else "—",
         "membership": membership_label,
         "covered_days": money_text(result.covered_days),
+        "work_days": money_text(result.shown_work_days),
         "month_days": money_text(result.month_days),
     }

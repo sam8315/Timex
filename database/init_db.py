@@ -2122,6 +2122,18 @@ def migrate_component_sick_behavior(bind_engine=None) -> None:
     )
 
 
+def migrate_payroll_result_work_days(bind_engine=None) -> None:
+    """ستون کارکرد فیش (033)؛ نتایج قدیمی NULL می‌مانند."""
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
+    if "payroll_results" not in inspector.get_table_names():
+        return
+    with target.begin() as conn:
+        conn.execute(text(
+            "ALTER TABLE payroll_results ADD COLUMN IF NOT EXISTS work_days INTEGER"
+        ))
+
+
 def migrate_insurance_exemptions(bind_engine=None) -> None:
     """جدول معافیت بیمه سهم کارمند را در صورت نبودن می‌سازد."""
     target = bind_engine if bind_engine is not None else engine
@@ -2241,6 +2253,7 @@ def create_tables() -> None:
         migrate_missing_columns()
         migrate_sick_leave_pay_status()
         migrate_component_sick_behavior()
+        migrate_payroll_result_work_days()
         migrate_insurance_exemptions()
         migrate_payroll_approval_workflow()
         migrate_report_policies()

@@ -137,6 +137,15 @@ class PayslipDraft:
     gross_earnings: Decimal
     total_deductions: Decimal
     net_pay: Decimal
+    work_days: int = 0
+
+
+def work_days_of(emp: EmployeeCalcInput) -> int:
+    """کارکرد = روز پوشش منهای غیبت و استعلاجی بدون پرداخت کارفرما."""
+    days = int(emp.covered_days or 0)
+    days -= max(int(emp.normal_absence_days or 0), 0)
+    days -= max(int(emp.excluded_sick_days or 0), 0)
+    return max(days, 0)
 
 
 def _policy_basis(
@@ -693,4 +702,5 @@ def calculate_employee_payslip(
         gross_earnings=gross,
         total_deductions=deductions,
         net_pay=net,
+        work_days=work_days_of(emp),
     )

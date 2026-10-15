@@ -250,9 +250,17 @@ class PayrollResult(TimestampMixin, Base):
     membership_type_code: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
     covered_days: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     month_days: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
+    # NULL برای فیش‌های قبل از ذخیرهٔ کارکرد؛ نمایش به covered_days برمی‌گردد.
+    work_days: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     gross_earnings: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=Decimal("0"))
     total_deductions: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=Decimal("0"))
     net_pay: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=Decimal("0"))
+
+    @property
+    def shown_work_days(self) -> int:
+        if self.work_days is not None:
+            return int(self.work_days)
+        return int(self.covered_days or 0)
 
     run: Mapped["PayrollRun"] = relationship(back_populates="results")
     items: Mapped[List["PayrollResultItem"]] = relationship(

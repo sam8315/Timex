@@ -111,6 +111,17 @@ def test_work_days_come_from_stored_coverage_and_sum():
     assert report["grand_total"]["amounts"]["__WORK_DAYS__"] == D(30)
 
 
+def test_work_days_subtract_absence_and_fall_back_to_coverage_for_old_results():
+    people = [
+        _person("1", "الف", 100, covered_days=30, work_days=20),
+        _person("2", "ب", 40, covered_days=30, work_days=None),
+    ]
+    report = build_run_report(people, column_codes=[], extra_columns=["__WORK_DAYS__"], department_totals=False)
+    rows = {row["user_id"]: row for row in report["sections"][0]["rows"]}
+    assert rows["1"]["amounts"]["__WORK_DAYS__"] == D(20)
+    assert rows["2"]["amounts"]["__WORK_DAYS__"] == D(30)
+
+
 def test_extra_columns_can_be_hidden():
     shown = build_run_report(
         _people(),

@@ -136,6 +136,7 @@ body.payslip-print-mode .payslip-person { break-inside: avoid; }
                 <div><span>تاریخ استخدام: </span>{{ profile.hire_date }}</div>
                 <div><span>عضویت: </span>{{ profile.membership }}</div>
                 <div><span>پوشش قرارداد: </span>{{ profile.covered_days }} از {{ profile.month_days }} روز</div>
+                <div><span>کارکرد: </span>{{ profile.work_days or profile.covered_days }} از {{ profile.month_days }} روز</div>
             </div>
         </section>
 

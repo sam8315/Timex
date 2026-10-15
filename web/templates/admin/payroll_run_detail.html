@@ -244,7 +244,7 @@
                         <th>کد</th>
                         <th>نام</th>
                         <th>عضویت</th>
-                        <th>روز پوشش</th>
+                        <th>کارکرد</th>
                         <th>ناخالص</th>
                         <th>کسورات</th>
                         <th>خالص</th>
@@ -267,7 +267,7 @@
                         <td>{{ r.user_id }}</td>
                         <td>{{ r.name }}</td>
                         <td>{{ r.membership or '—' }}</td>
-                        <td>{{ r.covered_days }}/{{ r.month_days }}</td>
+                        <td>{{ r.work_days if r.work_days is not none else r.covered_days }}/{{ r.month_days }}</td>
                         <td>{% if r.gross is not none %}{{ '{:,.0f}'.format(r.gross) }}{% else %}—{% endif %}</td>
                         <td>{% if r.deductions is not none %}{{ '{:,.0f}'.format(r.deductions) }}{% else %}—{% endif %}</td>
                         <td class="fw-bold">{% if r.net is not none %}{{ '{:,.0f}'.format(r.net) }}{% else %}—{% endif %}</td>

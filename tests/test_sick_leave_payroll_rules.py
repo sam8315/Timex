@@ -182,6 +182,50 @@ def test_payable_days_apply_to_every_day_based_item():
         assert "به مدت ۱۴ روز" in line_detail(by_code[code])
 
 
+def _work_days_emp(**kwargs):
+    base = dict(
+        user_id="u",
+        employee_name="افسانه",
+        membership_type_code="4",
+        hire_date=None,
+        marital_status="S",
+        covered_days=30,
+        month_days=30,
+        year_j=1405,
+        month_j=7,
+        payroll_date=date(2026, 10, 22),
+        amounts={"DAILY_WAGE": D("100")},
+    )
+    base.update(kwargs)
+    return EmployeeCalcInput(**base)
+
+
+def test_work_days_subtract_absence_days():
+    components = [ComponentDef(1, "DAILY_WAGE", "حقوق", "earning", "daily_x_covered", True, False, 10)]
+    draft = calculate_employee_payslip(
+        _work_days_emp(normal_absence_days=10), components, RateSettingsInput(), []
+    )
+    assert draft.work_days == 20
+    assert draft.covered_days == 30
+
+
+def test_work_days_subtract_absence_and_unpaid_sick_days():
+    components = [ComponentDef(1, "DAILY_WAGE", "حقوق", "earning", "daily_x_covered", True, False, 10)]
+    draft = calculate_employee_payslip(
+        _work_days_emp(normal_absence_days=2, excluded_sick_days=14), components, RateSettingsInput(), []
+    )
+    assert draft.work_days == 14
+
+
+def test_work_days_never_negative():
+    components = [ComponentDef(1, "DAILY_WAGE", "حقوق", "earning", "daily_x_covered", True, False, 10)]
+    draft = calculate_employee_payslip(
+        _work_days_emp(covered_days=10, normal_absence_days=8, excluded_sick_days=5),
+        components, RateSettingsInput(), [],
+    )
+    assert draft.work_days == 0
+
+
 def test_payslip_prorates_wage_not_seniority_when_only_wage_has_a_rule():
     components = [
         ComponentDef(1, "DAILY_WAGE", "حقوق", "earning", "daily_x_covered", True, False, 10, "exclude"),

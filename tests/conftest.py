@@ -117,6 +117,7 @@ from database.init_db import (  # noqa: E402
     migrate_missing_columns,
     migrate_sick_leave_pay_status,
     migrate_component_sick_behavior,
+    migrate_payroll_result_work_days,
     migrate_insurance_exemptions,
     seed_membership_types,
     seed_role_permissions,
@@ -219,6 +220,7 @@ migrate_attendance_policy_midnight_bridge(bind_engine=test_engine)
 migrate_missing_columns(bind_engine=test_engine)
 migrate_sick_leave_pay_status(bind_engine=test_engine)
 migrate_component_sick_behavior(bind_engine=test_engine)
+migrate_payroll_result_work_days(bind_engine=test_engine)
 migrate_insurance_exemptions(bind_engine=test_engine)
 migrate_users_role_length(bind_engine=test_engine)
 seed_roles(bind_engine=test_engine)

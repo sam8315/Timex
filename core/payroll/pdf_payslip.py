@@ -129,6 +129,7 @@ class _Painter:
 def _profile_rows(result: Any, profile: dict | None, period_label: str) -> list[tuple[str, str]]:
     if profile:
         covered = f"{profile.get('covered_days') or '—'} از {profile.get('month_days') or '—'} روز"
+        worked = profile.get("work_days") or profile.get("covered_days") or "—"
         return [
             ("نام", str(profile.get("name") or "—")),
             ("کد پرسنلی", str(profile.get("user_id") or "—")),
@@ -139,6 +140,7 @@ def _profile_rows(result: Any, profile: dict | None, period_label: str) -> list[
             ("تأهل", str(profile.get("marital") or "—")),
             ("عضویت", str(profile.get("membership") or "—")),
             ("پوشش قرارداد", covered),
+            ("کارکرد", f"{worked} از {profile.get('month_days') or '—'} روز"),
             ("دوره", fa_digits(period_label)),
             ("جنسیت", str(profile.get("gender") or "—")),
         ]
@@ -147,7 +149,13 @@ def _profile_rows(result: Any, profile: dict | None, period_label: str) -> list[
         ("کد پرسنلی", fa_digits(result.user_id)),
         ("عضویت", str(result.membership_type_code or "—")),
         ("پوشش قرارداد", f"{money_text(result.covered_days)} از {money_text(result.month_days)} روز"),
+        ("کارکرد", f"{money_text(_work_days(result))} از {money_text(result.month_days)} روز"),
     ]
+
+
+def _work_days(result: Any) -> int:
+    work_days = getattr(result, "work_days", None)
+    return int(result.covered_days or 0) if work_days is None else int(work_days)
 
 
 def _draw_profile(p: _Painter, x: float, y: float, width: float, rows: list[tuple[str, str]]) -> float:

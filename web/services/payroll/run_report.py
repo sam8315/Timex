@@ -68,6 +68,7 @@ class ReportPerson:
     net: Decimal
     lines: tuple[ReportLine, ...]
     covered_days: int = 0
+    work_days: Optional[int] = None
 
 
 def catalog_columns(people: Sequence[ReportPerson]) -> list[ReportLine]:
@@ -98,7 +99,7 @@ def person_amount(person: ReportPerson, code: str) -> Decimal:
     if code == NET:
         return D(person.net)
     if code == WORK_DAYS:
-        return D(person.covered_days)
+        return D(person.covered_days if person.work_days is None else person.work_days)
     total = D(0)
     for line in person.lines:
         if line.component_code == code:
@@ -396,6 +397,7 @@ def load_report_people(db: Session, run) -> list[ReportPerson]:
                 deductions=D(result.total_deductions),
                 net=D(result.net_pay),
                 covered_days=int(result.covered_days or 0),
+                work_days=result.work_days,
                 lines=lines,
             )
         )
