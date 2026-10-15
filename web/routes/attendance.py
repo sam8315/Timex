@@ -28,6 +28,7 @@ from web.services.attendance_policy_service import (
     resolve_policy,
     compute_late_early_for_day,
 )
+from web.services.midnight_bridge_settings import load_midnight_bridge_settings
 from web.services.hourly_leave_service import (
     get_approved_hl_minutes,
     get_approved_hl_intervals,
@@ -244,6 +245,7 @@ async def attendance_page(
 
     # ساخت لیست روزها
     days_list = []
+    midnight_bridge_settings = load_midnight_bridge_settings(db)
     current = month_start_g
     while current <= month_end_g:
         j_day = jdatetime.date.fromgregorian(date=current)
@@ -254,6 +256,12 @@ async def attendance_page(
         is_friday = current.weekday() == 4
         holiday_title = holiday_dates.get(current)
 
+        resolved = resolve_policy(db, emp, current)
+        midnight_bridge = (
+            midnight_bridge_settings.rule_for(membership_code_for(db, emp, current))
+            if midnight_bridge_settings.enabled else None
+        )
+
         # تحلیل وضعیت + کارکرد از موتور مرکزی (Phase 3)
         day_result = compute_day_attendance(
             day=current,
@@ -261,7 +269,8 @@ async def attendance_page(
             prev_day_records=prev_day_records,
             next_day_records=next_day_records,
             is_friday=is_friday,
-            holiday_title=holiday_title
+            holiday_title=holiday_title,
+            midnight_bridge=midnight_bridge,
         )
         status_info = day_result.attendance_status_dict
         # 🆕 بررسی مرخصی تایید شده
@@ -297,12 +306,14 @@ async def attendance_page(
             # اورراید مرخصی شب/غیرشب را عوض کرده → محاسبه مجدد (رفتار قبلی)
             work_hours, first_enter, last_exit = calculate_work_hours(
                 day_records,
-                is_night_shift=is_night_shift
+                is_night_shift=is_night_shift,
+                prev_day_records=prev_day_records,
+                next_day_records=next_day_records,
+                midnight_bridge=midnight_bridge,
             )
         if sick_effect.covered:
             work_hours = 0
 
-        resolved = resolve_policy(db, emp, current)
         late_early = compute_late_early_for_day(
             resolved=resolved,
             target_date=current,

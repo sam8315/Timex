@@ -99,6 +99,7 @@ TestingSessionLocal = sessionmaker(
 import models  # noqa: F401,E402  (register every mapped table)
 from models import Base  # noqa: E402
 from database.init_db import (  # noqa: E402
+    migrate_attendance_policy_midnight_bridge,
     migrate_employee_address_city_id,
     migrate_employee_address_history,
     migrate_employee_address_coords_pair,
@@ -214,6 +215,7 @@ with test_engine.connect() as _conn:
         _drop_tables_if_exist(_conn, "employee_relatives")
 
 Base.metadata.create_all(bind=test_engine)
+migrate_attendance_policy_midnight_bridge(bind_engine=test_engine)
 migrate_missing_columns(bind_engine=test_engine)
 migrate_sick_leave_pay_status(bind_engine=test_engine)
 migrate_component_sick_behavior(bind_engine=test_engine)

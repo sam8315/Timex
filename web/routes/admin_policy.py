@@ -16,6 +16,10 @@ import jdatetime
 from web.dependencies import get_db, require_permission
 from web.permissions import has_permission
 from web.services.notification_service import is_sms_enabled, set_sms_enabled
+from web.services.midnight_bridge_settings import (
+    load_midnight_bridge_settings,
+    save_midnight_bridge_settings,
+)
 from models.user import User
 from models.region import Region
 from models.policy import Policy, PolicyValue, PolicyAuditLog
@@ -1093,7 +1097,37 @@ async def admin_policies_attendance(
         "dept_types": _dept_types(db),
         "policies_by_type": policies_by_type,
         "overrides": override_list,
+        "midnight_bridge": load_midnight_bridge_settings(db),
     })
+
+
+@router.post("/admin/policies/attendance/midnight-bridge/save")
+async def admin_policies_attendance_midnight_bridge_save(
+    request: Request,
+    enabled: str = Form(""),
+    before_minutes: int = Form(15),
+    after_minutes: int = Form(15),
+    membership_codes: List[str] = Form([]),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission("manage_policies"))
+):
+    """ذخیره تنظیم سراسری شیفت پیوسته نیمه‌شب"""
+    if not has_permission(db, user, 'manage_users'):
+        return RedirectResponse(url="/admin/", status_code=302)
+
+    valid_codes = {code for code, _ in _dept_types(db)}
+    save_midnight_bridge_settings(
+        db,
+        enabled=(enabled == 'on'),
+        before_minutes=before_minutes,
+        after_minutes=after_minutes,
+        membership_codes=[c for c in membership_codes if c in valid_codes],
+        changed_by=user.user_id,
+    )
+    return RedirectResponse(
+        url="/admin/policies/attendance?success=saved",
+        status_code=302
+    )
 
 
 # ============================================
@@ -1536,7 +1570,6 @@ async def admin_policies_attendance_update(
         policy.early_leave_allowed_minutes = early_leave_allowed_minutes
         policy.early_leave_reference_mode = early_reference_mode
         policy.include_grace_in_work = (include_grace_in_work == 'on')
-
         # Delete existing schedule and recreate
         db.query(AttendancePolicyDay).filter(
             AttendancePolicyDay.policy_id == policy_id

@@ -32,7 +32,7 @@
 وابستگی: فقط standard library → هیچ وابستگی به FastAPI / Template / Route ندارد.
 """
 from dataclasses import dataclass, field
-from datetime import datetime, date as date_type
+from datetime import datetime, date as date_type, timedelta
 from typing import Dict, List, Mapping, Optional, Any
 
 # ============================================
@@ -351,18 +351,39 @@ def _analyze_day_status(
     }
 
 
+@dataclass(frozen=True)
+class MidnightBridgeRule:
+    """
+    قانون «شیفت پیوسته نیمه‌شب» (از Policy Engine داده می‌شود؛ موتور به DB وابسته نیست).
+
+    خروجی که بلافاصله با یک ورود دنبال شود و هر دو داخل پنجرهٔ حول یک نیمه‌شب
+    باشند (``before_minutes`` قبل تا ``after_minutes`` بعد از نیمه‌شب)، فاصله‌شان
+    کارکرد حساب می‌شود؛ هر تکه به روز تقویمی خودش تعلق می‌گیرد.
+    """
+    before_minutes: int = 15
+    after_minutes: int = 15
+
+
 def calculate_work_hours(
     day_records: list,
-    is_night_shift: bool
+    is_night_shift: bool,
+    prev_day_records: Optional[list] = None,
+    next_day_records: Optional[list] = None,
+    midnight_bridge: Optional[MidnightBridgeRule] = None,
 ) -> tuple:
     """
     🆕 محاسبه دقیق ساعات کاری با جمع زدن بازه‌های ورود و خروج
     - اگر بیش از ۲ تردد باشد، بازه هر جفت (ورود تا خروج) محاسبه و جمع می‌شود
     - ترددهای تکراری (دو ورود یا دو خروج پشت سر هم) نادیده گرفته می‌شوند
     - شیفت شب (ورود/خروج ضمنی) به درستی مدیریت می‌شود
+    - با ``midnight_bridge``، فاصلهٔ خروج/ورود داخل پنجرهٔ نیمه‌شب کارکرد است
     """
     work_hours, first_enter, last_exit, _pairs = _calculate_work_hours_detailed(
-        day_records, is_night_shift
+        day_records,
+        is_night_shift,
+        prev_day_records=prev_day_records,
+        next_day_records=next_day_records,
+        midnight_bridge=midnight_bridge,
     )
     return work_hours, first_enter, last_exit
 
@@ -372,9 +393,113 @@ def _get_naive_ts(rec):
     return rec.timestamp.replace(tzinfo=None) if rec.timestamp.tzinfo else rec.timestamp
 
 
+def _seconds_of_day(ts: datetime) -> float:
+    return ts.hour * 3600 + ts.minute * 60 + ts.second + ts.microsecond / 1_000_000
+
+
+def _in_evening_window(ts: datetime, rule: MidnightBridgeRule) -> bool:
+    before = max(0, int(rule.before_minutes or 0))
+    return before > 0 and _seconds_of_day(ts) >= 86400 - before * 60
+
+
+def _in_morning_window(ts: datetime, rule: MidnightBridgeRule) -> bool:
+    after = max(0, int(rule.after_minutes or 0))
+    return after > 0 and _seconds_of_day(ts) <= after * 60
+
+
+def _sorted_punches(records: Optional[list]) -> List[tuple]:
+    return sorted(
+        ((_get_naive_ts(r), r.punch) for r in records or [] if r.punch in (0, 1)),
+        key=lambda item: item[0],
+    )
+
+
+def _bridged_pair(enter: datetime, exit_: datetime) -> Dict:
+    return {
+        'enter': enter,
+        'exit': exit_,
+        'hours': (exit_ - enter).total_seconds() / 3600.0,
+        'bridged_midnight': True,
+    }
+
+
+def _apply_midnight_bridge(
+    pairs: List[Dict],
+    day_records: list,
+    prev_day_records: Optional[list],
+    next_day_records: Optional[list],
+    rule: MidnightBridgeRule,
+) -> List[Dict]:
+    """
+    اعمال قانون شیفت پیوسته نیمه‌شب روی pairهای یک روز.
+
+    - داخل روز: خروج و ورود پشت‌سرهم که هر دو در پنجرهٔ صبح یا هر دو در پنجرهٔ
+      عصر باشند → دو جفت مجاور ادغام می‌شوند.
+    - مرز عصر: آخرین تردد روز خروجِ داخل پنجرهٔ عصر و اولین تردد فردا ورودِ
+      داخل پنجرهٔ صبح → exit آخرین جفت تا نیمه‌شب کشیده می‌شود.
+    - مرز صبح: اولین تردد روز ورودِ داخل پنجرهٔ صبح و آخرین تردد دیروز خروجِ
+      داخل پنجرهٔ عصر → enter اولین جفت به 00:00 کشیده می‌شود.
+    """
+    if not pairs:
+        return pairs
+
+    punches = _sorted_punches(day_records)
+    if not punches:
+        return pairs
+
+    gaps = set()
+    for (exit_ts, exit_punch), (enter_ts, enter_punch) in zip(punches, punches[1:]):
+        if exit_punch != 1 or enter_punch != 0:
+            continue
+        both_morning = _in_morning_window(exit_ts, rule) and _in_morning_window(enter_ts, rule)
+        both_evening = _in_evening_window(exit_ts, rule) and _in_evening_window(enter_ts, rule)
+        if both_morning or both_evening:
+            gaps.add((exit_ts, enter_ts))
+
+    result: List[Dict] = []
+    for pair in pairs:
+        if result and (result[-1]['exit'], pair['enter']) in gaps:
+            result[-1] = _bridged_pair(result[-1]['enter'], pair['exit'])
+        else:
+            result.append(dict(pair))
+
+    last_ts, last_punch = punches[-1]
+    next_punches = _sorted_punches(next_day_records)
+    if (
+        last_punch == 1
+        and next_punches
+        and next_punches[0][1] == 0
+        and next_punches[0][0].date() == last_ts.date() + timedelta(days=1)
+        and _in_evening_window(last_ts, rule)
+        and _in_morning_window(next_punches[0][0], rule)
+        and result[-1]['exit'] == last_ts
+    ):
+        next_midnight = datetime.combine(last_ts.date() + timedelta(days=1), datetime.min.time())
+        result[-1] = _bridged_pair(result[-1]['enter'], next_midnight)
+
+    first_ts, first_punch = punches[0]
+    prev_punches = _sorted_punches(prev_day_records)
+    if (
+        first_punch == 0
+        and prev_punches
+        and prev_punches[-1][1] == 1
+        and prev_punches[-1][0].date() == first_ts.date() - timedelta(days=1)
+        and _in_morning_window(first_ts, rule)
+        and _in_evening_window(prev_punches[-1][0], rule)
+        and result[0]['enter'] == first_ts
+    ):
+        midnight = datetime.combine(first_ts.date(), datetime.min.time())
+        result[0] = _bridged_pair(midnight, result[0]['exit'])
+
+    return result
+
+
 def _calculate_work_hours_detailed(
     day_records: list,
-    is_night_shift: bool
+    is_night_shift: bool,
+    prev_day_records: Optional[list] = None,
+    next_day_records: Optional[list] = None,
+    midnight_bridge: Optional[MidnightBridgeRule] = None,
 ) -> tuple:
     """
     همان state machine تابع calculate_work_hours، با ثبت pairهای واقعیِ همان بازه‌ها.
@@ -447,6 +572,12 @@ def _calculate_work_hours_detailed(
         else:
             # روز عادی و خروج فراموش شده → این بازه ناقص است و محاسبه نمی‌شود
             pass
+
+    if midnight_bridge is not None:
+        pairs = _apply_midnight_bridge(
+            pairs, day_records, prev_day_records, next_day_records, midnight_bridge
+        )
+        total_seconds = sum((p['exit'] - p['enter']).total_seconds() for p in pairs)
 
     work_hours = total_seconds / 3600.0
 
@@ -563,6 +694,7 @@ def compute_day_attendance(
     is_friday: bool = False,
     holiday_title: Optional[str] = None,
     schedule_context: Optional[WorkScheduleContext] = None,
+    midnight_bridge: Optional[MidnightBridgeRule] = None,
 ) -> DayAttendanceResult:
     """
     API اصلی موتور مرکزی: محاسبه کامل «تردد واقعی» یک روز.
@@ -590,7 +722,11 @@ def compute_day_attendance(
     is_night_shift = full_status['main_status'] == STATUS_NIGHT_SHIFT
 
     work_hours, first_enter, last_exit, pairs = _calculate_work_hours_detailed(
-        day_records, is_night_shift
+        day_records,
+        is_night_shift,
+        prev_day_records=prev_day_records,
+        next_day_records=next_day_records,
+        midnight_bridge=midnight_bridge,
     )
 
     return DayAttendanceResult(

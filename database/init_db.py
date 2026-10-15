@@ -2212,6 +2212,23 @@ def migrate_report_policies(bind_engine=None) -> None:
     logger.info("Report policies table ready", extra={"event": "database.ready"})
 
 
+def migrate_attendance_policy_midnight_bridge(bind_engine=None) -> None:
+    """شیفت پیوسته نیمه‌شب تنظیم سراسری است (032)؛ ستون‌های قبلی روی attendance_policies حذف می‌شوند."""
+    target = bind_engine if bind_engine is not None else engine
+    inspector = inspect(target)
+    if "attendance_policies" not in inspector.get_table_names():
+        return
+    with target.begin() as conn:
+        for column in (
+            "midnight_bridge_enabled",
+            "midnight_bridge_before_minutes",
+            "midnight_bridge_after_minutes",
+        ):
+            conn.execute(text(
+                f"ALTER TABLE attendance_policies DROP COLUMN IF EXISTS {column}"
+            ))
+
+
 def create_tables() -> None:
     """
     ساخت تمام جداول تعریف شده در مدل‌ها
@@ -2220,6 +2237,7 @@ def create_tables() -> None:
     try:
         # اول جداول جدید، بعد ستون‌های جدید روی جداول موجود
         Base.metadata.create_all(bind=engine)
+        migrate_attendance_policy_midnight_bridge()
         migrate_missing_columns()
         migrate_sick_leave_pay_status()
         migrate_component_sick_behavior()

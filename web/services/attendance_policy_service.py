@@ -24,6 +24,7 @@ from models.holiday import Holiday
 from models.leave_request import LeaveRequest
 from models.daily_status import DailyStatus
 from web.services.membership_resolve import holiday_applies, membership_code_for
+from web.services.midnight_bridge_settings import load_midnight_bridge_settings
 
 
 class ReferenceMode(str, Enum):
@@ -823,7 +824,13 @@ def calculate_daily_attendance(
 
     # محاسبه کارکرد واقعی (از موتور مرکزی — Phase 8: نه از لایه routes)
     from core.attendance_calculator import calculate_work_hours
-    work_hours, first_enter, last_exit = calculate_work_hours(day_records, is_night_shift)
+    work_hours, first_enter, last_exit = calculate_work_hours(
+        day_records,
+        is_night_shift,
+        prev_day_records=prev_day_records,
+        next_day_records=next_day_records,
+        midnight_bridge=load_midnight_bridge_settings(db).rule_for(employment_type),
+    )
     actual_minutes = int(work_hours * 60)
 
     # بازه‌های HL تأییدشدهٔ همان روز (بدون import از hourly_leave_service

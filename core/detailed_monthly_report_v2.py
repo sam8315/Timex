@@ -33,8 +33,10 @@ from core.sick_leave_facts import (
 from core.attendance_calculator import (
     STATUS_NIGHT_SHIFT,
     STATUS_NO_ATTENDANCE,
+    MidnightBridgeRule,
     compute_day_attendance,
 )
+from web.services.midnight_bridge_settings import load_midnight_bridge_settings
 from web.services.attendance_policy_service import (
     resolve_policy,
     resolve_policy_day,
@@ -245,6 +247,8 @@ class DetailedMonthlyReportGeneratorV2:
             )
         ).count()
 
+        midnight_bridge_settings = load_midnight_bridge_settings(self.db)
+
         # ساخت لیست روزها
         days = []
         current = g_start
@@ -255,7 +259,8 @@ class DetailedMonthlyReportGeneratorV2:
             # تعیین وضعیت روز
             is_friday = current.weekday() == 4
             from web.services.membership_resolve import membership_code_for
-            holiday = self._find_holiday(current, membership_code_for(self.db, employee, current))
+            membership_code = membership_code_for(self.db, employee, current)
+            holiday = self._find_holiday(current, membership_code)
             is_holiday = holiday is not None
             holiday_title = holiday.title if holiday is not None else None
 
@@ -290,6 +295,7 @@ class DetailedMonthlyReportGeneratorV2:
                 attendances_by_day.get(current + timedelta(days=1), []),
                 is_friday=is_friday,
                 holiday_title=holiday_title,
+                midnight_bridge=midnight_bridge_settings.rule_for(membership_code),
             )
 
             work_hours = day_data['work_hours']
@@ -510,6 +516,7 @@ class DetailedMonthlyReportGeneratorV2:
         next_day_records: List,
         is_friday: bool,
         holiday_title: Optional[str],
+        midnight_bridge: Optional[MidnightBridgeRule] = None,
     ) -> Dict:
         """
         Actual Attendance یک روز - فقط از Central Attendance Engine.
@@ -527,6 +534,7 @@ class DetailedMonthlyReportGeneratorV2:
             next_day_records=next_day_records,
             is_friday=is_friday,
             holiday_title=holiday_title,
+            midnight_bridge=midnight_bridge,
         )
 
         # موتور برای محاسبه، زمان‌ها را naive نگه می‌دارد؛ ساختار قدیمیِ گزارش
