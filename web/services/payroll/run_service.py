@@ -1036,13 +1036,17 @@ def approve_run(db: Session, run_id: int, user_id: str) -> PayrollRun:
 
 
 def reopen_run(db: Session, run_id: int, user_id: str, reason: str) -> PayrollRun:
-    """بازگشت اجرای تأیید یا منتشرشده به محاسبه‌شده. فیش تا انتشار مجدد پنهان می‌ماند."""
+    """حذف تأییدها و بازگشت به محاسبه‌شده؛ برای لیست تأییدشده، منتشرشده یا در حال تأیید.
+
+    فیش منتشرشده تا انتشار مجدد پنهان می‌ماند.
+    """
     if not (reason or "").strip():
         raise PayrollRunError("دلیل بازگشایی الزامی است")
     run = get_run(db, run_id)
     ensure_calculation_idle(run)
-    if run.status not in ("approved", "published"):
-        raise PayrollRunError("فقط اجرای تأیید یا منتشرشده قابل بازگشایی است")
+    started = run.status == "calculated" and approval_service.has_started(run)
+    if run.status not in ("approved", "published") and not started:
+        raise PayrollRunError("این لیست تأییدی ندارد که بازگشایی شود")
     previous = approval_service.reset_for_reopen(db, run)
     note = f"reopen by {user_id}: {reason.strip()}"
     if previous:

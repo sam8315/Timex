@@ -281,6 +281,29 @@ def test_reopen_restarts_workflow_and_keeps_history_in_notes(db, make_user):
     assert _fresh(db, run.id).status == "approved"
 
 
+def test_reopen_partially_approved_run_allows_recalculation(db, make_user):
+    a, b = _boss(make_user), _boss(make_user)
+    run = _started(db, [("۱", a), ("۲", b)])
+    run_service.approve_run(db, run.id, a)
+    run_service.reopen_run(db, run.id, a, "اصلاح کارکرد")
+    run = _fresh(db, run.id)
+    assert run.status == "calculated"
+    assert all(s.approved_at is None for s in run.approval_steps)
+    assert "previous approvals" in run.notes and "اصلاح کارکرد" in run.notes
+    events = list(run_service.iter_calculate(db, run.id))
+    assert events[-1]["done"] and not events[-1].get("error")
+
+
+def test_reopen_rejects_run_without_approvals(db, make_user):
+    a = _boss(make_user)
+    run = _started(db, [("۱", a)])
+    with pytest.raises(PayrollRunError, match="تأییدی ندارد"):
+        run_service.reopen_run(db, run.id, a, "بی‌دلیل")
+    draft = _run(db, status="draft", month=2)
+    with pytest.raises(PayrollRunError, match="تأییدی ندارد"):
+        run_service.reopen_run(db, draft.id, a, "بی‌دلیل")
+
+
 def test_workflow_view_progress_preview_and_times(db, make_user):
     a, b = _boss(make_user), _boss(make_user)
     run = _started(db, [("نیروی انسانی", a), ("حسابدار", b), ("مدیر مالی", None)])
@@ -408,6 +431,30 @@ def test_approve_route_enforces_ownership_and_order(client, db, make_user):
     _release(db, None)
     resp = client.post(f"/admin/payroll/runs/{rid}/approve")
     assert "error=" in resp.headers["location"]
+
+
+def test_reopen_route_super_admin_only(client, db, make_user):
+    other = _boss(make_user)
+    run = _started(db, [("اول", other), ("دوم", None)])
+    run_service.approve_run(db, run.id, other)
+    rid = _release(db, run)
+
+    manager = make_user(role="admin")
+    login_as(client, manager["national_code"], manager["password"])
+    resp = client.post(f"/admin/payroll/runs/{rid}/reopen", data={"reason": "اصلاح"})
+    assert resp.status_code == 302 and "error=" in resp.headers["location"]
+    assert _fresh(db, rid).approval_steps[0].approved_at is not None
+    _release(db, None)
+
+    _ui_login(client, make_user)
+    html = client.get(f"/admin/payroll/runs/{rid}").text
+    assert 'id="reopenRunModal"' in html
+    assert 'id="payrollCalcBtn"' not in html
+    resp = client.post(f"/admin/payroll/runs/{rid}/reopen", data={"reason": "اصلاح"})
+    assert "success=" in resp.headers["location"]
+    run = _fresh(db, rid)
+    assert run.status == "calculated"
+    assert all(s.approved_at is None for s in run.approval_steps)
 
 
 def test_policy_tab_and_settings_routes(client, db, make_user):

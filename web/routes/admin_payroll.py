@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
+import html
 import json
 from pathlib import Path
 from typing import Optional
@@ -193,6 +194,13 @@ def _can_approve(db: Session, user: User) -> bool:
 
 def _deny():
     return RedirectResponse(url="/admin/?error=" + quote("دسترسی ندارید"), status_code=302)
+
+
+def _partial_error(message: str, status_code: int) -> HTMLResponse:
+    return HTMLResponse(
+        f'<div class="alert alert-danger mb-0">{html.escape(message)}</div>',
+        status_code=status_code,
+    )
 
 
 def _redirect(url: str, *, error: str = "", success: str = "") -> RedirectResponse:
@@ -561,6 +569,31 @@ async def payroll_approve(
         return _redirect(f"/admin/payroll/runs/{run_id}", error=str(exc))
 
 
+@router.post("/admin/payroll/runs/{run_id}/reopen")
+async def payroll_reopen(
+    run_id: int,
+    reason: str = Form(""),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if user.role != "super_admin":
+        return _redirect(
+            f"/admin/payroll/runs/{run_id}", error="بازگشایی لیست فقط برای مدیر ارشد مجاز است"
+        )
+    try:
+        run = run_service.get_run(db, run_id)
+        busy = _calculation_block(db, user, run)
+        if busy:
+            return _redirect(f"/admin/payroll/runs/{run_id}", error=busy)
+        run_service.reopen_run(db, run_id, user.user_id, reason)
+        return _redirect(
+            f"/admin/payroll/runs/{run_id}",
+            success="لیست بازگشایی شد؛ تأییدها حذف شد و اکنون می‌توان محاسبه مجدد کرد",
+        )
+    except PayrollRunError as exc:
+        return _redirect(f"/admin/payroll/runs/{run_id}", error=str(exc))
+
+
 @router.post("/admin/payroll/runs/{run_id}/publish")
 async def payroll_publish(
     run_id: int,
@@ -606,19 +639,24 @@ async def payroll_manual(
 async def admin_payslip(
     result_id: int,
     request: Request,
+    partial: int = 0,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     if not _can_view(db, user):
+        if partial:
+            return _partial_error("دسترسی ندارید", 403)
         return _deny()
     try:
         result = run_service.get_result(db, result_id)
     except PayrollRunError as exc:
+        if partial:
+            return _partial_error(str(exc), 404)
         return _redirect("/admin/payroll", error=str(exc))
     period = result.run.period
     return templates.TemplateResponse(
         request,
-        "payroll/payslip_detail.html",
+        "payroll/_payslip_body.html" if partial else "payroll/payslip_detail.html",
         {
             "user": user,
             "is_admin": True,

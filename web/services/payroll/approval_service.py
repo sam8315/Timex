@@ -437,7 +437,7 @@ def reset_for_reopen(db: Session, run: PayrollRun) -> str:
     if not run.approval_steps and run.approved_by:
         lines.append(f"{LEGACY_STEP_TITLE}: {run.approved_by}"
                      + (f" @ {run.approved_at.isoformat(timespec='seconds')}" if run.approved_at else ""))
-    # reopen از وضعیت تأییدشده است؛ نسخهٔ قبلی بی‌شرط جایگزین می‌شود.
+    # تأییدهای قبلی (کامل یا ناقص) کنار می‌روند؛ نسخهٔ قبلی بی‌شرط جایگزین می‌شود.
     db.query(PayrollRunApprovalStep).filter(PayrollRunApprovalStep.run_id == run.id).delete(
         synchronize_session=False
     )

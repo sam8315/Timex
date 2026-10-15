@@ -149,11 +149,18 @@
     </div>
 </div>
 
-{% if can_mutate_run or can_manage or (can_approve and run.status == 'calculated') %}
+{% set approvals_started = run.status == 'calculated' and workflow.started %}
+{% set can_reopen = is_super_admin and (run.status in ['approved', 'published'] or approvals_started) %}
+{% if can_mutate_run or can_manage or is_super_admin or (can_approve and run.status == 'calculated') %}
 <div class="mb-3 d-flex flex-wrap gap-2">
-    {% if can_mutate_run and run.status in ['draft', 'calculated'] %}
+    {% if can_mutate_run and run.status in ['draft', 'calculated'] and not approvals_started %}
     <button type="button" class="btn btn-sm {% if run.status == 'draft' %}btn-primary{% else %}btn-outline-primary{% endif %}" id="payrollCalcBtn" {% if calculation_busy %}disabled{% endif %}>{% if run.status == 'draft' %}محاسبه{% else %}محاسبه مجدد{% endif %}</button>
     <button type="button" class="btn btn-sm btn-outline-primary" id="payrollCalcSelectedBtn" {% if calculation_busy %}disabled{% endif %}>محاسبه انتخاب‌شده‌ها</button>
+    {% elif can_mutate_run and approvals_started %}
+    <span class="small text-muted align-self-center">گردش تأیید شروع شده؛ برای محاسبه مجدد، مدیر ارشد باید لیست را بازگشایی کند</span>
+    {% endif %}
+    {% if can_reopen %}
+    <button type="button" class="btn btn-outline-warning btn-sm" data-bs-toggle="modal" data-bs-target="#reopenRunModal" {% if calculation_busy %}disabled{% endif %}>بازگشایی لیست</button>
     {% endif %}
     {% if run.status == 'calculated' and can_approve_now %}
     <form method="post" action="/admin/payroll/runs/{{ run.id }}/approve">
@@ -172,6 +179,31 @@
         <button class="btn btn-outline-danger btn-sm" {% if calculation_busy %}disabled{% endif %}>حذف لیست</button>
     </form>
     {% endif %}
+</div>
+{% endif %}
+
+{% if can_reopen %}
+<div class="modal fade" id="reopenRunModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <form method="post" action="/admin/payroll/runs/{{ run.id }}/reopen" class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">بازگشایی لیست</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning small">
+                    همهٔ تأییدهای این لیست حذف می‌شود و گردش تأیید از ابتدا شروع خواهد شد. سابقهٔ تأییدها در یادداشت لیست می‌ماند.
+                    {% if run.status == 'published' %}<br>فیش‌های منتشرشده تا انتشار مجدد از دید کارکنان پنهان می‌شود.{% endif %}
+                </div>
+                <label class="form-label" for="reopenReason">دلیل بازگشایی</label>
+                <textarea class="form-control" id="reopenReason" name="reason" rows="3" required></textarea>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">انصراف</button>
+                <button type="submit" class="btn btn-warning">بازگشایی</button>
+            </div>
+        </form>
+    </div>
 </div>
 {% endif %}
 
@@ -252,7 +284,7 @@
                         {% endif %}
                         <td>
                             {% if r.result_id %}
-                            <a class="btn btn-sm btn-outline-primary" href="/admin/payroll/payslip/{{ r.result_id }}">فیش</a>
+                            <a class="btn btn-sm btn-outline-primary payslip-open" href="/admin/payroll/payslip/{{ r.result_id }}" data-result-id="{{ r.result_id }}">فیش</a>
                             {% endif %}
                         </td>
                     </tr>
@@ -261,6 +293,53 @@
                 {% endfor %}
                 </tbody>
             </table>
+        </div>
+    </div>
+</div>
+
+<style>
+@media print {
+    body.payslip-printing {
+        overflow: visible !important;
+        background: #fff !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+    body.payslip-printing > *:not(#payslipModal) { display: none !important; }
+    body.payslip-printing #payslipModal {
+        position: static !important;
+        display: block !important;
+        overflow: visible !important;
+        padding: 0 !important;
+        width: auto !important;
+    }
+    body.payslip-printing #payslipModal .modal-dialog {
+        max-width: 100% !important;
+        height: auto !important;
+        margin: 0 !important;
+        transform: none !important;
+    }
+    body.payslip-printing #payslipModal .modal-content {
+        border: 0 !important;
+        max-height: none !important;
+        overflow: visible !important;
+    }
+    body.payslip-printing #payslipModal .modal-header { display: none !important; }
+    body.payslip-printing #payslipModal .modal-body { overflow: visible !important; padding: 0 !important; }
+}
+</style>
+<div class="modal fade" id="payslipModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">فیش حقوقی</h5>
+                <div class="d-flex gap-2 ms-auto me-3">
+                    <button type="button" class="btn btn-primary btn-sm" id="payslipPrintBtn" disabled>چاپ</button>
+                    <a class="btn btn-outline-primary btn-sm disabled" id="payslipPdfLink" href="#">PDF</a>
+                </div>
+                <button type="button" class="btn-close m-0" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="payslipModalBody"></div>
         </div>
     </div>
 </div>
@@ -583,5 +662,63 @@ tr.payroll-row-active { background: #e8f7ee !important; }
         });
     }
 })();
+
+(function () {
+    const modalEl = document.getElementById('payslipModal');
+    const bodyEl = document.getElementById('payslipModalBody');
+    const printBtn = document.getElementById('payslipPrintBtn');
+    const pdfLink = document.getElementById('payslipPdfLink');
+    document.body.appendChild(modalEl);
+    let requestSeq = 0;
+
+    function setActionsEnabled(enabled) {
+        printBtn.disabled = !enabled;
+        pdfLink.classList.toggle('disabled', !enabled);
+    }
+
+    async function openPayslip(link) {
+        const seq = ++requestSeq;
+        setActionsEnabled(false);
+        pdfLink.href = link.getAttribute('href') + '/pdf';
+        bodyEl.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary" role="status"></div></div>';
+        bootstrap.Modal.getOrCreateInstance(modalEl).show();
+        try {
+            const response = await fetch(link.getAttribute('href') + '?partial=1', {credentials: 'same-origin'});
+            if (response.redirected) {
+                window.location = link.href;
+                return;
+            }
+            const text = await response.text();
+            if (seq !== requestSeq) return;
+            bodyEl.innerHTML = text;
+            setActionsEnabled(response.ok);
+        } catch (err) {
+            if (seq !== requestSeq) return;
+            bodyEl.innerHTML = '<div class="alert alert-danger mb-0">بارگذاری فیش ناموفق بود</div>';
+        }
+    }
+
+    document.querySelectorAll('.payslip-open').forEach((link) => {
+        link.addEventListener('click', (event) => {
+            if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+            event.preventDefault();
+            openPayslip(link);
+        });
+    });
+
+    printBtn.addEventListener('click', () => {
+        document.body.classList.add('payslip-printing');
+        window.print();
+    });
+    window.addEventListener('afterprint', () => {
+        document.body.classList.remove('payslip-printing');
+    });
+    modalEl.addEventListener('hidden.bs.modal', () => {
+        requestSeq++;
+        bodyEl.innerHTML = '';
+        setActionsEnabled(false);
+    });
+})();
 </script>
+<script src="/static/js/payslip_print.js"></script>
 {% endblock %}
