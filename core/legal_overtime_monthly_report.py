@@ -96,7 +96,11 @@ def day_duty_minutes(day: Dict, settings: Optional[Dict] = None) -> int:
     بدون این فیلد از `daily_duty` (که کسرها از قبل در آن اعمال شده) استفاده می‌کنند.
     """
     settings = settings or LEGAL_OT_DEFAULTS
-    key = _STATUS_DUTY_KEY.get(day.get('person_status'))
+    status = day.get('person_status')
+    if status == 'N' and day.get('is_future_day'):
+        key = 'duty_reduce_no_punch_future'
+    else:
+        key = _STATUS_DUTY_KEY.get(status)
     if key and settings[key]:
         return 0
     base = day.get('base_duty_minutes')
@@ -110,12 +114,13 @@ def day_duty_minutes(day: Dict, settings: Optional[Dict] = None) -> int:
     return max(0, minutes)
 
 
-_UNEXCUSED_DUTY_KEYS = ('duty_reduce_no_punch', 'duty_reduce_absent')
+_UNEXCUSED_DUTY_KEYS = ('duty_reduce_no_punch', 'duty_reduce_no_punch_future')
 
 
 def deficit_duty_minutes(day: Dict, settings: Optional[Dict] = None) -> int:
-    """موظفی روز برای کسر کار: مثل `day_duty_minutes`، ولی بدون تردد/غیبت
-    موظفی را حذف نمی‌کند (آن کسرها فقط مبنای اضافه‌کار را تنظیم می‌کنند)."""
+    """موظفی روز برای کسر کار: مثل `day_duty_minutes`، ولی بدون تردد
+    موظفی را حذف نمی‌کند (آن کسر فقط مبنای اضافه‌کار را تنظیم می‌کند).
+    غیبت با تیک سیاست از کسر کار هم حذف می‌شود."""
     settings = settings or LEGAL_OT_DEFAULTS
     return day_duty_minutes(
         day, {**settings, **{k: False for k in _UNEXCUSED_DUTY_KEYS}},
@@ -419,6 +424,8 @@ def build_legal_ot_summary(
         day['daily_excess_over_8'] = 0.0
 
     ref = reference_at or datetime.now()
+    for day in days:
+        day['is_future_day'] = day['date'] >= ref.date()
     # روش legacy موظفی را کامل (بدون توجه به زمان مرجع) حساب می‌کند
     week_ref = None if settings.get('deficit_method') == DEFICIT_METHOD_LEGACY else ref
     weekly = calculate_weekly_overtime(days, settings, week_ref)

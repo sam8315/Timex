@@ -58,6 +58,9 @@ _LEGACY_KEYS = (
 def _validate_legal_ot(raw: Dict[str, Any]) -> Dict[str, Any]:
     defaults = LEGAL_OT_DEFAULTS
     raw = {k: v for k, v in raw.items() if k not in _LEGACY_KEYS}
+    # schema ≤ 5 یک کلید «بدون تردد» برای گذشته و آینده داشت
+    if "duty_reduce_no_punch_future" not in raw and "duty_reduce_no_punch" in raw:
+        raw["duty_reduce_no_punch_future"] = raw["duty_reduce_no_punch"]
     unknown = set(raw) - set(defaults)
     if unknown:
         raise ReportPolicyError(f"کلید ناشناخته: {', '.join(sorted(unknown))}")
@@ -82,6 +85,7 @@ def _validate_legal_ot(raw: Dict[str, Any]) -> Dict[str, Any]:
 # موظفی هفتگی: True = این وضعیت از موظفی کم می‌شود
 LEGAL_OT_DUTY_KEYS = (
     "duty_reduce_no_punch",
+    "duty_reduce_no_punch_future",
     "duty_reduce_absent",
     "duty_reduce_leave",
     "duty_reduce_hourly_leave",
@@ -99,6 +103,7 @@ DEFICIT_BASIS_LABELS = ("کل کارکرد", "کارکرد روز کاری")
 
 LEGAL_OT_DEFAULTS: Dict[str, Any] = {
     "duty_reduce_no_punch": True,
+    "duty_reduce_no_punch_future": True,
     "duty_reduce_absent": False,
     "duty_reduce_leave": True,
     "duty_reduce_hourly_leave": True,
@@ -123,7 +128,8 @@ LEGAL_OT_FIELD_GROUPS = (
         "تیک‌خورده = این مورد موظفی روز را کم یا صفر می‌کند؛ بدون تیک = موظفی روز حفظ می‌شود.",
         "flag",
         (
-            ("duty_reduce_no_punch", "بدون تردد"),
+            ("duty_reduce_no_punch", "بدون تردد (روزهای گذشته)"),
+            ("duty_reduce_no_punch_future", "بدون تردد (امروز و آینده)"),
             ("duty_reduce_absent", "غیبت"),
             ("duty_reduce_leave", "مرخصی روزانه (و استعلاجی)"),
             ("duty_reduce_hourly_leave", "مرخصی ساعتی"),
@@ -150,7 +156,7 @@ REPORT_DEFINITIONS: Dict[str, ReportPolicyDefinition] = {
     LEGAL_OVERTIME_MONTHLY: ReportPolicyDefinition(
         key=LEGAL_OVERTIME_MONTHLY,
         label="اضافه‌کار قانونی (ماهانه)",
-        schema_version=5,
+        schema_version=6,
         defaults=LEGAL_OT_DEFAULTS,
         editable_keys=LEGAL_OT_DUTY_KEYS + LEGAL_OT_DEFICIT_KEYS,
         validate=_validate_legal_ot,

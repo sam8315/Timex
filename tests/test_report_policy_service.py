@@ -167,6 +167,27 @@ def test_schema4_saved_row_with_work_keys_still_resolves(db):
     assert not any(k.startswith("work_separate_") for k in p.settings)
 
 
+@pytest.mark.parametrize("no_punch", [True, False])
+def test_schema5_row_copies_no_punch_to_future_key(db, no_punch):
+    db.add(ReportPolicy(
+        report_key=KEY, effective_from_date=_g(1405, 1, 1), is_active=True,
+        schema_version=5, settings={"duty_reduce_no_punch": no_punch},
+    ))
+    db.commit()
+    p = svc.resolve_report_policy(db, KEY, _g(1405, 2, 1))
+    assert p.source == "db"
+    assert p.settings["duty_reduce_no_punch"] is no_punch
+    assert p.settings["duty_reduce_no_punch_future"] is no_punch
+
+
+def test_explicit_future_no_punch_key_is_kept():
+    s = svc.validate_settings(KEY, {
+        "duty_reduce_no_punch": False, "duty_reduce_no_punch_future": True,
+    })
+    assert s["duty_reduce_no_punch"] is False
+    assert s["duty_reduce_no_punch_future"] is True
+
+
 def test_work_keys_not_editable():
     assert not any(
         k.startswith("work_separate_") for k in svc.get_definition(KEY).editable_keys

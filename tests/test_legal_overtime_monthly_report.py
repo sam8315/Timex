@@ -755,6 +755,67 @@ class TestWeeklyDeficit:
         assert 'موظفی کسر کار' in wb['deficit_note']
         assert s['monthly_deficit'] == wb['weekly_deficit']
 
+    @pytest.mark.parametrize('work', [7 + 20 / 60, 8.5])
+    def test_absent_flag_on_removes_duty_from_ot_and_deficit(self, work):
+        days = _full_week([(0, {'person_status': 'A'})] + [work] * 5 + [0])
+        s = build_legal_ot_summary(
+            days, {'duty_hours': 44.0, 'total_work_hours': 5 * work},
+            reference_at=self._dt(2024, 4, 30),
+            policy=_settings(duty_reduce_absent=True),
+        )
+        wb = days[0]['week_block']
+        assert _hours_to_minutes(wb['duty_hours']) == 5 * WORKING_DAY_DUTY_MINUTES
+        assert s['monthly_deficit'] == 0
+        assert _hours_to_minutes(s['weekly_overtime']) == max(
+            0, _hours_to_minutes(5 * work) - 5 * WORKING_DAY_DUTY_MINUTES,
+        )
+
+    def test_absent_flag_off_keeps_duty_and_counts_deficit(self):
+        days = _full_week([(0, {'person_status': 'A'})] + [7 + 20 / 60] * 5 + [0])
+        s = build_legal_ot_summary(
+            days, {'duty_hours': 44.0, 'total_work_hours': 5 * (7 + 20 / 60)},
+            reference_at=self._dt(2024, 4, 30),
+            policy=_settings(duty_reduce_absent=False),
+        )
+        wb = days[0]['week_block']
+        assert _hours_to_minutes(wb['duty_hours']) == 6 * WORKING_DAY_DUTY_MINUTES
+        assert s['weekly_overtime'] == 0
+        assert _hours_to_minutes(s['monthly_deficit']) == WORKING_DAY_DUTY_MINUTES
+
+    def test_absent_flag_on_no_ot_and_full_day_deficit_together(self):
+        """با تیک غیبت، اضافه‌کار و کسر کار یک روز کامل هم‌زمان در یک هفته نمی‌آیند."""
+        days = _full_week([(0, {'person_status': 'A'})] + [8.5] * 5 + [0])
+        s = build_legal_ot_summary(
+            days, {'duty_hours': 44.0, 'total_work_hours': 42.5},
+            reference_at=self._dt(2024, 4, 30),
+            policy=_settings(duty_reduce_absent=True),
+        )
+        assert s['weekly_overtime'] > 0
+        assert s['monthly_deficit'] == 0
+
+    @pytest.mark.parametrize('past_flag,future_flag', [
+        (True, False), (False, True), (True, True), (False, False),
+    ])
+    def test_no_punch_past_and_future_follow_separate_flags(self, past_flag, future_flag):
+        # شنبه و یکشنبه گذشته؛ مرجع دوشنبه ۱۰:۰۰ → دوشنبه تا پنجشنبه آینده
+        days = _full_week([(0, {'person_status': 'N'})] * 6 + [0])
+        build_legal_ot_summary(
+            days, {'duty_hours': 44.0, 'total_work_hours': 0},
+            reference_at=self._dt(2024, 3, 18, 10, 0),
+            policy=_settings(
+                duty_reduce_no_punch=past_flag,
+                duty_reduce_no_punch_future=future_flag,
+            ),
+        )
+        past_days = 0 if past_flag else 2
+        future_days = 0 if future_flag else 4
+        wb = days[0]['week_block']
+        assert _hours_to_minutes(wb['duty_hours']) == (
+            (past_days + future_days) * WORKING_DAY_DUTY_MINUTES
+        )
+        # کسر کار مستقل از تیک‌های بدون تردد: موظفی دو روز گذشته + بخش سپری‌شدهٔ امروز
+        assert _hours_to_minutes(wb['weekly_deficit']) == 2 * WORKING_DAY_DUTY_MINUTES + 180
+
 
 class TestWeeklyColumnMatchesCards:
     """کارت‌های خلاصه = جمع ستون محاسبات هفتگی."""

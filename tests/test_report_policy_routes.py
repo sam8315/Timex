@@ -85,6 +85,29 @@ def test_legal_ot_page_has_settings_modal(client, make_user):
     assert r.status_code == 200
     assert 'id="legalOtSettingsModal"' in r.text
     assert 'name="ovr_duty_reduce_absent"' in r.text
+    assert 'name="ovr_duty_reduce_no_punch_future"' in r.text
+
+
+def test_save_and_override_future_no_punch_separately(client, db, make_user):
+    from web.routes.reports import _legal_ot_overrides
+
+    _super(client, make_user)
+    r = client.post("/admin/policies/reports/legal-overtime/save", data={
+        "effective_from": "1405/08/01",
+        "duty_reduce_no_punch_future": "on",
+    }, follow_redirects=False)
+    assert "success=saved" in r.headers["location"]
+    s = db.query(ReportPolicy).one().settings
+    assert s["duty_reduce_no_punch"] is False
+    assert s["duty_reduce_no_punch_future"] is True
+
+    page = client.get("/admin/policies/reports/legal-overtime")
+    assert "بدون تردد (روزهای گذشته)" in page.text
+    assert "بدون تردد (امروز و آینده)" in page.text
+
+    overrides = _legal_ot_overrides({"ovr": "1", "ovr_duty_reduce_no_punch_future": "1"})
+    assert overrides["duty_reduce_no_punch_future"] is True
+    assert overrides["duty_reduce_no_punch"] is False
 
 
 def test_override_query_string_roundtrip():
