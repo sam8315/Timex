@@ -29,19 +29,33 @@ def _clean(db):
     wipe()
 
 
-def test_defaults_all_adjustments_false():
+def test_defaults_deficit_keys():
     p = svc.default_policy(KEY)
     assert p.source == "default"
-    for k in ("deficit_adjust_ordinary_overtime", "deficit_adjust_holiday_work",
-              "deficit_adjust_friday_work"):
-        assert p.settings[k] is False
+    assert p.settings["deficit_adjust_ordinary_overtime"] is False
+    assert p.settings["deficit_separate_non_working"] is True
+    deficit_keys = {k for k in p.settings if k.startswith("deficit_") and k != "deficit_method"}
+    assert deficit_keys == {"deficit_separate_non_working", "deficit_adjust_ordinary_overtime"}
+
+
+def test_legacy_deficit_keys_dropped():
+    out = svc.validate_settings(KEY, {
+        "deficit_adjust_friday_work": True, "deficit_adjust_holiday_work": False,
+        "deficit_separate_friday": False, "deficit_separate_leave": True,
+        "deficit_separate_mission": True,
+    })
+    for k in ("deficit_adjust_friday_work", "deficit_adjust_holiday_work",
+              "deficit_separate_friday", "deficit_separate_leave",
+              "deficit_separate_mission"):
+        assert k not in out
+    assert out["deficit_separate_non_working"] is True
 
 
 def test_validation_rejects_unknown_and_bad_types():
     with pytest.raises(svc.ReportPolicyError):
         svc.validate_settings(KEY, {"bogus": True})
     with pytest.raises(svc.ReportPolicyError):
-        svc.validate_settings(KEY, {"deficit_adjust_friday_work": "yes"})
+        svc.validate_settings(KEY, {"deficit_separate_non_working": "yes"})
     with pytest.raises(svc.ReportPolicyError):
         svc.validate_settings(KEY, {"deficit_method": "x"})
     with pytest.raises(svc.ReportPolicyError):
@@ -57,16 +71,16 @@ def test_resolve_without_row_is_default(db):
 def test_create_and_resolve_by_date(db):
     s1 = _g(1405, 1, 1)
     s2 = _g(1405, 7, 1)
-    svc.create_policy_version(db, KEY, {"deficit_adjust_friday_work": True}, s1, "u1")
-    svc.create_policy_version(db, KEY, {"deficit_adjust_holiday_work": True}, s2, "u1")
+    svc.create_policy_version(db, KEY, {"deficit_separate_non_working": False}, s1, "u1")
+    svc.create_policy_version(db, KEY, {"deficit_adjust_ordinary_overtime": True}, s2, "u1")
     db.commit()
     mid = svc.resolve_report_policy(db, KEY, _g(1405, 3, 15))
     late = svc.resolve_report_policy(db, KEY, _g(1405, 9, 1))
     before = svc.resolve_report_policy(db, KEY, _g(1404, 12, 29))
-    assert mid.source == "db" and mid.settings["deficit_adjust_friday_work"] is True
-    assert late.settings["deficit_adjust_holiday_work"] is True
+    assert mid.source == "db" and mid.settings["deficit_separate_non_working"] is False
+    assert late.settings["deficit_adjust_ordinary_overtime"] is True
     # نسخهٔ دوم از روی پیش‌فرض ساخته شده، نه از نسخهٔ اول
-    assert late.settings["deficit_adjust_friday_work"] is False
+    assert late.settings["deficit_separate_non_working"] is True
     assert before.source == "default"
     first = db.query(ReportPolicy).filter(ReportPolicy.effective_from_date == s1).one()
     assert first.effective_to_date == _g(1405, 6, 31)
@@ -84,12 +98,12 @@ def test_rejects_non_month_start_and_overlap(db):
 
 
 def test_audit_log_written(db):
-    svc.create_policy_version(db, KEY, {"deficit_adjust_friday_work": True},
+    svc.create_policy_version(db, KEY, {"deficit_separate_non_working": False},
                               _g(1405, 1, 1), "u9")
     db.commit()
     log = db.query(PolicyAuditLog).filter(
         PolicyAuditLog.entity_type == "report_policy").one()
-    assert log.changed_by == "u9" and "deficit_adjust_friday_work" in log.new_value
+    assert log.changed_by == "u9" and "deficit_separate_non_working" in log.new_value
 
 
 def test_reports_are_isolated(db, monkeypatch):
@@ -103,6 +117,143 @@ def test_reports_are_isolated(db, monkeypatch):
     svc.create_policy_version(db, "other_report", {"flag": True}, _g(1405, 1, 1))
     db.commit()
     assert svc.resolve_report_policy(db, "other_report", _g(1405, 2, 1)).settings["flag"]
+    assert svc.resolve_report_policy(db, KEY, _g(1405, 2, 1)).source == "default"
+
+
+def test_old_saved_rows_get_new_keys_from_defaults(db):
+    """نسخهٔ ذخیره‌شدهٔ schema 1 (بدون کلیدهای موظفی) همان رفتار قبلی را دارد."""
+    db.add(ReportPolicy(
+        report_key=KEY, effective_from_date=_g(1405, 1, 1), is_active=True,
+        schema_version=1, settings={"deficit_adjust_friday_work": True},
+    ))
+    db.commit()
+    p = svc.resolve_report_policy(db, KEY, _g(1405, 2, 1))
+    assert p.source == "db"
+    assert p.settings["duty_reduce_leave"] is True
+    assert p.settings["duty_reduce_absent"] is False
+    assert p.settings["deficit_separate_non_working"] is True
+    assert "deficit_adjust_friday_work" not in p.settings
+
+
+def test_schema3_saved_row_with_per_type_keys_still_resolves(db):
+    db.add(ReportPolicy(
+        report_key=KEY, effective_from_date=_g(1405, 1, 1), is_active=True,
+        schema_version=3, settings={
+            "deficit_separate_non_working": False,
+            "deficit_separate_leave": True, "deficit_separate_friday": False,
+        },
+    ))
+    db.commit()
+    p = svc.resolve_report_policy(db, KEY, _g(1405, 2, 1))
+    assert p.source == "db"
+    assert p.settings["deficit_separate_non_working"] is False
+    assert "deficit_separate_leave" not in p.settings
+
+
+def test_schema4_saved_row_with_work_keys_still_resolves(db):
+    """کلیدهای work_separate_* (تفکیک کارکرد، اکنون ثابت) در نسخهٔ قدیمی نادیده گرفته می‌شوند."""
+    db.add(ReportPolicy(
+        report_key=KEY, effective_from_date=_g(1405, 1, 1), is_active=True,
+        schema_version=4, settings={
+            "duty_reduce_absent": True,
+            "work_separate_friday": False, "work_separate_holiday": False,
+            "work_separate_rest": False, "work_separate_leave": True,
+        },
+    ))
+    db.commit()
+    p = svc.resolve_report_policy(db, KEY, _g(1405, 2, 1))
+    assert p.source == "db"
+    assert p.settings["duty_reduce_absent"] is True
+    assert not any(k.startswith("work_separate_") for k in p.settings)
+
+
+def test_work_keys_not_editable():
+    assert not any(
+        k.startswith("work_separate_") for k in svc.get_definition(KEY).editable_keys
+    )
+    titles = [g[0] for g in svc.LEGAL_OT_FIELD_GROUPS]
+    assert "کارکرد" not in titles
+    with pytest.raises(svc.ReportPolicyError):
+        svc.apply_overrides(svc.default_policy(KEY), {"work_separate_rest": True})
+
+
+def test_apply_overrides_is_temporary(db):
+    base = svc.resolve_report_policy(db, KEY, date(2026, 1, 1))
+    out = svc.apply_overrides(base, {"duty_reduce_absent": True, "duty_reduce_rest": False})
+    assert out.source == "override" and out.label == "تنظیمات موقت"
+    assert out.settings["duty_reduce_absent"] is True
+    assert out.settings["duty_reduce_rest"] is False
+    assert base.settings["duty_reduce_absent"] is False
+    assert svc.apply_overrides(base, None) is base
+    assert db.query(ReportPolicy).count() == 0
+
+
+def test_apply_overrides_rejects_non_editable_and_bad_values():
+    base = svc.default_policy(KEY)
+    with pytest.raises(svc.ReportPolicyError):
+        svc.apply_overrides(base, {"deficit_method": "legacy"})
+    with pytest.raises(svc.ReportPolicyError):
+        svc.apply_overrides(base, {"bogus": True})
+    with pytest.raises(svc.ReportPolicyError):
+        svc.apply_overrides(base, {"duty_reduce_leave": "yes"})
+
+
+def test_update_version_changes_settings_and_audits(db):
+    row = svc.create_policy_version(db, KEY, {}, _g(1405, 1, 1), "u1")
+    db.commit()
+    svc.update_policy_version(
+        db, KEY, row.id, {"duty_reduce_absent": True}, "u2", notes="اصلاح",
+    )
+    db.commit()
+    p = svc.resolve_report_policy(db, KEY, _g(1405, 2, 1))
+    assert p.policy_id == row.id and p.settings["duty_reduce_absent"] is True
+    assert db.query(ReportPolicy).one().notes == "اصلاح"
+    log = db.query(PolicyAuditLog).filter(
+        PolicyAuditLog.entity_type == "report_policy",
+        PolicyAuditLog.action == "UPDATE_VERSION").one()
+    assert log.changed_by == "u2"
+    with pytest.raises(svc.ReportPolicyError):
+        svc.update_policy_version(db, KEY, row.id, {"bogus": True})
+
+
+def test_delete_latest_reopens_previous(db):
+    first = svc.create_policy_version(db, KEY, {"deficit_separate_non_working": False},
+                                      _g(1405, 1, 1))
+    second = svc.create_policy_version(db, KEY, {}, _g(1405, 7, 1))
+    db.commit()
+    svc.delete_policy_version(db, KEY, second.id, "u3")
+    db.commit()
+    db.refresh(first)
+    assert first.effective_to_date is None
+    p = svc.resolve_report_policy(db, KEY, _g(1405, 9, 1))
+    assert p.policy_id == first.id
+    assert db.query(PolicyAuditLog).filter(
+        PolicyAuditLog.action == "DELETE_VERSION").count() == 1
+    with pytest.raises(svc.ReportPolicyError):
+        svc.delete_policy_version(db, KEY, second.id)
+    # همان تاریخ پس از حذف دوباره قابل ثبت است
+    svc.create_policy_version(db, KEY, {}, _g(1405, 7, 1))
+    db.commit()
+
+
+def test_delete_middle_extends_previous_to_next(db):
+    a = svc.create_policy_version(db, KEY, {}, _g(1405, 1, 1))
+    b = svc.create_policy_version(db, KEY, {"duty_reduce_absent": True}, _g(1405, 4, 1))
+    c = svc.create_policy_version(db, KEY, {}, _g(1405, 7, 1))
+    db.commit()
+    svc.delete_policy_version(db, KEY, b.id)
+    db.commit()
+    db.refresh(a)
+    assert a.effective_to_date == _g(1405, 6, 31)
+    assert svc.resolve_report_policy(db, KEY, _g(1405, 5, 1)).policy_id == a.id
+    assert svc.resolve_report_policy(db, KEY, _g(1405, 8, 1)).policy_id == c.id
+
+
+def test_delete_only_version_falls_back_to_default(db):
+    row = svc.create_policy_version(db, KEY, {}, _g(1405, 1, 1))
+    db.commit()
+    svc.delete_policy_version(db, KEY, row.id)
+    db.commit()
     assert svc.resolve_report_policy(db, KEY, _g(1405, 2, 1)).source == "default"
 
 

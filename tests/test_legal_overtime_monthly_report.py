@@ -9,10 +9,12 @@ from core.legal_overtime_monthly_report import (
     WORKING_DAY_DUTY_MINUTES,
     build_legal_ot_summary,
     calculate_weekly_overtime,
+    day_duty_minutes,
     proportional_weekly_required_minutes,
     week_start_saturday,
     weekly_required_minutes,
 )
+from web.services.report_policy_service import LEGAL_OT_DEFAULTS
 
 
 def _day(
@@ -229,6 +231,69 @@ class TestSummaryWorkDays:
         })
         assert summary['total_work_days'] == 5  # 8,8,8,8,4
 
+    @staticmethod
+    def _mixed_week():
+        return _full_week([
+            8,
+            7.5,
+            (3, {'person_status': 'M'}),
+            (2, {'person_status': 'R'}),
+            (1, {'person_status': 'L'}),
+            (5, {'is_holiday': True, 'is_day_off': True, 'person_status': 'P'}),
+            4,
+        ])
+
+    @staticmethod
+    def _assert_split_sums_to_total(summary):
+        assert _hours_to_minutes(summary['working_day_work_hours']) + _hours_to_minutes(
+            summary['non_working_day_work_hours']
+        ) == _hours_to_minutes(summary['total_work_hours'])
+
+    def test_working_and_non_working_day_work_split(self):
+        """مبنای پیش‌فرض «کارکرد روز کاری»: ستون «کاری» و نه مرخصی/استراحت/مأموریت."""
+        summary = build_legal_ot_summary(self._mixed_week(), {
+            'duty_hours': 44.0,
+            'total_work_hours': 30.5,
+            'duty_days': 2,
+        })
+        assert summary['working_day_work_hours'] == pytest.approx(15.5)
+        assert summary['working_day_work_days'] == 2
+        assert summary['non_working_day_work_hours'] == pytest.approx(15.0)
+        assert summary['non_working_day_work_days'] == 5
+        self._assert_split_sums_to_total(summary)
+
+    def test_work_card_split_independent_of_deficit_basis(self):
+        """کارت کارکرد با مبنای «کل کارکرد» هم کاری/غیرکاری/مجموع را نشان می‌دهد."""
+        summary = build_legal_ot_summary(
+            self._mixed_week(),
+            {'duty_hours': 44.0, 'total_work_hours': 30.5, 'duty_days': 2},
+            policy=_settings(deficit_separate_non_working=False),
+        )
+        assert summary['work_split_enabled'] is False
+        assert summary['working_day_work_hours'] == pytest.approx(15.5)
+        assert summary['working_day_work_days'] == 2
+        assert summary['non_working_day_work_hours'] == pytest.approx(15.0)
+        assert summary['non_working_day_work_days'] == 5
+        self._assert_split_sums_to_total(summary)
+
+    def test_split_enabled_by_default(self):
+        summary = build_legal_ot_summary(
+            self._mixed_week(),
+            {'duty_hours': 44.0, 'total_work_hours': 30.5, 'duty_days': 2},
+        )
+        assert summary['work_split_enabled'] is True
+
+    def test_working_day_without_work_not_counted(self):
+        days = _full_week([8, 0, 8, 8, 8, 8, 0])
+        summary = build_legal_ot_summary(days, {
+            'duty_hours': 44.0,
+            'total_work_hours': 40.0,
+            'duty_days': 6,
+        })
+        assert summary['working_day_work_days'] == 5
+        assert summary['non_working_day_work_days'] == 0
+        assert summary['non_working_day_work_hours'] == 0.0
+
 
 class TestStatusDayCounts:
     def test_present_includes_friday_and_holiday_work(self):
@@ -411,16 +476,17 @@ class TestMonthlyDeficitElapsedDuty:
         assert _hours_to_minutes(s['monthly_deficit']) == 32 * 60 + 1
 
     def test_default_excludes_friday_holiday_overtime_from_deficit(self):
-        """جمعه‌کاری/اضافه‌کار هفتگی کسر کار را پوشش نمی‌دهد (پیش‌فرض False)."""
+        """مبنای پیش‌فرض «کارکرد روز کاری»: جمعه‌کاری کسر کار را پوشش نمی‌دهد."""
         days = _full_week([0, 0, 0, 0, 0, 0, 10])  # فقط جمعه‌کاری ۱۰ ساعت
         base = {'duty_hours': 44.0, 'total_work_hours': 10.0}
         ref = self._dt(2024, 4, 30)
         s = build_legal_ot_summary(days, dict(base), reference_at=ref)
         assert s['monthly_deficit'] == pytest.approx(44.0)
+        # مبنای «کل کارکرد»: جمعه هم مثل همهٔ کارکرد کسر کار را پوشش می‌دهد
         days = _full_week([0, 0, 0, 0, 0, 0, 10])
         s2 = build_legal_ot_summary(
             days, dict(base), reference_at=ref,
-            policy={'deficit_adjust_friday_work': True},
+            policy={'deficit_separate_non_working': False},
         )
         assert s2['monthly_deficit'] == pytest.approx(34.0)
 
@@ -441,11 +507,81 @@ class TestMonthlyDeficitElapsedDuty:
         assert s['monthly_deficit'] == pytest.approx(44.0)
         for d in wk1 + wk2:
             d['week_block'] = None
+        # تهاتر ماهانه: ۴ ساعت اضافه‌کار از کسر کار کم و خودش صفر می‌شود؛ بلوک هفته ناخالص
         s2 = build_legal_ot_summary(
             wk1 + wk2, dict(base), reference_at=ref,
             policy={'deficit_adjust_ordinary_overtime': True},
         )
+        assert s2['overtime_deficit_offset'] == pytest.approx(4.0)
+        assert s2['overtime_total'] == 0
+        assert s2['weekly_overtime'] == 0
+        assert s2['weekly_overtime_gross'] == pytest.approx(4.0)
         assert s2['monthly_deficit'] == pytest.approx(40.0)
+        assert s2['monthly_deficit_gross'] == pytest.approx(44.0)
+        assert wk2[0]['week_block']['weekly_deficit'] == pytest.approx(44.0)
+        assert wk1[0]['week_block']['weekly_overtime'] == pytest.approx(4.0)
+        assert wk1[0]['week_block']['weekly_deficit'] == 0
+
+    def test_offset_limited_by_deficit(self):
+        """اضافه‌کار ۸:۲۰ و کسر کار ۷:۲۰ (روز بدون تردد) → تهاتر ۷:۲۰، اضافه‌کار ۱:۰۰."""
+        ref = self._dt(2024, 4, 30)
+        days = _full_week([9, 9, 9, 9, 9, (0, {'person_status': 'N'}), 0])
+        base = {'duty_hours': 44.0, 'total_work_hours': 45.0}
+        s = build_legal_ot_summary(days, dict(base), reference_at=ref)
+        assert _hours_to_minutes(s['overtime_total']) == 8 * 60 + 20
+        assert _hours_to_minutes(s['monthly_deficit']) == WORKING_DAY_DUTY_MINUTES
+        assert s['overtime_deficit_offset'] == 0
+        days = _full_week([9, 9, 9, 9, 9, (0, {'person_status': 'N'}), 0])
+        s2 = build_legal_ot_summary(
+            days, dict(base), reference_at=ref,
+            policy={'deficit_adjust_ordinary_overtime': True},
+        )
+        assert _hours_to_minutes(s2['overtime_deficit_offset']) == WORKING_DAY_DUTY_MINUTES
+        assert _hours_to_minutes(s2['overtime_total']) == 60
+        assert s2['monthly_deficit'] == 0
+        assert _hours_to_minutes(s2['combined_total']) == 60
+
+    def test_offset_skipped_for_legacy_method(self):
+        ref = self._dt(2024, 4, 30)
+        days = _full_week([9, 9, 9, 9, 9, (0, {'person_status': 'N'}), 0])
+        s = build_legal_ot_summary(
+            days, {'duty_hours': 44.0, 'total_work_hours': 45.0}, reference_at=ref,
+            policy={'deficit_adjust_ordinary_overtime': True, 'deficit_method': 'legacy'},
+        )
+        assert s['overtime_deficit_offset'] == 0
+        assert _hours_to_minutes(s['overtime_total']) == 8 * 60 + 20
+
+    def test_leave_work_covers_deficit_only_with_total_basis(self):
+        """کارکرد ۴ ساعته در روز مرخصی؛ موظفی ۵×۷:۲۰ = ۳۶:۴۰."""
+        ref = self._dt(2024, 4, 30)
+        base = {'duty_hours': _minutes_to_hours(5 * WORKING_DAY_DUTY_MINUTES),
+                'total_work_hours': 4.0}
+
+        def week():
+            return _full_week([0, 0, (4, {'person_status': 'L'}), 0, 0, 0, 0])
+
+        s = build_legal_ot_summary(week(), dict(base), reference_at=ref)
+        assert _hours_to_minutes(s['monthly_deficit']) == 5 * WORKING_DAY_DUTY_MINUTES
+        s2 = build_legal_ot_summary(
+            week(), dict(base), reference_at=ref,
+            policy={'deficit_separate_non_working': False},
+        )
+        assert _hours_to_minutes(s2['monthly_deficit']) == 5 * WORKING_DAY_DUTY_MINUTES - 240
+
+    def test_overtime_taken_from_separated_hours_in_base_first(self):
+        """مأموریت ۱۰ ساعت داخل مبنای OT ولی روز غیرکاری برای کسر کار:
+        OT = ۵۰ − ۳۶:۴۰ = ۱۳:۲۰؛ ۱۰ ساعتش از کارکرد مأموریت است، پس اعتبار روز کاری
+        ۴۰ − ۳:۲۰ = ۳۶:۴۰ و کسر کار صفر (نه ۴۰ − ۱۳:۲۰)."""
+        ref = self._dt(2024, 4, 30)
+        base = {'duty_hours': _minutes_to_hours(5 * WORKING_DAY_DUTY_MINUTES),
+                'total_work_hours': 50.0}
+        days = _full_week([8, 8, (10, {'person_status': 'M'}), 8, 8, 8, 0])
+        s = build_legal_ot_summary(days, dict(base), reference_at=ref)
+        wb = days[0]['week_block']
+        assert wb['deficit_work_hours'] == pytest.approx(40.0)
+        assert wb['nonworking_in_base_hours'] == pytest.approx(10.0)
+        assert _hours_to_minutes(s['weekly_overtime']) == 50 * 60 - 5 * WORKING_DAY_DUTY_MINUTES
+        assert s['monthly_deficit'] == 0
 
     def test_legacy_method_keeps_old_behavior(self):
         day = _day(date(2024, 3, 16), 0, person_status='N')
@@ -472,3 +608,285 @@ class TestMonthlyDeficitElapsedDuty:
             reference_at=self._dt(2024, 3, 30),
         )
         assert _hours_to_minutes(s['monthly_deficit']) == 30
+
+
+def _pday(d, work, status='P', *, base=WORKING_DAY_DUTY_MINUTES, hl=0, hm=0,
+          is_friday=False, is_holiday=False):
+    """روز با base_duty_minutes (مسیر واقعی V2)؛ daily_duty عمداً نامرتبط است."""
+    return {
+        'date': d,
+        'work_hours': work,
+        'is_friday': is_friday,
+        'is_holiday': is_holiday,
+        'is_day_off': is_friday or is_holiday,
+        'person_status': status,
+        'daily_duty': 0.0,
+        'base_duty_minutes': 0 if (is_friday or is_holiday) else base,
+        'hourly_leave_minutes': hl,
+        'hourly_mission_minutes': hm,
+    }
+
+
+def _settings(**changes):
+    return {**LEGAL_OT_DEFAULTS, **changes}
+
+
+SAT = date(2024, 3, 16)
+
+
+class TestPolicyDrivenDuty:
+    def test_defaults_match_previous_behavior(self):
+        cases = {
+            'L': 0, 'SL': 0, 'M': 0, 'R': 0, 'N': 0,
+            'A': WORKING_DAY_DUTY_MINUTES, 'P': WORKING_DAY_DUTY_MINUTES,
+        }
+        for status, expected in cases.items():
+            assert day_duty_minutes(_pday(SAT, 0, status), _settings()) == expected
+        assert day_duty_minutes(_pday(SAT, 8, hl=60), _settings()) == 380
+        assert day_duty_minutes(_pday(SAT, 8, hm=30), _settings()) == 410
+
+    @pytest.mark.parametrize('status,key', [
+        ('L', 'duty_reduce_leave'),
+        ('SL', 'duty_reduce_leave'),
+        ('M', 'duty_reduce_mission'),
+        ('R', 'duty_reduce_rest'),
+        ('N', 'duty_reduce_no_punch'),
+    ])
+    def test_status_keeps_duty_when_option_off(self, status, key):
+        day = _pday(SAT, 0, status)
+        assert day_duty_minutes(day, _settings(**{key: False})) == WORKING_DAY_DUTY_MINUTES
+
+    def test_absent_reduces_duty_when_option_on(self):
+        day = _pday(SAT, 0, 'A')
+        assert day_duty_minutes(day, _settings(duty_reduce_absent=True)) == 0
+
+    def test_hourly_leave_and_mission_toggle(self):
+        day = _pday(SAT, 8, hl=60, hm=30)
+        assert day_duty_minutes(day, _settings()) == WORKING_DAY_DUTY_MINUTES - 90
+        assert day_duty_minutes(
+            day, _settings(duty_reduce_hourly_leave=False),
+        ) == WORKING_DAY_DUTY_MINUTES - 30
+        assert day_duty_minutes(
+            day, _settings(duty_reduce_hourly_mission=False),
+        ) == WORKING_DAY_DUTY_MINUTES - 60
+
+    def test_holiday_never_has_duty(self):
+        day = _pday(SAT, 0, 'H', is_holiday=True)
+        assert day_duty_minutes(day, _settings(duty_reduce_leave=False)) == 0
+
+    def test_weekly_duty_and_overtime_follow_policy(self):
+        days = [_pday(SAT + timedelta(days=i), 8.0) for i in range(5)]
+        days.append(_pday(SAT + timedelta(days=5), 0, 'L'))
+        days.append(_pday(SAT + timedelta(days=6), 0, 'H', is_friday=True))
+        assert weekly_required_minutes(days, _settings()) == 5 * WORKING_DAY_DUTY_MINUTES
+        assert weekly_required_minutes(
+            days, _settings(duty_reduce_leave=False),
+        ) == 6 * WORKING_DAY_DUTY_MINUTES
+        s = build_legal_ot_summary(
+            days, {'duty_hours': 0, 'total_work_hours': 40.0},
+            policy=_settings(duty_reduce_leave=False),
+        )
+        assert s['weekly_overtime'] == 0.0
+
+
+class TestWeeklyDeficit:
+    from datetime import datetime as _dt  # noqa: E402
+
+    def test_past_week_shows_deficit_and_signed_formula(self):
+        days = _full_week([7, 7, 7, 7, 7, 0, 0])
+        build_legal_ot_summary(
+            days, {'duty_hours': 44.0, 'total_work_hours': 35.0},
+            reference_at=self._dt(2024, 4, 30),
+        )
+        wb = days[0]['week_block']
+        assert wb['weekly_overtime'] == 0.0
+        assert wb['weekly_deficit'] == pytest.approx(9.0)
+        assert wb['formula'].endswith('= -09:00')
+        assert wb['deficit_note'] == ''
+
+    def test_overtime_week_has_zero_deficit(self):
+        days = _full_week([9, 9, 8, 8, 8, 8, 4])
+        build_legal_ot_summary(
+            days, {'duty_hours': 44.0, 'total_work_hours': 54.0},
+            reference_at=self._dt(2024, 4, 30),
+        )
+        wb = days[0]['week_block']
+        assert wb['weekly_overtime'] == pytest.approx(6.0)
+        assert wb['weekly_deficit'] == 0.0
+        assert wb['formula'].endswith('= 06:00')
+
+    def test_current_week_counts_only_elapsed_duty(self):
+        # شنبه تا دوشنبه سپری شده (هر روز ۷ ساعت)، مرجع سه‌شنبه ۰۰:۰۰
+        days = _full_week([7, 7, 7, 0, 0, 0, 0])
+        build_legal_ot_summary(
+            days, {'duty_hours': 44.0, 'total_work_hours': 21.0},
+            reference_at=self._dt(2024, 3, 19, 0, 0),
+        )
+        wb = days[0]['week_block']
+        # موظفی سپری‌شده ۳×۷:۲۰ = ۲۲ → کسر ۱ ساعت (نه ۴۴ − ۲۱)
+        assert wb['weekly_deficit'] == pytest.approx(1.0)
+        assert 'سپری‌شده' in wb['deficit_note']
+
+    def test_violation_in_same_week_deficit(self):
+        days = _full_week([
+            (8, {'late_violation_minutes': 20}), 8, 8, 8, 8, 8, 0,
+        ])
+        build_legal_ot_summary(
+            days, {'duty_hours': 44.0, 'total_work_hours': 48.0},
+            reference_at=self._dt(2024, 4, 30),
+        )
+        wb = days[0]['week_block']
+        assert _hours_to_minutes(wb['weekly_deficit']) == 20
+        assert _hours_to_minutes(wb['deficit_violation_hours']) == 20
+        assert wb['deficit_shortfall_hours'] == 0
+        assert 'تأخیر/تعجیل' in wb['deficit_note']
+
+    def test_no_punch_day_out_of_ot_duty_but_in_deficit(self):
+        days = _full_week([8, 8, 8, 8, 8, (0, {'person_status': 'N'}), 0])
+        s = build_legal_ot_summary(
+            days, {'duty_hours': 44.0, 'total_work_hours': 40.0},
+            reference_at=self._dt(2024, 4, 30),
+        )
+        wb = days[0]['week_block']
+        assert _hours_to_minutes(wb['duty_hours']) == 5 * WORKING_DAY_DUTY_MINUTES
+        # OT = ۴۰ − ۳۶:۴۰ = ۳:۲۰، ولی روز بدون تردد کسر کار است
+        assert _hours_to_minutes(wb['weekly_overtime']) == 40 * 60 - 5 * WORKING_DAY_DUTY_MINUTES
+        assert _hours_to_minutes(wb['weekly_deficit']) == WORKING_DAY_DUTY_MINUTES
+        assert 'موظفی کسر کار' in wb['deficit_note']
+        assert s['monthly_deficit'] == wb['weekly_deficit']
+
+
+class TestWeeklyColumnMatchesCards:
+    """کارت‌های خلاصه = جمع ستون محاسبات هفتگی."""
+
+    from datetime import datetime as _dt  # noqa: E402
+
+    def _month(self):
+        start = date(2024, 3, 16)  # شنبه
+        works = [
+            [8, 8, 8, 8, 8, 8, 4],
+            [7, 6, 0, 7, 7, 7, 0],
+            [8, (0, {'person_status': 'L'}), 8, 9, 8, 8, 0],
+            [5, 5, 5, 5, 5, 5, 0],
+        ]
+        days = []
+        for w, week in enumerate(works):
+            for i, spec in enumerate(week):
+                work, kw = spec if isinstance(spec, tuple) else (spec, {})
+                d = start + timedelta(days=7 * w + i)
+                if w == 1 and i == 0:
+                    kw = {**kw, 'late_violation_minutes': 30}
+                if w == 0 and i == 1:
+                    kw = {**kw, 'early_leave_violation_minutes': 15}
+                days.append(_day(d, work, is_friday=i == 6, **kw))
+        return days
+
+    @staticmethod
+    def _blocks(days):
+        return [d['week_block'] for d in days if d.get('week_block')]
+
+    @pytest.mark.parametrize('policy', [
+        None,
+        {'deficit_separate_non_working': False},
+        {'deficit_adjust_ordinary_overtime': True},
+        {'duty_reduce_leave': False},
+    ])
+    def test_deficit_and_duty_cards_are_week_sums(self, policy):
+        days = self._month()
+        s = build_legal_ot_summary(
+            days, {'duty_hours': 999.0, 'duty_days': 99, 'total_work_hours': 0.0},
+            reference_at=self._dt(2024, 4, 30), policy=policy,
+        )
+        blocks = self._blocks(days)
+        assert len(blocks) == 4
+        offset_m = _hours_to_minutes(s['overtime_deficit_offset'])
+        assert _hours_to_minutes(s['monthly_deficit_gross']) == sum(
+            _hours_to_minutes(b['weekly_deficit']) for b in blocks
+        )
+        assert _hours_to_minutes(s['monthly_deficit']) == (
+            _hours_to_minutes(s['monthly_deficit_gross']) - offset_m
+        )
+        assert _hours_to_minutes(s['duty_hours']) == sum(
+            _hours_to_minutes(b['duty_hours']) for b in blocks
+        )
+        assert s['duty_days'] == sum(b['working_day_count'] for b in blocks)
+        assert _hours_to_minutes(s['weekly_overtime_gross']) == sum(
+            _hours_to_minutes(b['weekly_overtime']) for b in blocks
+        )
+        assert _hours_to_minutes(s['weekly_overtime']) == (
+            _hours_to_minutes(s['weekly_overtime_gross']) - offset_m
+        )
+
+    @pytest.mark.parametrize('reduce_leave,n_days', [(True, 5), (False, 6)])
+    def test_duty_card_follows_duty_reduce_policy(self, reduce_leave, n_days):
+        days = [_pday(SAT + timedelta(days=i), 8.0) for i in range(5)]
+        days.append(_pday(SAT + timedelta(days=5), 0, 'L'))
+        days.append(_pday(SAT + timedelta(days=6), 0, 'H', is_friday=True))
+        s = build_legal_ot_summary(
+            days, {'duty_hours': 0, 'duty_days': 0, 'total_work_hours': 40.0},
+            reference_at=self._dt(2024, 4, 30),
+            policy=_settings(duty_reduce_leave=reduce_leave),
+        )
+        wb = days[0]['week_block']
+        assert _hours_to_minutes(s['duty_hours']) == n_days * WORKING_DAY_DUTY_MINUTES
+        assert s['duty_hours'] == wb['duty_hours']
+        assert s['duty_days'] == n_days == wb['working_day_count']
+
+
+class TestPolicyDrivenWork:
+    def _week(self):
+        return [
+            _pday(SAT, 8.0),
+            _pday(SAT + timedelta(days=1), 8.0),
+            _pday(SAT + timedelta(days=2), 4.0, 'R'),
+            _pday(SAT + timedelta(days=3), 3.0, 'L'),
+            _pday(SAT + timedelta(days=4), 8.0),
+            _pday(SAT + timedelta(days=5), 5.0, 'P', is_holiday=True),
+            _pday(SAT + timedelta(days=6), 6.0, 'P', is_friday=True),
+        ]
+
+    def test_all_four_buckets_always_separated(self):
+        days = self._week()
+        s = build_legal_ot_summary(days, {'duty_hours': 0, 'total_work_hours': 42.0})
+        wb = days[0]['week_block']
+        # کل ۴۲ − جمعه ۶ − تعطیل ۵ − استراحت ۴ − مرخصی ۳ = ۲۴
+        assert wb['work_base_hours'] == pytest.approx(24.0)
+        assert s['friday_work_hours'] == pytest.approx(6.0)
+        assert s['holiday_work_hours'] == pytest.approx(5.0)
+        assert s['rest_work_hours'] == pytest.approx(4.0)
+        assert s['rest_work_days'] == 1
+        assert s['leave_work_hours'] == pytest.approx(3.0)
+        assert s['leave_work_days'] == 1
+        assert s['combined_total'] == pytest.approx(
+            s['weekly_overtime'] + 6.0 + 5.0 + 4.0 + 3.0
+        )
+
+    def test_old_work_separate_keys_have_no_effect(self):
+        base_days = self._week()
+        build_legal_ot_summary(base_days, {'duty_hours': 0, 'total_work_hours': 42.0})
+        days = self._week()
+        build_legal_ot_summary(
+            days, {'duty_hours': 0, 'total_work_hours': 42.0},
+            policy=_settings(
+                work_separate_friday=False, work_separate_holiday=False,
+                work_separate_rest=False, work_separate_leave=False,
+            ),
+        )
+        assert days[0]['week_block']['work_base_hours'] == pytest.approx(
+            base_days[0]['week_block']['work_base_hours']
+        )
+
+    @pytest.mark.parametrize('reduce_rest', [True, False])
+    @pytest.mark.parametrize('reduce_leave', [True, False])
+    def test_every_hour_counted_once(self, reduce_rest, reduce_leave):
+        days = self._week()
+        build_legal_ot_summary(
+            days, {'duty_hours': 0, 'total_work_hours': 42.0},
+            policy=_settings(duty_reduce_rest=reduce_rest, duty_reduce_leave=reduce_leave),
+        )
+        wb = days[0]['week_block']
+        parts = (
+            wb['work_base_hours'] + wb['friday_hours'] + wb['holiday_work_hours']
+            + wb['rest_work_hours'] + wb['leave_work_hours']
+        )
+        assert parts == pytest.approx(wb['work_hours'])

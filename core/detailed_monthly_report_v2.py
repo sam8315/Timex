@@ -38,6 +38,7 @@ from core.attendance_calculator import (
 from web.services.attendance_policy_service import (
     resolve_policy,
     resolve_policy_day,
+    resolve_required_minutes,
     compute_effective_required_minutes_for_day,
     compute_late_early_for_day,
     grace_credit_minutes,
@@ -316,6 +317,14 @@ class DetailedMonthlyReportGeneratorV2:
                 hourly_mission_minutes=hm_mins,
             )
             daily_required_hours = _minutes_to_hours(int(required_minutes))
+            # موظفی Policy پیش از کسر مرخصی/مأموریت/استراحت/HL/HM
+            # (گزارش اضافه‌کار قانونی کسرها را طبق سیاست گزارش خودش اعمال می‌کند)
+            base_duty_minutes = int(resolve_required_minutes(
+                resolved=resolved,
+                target_date=current,
+                is_holiday=is_holiday,
+                is_friday=is_friday,
+            ))
 
             # تأخیر / تعجیل از سیاست (Grace کامل؛ در مرخصی/استراحت صفر؛
             # همپوشانی HL از پنجرهٔ تأخیر/تعجیل کم می‌شود)
@@ -394,6 +403,7 @@ class DetailedMonthlyReportGeneratorV2:
                 'sick_payment_unknown': sick_effect.payment_unknown,
                 'has_duty': has_duty,
                 'daily_duty': daily_duty,
+                'base_duty_minutes': base_duty_minutes,
                 # شروع موظفی Policy (برای موظفی سپری‌شدهٔ روز جاری)
                 'duty_start_time': policy_day.start_time if policy_day else None,
                 # 🕐 HL تأییدشده برای نمایش (از Effective Required کم شده)

@@ -78,6 +78,8 @@ class LegalOvertimeExcelExporter(DetailedExcelExporterV2):
                     f"کارکرد: {fmt_hours(wb.get('work_hours'))}\n"
                     f"موظفی: {fmt_hours(wb.get('duty_hours'))} ({wb.get('duty_note')})\n"
                     f"اضافه‌کار هفتگی: {fmt_hours(wb.get('weekly_overtime'))}\n"
+                    f"کسر کار هفتگی: {fmt_hours(wb.get('weekly_deficit'))}"
+                    f"{' (' + wb['deficit_note'] + ')' if wb.get('deficit_note') else ''}\n"
                     f"{wb.get('formula') or ''}"
                 )
                 start_row = data_start_row + idx
@@ -143,15 +145,40 @@ class LegalOvertimeExcelExporter(DetailedExcelExporterV2):
         section('کل کارکرد و موظفی')
         entry('کل کارکرد', self._fmt_hours(summary['total_work_hours']))
         entry('تعداد روز کارکرد', summary.get('total_work_days', 0))
+        entry(
+            'کارکرد روزهای کاری',
+            self._fmt_hours(summary.get('working_day_work_hours') or 0),
+        )
+        entry('تعداد روز کارکرد کاری', summary.get('working_day_work_days', 0))
+        entry(
+            'کارکرد روزهای غیرکاری',
+            self._fmt_hours(summary.get('non_working_day_work_hours') or 0),
+        )
+        entry('تعداد روز کارکرد غیرکاری', summary.get('non_working_day_work_days', 0))
         entry('روزهای موظفی', summary['duty_days'])
         entry('ساعات موظفی', self._fmt_hours(summary['duty_hours']))
 
-        section('اضافه‌کار هفتگی / تعطیل‌کاری / جمعه‌کاری')
-        entry('اضافه‌کار هفتگی', self._fmt_hours(summary['weekly_overtime']))
+        section('اضافه‌کاری / تعطیل‌کاری / جمعه‌کاری')
+        entry('اضافه‌کاری', self._fmt_hours(summary['weekly_overtime']))
+        if summary.get('overtime_deficit_offset'):
+            entry(
+                'اضافه‌کاری پیش از تهاتر',
+                self._fmt_hours(summary.get('weekly_overtime_gross') or 0),
+            )
+            entry(
+                'تهاتر با کسر کار',
+                self._fmt_hours(summary['overtime_deficit_offset']),
+            )
         entry('ساعت تعطیل‌کاری', self._fmt_hours(summary.get('holiday_work_hours') or 0))
         entry('تعداد روز تعطیل‌کاری', summary.get('holiday_work_days', 0))
         entry('ساعت جمعه‌کاری', self._fmt_hours(summary['friday_work_hours']))
         entry('تعداد روز جمعه‌کاری', summary['friday_work_days'])
+        if summary.get('rest_work_hours'):
+            entry('کارکرد استراحت (تفکیک)', self._fmt_hours(summary['rest_work_hours']))
+            entry('تعداد روز کارکرد استراحت', summary.get('rest_work_days', 0))
+        if summary.get('leave_work_hours'):
+            entry('کارکرد مرخصی (تفکیک)', self._fmt_hours(summary['leave_work_hours']))
+            entry('تعداد روز کارکرد مرخصی', summary.get('leave_work_days', 0))
         entry(
             'مجموع',
             self._fmt_hours(summary.get('combined_total') or 0),
@@ -175,7 +202,13 @@ class LegalOvertimeExcelExporter(DetailedExcelExporterV2):
         entry('استراحت', summary.get('rest_days', 0))
         entry('تعطیل', summary.get('holiday_days', 0))
         entry('کسر کار ماهانه', self._fmt_hours(summary.get('monthly_deficit') or 0))
+        if summary.get('overtime_deficit_offset'):
+            entry(
+                'کسر کار پیش از تهاتر',
+                self._fmt_hours(summary.get('monthly_deficit_gross') or 0),
+            )
         entry('تخلف تأخیر', self._fmt_hours(summary.get('total_late_violation') or 0))
         entry('تخلف تعجیل', self._fmt_hours(summary.get('total_early_leave_violation') or 0))
+        entry('سیاست گزارش', summary.get('report_policy_label') or '')
 
         self._auto_adjust_column_width(ws)

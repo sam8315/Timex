@@ -6,6 +6,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
 from sqlalchemy.orm import Session, selectinload
+from functools import partial
 from typing import Optional
 from urllib.parse import quote
 from io import BytesIO
@@ -40,6 +41,61 @@ from core.pdf_detailed_export_v2 import DetailedPDFExporterV2
 from core.legal_overtime_monthly_report import LegalOvertimeMonthlyReportGenerator
 from core.excel_legal_overtime_export import LegalOvertimeExcelExporter
 from core.pdf_legal_overtime_export import LegalOvertimePDFExporter
+from web.services.report_policy_service import (
+    DEFICIT_BASIS_LABELS,
+    LEGAL_OT_FIELD_GROUPS,
+    LEGAL_OVERTIME_MONTHLY,
+    REPORT_DEFINITIONS,
+    month_end,
+    resolve_report_policy,
+)
+
+_LEGAL_OT_EDITABLE_KEYS = REPORT_DEFINITIONS[LEGAL_OVERTIME_MONTHLY].editable_keys
+
+
+def _legal_ot_overrides(params) -> Optional[dict]:
+    """تنظیمات موقت گزارش از فرم یا query string (`ovr=1`, `ovr_<key>=0|1`)."""
+    if params.get('ovr') != '1':
+        return None
+    return {
+        key: params.get(f'ovr_{key}') == '1'
+        for key in _LEGAL_OT_EDITABLE_KEYS
+    }
+
+
+def _legal_ot_override_qs(overrides: Optional[dict]) -> str:
+    """همان تنظیمات موقت به‌صورت `&ovr=1&ovr_<key>=…` برای لینک‌های خروجی."""
+    if not overrides:
+        return ''
+    parts = ['ovr=1'] + [
+        f'ovr_{key}={"1" if overrides.get(key) else "0"}'
+        for key in _LEGAL_OT_EDITABLE_KEYS
+    ]
+    return '&' + '&'.join(parts)
+
+
+def _legal_ot_settings_context(
+    db: Session, year: int, month: int,
+    report=None, overrides: Optional[dict] = None,
+) -> dict:
+    """مقادیر مودال تنظیمات: سیاست ذخیره‌شدهٔ ماه و تنظیمات فعلی (موقت یا ذخیره)."""
+    saved = resolve_report_policy(db, LEGAL_OVERTIME_MONTHLY, month_end(year, month))
+    if report and report.get('report_policy') is not None:
+        current = report['report_policy'].settings
+    else:
+        current = {**saved.settings, **(overrides or {})}
+    return {
+        'legal_ot_field_groups': LEGAL_OT_FIELD_GROUPS,
+        'deficit_basis_labels': DEFICIT_BASIS_LABELS,
+        'legal_ot_saved_settings': {
+            k: bool(saved.settings[k]) for k in _LEGAL_OT_EDITABLE_KEYS
+        },
+        'legal_ot_settings': {
+            k: bool(current[k]) for k in _LEGAL_OT_EDITABLE_KEYS
+        },
+        'legal_ot_override_active': bool(overrides),
+        'legal_ot_override_qs': _legal_ot_override_qs(overrides),
+    }
 
 
 def _monthly_full_report_data(target_user_id: str, year: int, month: int):
@@ -128,11 +184,14 @@ def _monthly_group_reports(
     return reports, _employment_type_label(employment_type, db)
 
 
-def _monthly_legal_ot_report_data(target_user_id: str, year: int, month: int):
+def _monthly_legal_ot_report_data(
+    target_user_id: str, year: int, month: int, overrides: Optional[dict] = None,
+):
     """گزارش اضافه‌کار قانونی (۸/۴۴) از لایهٔ جدا روی همان روزساز V2."""
     generator = LegalOvertimeMonthlyReportGenerator()
     try:
-        report = generator.generate_report(target_user_id, year, month)
+        report = generator.generate_report(
+            target_user_id, year, month, policy_overrides=overrides)
     finally:
         generator.close()
     if not report.get('success'):
@@ -225,11 +284,13 @@ def _monthly_group_print_redirect(
     year: int,
     month: int,
     employment_type: str,
+    extra_qs: str = '',
 ) -> RedirectResponse:
     """هدایت به صفحه چاپ گروهی — همان مسیر خروجی گروهی گزارش خام."""
     qs = (
         f'year={year}&month={month}'
         f'&employment_type={quote(str(employment_type), safe="")}'
+        f'{extra_qs}'
     )
     return RedirectResponse(
         url=f'{base_path}/print-group?{qs}',
@@ -1078,13 +1139,15 @@ async def monthly_legal_ot_report_form(
         _validate_monthly_employment_type(selected_employment_type, db)
     except ValueError:
         selected_employment_type = 'all'
+    context = _monthly_form_context(
+        request, user, db,
+        selected_employment_type=selected_employment_type,
+    )
+    context.update(_legal_ot_settings_context(
+        db, context['selected_year'], context['selected_month'],
+    ))
     return templates.TemplateResponse(
-        request,
-        "admin/report_monthly_legal_ot.html",
-        _monthly_form_context(
-            request, user, db,
-            selected_employment_type=selected_employment_type,
-        ),
+        request, "admin/report_monthly_legal_ot.html", context,
     )
 
 
@@ -1104,22 +1167,27 @@ async def monthly_legal_ot_report_generate(
         if month < 1 or month > 12:
             raise ValueError("ماه نامعتبر است")
         _validate_monthly_employment_type(employment_type, db)
+        overrides = _legal_ot_overrides(await request.form())
         target_user_id = (target_user_id or '').strip()
         if not target_user_id:
             return _monthly_group_print_redirect(
-                '/reports/monthly-legal-ot', year, month, employment_type)
-        report = _monthly_legal_ot_report_data(target_user_id, year, month)
+                '/reports/monthly-legal-ot', year, month, employment_type,
+                extra_qs=_legal_ot_override_qs(overrides))
+        report = _monthly_legal_ot_report_data(
+            target_user_id, year, month, overrides)
+        context = _monthly_form_context(
+            request, user, db,
+            report=report,
+            selected_user_id=target_user_id,
+            selected_year=year,
+            selected_month=month,
+            selected_employment_type=employment_type,
+        )
+        context.update(_legal_ot_settings_context(
+            db, year, month, report=report, overrides=overrides,
+        ))
         return templates.TemplateResponse(
-            request,
-            "admin/report_monthly_legal_ot.html",
-            _monthly_form_context(
-                request, user, db,
-                report=report,
-                selected_user_id=target_user_id,
-                selected_year=year,
-                selected_month=month,
-                selected_employment_type=employment_type,
-            ),
+            request, "admin/report_monthly_legal_ot.html", context,
         )
     except Exception as e:
         error = quote(str(e), safe='')
@@ -1142,7 +1210,9 @@ async def monthly_legal_ot_report_excel(
     try:
         if month < 1 or month > 12:
             raise ValueError("ماه نامعتبر است")
-        report = _monthly_legal_ot_report_data(target_user_id, year, month)
+        report = _monthly_legal_ot_report_data(
+            target_user_id, year, month,
+            _legal_ot_overrides(request.query_params))
         return _monthly_legal_ot_excel_response(report, year, month)
     except Exception as e:
         error = quote(str(e), safe='')
@@ -1165,7 +1235,9 @@ async def monthly_legal_ot_report_pdf(
     try:
         if month < 1 or month > 12:
             raise ValueError("ماه نامعتبر است")
-        report = _monthly_legal_ot_report_data(target_user_id, year, month)
+        report = _monthly_legal_ot_report_data(
+            target_user_id, year, month,
+            _legal_ot_overrides(request.query_params))
         return _monthly_legal_ot_pdf_response(report, year, month)
     except Exception as e:
         error = quote(str(e), safe='')
@@ -1188,7 +1260,10 @@ async def monthly_legal_ot_report_pdf_group(
     try:
         reports, group_label = _monthly_group_reports(
             db, year, month, employment_type,
-            data_fn=_monthly_legal_ot_report_data,
+            data_fn=partial(
+                _monthly_legal_ot_report_data,
+                overrides=_legal_ot_overrides(request.query_params),
+            ),
         )
         return _monthly_legal_ot_group_pdf_response(
             reports, year, month, group_label)
@@ -1211,9 +1286,10 @@ async def monthly_legal_ot_report_print_group(
 ):
     enforce_permission(db, user, 'view_reports')
     try:
+        overrides = _legal_ot_overrides(request.query_params)
         reports, group_label = _monthly_group_reports(
             db, year, month, employment_type,
-            data_fn=_monthly_legal_ot_report_data,
+            data_fn=partial(_monthly_legal_ot_report_data, overrides=overrides),
         )
         return templates.TemplateResponse(
             request,
@@ -1231,6 +1307,7 @@ async def monthly_legal_ot_report_print_group(
                     "/reports/monthly-legal-ot/export-pdf-group"
                     f"?year={year}&month={month}"
                     f"&employment_type={quote(str(employment_type), safe='')}"
+                    f"{_legal_ot_override_qs(overrides)}"
                 ),
                 "report_title": "گزارش اضافه‌کار قانونی",
                 "is_admin": True,

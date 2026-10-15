@@ -127,6 +127,8 @@ class LegalOvertimePDFExporter(DetailedPDFExporterV2):
                     f"م:{self._fmt_hours(wb.get('duty_hours') or 0)} "
                     f"ه:{self._fmt_hours(wb.get('weekly_overtime') or 0)}"
                 )
+                if wb.get('weekly_deficit'):
+                    week_cell += f" کسر:{self._fmt_hours(wb['weekly_deficit'])}"
             elif not day.get('week_rowspan'):
                 week_cell = ''
 
@@ -165,50 +167,71 @@ class LegalOvertimePDFExporter(DetailedPDFExporterV2):
         gap = 1.5
         usable = page_width
         y0 = pdf.get_y()
-        # دو ردیف سه‌ستونه تا برچسب‌های بلند جا شوند
-        box_rows = [
+        total_box = (
+            'کل کارکرد',
+            (
+                f"{self._fmt_hours(summary.get('total_work_hours') or 0)}\n"
+                f"{summary.get('total_work_days', 0)} روز"
+            ),
+        )
+        duty_box = (
+            'موظفی',
+            f"{summary.get('duty_days', 0)} روز / "
+            f"{self._fmt_hours(summary.get('duty_hours') or 0)}",
+        )
+        weekly_box = (
+            'اضافه‌کاری',
+            self._fmt_hours(summary.get('weekly_overtime') or 0)
+            + (
+                f"\nتهاتر {self._fmt_hours(summary['overtime_deficit_offset'])}"
+                if summary.get('overtime_deficit_offset') else ''
+            ),
+        )
+        holiday_box = (
+            'تعطیل‌کاری',
+            (
+                f"{self._fmt_hours(summary.get('holiday_work_hours') or 0)}\n"
+                f"{summary.get('holiday_work_days', 0)} روز"
+            ),
+        )
+        friday_box = (
+            'جمعه‌کاری',
+            (
+                f"{self._fmt_hours(summary.get('friday_work_hours') or 0)} "
+                f"({self._fmt_hours_decimal(summary.get('friday_work_hours') or 0)})\n"
+                f"{summary.get('friday_work_days', 0)} روز"
+            ),
+        )
+        combined_box = (
+            'مجموع',
+            (
+                f"{self._fmt_hours(summary.get('combined_total') or 0)} "
+                f"({self._fmt_hours_decimal(summary.get('combined_total') or 0)})"
+            ),
+        )
+        # ردیف‌های حداکثر سه‌ستونه تا برچسب‌های بلند جا شوند
+        pay_rows = [
             [
+                total_box,
                 (
-                    'کل کارکرد',
+                    'کارکرد روزهای کاری',
                     (
-                        f"{self._fmt_hours(summary.get('total_work_hours') or 0)}\n"
-                        f"{summary.get('total_work_days', 0)} روز"
+                        f"{self._fmt_hours(summary.get('working_day_work_hours') or 0)}\n"
+                        f"{summary.get('working_day_work_days', 0)} روز"
                     ),
                 ),
                 (
-                    'موظفی',
-                    f"{summary.get('duty_days', 0)} روز / "
-                    f"{self._fmt_hours(summary.get('duty_hours') or 0)}",
-                ),
-                (
-                    'اضافه‌کار هفتگی',
-                    self._fmt_hours(summary.get('weekly_overtime') or 0),
+                    'کارکرد روزهای غیرکاری',
+                    (
+                        f"{self._fmt_hours(summary.get('non_working_day_work_hours') or 0)}\n"
+                        f"{summary.get('non_working_day_work_days', 0)} روز"
+                    ),
                 ),
             ],
-            [
-                (
-                    'تعطیل‌کاری',
-                    (
-                        f"{self._fmt_hours(summary.get('holiday_work_hours') or 0)}\n"
-                        f"{summary.get('holiday_work_days', 0)} روز"
-                    ),
-                ),
-                (
-                    'جمعه‌کاری',
-                    (
-                        f"{self._fmt_hours(summary.get('friday_work_hours') or 0)} "
-                        f"({self._fmt_hours_decimal(summary.get('friday_work_hours') or 0)})\n"
-                        f"{summary.get('friday_work_days', 0)} روز"
-                    ),
-                ),
-                (
-                    'مجموع',
-                    (
-                        f"{self._fmt_hours(summary.get('combined_total') or 0)} "
-                        f"({self._fmt_hours_decimal(summary.get('combined_total') or 0)})"
-                    ),
-                ),
-            ],
+            [duty_box, weekly_box, holiday_box],
+            [friday_box, combined_box],
+        ]
+        box_rows = pay_rows + [
             [
                 (
                     'صبح',
@@ -270,10 +293,20 @@ class LegalOvertimePDFExporter(DetailedPDFExporterV2):
             f"استراحت {summary.get('rest_days', 0)} | "
             f"تعطیل {summary.get('holiday_days', 0)} | "
             f"تعطیل‌کاری {self._fmt_hours(summary.get('holiday_work_hours') or 0)} | "
-            f"کسرکار {self._fmt_hours(summary.get('monthly_deficit') or 0)} | "
+            + (
+                f"کارکرد‌استراحت {self._fmt_hours(summary['rest_work_hours'])} | "
+                if summary.get('rest_work_hours') else ''
+            )
+            + (
+                f"کارکرد‌مرخصی {self._fmt_hours(summary['leave_work_hours'])} | "
+                if summary.get('leave_work_hours') else ''
+            )
+            + f"کسرکار {self._fmt_hours(summary.get('monthly_deficit') or 0)} | "
             f"تأخیر {self._fmt_hours(summary.get('total_late_violation') or 0)} | "
             f"تعجیل {self._fmt_hours(summary.get('total_early_leave_violation') or 0)}"
         )
+        if summary.get('report_policy_source') == 'override':
+            meta += f" | سیاست: {summary.get('report_policy_label')}"
         pdf.cell(
             0, 4.5, self._fix_rtl(meta),
             new_x='LMARGIN', new_y='NEXT', align='C',

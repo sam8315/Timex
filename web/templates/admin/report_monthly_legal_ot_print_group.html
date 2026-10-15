@@ -103,6 +103,7 @@
         color: #0f172a;
     }
     .week-block .wb-value.ot { color: #059669; }
+    .week-block .wb-value.deficit { color: #dc2626; }
     .week-block .wb-formula {
         direction: ltr;
         unicode-bidi: embed;
@@ -138,7 +139,7 @@
     }
     .pay-summary-grid {
         display: grid;
-        grid-template-columns: repeat(6, 1fr);
+        grid-template-columns: repeat(7, 1fr);
         gap: 6px;
     }
     .shift-summary-grid {
@@ -243,7 +244,7 @@
     }
     .meta-chip-grid {
         display: grid;
-        grid-template-columns: repeat(9, 1fr);
+        grid-template-columns: repeat(6, 1fr);
         gap: 4px;
         margin-top: 8px;
     }
@@ -399,7 +400,7 @@
             border-bottom-color: #94a3b8 !important;
         }
         .pay-summary-grid {
-            grid-template-columns: repeat(6, 1fr) !important;
+            grid-template-columns: repeat(7, 1fr) !important;
             gap: 4px !important;
         }
         .shift-summary-grid {
@@ -451,7 +452,7 @@
             color: #475569 !important;
         }
         .meta-chip-grid {
-            grid-template-columns: repeat(9, 1fr) !important;
+            grid-template-columns: repeat(6, 1fr) !important;
             gap: 3px !important;
             margin-top: 4px !important;
         }
@@ -633,6 +634,11 @@
                                 <span class="wb-value ot">{{ day.week_block.weekly_overtime | hhmm }}</span>
                             </div>
                             <div class="wb-row">
+                                <span class="wb-label">کسر کار هفتگی</span>
+                                <span class="wb-value deficit">{{ day.week_block.weekly_deficit | hhmm }}</span>
+                                {% if day.week_block.deficit_note %}<span class="wb-label">({{ day.week_block.deficit_note }})</span>{% endif %}
+                            </div>
+                            <div class="wb-row">
                                 <span class="wb-label">محاسبه</span>
                                 <span class="wb-formula">{{ day.week_block.formula }}</span>
                             </div>
@@ -647,30 +653,39 @@
 
     <div class="summary-box">
         <div class="summary-title">خلاصه ماهانه</div>
+        {% set split = report.summary.work_split_enabled %}
         <div class="pay-summary-grid">
-            {% if report.summary.total_grace_hours %}
-            <div class="pay-summary-card" title="جمع کارکرد واقعی و فرجه">
-                <span class="label">جمع کارکرد</span>
-                <span class="main-value">{{ report.summary.total_punch_grace_hours | hhmm }}</span>
-                <span class="sub-value">کارکرد واقعی <span class="num">{{ report.summary.total_punch_hours | hhmm }}</span> + فرجه <span class="num">{{ report.summary.total_grace_hours | hhmm }}</span></span>
+            <div class="pay-pair-group" title="کل کارکرد = کارکرد روزهای کاری + غیرکاری — {{ report.summary.total_work_days }} روز کارکرد{% if report.summary.total_grace_hours %} (کارکرد واقعی {{ report.summary.total_punch_hours | hhmm }} + فرجه {{ report.summary.total_grace_hours | hhmm }}){% endif %}">
+                <div class="pay-pair-cards">
+                    <div class="pay-summary-card" title="{% if split %}مبنای کسر کار: کارکرد روزهای کاری — کسر کار را پوشش می‌دهد{% else %}روزهای کاری فرد{% endif %}">
+                        <span class="label">روزهای کاری</span>
+                        <span class="main-value">{{ report.summary.working_day_work_hours | hhmm }}</span>
+                        <span class="sub-value"><span class="num">{{ report.summary.working_day_work_days }}</span> روز</span>
+                    </div>
+                    <div class="pay-summary-card" title="جمعه، تعطیل و روزهای مرخصی/استراحت/مأموریت{% if split %} — کسر کار را پوشش نمی‌دهد{% else %} — طبق سیاست در کسر کار لحاظ می‌شود{% endif %}">
+                        <span class="label">روزهای غیرکاری</span>
+                        <span class="main-value">{{ report.summary.non_working_day_work_hours | hhmm }}</span>
+                        <span class="sub-value"><span class="num">{{ report.summary.non_working_day_work_days }}</span> روز</span>
+                    </div>
+                </div>
+                <div class="pay-pair-sum">
+                    <span class="pair-sum-label">کل کارکرد</span>
+                    <span class="pair-sum-value">{{ report.summary.total_work_hours | hhmm }}</span>
+                </div>
             </div>
-            {% else %}
-            <div class="pay-summary-card">
-                <span class="label">کل کارکرد</span>
-                <span class="main-value">{{ report.summary.total_work_hours | hhmm }}</span>
-                <span class="sub-value"><span class="num">{{ report.summary.total_work_days }}</span> روز کارکرد</span>
-            </div>
-            {% endif %}
             <div class="pay-summary-card">
                 <span class="label">موظفی</span>
                 <span class="main-value">{{ report.summary.duty_hours | hhmm }}</span>
                 <span class="sub-value"><span class="num">{{ report.summary.duty_days }}</span> روز</span>
             </div>
-            <div class="pay-pair-group" title="جمع اضافه‌کار هفتگی و تعطیل‌کاری">
+            <div class="pay-pair-group" title="جمع اضافه‌کاری و تعطیل‌کاری">
                 <div class="pay-pair-cards">
                     <div class="pay-summary-card">
-                        <span class="label">اضافه‌کار هفتگی</span>
+                        <span class="label">اضافه‌کاری</span>
                         <span class="main-value">{{ report.summary.weekly_overtime | hhmm }}</span>
+                        {% if report.summary.overtime_deficit_offset %}
+                        <span class="sub-value">تهاتر <span class="num">{{ report.summary.overtime_deficit_offset | hhmm }}</span></span>
+                        {% endif %}
                     </div>
                     <div class="pay-summary-card">
                         <span class="label">تعطیل‌کاری</span>
@@ -689,6 +704,20 @@
                 <span class="main-value">{{ report.summary.friday_work_hours | hhmm }}<span class="decimal-paren">({{ report.summary.friday_work_hours | hours_decimal }})</span></span>
                 <span class="sub-value"><span class="num">{{ report.summary.friday_work_days }}</span> روز</span>
             </div>
+            {% if report.summary.rest_work_hours %}
+            <div class="pay-summary-card">
+                <span class="label">کارکرد استراحت</span>
+                <span class="main-value">{{ report.summary.rest_work_hours | hhmm }}</span>
+                <span class="sub-value"><span class="num">{{ report.summary.rest_work_days }}</span> روز</span>
+            </div>
+            {% endif %}
+            {% if report.summary.leave_work_hours %}
+            <div class="pay-summary-card">
+                <span class="label">کارکرد مرخصی</span>
+                <span class="main-value">{{ report.summary.leave_work_hours | hhmm }}</span>
+                <span class="sub-value"><span class="num">{{ report.summary.leave_work_days }}</span> روز</span>
+            </div>
+            {% endif %}
             <div class="pay-summary-card">
                 <span class="label">مجموع</span>
                 <span class="main-value">{{ report.summary.combined_total | hhmm }}<span class="decimal-paren">({{ report.summary.combined_total | hours_decimal }})</span></span>
@@ -722,7 +751,6 @@
             <div class="meta-chip"><span class="chip-label">استراحت</span><span class="chip-value"><span class="num">{{ report.summary.rest_days }}</span></span></div>
             <div class="meta-chip"><span class="chip-label">تعطیل</span><span class="chip-value"><span class="num">{{ report.summary.holiday_days }}</span></span></div>
             <div class="meta-chip"><span class="chip-label">کسر کار</span><span class="chip-value" style="color:#f87171;"><span class="num">{{ report.summary.monthly_deficit | hhmm }}</span></span></div>
-            <div class="meta-chip"><span class="chip-label">سیاست گزارش</span><span class="chip-value">{{ report.summary.report_policy_label }}</span></div>
             <div class="meta-chip"><span class="chip-label">تأخیر</span><span class="chip-value" style="color:#f59e0b;"><span class="num">{{ report.summary.total_late_violation | hhmm }}</span></span></div>
             <div class="meta-chip"><span class="chip-label">تعجیل</span><span class="chip-value" style="color:#f59e0b;"><span class="num">{{ report.summary.total_early_leave_violation | hhmm }}</span></span></div>
         </div>

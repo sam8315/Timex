@@ -7,8 +7,13 @@
     <a href="/admin/policies/reports" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-right"></i> بازگشت</a>
 </div>
 
-{% if request.query_params.get('success') == 'saved' %}
+{% set success = request.query_params.get('success') %}
+{% if success == 'saved' %}
 <div class="alert alert-success">نسخهٔ جدید سیاست ذخیره شد.</div>
+{% elif success == 'updated' %}
+<div class="alert alert-success">نسخهٔ سیاست ویرایش شد.</div>
+{% elif success == 'deleted' %}
+<div class="alert alert-success">نسخهٔ سیاست حذف شد؛ بازهٔ آن به نسخهٔ قبلی (یا پیش‌فرض سیستم) برگشت.</div>
 {% endif %}
 {% if error %}
 <div class="alert alert-danger">{{ error }}</div>
@@ -17,8 +22,22 @@
 <div class="row g-4">
     <div class="col-lg-6">
         <div class="card shadow-sm">
-            <div class="card-header bg-white"><h6 class="mb-0">نسخهٔ جدید</h6></div>
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                {% if editing %}
+                <h6 class="mb-0">ویرایش نسخهٔ {{ editing.from }} تا {{ editing.to or 'باز' }}</h6>
+                <a href="/admin/policies/reports/legal-overtime" class="btn btn-outline-secondary btn-sm">انصراف</a>
+                {% else %}
+                <h6 class="mb-0">نسخهٔ جدید</h6>
+                {% endif %}
+            </div>
             <div class="card-body">
+                {% if editing %}
+                <p class="small text-warning-emphasis bg-warning-subtle rounded p-2">
+                    ویرایش روی کل بازهٔ این نسخه اثر می‌گذارد؛ گزارش‌های ماه‌های این بازه با تنظیمات جدید تولید می‌شوند.
+                    تاریخ شروع قابل تغییر نیست؛ برای تاریخ دیگر نسخهٔ جدید ثبت کنید.
+                </p>
+                <form method="post" action="/admin/policies/reports/legal-overtime/{{ editing.id }}/update">
+                {% else %}
                 <p class="small text-muted">
                     تغییر فقط از تاریخ شروع (اول ماه شمسی) اعمال می‌شود و داده‌های گذشته بازمحاسبه نمی‌شود.
                     نسخهٔ جدید از روی سیاست مؤثر همان تاریخ پر می‌شود؛ مقادیر ثابت (موظفی روز گذشته، سپری‌شدهٔ روز جاری،
@@ -29,18 +48,43 @@
                         <label class="form-label" for="effective_from">تاریخ شروع (شمسی، اول ماه)</label>
                         <input class="form-control" id="effective_from" name="effective_from" placeholder="1405/08/01" required>
                     </div>
-                    {% for key, label in fields %}
-                    <div class="form-check mb-2">
-                        <input class="form-check-input" type="checkbox" name="{{ key }}" id="{{ key }}"
-                               {% if current.settings[key] %}checked{% endif %}>
-                        <label class="form-check-label" for="{{ key }}">{{ label }}</label>
+                {% endif %}
+                    {% for title, help, kind, fields in field_groups %}
+                    <div class="border rounded p-2 mb-3">
+                        <h6 class="mb-1">{{ title }}</h6>
+                        <div class="small text-muted mb-2">{{ help }}</div>
+                        {% if kind == 'deficit_basis' %}
+                        {% set basis_key, basis_label = fields[0] %}
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="form-label mb-0">{{ basis_label }}</span>
+                            <div class="btn-group btn-group-sm" role="group" aria-label="{{ basis_label }}">
+                                {% for value in (0, 1) %}
+                                <input type="radio" class="btn-check" name="{{ basis_key }}" id="{{ basis_key }}_{{ value }}"
+                                       value="{{ value }}" autocomplete="off"
+                                       {% if form_settings[basis_key] == (value == 1) %}checked{% endif %}>
+                                <label class="btn btn-outline-primary" for="{{ basis_key }}_{{ value }}">{{ deficit_basis_labels[value] }}</label>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% endif %}
+                        {% for key, label in (fields[1:] if kind == 'deficit_basis' else fields) %}
+                        <div class="form-check mb-1">
+                            <input class="form-check-input" type="checkbox" name="{{ key }}" id="{{ key }}"
+                                   {% if form_settings[key] %}checked{% endif %}>
+                            <label class="form-check-label" for="{{ key }}">{{ label }}</label>
+                        </div>
+                        {% endfor %}
                     </div>
                     {% endfor %}
                     <div class="mb-3 mt-3">
                         <label class="form-label" for="notes">توضیح</label>
-                        <input class="form-control" id="notes" name="notes">
+                        <input class="form-control" id="notes" name="notes" value="{{ editing.notes if editing else '' }}">
                     </div>
+                    {% if editing %}
+                    <button type="submit" class="btn btn-warning"><i class="bi bi-pencil"></i> ذخیرهٔ ویرایش</button>
+                    {% else %}
                     <button type="submit" class="btn btn-primary"><i class="bi bi-save"></i> ثبت نسخهٔ جدید</button>
+                    {% endif %}
                 </form>
             </div>
         </div>
@@ -53,19 +97,37 @@
             </div>
             <div class="card-body">
                 <ul class="small">
-                    {% for key, label in fields %}
+                    {% for title, _help, kind, fields in field_groups %}
+                    <li class="fw-bold list-unstyled mt-2">{{ title }}</li>
+                    {% if kind == 'deficit_basis' %}
+                    {% set basis_key, basis_label = fields[0] %}
+                    <li>{{ basis_label }}: {{ deficit_basis_labels[1 if current.settings[basis_key] else 0] }}</li>
+                    {% endif %}
+                    {% for key, label in (fields[1:] if kind == 'deficit_basis' else fields) %}
                     <li>{{ label }}: {{ 'بله' if current.settings[key] else 'خیر' }}</li>
+                    {% endfor %}
                     {% endfor %}
                     <li>روش کسر کار: {{ 'تجمیعی ماهانه' if current.settings.deficit_method == 'cumulative_monthly' else 'قدیمی (legacy)' }}</li>
                 </ul>
                 <h6 class="mt-3">تاریخچه</h6>
                 <table class="table table-sm">
-                    <thead><tr><th>از</th><th>تا</th><th>کاربر</th><th>توضیح</th></tr></thead>
+                    <thead><tr><th>از</th><th>تا</th><th>کاربر</th><th>توضیح</th><th>عملیات</th></tr></thead>
                     <tbody>
                     {% for v in versions %}
-                    <tr><td>{{ v.from }}</td><td>{{ v.to or 'باز' }}</td><td>{{ v.created_by }}</td><td>{{ v.notes }}</td></tr>
+                    <tr class="{{ 'table-warning' if editing and editing.id == v.id else '' }}">
+                        <td>{{ v.from }}</td><td>{{ v.to or 'باز' }}</td><td>{{ v.created_by }}</td><td>{{ v.notes }}</td>
+                        <td class="text-nowrap">
+                            <a href="/admin/policies/reports/legal-overtime?edit={{ v.id }}" class="btn btn-outline-primary btn-sm" title="ویرایش">
+                                <i class="bi bi-pencil"></i>
+                            </a>
+                            <form method="post" action="/admin/policies/reports/legal-overtime/{{ v.id }}/delete" class="d-inline"
+                                  onsubmit="return confirm('نسخهٔ {{ v.from }} حذف شود؟ بازهٔ آن به نسخهٔ قبلی (یا پیش‌فرض سیستم) برمی‌گردد.');">
+                                <button type="submit" class="btn btn-outline-danger btn-sm" title="حذف"><i class="bi bi-trash"></i></button>
+                            </form>
+                        </td>
+                    </tr>
                     {% else %}
-                    <tr><td colspan="4" class="text-muted">نسخه‌ای ثبت نشده؛ پیش‌فرض سیستم اعمال می‌شود.</td></tr>
+                    <tr><td colspan="5" class="text-muted">نسخه‌ای ثبت نشده؛ پیش‌فرض سیستم اعمال می‌شود.</td></tr>
                     {% endfor %}
                     </tbody>
                 </table>

@@ -87,6 +87,7 @@
         color: #0f172a;
     }
     .week-block .wb-value.ot { color: #059669; }
+    .week-block .wb-value.deficit { color: #dc2626; }
     .week-block .wb-formula {
         direction: ltr;
         unicode-bidi: embed;
@@ -130,7 +131,7 @@
     }
     .pay-summary-grid {
         display: grid;
-        grid-template-columns: repeat(6, 1fr);
+        grid-template-columns: repeat(7, 1fr);
         gap: 6px;
         margin-top: 6px;
     }
@@ -261,7 +262,7 @@
     }
     .meta-chip-grid {
         display: grid;
-        grid-template-columns: repeat(9, 1fr);
+        grid-template-columns: repeat(6, 1fr);
         gap: 4px;
     }
     .meta-chip {
@@ -496,7 +497,7 @@
             border-bottom-color: #94a3b8 !important;
         }
         .pay-summary-grid {
-            grid-template-columns: repeat(6, 1fr) !important;
+            grid-template-columns: repeat(7, 1fr) !important;
             gap: 4px !important;
         }
         .shift-summary-grid {
@@ -548,7 +549,7 @@
             color: #475569 !important;
         }
         .meta-chip-grid {
-            grid-template-columns: repeat(9, 1fr) !important;
+            grid-template-columns: repeat(6, 1fr) !important;
             gap: 3px !important;
         }
         .meta-chip {
@@ -654,14 +655,88 @@
                 </select>
             </div>
 
-            <div class="col-md-2">
-                <button type="submit" class="btn btn-primary w-100">
+            <div class="col-md-2 d-flex gap-2">
+                <button type="button" class="btn btn-outline-secondary position-relative"
+                        data-bs-toggle="modal" data-bs-target="#legalOtSettingsModal"
+                        title="تنظیمات محاسبه فقط برای همین بار">
+                    <i class="bi bi-sliders"></i> تنظیمات
+                    <span id="ovrDot" class="position-absolute top-0 start-0 translate-middle p-1 bg-warning border border-light rounded-circle"
+                          style="{% if not legal_ot_override_active %}display: none;{% endif %}"></span>
+                </button>
+                <button type="submit" class="btn btn-primary flex-grow-1">
                     <i class="bi bi-lightning"></i> تولید
                 </button>
             </div>
+
+            <input type="hidden" name="ovr" id="ovrActive" value="{{ '1' if legal_ot_override_active else '0' }}">
+            {% for _title, _help, _kind, fields in legal_ot_field_groups %}
+            {% for key, _label in fields %}
+            <input type="hidden" name="ovr_{{ key }}" id="ovr_{{ key }}" value="{{ '1' if legal_ot_settings[key] else '0' }}">
+            {% endfor %}
+            {% endfor %}
         </form>
         <div class="form-text mt-2">
             <strong>راهنما:</strong> با انتخاب کارمند گزارش فردی؛ بدون انتخاب کارمند، گزارش گروهی بر اساس نوع عضویت (مثل گزارش خام).
+            <span id="ovrBadge" class="badge bg-warning text-dark ms-2"
+                  style="{% if not legal_ot_override_active %}display: none;{% endif %}">
+                <i class="bi bi-sliders"></i> تنظیمات موقت فعال است (فقط برای همین تولید؛ سیاست ذخیره‌شده تغییر نمی‌کند)
+            </span>
+        </div>
+    </div>
+</div>
+
+<!-- مودال تنظیمات موقت سیاست -->
+<div class="modal fade no-print" id="legalOtSettingsModal" tabindex="-1" aria-labelledby="legalOtSettingsTitle" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h6 class="modal-title" id="legalOtSettingsTitle"><i class="bi bi-sliders"></i> تنظیمات محاسبه (فقط برای همین بار)</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="بستن"></button>
+            </div>
+            <div class="modal-body">
+                <p class="small text-muted">
+                    این تنظیمات فقط روی همین تولید گزارش (و خروجی‌های اکسل، PDF و چاپ آن) اعمال می‌شود و سیاست ذخیره‌شده را تغییر نمی‌دهد.
+                </p>
+                <div class="row g-3">
+                {% for title, help, kind, fields in legal_ot_field_groups %}
+                    <div class="col-md-6">
+                        <div class="border rounded p-2 h-100">
+                            <h6 class="mb-1">{{ title }}</h6>
+                            <div class="small text-muted mb-2">{{ help }}</div>
+                            {% if kind == 'deficit_basis' %}
+                            {% set basis_key, basis_label = fields[0] %}
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <span class="form-label mb-0 small">{{ basis_label }}</span>
+                                <div class="btn-group btn-group-sm" role="group" aria-label="{{ basis_label }}">
+                                    <input type="radio" class="btn-check" name="m_{{ basis_key }}" id="m_{{ basis_key }}_0"
+                                           autocomplete="off" {% if not legal_ot_settings[basis_key] %}checked{% endif %}>
+                                    <label class="btn btn-outline-primary" for="m_{{ basis_key }}_0">{{ deficit_basis_labels[0] }}</label>
+                                    <input type="radio" class="btn-check ovr-field" name="m_{{ basis_key }}" id="m_{{ basis_key }}"
+                                           data-key="{{ basis_key }}" autocomplete="off" {% if legal_ot_settings[basis_key] %}checked{% endif %}>
+                                    <label class="btn btn-outline-primary" for="m_{{ basis_key }}">{{ deficit_basis_labels[1] }}</label>
+                                </div>
+                            </div>
+                            {% endif %}
+                            {% for key, label in (fields[1:] if kind == 'deficit_basis' else fields) %}
+                            <div class="form-check form-switch mb-1">
+                                <input class="form-check-input ovr-field" type="checkbox" id="m_{{ key }}" data-key="{{ key }}"
+                                       {% if legal_ot_settings[key] %}checked{% endif %}>
+                                <label class="form-check-label small" for="m_{{ key }}">{{ label }}</label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                {% endfor %}
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="ovrResetBtn">
+                    <i class="bi bi-arrow-counterclockwise"></i> بازگشت به سیاست ذخیره‌شده
+                </button>
+                <button type="button" class="btn btn-primary btn-sm" id="ovrApplyBtn" data-bs-dismiss="modal">
+                    <i class="bi bi-check2"></i> اعمال
+                </button>
+            </div>
         </div>
     </div>
 </div>
@@ -823,6 +898,11 @@
                                     <span class="wb-value ot">{{ day.week_block.weekly_overtime | hhmm }}</span>
                                 </div>
                                 <div class="wb-row">
+                                    <span class="wb-label">کسر کار هفتگی</span>
+                                    <span class="wb-value deficit">{{ day.week_block.weekly_deficit | hhmm }}</span>
+                                    {% if day.week_block.deficit_note %}<span class="wb-label">({{ day.week_block.deficit_note }})</span>{% endif %}
+                                </div>
+                                <div class="wb-row">
                                     <span class="wb-label">محاسبه</span>
                                     <span class="wb-formula">{{ day.week_block.formula }}</span>
                                 </div>
@@ -842,30 +922,39 @@
     <div class="summary-title">
         <i class="bi bi-clipboard-data"></i> خلاصه ماهانه
     </div>
+    {% set split = report.summary.work_split_enabled %}
     <div class="pay-summary-grid">
-        {% if report.summary.total_grace_hours %}
-        <div class="pay-summary-card" title="جمع کارکرد واقعی و فرجه">
-            <span class="label">جمع کارکرد</span>
-            <span class="main-value">{{ report.summary.total_punch_grace_hours | hhmm }}</span>
-            <span class="sub-value">کارکرد واقعی <span class="num">{{ report.summary.total_punch_hours | hhmm }}</span> + فرجه <span class="num">{{ report.summary.total_grace_hours | hhmm }}</span></span>
+        <div class="pay-pair-group" title="کل کارکرد = کارکرد روزهای کاری + غیرکاری — {{ report.summary.total_work_days }} روز کارکرد{% if report.summary.total_grace_hours %} (کارکرد واقعی {{ report.summary.total_punch_hours | hhmm }} + فرجه {{ report.summary.total_grace_hours | hhmm }}){% endif %}">
+            <div class="pay-pair-cards">
+                <div class="pay-summary-card" title="{% if split %}مبنای کسر کار: کارکرد روزهای کاری — کسر کار را پوشش می‌دهد{% else %}روزهای کاری فرد{% endif %}">
+                    <span class="label">روزهای کاری</span>
+                    <span class="main-value">{{ report.summary.working_day_work_hours | hhmm }}</span>
+                    <span class="sub-value"><span class="num">{{ report.summary.working_day_work_days }}</span> روز</span>
+                </div>
+                <div class="pay-summary-card" title="جمعه، تعطیل و روزهای مرخصی/استراحت/مأموریت{% if split %} — کسر کار را پوشش نمی‌دهد{% else %} — طبق سیاست در کسر کار لحاظ می‌شود{% endif %}">
+                    <span class="label">روزهای غیرکاری</span>
+                    <span class="main-value">{{ report.summary.non_working_day_work_hours | hhmm }}</span>
+                    <span class="sub-value"><span class="num">{{ report.summary.non_working_day_work_days }}</span> روز</span>
+                </div>
+            </div>
+            <div class="pay-pair-sum">
+                <span class="pair-sum-label">کل کارکرد</span>
+                <span class="pair-sum-value">{{ report.summary.total_work_hours | hhmm }}</span>
+            </div>
         </div>
-        {% else %}
-        <div class="pay-summary-card">
-            <span class="label">کل کارکرد</span>
-            <span class="main-value">{{ report.summary.total_work_hours | hhmm }}</span>
-            <span class="sub-value"><span class="num">{{ report.summary.total_work_days }}</span> روز کارکرد</span>
-        </div>
-        {% endif %}
         <div class="pay-summary-card">
             <span class="label">موظفی</span>
             <span class="main-value">{{ report.summary.duty_hours | hhmm }}</span>
             <span class="sub-value"><span class="num">{{ report.summary.duty_days }}</span> روز</span>
         </div>
-        <div class="pay-pair-group" title="جمع اضافه‌کار هفتگی و تعطیل‌کاری">
+        <div class="pay-pair-group" title="جمع اضافه‌کاری و تعطیل‌کاری">
             <div class="pay-pair-cards">
-                <div class="pay-summary-card">
-                    <span class="label">اضافه‌کار هفتگی</span>
+                <div class="pay-summary-card"{% if report.summary.overtime_deficit_offset %} title="اضافه‌کار پیش از تهاتر با کسر کار: {{ report.summary.weekly_overtime_gross | hhmm }}"{% endif %}>
+                    <span class="label">اضافه‌کاری</span>
                     <span class="main-value">{{ report.summary.weekly_overtime | hhmm }}</span>
+                    {% if report.summary.overtime_deficit_offset %}
+                    <span class="sub-value">تهاتر <span class="num">{{ report.summary.overtime_deficit_offset | hhmm }}</span></span>
+                    {% endif %}
                 </div>
                 <div class="pay-summary-card">
                     <span class="label">تعطیل‌کاری</span>
@@ -884,6 +973,20 @@
             <span class="main-value">{{ report.summary.friday_work_hours | hhmm }}<span class="decimal-paren">({{ report.summary.friday_work_hours | hours_decimal }})</span></span>
             <span class="sub-value"><span class="num">{{ report.summary.friday_work_days }}</span> روز</span>
         </div>
+        {% if report.summary.rest_work_hours %}
+        <div class="pay-summary-card" title="کارکرد روزهای استراحت — تفکیک‌شده طبق سیاست">
+            <span class="label">کارکرد استراحت</span>
+            <span class="main-value">{{ report.summary.rest_work_hours | hhmm }}</span>
+            <span class="sub-value"><span class="num">{{ report.summary.rest_work_days }}</span> روز</span>
+        </div>
+        {% endif %}
+        {% if report.summary.leave_work_hours %}
+        <div class="pay-summary-card" title="کارکرد روزهای مرخصی — تفکیک‌شده طبق سیاست">
+            <span class="label">کارکرد مرخصی</span>
+            <span class="main-value">{{ report.summary.leave_work_hours | hhmm }}</span>
+            <span class="sub-value"><span class="num">{{ report.summary.leave_work_days }}</span> روز</span>
+        </div>
+        {% endif %}
         <div class="pay-summary-card">
             <span class="label">مجموع</span>
             <span class="main-value">{{ report.summary.combined_total | hhmm }}<span class="decimal-paren">({{ report.summary.combined_total | hours_decimal }})</span></span>
@@ -944,13 +1047,9 @@
                 <span class="chip-label">تعطیل</span>
                 <span class="chip-value"><span class="num">{{ report.summary.holiday_days }}</span> روز</span>
             </div>
-            <div class="meta-chip">
+            <div class="meta-chip"{% if report.summary.overtime_deficit_offset %} title="کسر کار پیش از تهاتر: {{ report.summary.monthly_deficit_gross | hhmm }} − تهاتر {{ report.summary.overtime_deficit_offset | hhmm }}"{% endif %}>
                 <span class="chip-label">کسر کار ماهانه</span>
                 <span class="chip-value" style="color:#f87171;"><span class="num">{{ report.summary.monthly_deficit | hhmm }}</span></span>
-            </div>
-            <div class="meta-chip">
-                <span class="chip-label">سیاست گزارش</span>
-                <span class="chip-value">{{ report.summary.report_policy_label }} | مرجع {{ report.summary.report_reference_at }}</span>
             </div>
             <div class="meta-chip">
                 <span class="chip-label">تخلف تأخیر</span>
@@ -973,11 +1072,11 @@
         <h6 class="mb-3"><i class="bi bi-download"></i> خروجی گزارش</h6>
 
         <div class="d-flex justify-content-center gap-3 flex-wrap">
-            <a href="/reports/monthly-legal-ot/export-excel?target_user_id={{ selected_user_id }}&year={{ selected_year }}&month={{ selected_month }}"
+            <a href="/reports/monthly-legal-ot/export-excel?target_user_id={{ selected_user_id }}&year={{ selected_year }}&month={{ selected_month }}{{ legal_ot_override_qs }}"
                class="btn btn-success btn-lg">
                 <i class="bi bi-file-earmark-excel"></i> دانلود اکسل
             </a>
-            <a href="/reports/monthly-legal-ot/export-pdf?target_user_id={{ selected_user_id }}&year={{ selected_year }}&month={{ selected_month }}"
+            <a href="/reports/monthly-legal-ot/export-pdf?target_user_id={{ selected_user_id }}&year={{ selected_year }}&month={{ selected_month }}{{ legal_ot_override_qs }}"
                class="btn btn-danger btn-lg">
                 <i class="bi bi-file-earmark-pdf"></i> دانلود PDF
             </a>
@@ -1130,6 +1229,54 @@ document.addEventListener('click', function(e) {
     if (!e.target.closest('.user-search-wrapper')) {
         searchResults.classList.remove('show');
     }
+});
+
+// تنظیمات موقت سیاست — فقط برای همین تولید
+const savedPolicySettings = {{ legal_ot_saved_settings | tojson }};
+const ovrActive = document.getElementById('ovrActive');
+const ovrFields = document.querySelectorAll('#legalOtSettingsModal .ovr-field');
+
+function ovrFieldValue(el) {
+    return el.type === 'checkbox' || el.type === 'radio' ? el.checked : el.value === '1';
+}
+
+function setOvrFieldValue(el, value) {
+    if (el.type === 'radio') {
+        el.checked = value;
+        document.getElementById(el.id + '_0').checked = !value;
+    } else if (el.type === 'checkbox') el.checked = value;
+    else el.value = value ? '1' : '0';
+}
+
+function setOverrideIndicator(active) {
+    ovrActive.value = active ? '1' : '0';
+    document.getElementById('ovrBadge').style.display = active ? '' : 'none';
+    document.getElementById('ovrDot').style.display = active ? '' : 'none';
+}
+
+document.getElementById('legalOtSettingsModal').addEventListener('show.bs.modal', function() {
+    ovrFields.forEach(el => {
+        setOvrFieldValue(el, document.getElementById('ovr_' + el.dataset.key).value === '1');
+    });
+});
+
+document.getElementById('ovrApplyBtn').addEventListener('click', function() {
+    let differs = false;
+    ovrFields.forEach(el => {
+        const value = ovrFieldValue(el);
+        document.getElementById('ovr_' + el.dataset.key).value = value ? '1' : '0';
+        if (value !== savedPolicySettings[el.dataset.key]) differs = true;
+    });
+    setOverrideIndicator(differs);
+});
+
+document.getElementById('ovrResetBtn').addEventListener('click', function() {
+    ovrFields.forEach(el => {
+        const value = savedPolicySettings[el.dataset.key];
+        setOvrFieldValue(el, value);
+        document.getElementById('ovr_' + el.dataset.key).value = value ? '1' : '0';
+    });
+    setOverrideIndicator(false);
 });
 </script>
 {% endblock %}
