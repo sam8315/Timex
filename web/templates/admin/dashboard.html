@@ -52,9 +52,19 @@
         gap: 1rem;
     }
     .alert-grid > .card,
-    .alert-grid > a {
+    .alert-grid > a,
+    .alert-grid > button {
         height: 100%;
         min-width: 0;
+    }
+    .alert-grid > button.alert-card-btn {
+        cursor: pointer;
+        display: block;
+        width: 100%;
+        background: transparent;
+        padding: 0;
+        border: 0;
+        text-align: start;
     }
     @media (max-width: 992px) {
         .alert-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -256,6 +266,34 @@
     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
 </div>
 {% endif %}
+{% if request.query_params.get('success') == 'employee-deactivated' %}
+<div class="alert alert-success alert-dismissible fade show shadow-sm" role="alert">
+    <i class="bi bi-person-dash"></i>
+    کارمند غیرفعال شد.
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+{% if request.query_params.get('error') == 'deactivate-self' %}
+<div class="alert alert-warning alert-dismissible fade show shadow-sm" role="alert">
+    <i class="bi bi-exclamation-triangle"></i>
+    غیرفعال کردن حساب خودتان از این فهرست ممکن نیست.
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+{% if request.query_params.get('error') == 'deactivate-missing' %}
+<div class="alert alert-warning alert-dismissible fade show shadow-sm" role="alert">
+    <i class="bi bi-exclamation-triangle"></i>
+    کارمند یافت نشد.
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+{% if request.query_params.get('error') == 'deactivate-inactive' %}
+<div class="alert alert-warning alert-dismissible fade show shadow-sm" role="alert">
+    <i class="bi bi-exclamation-triangle"></i>
+    این کارمند از قبل غیرفعال است.
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
 {% if request.query_params.get('error') == 'tests-running' %}
 <div class="alert alert-warning alert-dismissible fade show shadow-sm" role="alert">
     <i class="bi bi-exclamation-triangle"></i>
@@ -372,7 +410,7 @@
 <!-- ============================================ -->
 <!-- ⚠️ هشدارهای فوری -->
 <!-- ============================================ -->
-{% if can_approve_missed_attendance or expiring_contracts_count > 0 or negative_balances_count > 0 or pending_carry_forward_count > 0 or week_incomplete_count > 0 %}
+{% if can_approve_missed_attendance or missing_contract_count > 0 or expiring_contracts_count > 0 or negative_balances_count > 0 or pending_carry_forward_count > 0 or week_incomplete_count > 0 %}
 <div class="alert-grid mb-4">
     {% if can_approve_missed_attendance %}
     <a href="/admin/missed-attendance" class="text-decoration-none text-reset">
@@ -390,7 +428,26 @@
     </a>
     {% endif %}
 
+    {% if missing_contract_count > 0 %}
+    <button type="button" class="alert-card-btn text-reset"
+            data-bs-toggle="modal" data-bs-target="#missingContractModal">
+        <div class="card alert-card bg-danger bg-opacity-10 h-100">
+            <div class="card-body d-flex align-items-center gap-3">
+                <div class="alert-icon bg-danger bg-opacity-25 text-danger">
+                    <i class="bi bi-file-earmark-excel"></i>
+                </div>
+                <div>
+                    <div class="fw-bold">{{ missing_contract_count }}</div>
+                    <small class="text-muted">فعال بدون قرارداد</small>
+                </div>
+            </div>
+        </div>
+    </button>
+    {% endif %}
+
     {% if expiring_contracts_count > 0 %}
+    <button type="button" class="alert-card-btn text-reset"
+            data-bs-toggle="modal" data-bs-target="#expiringContractModal">
         <div class="card alert-card bg-warning bg-opacity-10 h-100">
             <div class="card-body d-flex align-items-center gap-3">
                 <div class="alert-icon bg-warning bg-opacity-25 text-warning">
@@ -402,6 +459,7 @@
                 </div>
             </div>
         </div>
+    </button>
     {% endif %}
 
     {% if negative_balances_count > 0 %}
@@ -748,6 +806,125 @@
     </div>
 </div>
 
+{% if missing_contract_count > 0 %}
+<div class="modal fade" id="missingContractModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-file-earmark-excel text-danger"></i>
+                    کارمندان فعال بدون قرارداد
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mini-table mb-0">
+                        <thead>
+                            <tr>
+                                <th>نام</th>
+                                <th>شناسه</th>
+                                <th>دلیل</th>
+                                <th>پیوند</th>
+                                {% if user and 'edit_profile' in user.effective_permissions %}
+                                <th>وضعیت</th>
+                                {% endif %}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in missing_contract_list %}
+                            <tr data-missing-contract="{{ row.user_id }}">
+                                <td><strong>{{ row.full_name }}</strong></td>
+                                <td>{{ row.user_id }}</td>
+                                <td>{{ row.reason }}</td>
+                                <td>
+                                    <a href="{{ row.profile_url }}" class="btn btn-sm btn-outline-primary py-0">پروفایل</a>
+                                    <a href="{{ row.contract_url }}" class="btn btn-sm btn-outline-info py-0">قرارداد</a>
+                                </td>
+                                {% if user and 'edit_profile' in user.effective_permissions %}
+                                <td>
+                                    <form method="post"
+                                          action="/admin/users/{{ row.user_id }}/deactivate"
+                                          class="d-inline m-0 js-deactivate-employee"
+                                          data-employee-name="{{ row.full_name }}">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger py-0">غیرفعال</button>
+                                    </form>
+                                </td>
+                                {% endif %}
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">بستن</button>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+document.querySelectorAll('.js-deactivate-employee').forEach(function (form) {
+    form.addEventListener('submit', function (event) {
+        var name = form.getAttribute('data-employee-name') || 'این کارمند';
+        if (!window.confirm(name + ' غیرفعال شود؟')) {
+            event.preventDefault();
+        }
+    });
+});
+</script>
+{% endif %}
+
+{% if expiring_contracts_count > 0 %}
+<div class="modal fade" id="expiringContractModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-file-earmark-x text-warning"></i>
+                    قرارداد رو به انقضا (30 روز)
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mini-table mb-0">
+                        <thead>
+                            <tr>
+                                <th>نام</th>
+                                <th>شناسه</th>
+                                <th>نوع</th>
+                                <th>پایان</th>
+                                <th>مانده</th>
+                                <th>پیوند</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in expiring_contract_list %}
+                            <tr data-expiring-contract="{{ row.user_id }}">
+                                <td><strong>{{ row.full_name }}</strong></td>
+                                <td>{{ row.user_id }}</td>
+                                <td>{{ row.contract_type }}</td>
+                                <td>{{ row.end_date_j }}</td>
+                                <td>{% if row.days_left == 0 %}امروز{% else %}{{ row.days_left }} روز{% endif %}</td>
+                                <td>
+                                    <a href="{{ row.profile_url }}" class="btn btn-sm btn-outline-primary py-0">پروفایل</a>
+                                    <a href="{{ row.contract_url }}" class="btn btn-sm btn-outline-info py-0">قرارداد</a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">بستن</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <!-- مودال رد از داشبورد (مدارک پرسنلی / بستگان) -->
 <div class="modal fade" id="dashRejectModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
@@ -820,4 +997,17 @@
     </div>
 </div>
 
+{% endblock %}
+
+{% block extra_js %}
+{% if request.query_params.get('open') == 'missing-contracts' %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var el = document.getElementById('missingContractModal');
+    if (el && window.bootstrap) {
+        window.bootstrap.Modal.getOrCreateInstance(el).show();
+    }
+});
+</script>
+{% endif %}
 {% endblock %}

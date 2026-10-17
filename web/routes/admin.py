@@ -186,6 +186,10 @@ from models.attendance import Attendance
 from models.daily_status import DailyStatus
 from models.contract import Contract
 from models.leave_carry_forward_request import LeaveCarryForwardRequest
+from web.services.contract_coverage import (
+    list_active_employees_missing_contract,
+    list_expiring_contracts,
+)
 from models.bale_user import BaleUser  # 🆕 ربات بله
 
 router = APIRouter(tags=["Admin"])
@@ -354,15 +358,13 @@ async def admin_dashboard(
     # ⚠️ هشدارهای فوری
     # ============================================
 
-    # قراردادهای رو به انقضا
-    expiration_warning_date = today_g + timedelta(days=30)
-    expiring_contracts_count = db.query(Contract).filter(
-        and_(
-            Contract.end_date != None,
-            Contract.end_date <= expiration_warning_date,
-            Contract.end_date >= today_g
-        )
-    ).count()
+    # کارمندان فعال بدون قرارداد پوشش‌دهنده
+    missing_contract_list = list_active_employees_missing_contract(db, today_g)
+    missing_contract_count = len(missing_contract_list)
+
+    # قراردادهای رو به انقضا (۳۰ روز)
+    expiring_contract_list = list_expiring_contracts(db, today_g, within_days=30)
+    expiring_contracts_count = len(expiring_contract_list)
 
     # مانده‌های منفی
     negative_balances_count = db.query(LeaveBalance).filter(
@@ -624,7 +626,10 @@ async def admin_dashboard(
         "attendance_rate": attendance_rate,
 
         # ⚠️ هشدارها
+        "missing_contract_count": missing_contract_count,
+        "missing_contract_list": missing_contract_list,
         "expiring_contracts_count": expiring_contracts_count,
+        "expiring_contract_list": expiring_contract_list,
         "negative_balances_count": negative_balances_count,
         "pending_carry_forward_count": pending_carry_forward_count,
         "week_incomplete_count": week_incomplete_count,  # 🆕 (جایگزین تردد ناقص امروز)
@@ -2694,6 +2699,31 @@ async def admin_toggle_web(
     db.commit()
 
     return RedirectResponse(url=f"/admin/profile/{target_user_id}?web_toggled=1", status_code=302)
+
+
+@router.post("/admin/users/{target_user_id}/deactivate")
+async def admin_deactivate_employee(
+    target_user_id: str,
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """غیرفعال کردن کارمند؛ همان پرچم وضعیت پروفایل، با دسترسی edit_profile."""
+    enforce_permission(db, user, "edit_profile")
+    if target_user_id == user.user_id:
+        return RedirectResponse(url="/admin?error=deactivate-self", status_code=302)
+
+    employee = db.query(Employee).filter(Employee.user_id == target_user_id).first()
+    if employee is None:
+        return RedirectResponse(url="/admin?error=deactivate-missing", status_code=302)
+    if not employee.is_active:
+        return RedirectResponse(url="/admin?error=deactivate-inactive", status_code=302)
+
+    employee.is_active = False
+    db.commit()
+    return RedirectResponse(
+        url="/admin?success=employee-deactivated&open=missing-contracts",
+        status_code=302,
+    )
 
 
 ALLOWED_AVATAR_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp'}

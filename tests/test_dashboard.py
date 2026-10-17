@@ -1,5 +1,9 @@
 """Tests for the user dashboard and the admin dashboard (incl. test banner)."""
 import json
+from datetime import date, timedelta
+
+from models.contract import Contract
+from models.employee import Employee
 
 from .conftest import TEST_STATUS_PATH, login_as
 
@@ -120,6 +124,112 @@ def test_admin_dashboard_contract_breakdown_shows_membership_name(client, make_u
     assert "قراردادی:" in resp.text
     assert "annual_leave_base" not in resp.text
     assert "supports_positive_seniority" not in resp.text
+
+
+def test_admin_dashboard_shows_active_employees_without_contract(client, db, make_user):
+    """Active employees with no covering contract appear on the alert card and in its modal."""
+    admin = make_user(role="admin")
+    missing = make_user(role="user")
+    covered = make_user(role="user")
+    inactive = make_user(role="user")
+    expired = make_user(role="user")
+
+    db.query(Contract).filter(Contract.user_id == missing["user_id"]).delete()
+    db.query(Contract).filter(Contract.user_id == inactive["user_id"]).delete()
+    inactive_emp = db.query(Employee).filter(Employee.user_id == inactive["user_id"]).one()
+    inactive_emp.is_active = False
+    expired_contract = db.query(Contract).filter(Contract.user_id == expired["user_id"]).one()
+    expired_contract.end_date = date.today() - timedelta(days=1)
+    db.commit()
+
+    missing_emp = db.query(Employee).filter(Employee.user_id == missing["user_id"]).one()
+    expired_emp = db.query(Employee).filter(Employee.user_id == expired["user_id"]).one()
+
+    login_as(client, admin["national_code"])
+    resp = client.get("/admin")
+    assert resp.status_code == 200
+    assert "فعال بدون قرارداد" in resp.text
+    assert f'data-missing-contract="{missing["user_id"]}"' in resp.text
+    assert missing_emp.full_name in resp.text
+    assert "بدون قرارداد" in resp.text
+    assert f'href="/admin/profile/{missing["user_id"]}"' in resp.text
+    assert f'href="/admin/contracts/user/{missing["user_id"]}"' in resp.text
+    assert f'data-missing-contract="{expired["user_id"]}"' in resp.text
+    assert expired_emp.full_name in resp.text
+    assert "منقضی" in resp.text
+    assert f'data-missing-contract="{covered["user_id"]}"' not in resp.text
+    assert f'data-missing-contract="{inactive["user_id"]}"' not in resp.text
+    assert f'data-missing-contract="{admin["user_id"]}"' not in resp.text
+    assert f'/admin/users/{missing["user_id"]}/deactivate' not in resp.text
+
+
+def test_admin_dashboard_expiring_contracts_open_in_popup(client, db, make_user):
+    """Contracts ending within 30 days are listed in the expiring-contract popup."""
+    admin = make_user(role="admin")
+    soon = make_user(role="user")
+    later = make_user(role="user")
+    ended = make_user(role="user")
+
+    soon_contract = db.query(Contract).filter(Contract.user_id == soon["user_id"]).one()
+    soon_contract.end_date = date.today() + timedelta(days=10)
+    later_contract = db.query(Contract).filter(Contract.user_id == later["user_id"]).one()
+    later_contract.end_date = date.today() + timedelta(days=40)
+    ended_contract = db.query(Contract).filter(Contract.user_id == ended["user_id"]).one()
+    ended_contract.end_date = date.today() - timedelta(days=1)
+    db.commit()
+
+    soon_emp = db.query(Employee).filter(Employee.user_id == soon["user_id"]).one()
+    login_as(client, admin["national_code"])
+    resp = client.get("/admin")
+    assert resp.status_code == 200
+    assert "قرارداد رو به انقضا (30 روز)" in resp.text
+    assert 'data-bs-target="#expiringContractModal"' in resp.text
+    assert f'data-expiring-contract="{soon["user_id"]}"' in resp.text
+    assert soon_emp.full_name in resp.text
+    assert f'href="/admin/contracts/user/{soon["user_id"]}"' in resp.text
+    assert f'data-expiring-contract="{later["user_id"]}"' not in resp.text
+    assert f'data-expiring-contract="{ended["user_id"]}"' not in resp.text
+    assert f'data-expiring-contract="{admin["user_id"]}"' not in resp.text
+
+
+def test_dashboard_deactivate_removes_employee_without_contract(client, db, make_user):
+    """Super admin can deactivate a listed employee from the missing-contract popup."""
+    admin = make_user(role="super_admin")
+    missing = make_user(role="user")
+    db.query(Contract).filter(Contract.user_id == missing["user_id"]).delete()
+    db.commit()
+
+    login_as(client, admin["national_code"])
+    page = client.get("/admin")
+    assert page.status_code == 200
+    assert f'action="/admin/users/{missing["user_id"]}/deactivate"' in page.text
+
+    posted = client.post(f"/admin/users/{missing['user_id']}/deactivate")
+    assert posted.status_code == 302
+    assert "success=employee-deactivated" in posted.headers["location"]
+    assert "open=missing-contracts" in posted.headers["location"]
+
+    db.expire_all()
+    employee = db.query(Employee).filter(Employee.user_id == missing["user_id"]).one()
+    assert employee.is_active is False
+
+    again = client.get("/admin")
+    assert f'data-missing-contract="{missing["user_id"]}"' not in again.text
+
+
+def test_dashboard_deactivate_requires_edit_profile(client, db, make_user):
+    admin = make_user(role="admin")
+    missing = make_user(role="user")
+    db.query(Contract).filter(Contract.user_id == missing["user_id"]).delete()
+    db.commit()
+
+    login_as(client, admin["national_code"])
+    posted = client.post(f"/admin/users/{missing['user_id']}/deactivate")
+    assert posted.status_code == 403
+
+    db.expire_all()
+    employee = db.query(Employee).filter(Employee.user_id == missing["user_id"]).one()
+    assert employee.is_active is True
 
 
 def test_admin_dashboard_banner_empty_state(client, make_user):
