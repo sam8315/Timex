@@ -3092,31 +3092,6 @@ class TestMonthlyReportSummaryAndShifts:
         finally:
             _p6c_teardown(db, creds["user_id"])
 
-    def test_weekly_overtime_current_behavior(self, db, make_user, monkeypatch):
-        """اضافه‌کار هفتگی: هفته از شنبه؛ فقط روزهای همین ماه شمرده می‌شوند."""
-        emp, creds = _p6c_base(db, make_user)
-        try:
-            # پانچِ خارج از ماه (شنبه 2027-03-20 — همان هفته) نباید لحاظ شود
-            _p6c_seed_punches(db, creds["user_id"], date(2027, 3, 20),
-                              time(7, 0), time(19, 0))
-            _p6c_seed_punches(db, creds["user_id"], MONDAY,
-                              time(7, 0), time(16, 0))       # 9h
-            _p6c_seed_punches(db, creds["user_id"], P6C_TUESDAY,
-                              time(7, 0), time(15, 0))       # 8h
-            _p6c_seed_punches(db, creds["user_id"], P6C_WEDNESDAY,
-                              time(7, 0), time(15, 0))       # 8h
-            _p6c_seed_punches(db, creds["user_id"], P6C_THURSDAY,
-                              time(7, 0), time(15, 0))       # 8h
-            report = _p6c_report(monkeypatch, creds["user_id"])
-
-            # هفتهٔ شنبه 2027-03-20 (ماه قبل) تا جمعه 2027-03-26:
-            # کارکرد درون‌ماه 33h در برابر موظفی درون‌ماه 32h → 1h اضافه‌کار
-            assert report["summary"]["weekly_overtime"] == 1.0
-            assert report["summary"]["total_work_hours"] == 33.0
-        finally:
-            _p6c_teardown(db, creds["user_id"])
-
-
 class TestMonthlyReportRoutes:
     """دو route گزارش + monthly-stats (بدون HM) + UI فرم HM."""
 

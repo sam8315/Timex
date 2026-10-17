@@ -5654,7 +5654,6 @@ class ConsoleUI:
         print(f"\n  اضافه کاری و کسری (مبنای 7:20):")
         print(f"     مجموع اضافی         : {fmt_hours_summary(summary['total_surplus'])} ساعت")
         print(f"     مجموع کسری          : {fmt_hours_summary(summary['total_deficit'])} ساعت")
-        print(f"     اضافه کاری هفتگی    : {fmt_hours_summary(summary['weekly_overtime'])} ساعت")
         print(f"     جمعه کاری           : {fmt_hours_summary(summary['friday_work_hours'])} ساعت")
 
         # ✅ وضعیت کلی - تهاتر اضافی و کسری

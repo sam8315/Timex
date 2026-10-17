@@ -251,7 +251,6 @@ class DetailedPDFExporterV2:
             f"کسری: {self._fmt_hours(summary['total_deficit'])} | "
             f"تأخیر: {self._fmt_hours(summary.get('total_late_violation') or 0)} | "
             f"تعجیل: {self._fmt_hours(summary.get('total_early_leave_violation') or 0)} | "
-            f"هفتگی: {self._fmt_hours(summary['weekly_overtime'])} | "
             f"جمعه‌کاری: {self._fmt_hours(summary['friday_work_hours'])} | "
             f"تعطیل‌کاری: {self._fmt_hours(summary['holiday_work_hours'])}",
             f"وضعیت کلی: {summary['overall_status']} | "

@@ -382,8 +382,14 @@
             موظفی: {{ report.summary.duty_days }} / {{ report.summary.duty_hours | hhmm }}
             | حضور: {{ report.summary.present_days }}
             | مرخصی: {{ report.summary.leave_days }}
+            | مأموریت: {{ report.summary.mission_days }}
             | غیبت: {{ report.summary.absent_days }}
             | بدون تردد: {{ report.summary.no_punch_days }}
+            | استراحت: {{ report.summary.rest_days }}
+            | تعطیل: {{ report.summary.holiday_days }}
+            | جمعه‌کاری: {{ report.summary.friday_work_days }}
+            | تعطیل‌کاری: {{ report.summary.holiday_work_days }}
+            | جمع روزها: {{ report.summary.status_days_total }}/{{ report.summary.month_days }}
             | کارکرد: {{ report.summary.total_work_hours | hhmm }}
             {% if report.summary.total_grace_hours %}
             ({{ report.summary.total_punch_grace_hours | hhmm }} = کارکرد واقعی {{ report.summary.total_punch_hours | hhmm }} + فرجه {{ report.summary.total_grace_hours | hhmm }})
@@ -395,38 +401,96 @@
             | {{ report.summary.overall_status }} / {{ report.summary.net_balance | hhmm }}
         </div>
 
-        <!-- 📈 کارت‌های خلاصه -->
-        <div class="row g-3 mb-4 screen-summary-cards">
-            <div class="col-md-3 col-6">
-                <div class="card summary-card bg-light">
+        <!-- 📈 کارت‌های خلاصه وضعیت روزها (جمع = روزهای ماه) -->
+        <div class="row g-3 mb-3 screen-summary-cards">
+            <div class="col-lg-2 col-md-3 col-6">
+                <div class="card summary-card bg-light h-100">
                     <div class="card-body text-center">
                         <div class="value">{{ report.summary.duty_days }}</div>
                         <div class="label">روز موظفی</div>
                     </div>
                 </div>
             </div>
-            <div class="col-md-3 col-6">
-                <div class="card summary-card bg-success bg-opacity-10">
+            <div class="col-lg-2 col-md-3 col-6">
+                <div class="card summary-card bg-success bg-opacity-10 h-100">
                     <div class="card-body text-center">
                         <div class="value text-success">{{ report.summary.present_days }}</div>
-                        <div class="label text-success">روز حضور</div>
+                        <div class="label text-success">حضور کاری</div>
                     </div>
                 </div>
             </div>
-            <div class="col-md-3 col-6">
-                <div class="card summary-card bg-info bg-opacity-10">
+            <div class="col-lg-2 col-md-3 col-6">
+                <div class="card summary-card bg-info bg-opacity-10 h-100">
                     <div class="card-body text-center">
                         <div class="value text-info">{{ report.summary.leave_days }}</div>
-                        <div class="label text-info">روز مرخصی</div>
+                        <div class="label text-info">مرخصی</div>
                     </div>
                 </div>
             </div>
-            <div class="col-md-3 col-6">
-                <div class="card summary-card bg-danger bg-opacity-10">
+            <div class="col-lg-2 col-md-3 col-6">
+                <div class="card summary-card bg-primary bg-opacity-10 h-100">
+                    <div class="card-body text-center">
+                        <div class="value text-primary">{{ report.summary.mission_days }}</div>
+                        <div class="label text-primary">مأموریت</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-2 col-md-3 col-6">
+                <div class="card summary-card bg-danger bg-opacity-10 h-100">
                     <div class="card-body text-center">
                         <div class="value text-danger">{{ report.summary.absent_days }}</div>
-                        <div class="label text-danger">روز غیبت</div>
-                        <div class="small text-secondary">بدون تردد: {{ report.summary.no_punch_days }}</div>
+                        <div class="label text-danger">غیبت</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-2 col-md-3 col-6">
+                <div class="card summary-card bg-secondary bg-opacity-10 h-100">
+                    <div class="card-body text-center">
+                        <div class="value text-secondary">{{ report.summary.no_punch_days }}</div>
+                        <div class="label text-secondary">بدون تردد</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="row g-3 mb-4 screen-summary-cards">
+            <div class="col-lg-2 col-md-3 col-6">
+                <div class="card summary-card bg-secondary bg-opacity-10 h-100">
+                    <div class="card-body text-center">
+                        <div class="value">{{ report.summary.rest_days }}</div>
+                        <div class="label">استراحت</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-2 col-md-3 col-6">
+                <div class="card summary-card bg-warning bg-opacity-10 h-100">
+                    <div class="card-body text-center">
+                        <div class="value text-warning">{{ report.summary.holiday_days }}</div>
+                        <div class="label text-warning">تعطیل</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-2 col-md-3 col-6" title="جمعه با حضور — جدا از حضور روزهای کاری">
+                <div class="card summary-card bg-light h-100">
+                    <div class="card-body text-center">
+                        <div class="value">{{ report.summary.friday_work_days }}</div>
+                        <div class="label">جمعه‌کاری</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-2 col-md-3 col-6" title="تعطیل رسمی با حضور — جدا از حضور روزهای کاری">
+                <div class="card summary-card bg-light h-100">
+                    <div class="card-body text-center">
+                        <div class="value">{{ report.summary.holiday_work_days }}</div>
+                        <div class="label">تعطیل‌کاری</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-4 col-md-6 col-12">
+                <div class="card summary-card border-primary h-100">
+                    <div class="card-body text-center">
+                        <div class="value text-primary">{{ report.summary.status_days_total }}</div>
+                        <div class="label text-primary">جمع روزها</div>
+                        <div class="small text-muted">از {{ report.summary.month_days }} روز ماه</div>
                     </div>
                 </div>
             </div>
@@ -512,8 +576,6 @@
             <i class="bi bi-info-circle"></i>
             وضعیت کلی: <strong>{{ report.summary.overall_status }}</strong>
             | خالص: <strong class="hour-value">{{ report.summary.net_balance | hhmm }}</strong> ساعت
-            | اضافه کار هفتگی: <strong class="hour-value">{{ report.summary.weekly_overtime | hhmm }}</strong>
-            ساعت
             | جمعه کاری: <strong class="hour-value">{{ report.summary.friday_work_hours | hhmm }}</strong> ساعت
             | تعطیل کاری: <strong class="hour-value">{{ report.summary.holiday_work_hours | hhmm }}</strong>
             ساعت

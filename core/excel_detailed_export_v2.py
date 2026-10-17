@@ -235,7 +235,6 @@ class DetailedExcelExporterV2:
         entry('کسری کار', self._fmt_hours(summary['total_deficit']))
         entry('تخلف تأخیر', self._fmt_hours(summary.get('total_late_violation') or 0))
         entry('تخلف تعجیل', self._fmt_hours(summary.get('total_early_leave_violation') or 0))
-        entry('اضافه کاری هفتگی', self._fmt_hours(summary['weekly_overtime']))
 
         section('وضعیت کلی')
         entry('تهاتر اضافی و کسری',

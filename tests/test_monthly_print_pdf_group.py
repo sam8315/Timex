@@ -144,6 +144,26 @@ class TestDetailedExports:
         assert 'چاپ گروهی' not in html
         assert 'PDF گروهی' not in html
 
+    def test_detailed_summary_cards_match_month_days(self, client, monthly_ctx):
+        """کارت‌های وضعیت روز + جمع روزها؛ بدون فیلد هفتگی حذف‌شده."""
+        _login(client, monthly_ctx)
+        uid = monthly_ctx['target']['user_id']
+
+        resp = client.post('/reports/monthly-detailed', data=_params(uid))
+        assert resp.status_code == 200
+        html = resp.text
+        assert 'weekly_overtime' not in html
+        assert 'اضافه کار هفتگی' not in html
+        assert 'جمع روزها' in html
+
+        from core.detailed_monthly_report_v2 import DetailedMonthlyReportGeneratorV2
+
+        gen = DetailedMonthlyReportGeneratorV2()
+        report = gen.generate_detailed_report(uid, J_YEAR, J_MONTH)
+        s = report['summary']
+        assert s['status_days_total'] == s['month_days']
+        assert s['status_days_total'] == len(report['days'])
+
 
 # ---------------------------------------------------------------------------
 # خروجی گروهی بر اساس نوع عضویت (سیاست گزارش خام)

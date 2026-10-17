@@ -503,25 +503,8 @@ class TestScenarioMatrix:
                 sum(_hours_to_minutes(d['surplus']) for d in report['days'])))
             assert s['total_deficit'] == pytest.approx(_minutes_to_hours(
                 sum(_hours_to_minutes(d['deficit']) for d in report['days'])))
-            expected_ot_m = 0
-            for wk in {_week_start(d['date']) for d in report['days']}:
-                week_days = [d for d in report['days']
-                             if _week_start(d['date']) == wk]
-                work_m = sum(_hours_to_minutes(d['work_hours']) for d in week_days)
-                req_m = sum(_hours_to_minutes(d['daily_duty']) for d in week_days)
-                if req_m > 0 and work_m > req_m:
-                    expected_ot_m += work_m - req_m
-            assert s['weekly_overtime'] == pytest.approx(
-                _minutes_to_hours(expected_ot_m))
         finally:
             _cleanup_holiday(db)
-
-
-def _week_start(d):
-    current = d
-    while current.weekday() != 5:
-        current -= timedelta(days=1)
-    return current
 
 
 # ---------------------------------------------------------------------------

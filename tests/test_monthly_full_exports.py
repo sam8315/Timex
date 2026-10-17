@@ -233,8 +233,6 @@ class TestExcelExport:
             summary['friday_work_hours'])
         assert cells['تعطیل کاری (ساعت)'] == _fmt_hours(
             summary['holiday_work_hours'])
-        assert cells['اضافه کاری هفتگی'] == _fmt_hours(
-            summary['weekly_overtime'])
         assert cells['وضعیت نهایی'] == summary['overall_status']
 
     def test_summary_labels_do_not_hardcode_required_work(self, client,

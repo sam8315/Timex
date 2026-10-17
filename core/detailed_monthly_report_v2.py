@@ -8,7 +8,7 @@ Phase 5: محاسبه «تردد واقعی» (Actual Attendance) از Central A
 
     Central Engine  → Actual Work / pairs / وضعیت تردد
     Policy Engine   → Required Duty / موظفی روز
-    Report Layer    → surplus / deficit / weekly overtime / monthly summary
+    Report Layer    → surplus / deficit / monthly summary
 """
 from datetime import date, datetime, timedelta
 from typing import List, Dict, Optional
@@ -764,8 +764,6 @@ class DetailedMonthlyReportGeneratorV2:
             overall_status = 'متعادل'
             net_balance_hours = 0.0
 
-        weekly_overtime = self._calculate_weekly_overtime(days)
-
         friday_work_hours = _minutes_to_hours(sum(
             _hours_to_minutes(d['work_hours'])
             for d in days if d['is_friday'] and d['person_status'] == 'P'
@@ -817,34 +815,9 @@ class DetailedMonthlyReportGeneratorV2:
             'net_balance': net_balance,
             'overall_status': overall_status,
             'net_balance_hours': net_balance_hours,
-            'weekly_overtime': weekly_overtime,
             'friday_work_hours': friday_work_hours,
             'holiday_work_hours': holiday_work_hours,
         }
-
-    def _calculate_weekly_overtime(self, days: List[Dict]) -> float:
-        """محاسبه اضافه کار هفتگی با دقت دقیقه (بر اساس Policy هر روز)."""
-        weekly_overtime_m = 0
-
-        weeks = {}
-        for day in days:
-            current = day['date']
-            while current.weekday() != 5:
-                current -= timedelta(days=1)
-
-            week_start = current
-            if week_start not in weeks:
-                weeks[week_start] = []
-            weeks[week_start].append(day)
-
-        for week_start, week_days in weeks.items():
-            total_m = sum(_hours_to_minutes(d['work_hours']) for d in week_days)
-            required_m = sum(_hours_to_minutes(d['daily_duty']) for d in week_days)
-
-            if required_m > 0 and total_m > required_m:
-                weekly_overtime_m += total_m - required_m
-
-        return _minutes_to_hours(weekly_overtime_m)
 
     def _find_holiday(self, target_date: date, department: str) -> Optional[Holiday]:
         """رکورد تعطیلِ مؤثر برای تاریخ/گروه (برای عنوان و پرچم تعطیلی)"""
