@@ -110,6 +110,18 @@ def test_admin_dashboard_banner_shows_error_details(client, make_user):
             TEST_STATUS_PATH.write_text(backup, encoding="utf-8")
 
 
+def test_admin_dashboard_contract_breakdown_shows_membership_name(client, make_user):
+    """نوع عضویت در نوار تفکیک قرارداد باید نام باشد، نه دیکشنری Rule."""
+    creds = make_user(role="admin", department="4")
+    login_as(client, creds["national_code"])
+    resp = client.get("/admin")
+    assert resp.status_code == 200
+    assert "تفکیک قرارداد" in resp.text
+    assert "قراردادی:" in resp.text
+    assert "annual_leave_base" not in resp.text
+    assert "supports_positive_seniority" not in resp.text
+
+
 def test_admin_dashboard_banner_empty_state(client, make_user):
     """Without any prior run the banner must say tests never ran."""
     backup = None

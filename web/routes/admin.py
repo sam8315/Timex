@@ -261,7 +261,10 @@ async def admin_dashboard(
 
     # تفکیک کارمندان فعال بر اساس نوع عضویت پایه
     from web.services.membership_service import membership_types_as_dict
-    membership_names = membership_types_as_dict(db, active_only=False)
+    membership_names = {
+        code: info["name"]
+        for code, info in membership_types_as_dict(db, active_only=False).items()
+    }
     dept_counts_raw = db.query(
         Employee.membership_type_code,
         func.count(Employee.id)
@@ -273,7 +276,7 @@ async def admin_dashboard(
     for dept_code, count in dept_counts_raw:
         employee_breakdown.append({
             'code': dept_code,
-            'name': membership_names.get(dept_code, dept_code or 'نامشخص'),
+            'name': membership_names.get(dept_code) or dept_code or 'نامشخص',
             'count': count
         })
 
@@ -2989,7 +2992,10 @@ async def admin_incomplete_attendance(
             by_department = {}
 
     from web.services.membership_service import membership_types_as_dict, list_membership_types
-    membership_names = membership_types_as_dict(db, active_only=False)
+    membership_names = {
+        code: info["name"]
+        for code, info in membership_types_as_dict(db, active_only=False).items()
+    }
     membership_names['بدون گروه'] = 'بدون گروه'
 
     return templates.TemplateResponse(request, "admin/incomplete.html", {
