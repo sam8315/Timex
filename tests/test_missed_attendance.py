@@ -4,7 +4,11 @@ from datetime import datetime, timedelta
 import jdatetime
 
 from models.attendance import Attendance
-from models.missed_attendance_request import MissedAttendanceRequest
+from models.missed_attendance_request import (
+    ACTION_CREATE,
+    ACTION_DELETE,
+    MissedAttendanceRequest,
+)
 from models.user import User
 from tests.conftest import login_as
 from web.permissions import ALL_PERMISSIONS, has_permission
@@ -60,6 +64,23 @@ def test_other_reason_requires_text(client, db, make_user):
     assert row.reason_text == "جلسه بیرون از ساختمان"
     assert row.status == "P"
     assert row.punch == 1
+    assert row.action == ACTION_CREATE
+
+
+def _add_attendance(db, user_id, days_ago=2, hour=10, minute=30, punch=0):
+    stamp = datetime.now().replace(second=0, microsecond=0) - timedelta(days=days_ago)
+    stamp = stamp.replace(hour=hour, minute=minute)
+    record = Attendance(
+        user_id=user_id,
+        timestamp=stamp,
+        punch=punch,
+        status=0,
+        source="D",
+    )
+    db.add(record)
+    db.commit()
+    db.refresh(record)
+    return record
 
 
 def test_approve_creates_manual_attendance(client, db, make_user):
@@ -108,6 +129,135 @@ def test_approve_creates_manual_attendance(client, db, make_user):
     if wall.tzinfo is not None:
         wall = wall.astimezone().replace(tzinfo=None)
     assert (wall.hour, wall.minute) == (9, 15)
+    assert row.action == ACTION_CREATE
+
+
+def test_approve_delete_soft_deletes_attendance(client, db, make_user):
+    employee = make_user(role="user")
+    approver = make_user(role="super_admin")
+    record = _add_attendance(db, employee["user_id"], days_ago=3, hour=11, minute=5)
+
+    login_as(client, employee["national_code"])
+    sent = client.post(
+        "/attendance/missed/action",
+        data={
+            "attendance_id": record.id,
+            "action": "delete",
+            "reason_code": "duplicate",
+        },
+        follow_redirects=False,
+    )
+    assert sent.status_code == 302
+
+    row = db.query(MissedAttendanceRequest).filter(
+        MissedAttendanceRequest.user_id == employee["user_id"],
+        MissedAttendanceRequest.action == ACTION_DELETE,
+    ).one()
+    assert row.target_attendance_id == record.id
+
+    login_as(client, approver["national_code"])
+    approved = client.post(f"/admin/missed-attendance/{row.id}/approve", follow_redirects=True)
+    assert approved.status_code == 200
+    assert "تردد حذف شد" in approved.text
+
+    db.expire_all()
+    record = db.query(Attendance).filter(Attendance.id == record.id).one()
+    assert record.is_deleted is True
+    assert db.query(Attendance).filter(
+        Attendance.user_id == employee["user_id"],
+        Attendance.is_deleted == False,  # noqa: E712
+    ).count() == 0
+
+
+def test_approve_change_punch_updates_record(client, db, make_user):
+    employee = make_user(role="user")
+    approver = make_user(role="super_admin")
+    record = _add_attendance(db, employee["user_id"], days_ago=3, hour=14, minute=20, punch=0)
+
+    login_as(client, employee["national_code"])
+    client.post(
+        "/attendance/missed/action",
+        data={
+            "attendance_id": record.id,
+            "action": "change_punch",
+            "new_punch": "1",
+        },
+        follow_redirects=True,
+    )
+    row = db.query(MissedAttendanceRequest).filter(
+        MissedAttendanceRequest.user_id == employee["user_id"],
+        MissedAttendanceRequest.action == "change_punch",
+    ).one()
+    assert row.punch == 1
+    assert not row.reason_code
+
+    login_as(client, approver["national_code"])
+    client.post(f"/admin/missed-attendance/{row.id}/approve", follow_redirects=True)
+
+    db.expire_all()
+    record = db.query(Attendance).filter(Attendance.id == record.id).one()
+    assert record.is_deleted is False
+    assert record.punch == 1
+
+
+def test_action_on_other_users_attendance_rejected(client, db, make_user):
+    owner = make_user(role="user")
+    other = make_user(role="user")
+    record = _add_attendance(db, owner["user_id"], days_ago=4, hour=8, minute=0)
+
+    login_as(client, other["national_code"])
+    resp = client.post(
+        "/attendance/missed/action",
+        data={
+            "attendance_id": record.id,
+            "action": "delete",
+            "reason_code": "duplicate",
+        },
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    assert "تردد یافت نشد" in resp.text
+    assert db.query(MissedAttendanceRequest).filter(
+        MissedAttendanceRequest.user_id == other["user_id"]
+    ).count() == 0
+
+
+def test_nearby_endpoint_requires_permission_and_returns_three_days(client, db, make_user):
+    employee = make_user(role="user")
+    approver = make_user(role="super_admin")
+    center = datetime.now().replace(second=0, microsecond=0) - timedelta(days=2)
+    center = center.replace(hour=9, minute=0)
+    db.add(Attendance(
+        user_id=employee["user_id"],
+        timestamp=center,
+        punch=0,
+        status=0,
+        source="D",
+    ))
+    db.commit()
+
+    record = db.query(Attendance).filter(Attendance.user_id == employee["user_id"]).one()
+    login_as(client, employee["national_code"])
+    client.post(
+        "/attendance/missed/action",
+        data={
+            "attendance_id": record.id,
+            "action": "delete",
+            "reason_code": "duplicate",
+        },
+    )
+    row = db.query(MissedAttendanceRequest).filter(
+        MissedAttendanceRequest.user_id == employee["user_id"]
+    ).one()
+
+    login_as(client, make_user(role="admin")["national_code"])
+    assert client.get(f"/admin/missed-attendance/{row.id}/nearby").status_code == 403
+
+    login_as(client, approver["national_code"])
+    payload = client.get(f"/admin/missed-attendance/{row.id}/nearby").json()
+    assert len(payload["days"]) == 3
+    assert payload["days"][1]["label"] == "همان روز"
+    assert any(rec["time"] == "09:00" for rec in payload["days"][1]["records"])
 
 
 def test_reject_does_not_create_attendance(client, db, make_user):

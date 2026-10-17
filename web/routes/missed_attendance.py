@@ -1,10 +1,10 @@
 """درخواست و تأیید تردد فراموش‌شده."""
-from datetime import datetime
+from datetime import datetime, timedelta
 from urllib.parse import quote
 
 import jdatetime
-from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Depends, Form, Query, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
 from sqlalchemy.exc import IntegrityError
@@ -13,6 +13,11 @@ from sqlalchemy.orm import Session
 from models.attendance import Attendance
 from models.employee import Employee
 from models.missed_attendance_request import (
+    ACTION_CHANGE_PUNCH,
+    ACTION_CREATE,
+    ACTION_DELETE,
+    DELETE_REASON_LABELS,
+    DELETE_REASON_OPTIONS,
     PUNCH_LABELS,
     REASON_LABELS,
     REASON_OPTIONS,
@@ -44,13 +49,38 @@ def format_punch_at(value: datetime) -> str:
     return jdatetime.datetime.fromgregorian(datetime=wall).strftime("%Y/%m/%d %H:%M")
 
 
-def parse_submission(date_str: str, time_str: str, punch: str, reason_code: str, reason_text: str):
-    """اعتبارسنجی فرم. در صورت خطا ValueError با پیام فارسی."""
+def parse_jalali_date(date_str: str):
     try:
         j_date = jdatetime.datetime.strptime(date_str.strip(), "%Y/%m/%d").date()
-        g_date = j_date.togregorian()
+        return j_date.togregorian()
     except ValueError:
         raise ValueError("تاریخ شمسی نامعتبر است")
+
+
+def parse_reason(
+    reason_code: str,
+    reason_text: str,
+    allowed: dict[str, str] | None = None,
+) -> tuple[str, str | None]:
+    labels = allowed if allowed is not None else REASON_LABELS
+    code = (reason_code or "").strip()
+    if code not in labels:
+        raise ValueError("دلیل نامعتبر است")
+
+    text = (reason_text or "").strip()
+    if code == "other":
+        if not text:
+            raise ValueError("برای گزینه سایر، نوشتن دلیل الزامی است")
+        if len(text) > 500:
+            raise ValueError("متن دلیل طولانی است")
+    else:
+        text = ""
+    return code, text or None
+
+
+def parse_submission(date_str: str, time_str: str, punch: str, reason_code: str, reason_text: str):
+    """اعتبارسنجی فرم. در صورت خطا ValueError با پیام فارسی."""
+    g_date = parse_jalali_date(date_str)
 
     try:
         hour, minute = map(int, time_str.strip().split(":"))
@@ -70,20 +100,54 @@ def parse_submission(date_str: str, time_str: str, punch: str, reason_code: str,
     if punch_value not in PUNCH_LABELS:
         raise ValueError("نوع تردد نامعتبر است")
 
-    code = (reason_code or "").strip()
-    if code not in REASON_LABELS:
-        raise ValueError("دلیل نامعتبر است")
+    code, text = parse_reason(reason_code, reason_text)
+    return punch_at, punch_value, code, text
 
-    text = (reason_text or "").strip()
-    if code == "other":
-        if not text:
-            raise ValueError("برای گزینه سایر، نوشتن دلیل الزامی است")
-        if len(text) > 500:
-            raise ValueError("متن دلیل طولانی است")
-    else:
-        text = ""
 
-    return punch_at, punch_value, code, text or None
+def _day_bounds(g_date) -> tuple[datetime, datetime]:
+    start = datetime(g_date.year, g_date.month, g_date.day, 0, 0, 0)
+    return start, start + timedelta(days=1)
+
+
+def _attendance_record_dict(record: Attendance) -> dict:
+    wall = _wall_clock(record.timestamp)
+    return {
+        "id": record.id,
+        "time": wall.strftime("%H:%M"),
+        "punch": record.punch,
+        "punch_label": PUNCH_LABELS.get(record.punch, "نامشخص"),
+    }
+
+
+def _attendances_on_day(db: Session, user_id: str, g_date) -> list[Attendance]:
+    day_start, day_end = _day_bounds(g_date)
+    return (
+        db.query(Attendance)
+        .filter(
+            Attendance.user_id == user_id,
+            Attendance.is_deleted == False,  # noqa: E712
+            Attendance.timestamp >= day_start,
+            Attendance.timestamp < day_end,
+        )
+        .order_by(Attendance.timestamp.asc())
+        .all()
+    )
+
+
+def _pending_action_on_target(
+    db: Session, user_id: str, target_id: int, action: str
+) -> bool:
+    return (
+        db.query(MissedAttendanceRequest)
+        .filter(
+            MissedAttendanceRequest.user_id == user_id,
+            MissedAttendanceRequest.target_attendance_id == target_id,
+            MissedAttendanceRequest.action == action,
+            MissedAttendanceRequest.status == "P",
+        )
+        .first()
+        is not None
+    )
 
 
 def _row_dict(req: MissedAttendanceRequest, employee_name: str | None = None) -> dict:
@@ -98,6 +162,9 @@ def _row_dict(req: MissedAttendanceRequest, employee_name: str | None = None) ->
         "status_name": req.status_name,
         "rejection_reason": req.rejection_reason or "",
         "created_at_j": format_punch_at(req.created_at) if req.created_at else "",
+        "action": req.effective_action,
+        "action_label": req.action_label,
+        "target_attendance_id": req.target_attendance_id,
     }
 
 
@@ -173,6 +240,7 @@ async def missed_attendance_page(
         "user": user,
         "is_admin": user.is_admin,
         "reason_options": REASON_OPTIONS,
+        "delete_reason_options": DELETE_REASON_OPTIONS,
         "requests": [_row_dict(row) for row in rows],
         "incomplete_rows": incomplete_rows,
         "incomplete_month_label": month_label,
@@ -216,10 +284,99 @@ async def submit_missed_attendance(
             reason_code=code,
             reason_text=text,
             status="P",
+            action=ACTION_CREATE,
         ))
         db.commit()
         return RedirectResponse(
             url=build_redirect_url(USER_LIST_PATH, "success", "درخواست ثبت شد و پس از تأیید اعمال می‌شود"),
+            status_code=302,
+        )
+    except ValueError as exc:
+        db.rollback()
+        return RedirectResponse(
+            url=build_redirect_url(USER_LIST_PATH, "error", str(exc)),
+            status_code=302,
+        )
+
+
+@router.get("/attendance/missed/day-records")
+async def missed_attendance_day_records(
+    date_str: str = Query(...),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        g_date = parse_jalali_date(date_str)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+    records = _attendances_on_day(db, user.user_id, g_date)
+    return JSONResponse({
+        "date_j": date_str.strip(),
+        "records": [_attendance_record_dict(row) for row in records],
+    })
+
+
+@router.post("/attendance/missed/action")
+async def submit_missed_attendance_action(
+    attendance_id: int = Form(...),
+    action: str = Form(...),
+    new_punch: str = Form(""),
+    reason_code: str = Form(""),
+    reason_text: str = Form(""),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        if action not in (ACTION_DELETE, ACTION_CHANGE_PUNCH):
+            raise ValueError("نوع درخواست نامعتبر است")
+
+        record = db.query(Attendance).filter(
+            Attendance.id == attendance_id,
+            Attendance.user_id == user.user_id,
+            Attendance.is_deleted == False,  # noqa: E712
+        ).first()
+        if not record:
+            raise ValueError("تردد یافت نشد")
+
+        punch_at = _wall_clock(record.timestamp)
+        punch_value = record.punch if record.punch is not None else 0
+        code = ""
+        text = None
+
+        if action == ACTION_CHANGE_PUNCH:
+            try:
+                requested = int(new_punch)
+            except (TypeError, ValueError):
+                requested = -1
+            if requested not in PUNCH_LABELS:
+                raise ValueError("نوع تردد نامعتبر است")
+            if requested == punch_value:
+                raise ValueError("وضعیت درخواستی با وضعیت فعلی یکسان است")
+            punch_value = requested
+        else:
+            code, text = parse_reason(reason_code, reason_text, DELETE_REASON_LABELS)
+
+        if _pending_action_on_target(db, user.user_id, record.id, action):
+            raise ValueError("درخواست در انتظار برای این تردد وجود دارد")
+
+        db.add(MissedAttendanceRequest(
+            user_id=user.user_id,
+            punch_at=punch_at,
+            punch=punch_value,
+            reason_code=code,
+            reason_text=text,
+            status="P",
+            action=action,
+            target_attendance_id=record.id,
+        ))
+        db.commit()
+        return RedirectResponse(
+            url=build_redirect_url(
+                USER_LIST_PATH,
+                "success",
+                "درخواست ثبت شد و پس از تأیید اعمال می‌شود",
+            ),
             status_code=302,
         )
     except ValueError as exc:
@@ -301,36 +458,117 @@ async def approve_missed_attendance(
             status_code=302,
         )
 
-    record = Attendance(
-        user_id=row.user_id,
-        timestamp=row.punch_at,
-        punch=row.punch,
-        status=15,
-        source="M",
-    )
-    db.add(record)
-    try:
-        db.flush()
+    action = row.effective_action
+    success_msg = "تردد ثبت شد"
+
+    if action == ACTION_CREATE:
+        record = Attendance(
+            user_id=row.user_id,
+            timestamp=row.punch_at,
+            punch=row.punch,
+            status=15,
+            source="M",
+        )
+        db.add(record)
+        try:
+            db.flush()
+            row.status = "A"
+            row.attendance_id = record.id
+            row.reviewed_by = user.user_id
+            row.reviewed_at = datetime.now()
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            return RedirectResponse(
+                url=build_redirect_url(
+                    ADMIN_LIST_PATH,
+                    "error",
+                    "ثبت تردد ممکن نشد؛ برای این زمان رکورد تردد وجود دارد",
+                ),
+                status_code=302,
+            )
+    else:
+        target = db.query(Attendance).filter(
+            Attendance.id == row.target_attendance_id,
+            Attendance.user_id == row.user_id,
+            Attendance.is_deleted == False,  # noqa: E712
+        ).first()
+        if not target:
+            return RedirectResponse(
+                url=build_redirect_url(
+                    ADMIN_LIST_PATH,
+                    "error",
+                    "تردد هدف یافت نشد یا قبلاً حذف شده است",
+                ),
+                status_code=302,
+            )
+        if action == ACTION_DELETE:
+            target.is_deleted = True
+            success_msg = "تردد حذف شد"
+        elif action == ACTION_CHANGE_PUNCH:
+            target.punch = row.punch
+            success_msg = "وضعیت تردد تغییر کرد"
         row.status = "A"
-        row.attendance_id = record.id
+        row.attendance_id = target.id
         row.reviewed_by = user.user_id
         row.reviewed_at = datetime.now()
         db.commit()
-    except IntegrityError:
-        db.rollback()
-        return RedirectResponse(
-            url=build_redirect_url(
-                ADMIN_LIST_PATH,
-                "error",
-                "ثبت تردد ممکن نشد؛ برای این زمان رکورد تردد وجود دارد",
-            ),
-            status_code=302,
-        )
 
     return RedirectResponse(
-        url=build_redirect_url(ADMIN_LIST_PATH, "success", "تردد ثبت شد"),
+        url=build_redirect_url(ADMIN_LIST_PATH, "success", success_msg),
         status_code=302,
     )
+
+
+def _nearby_days_payload(
+    db: Session,
+    row: MissedAttendanceRequest,
+    employee_name: str | None,
+) -> dict:
+    center = _wall_clock(row.punch_at).date()
+    day_specs = [
+        ("روز قبل", center - timedelta(days=1)),
+        ("همان روز", center),
+        ("روز بعد", center + timedelta(days=1)),
+    ]
+    days = []
+    for label, g_date in day_specs:
+        date_j = jdatetime.date.fromgregorian(date=g_date).strftime("%Y/%m/%d")
+        records = []
+        for rec in _attendances_on_day(db, row.user_id, g_date):
+            item = _attendance_record_dict(rec)
+            item["highlight"] = (
+                row.target_attendance_id is not None
+                and rec.id == row.target_attendance_id
+            )
+            records.append(item)
+        days.append({
+            "label": label,
+            "date_j": date_j,
+            "records": records,
+        })
+    return {
+        "employee_name": employee_name or row.user_id,
+        "request_date_j": jdatetime.date.fromgregorian(date=center).strftime("%Y/%m/%d"),
+        "target_attendance_id": row.target_attendance_id,
+        "days": days,
+    }
+
+
+@router.get("/admin/missed-attendance/{request_id}/nearby")
+async def admin_missed_attendance_nearby(
+    request_id: int,
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    enforce_permission(db, user, "approve_missed_attendance")
+    row = db.query(MissedAttendanceRequest).filter(
+        MissedAttendanceRequest.id == request_id
+    ).first()
+    if not row:
+        return JSONResponse({"error": "درخواست یافت نشد"}, status_code=404)
+    names = _employee_names(db, [row.user_id])
+    return JSONResponse(_nearby_days_payload(db, row, names.get(row.user_id)))
 
 
 @router.post("/admin/missed-attendance/{request_id}/reject")

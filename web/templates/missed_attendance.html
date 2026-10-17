@@ -117,6 +117,63 @@
     </div>
 </div>
 
+<div class="card border-0 shadow-sm mb-4" id="existingPunchCard">
+    <div class="card-header bg-white">
+        <h6 class="mb-0"><i class="bi bi-pencil-square"></i> درخواست روی تردد ثبت‌شده</h6>
+    </div>
+    <div class="card-body">
+        <p class="text-muted small">برای حذف یا تغییر ورود/خروج یک تردد موجود، تاریخ را انتخاب کنید.</p>
+        <div class="row g-3 mb-3">
+            <div class="col-md-4">
+                <label class="form-label" for="actionDateStr">تاریخ</label>
+                <input type="text" class="form-control jalali-date" id="actionDateStr"
+                       dir="ltr" placeholder="1404/01/01" autocomplete="off">
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <button type="button" class="btn btn-outline-secondary w-100" id="loadDayRecordsBtn">
+                    نمایش ترددها
+                </button>
+            </div>
+        </div>
+        <div id="dayRecordsWrap" class="d-none">
+            <div class="table-responsive mb-3">
+                <table class="table table-sm table-bordered align-middle mb-0">
+                    <thead class="table-light">
+                    <tr>
+                        <th class="text-center">ساعت</th>
+                        <th class="text-center">نوع</th>
+                        <th class="text-center">درخواست</th>
+                    </tr>
+                    </thead>
+                    <tbody id="dayRecordsBody"></tbody>
+                </table>
+            </div>
+            <form method="post" action="/attendance/missed/action" id="actionForm" class="row g-3">
+                <input type="hidden" name="attendance_id" id="actionAttendanceId" value="">
+                <input type="hidden" name="action" id="actionType" value="">
+                <input type="hidden" name="new_punch" id="actionNewPunch" value="">
+                <div class="col-md-4 d-none" id="deleteReasonWrap">
+                    <label class="form-label" for="actionReasonCode">دلیل حذف</label>
+                    <select class="form-select" id="actionReasonCode" name="reason_code">
+                        {% for code, label in delete_reason_options %}
+                        <option value="{{ code }}">{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-12 d-none" id="actionOtherWrap">
+                    <label class="form-label" for="actionReasonText">شرح دلیل</label>
+                    <textarea class="form-control" id="actionReasonText" name="reason_text" rows="2"
+                              maxlength="500" placeholder="دلیل را بنویسید"></textarea>
+                </div>
+                <div class="col-md-3 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary w-100" id="actionSubmitBtn" disabled>ارسال</button>
+                </div>
+            </form>
+        </div>
+        <p class="text-muted small mb-0 d-none" id="dayRecordsEmpty">در این تاریخ ترددی ثبت نشده است.</p>
+    </div>
+</div>
+
 <div class="card border-0 shadow-sm">
     <div class="card-header bg-white">
         <h6 class="mb-0">درخواست‌های من</h6>
@@ -128,6 +185,7 @@
                 <thead>
                 <tr>
                     <th>زمان</th>
+                    <th>عمل</th>
                     <th>نوع</th>
                     <th>دلیل</th>
                     <th>وضعیت</th>
@@ -138,6 +196,7 @@
                 {% for item in requests %}
                 <tr>
                     <td dir="ltr" class="text-end">{{ item.punch_at_j }}</td>
+                    <td>{{ item.action_label }}</td>
                     <td>{{ item.punch_label }}</td>
                     <td>{{ item.reason_label }}</td>
                     <td>
@@ -214,6 +273,122 @@
             document.getElementById('missedFormCard').scrollIntoView({behavior: 'smooth', block: 'start'});
             timeInput.focus();
         });
+    });
+
+    var actionReason = document.getElementById('actionReasonCode');
+    var deleteReasonWrap = document.getElementById('deleteReasonWrap');
+    var actionOtherWrap = document.getElementById('actionOtherWrap');
+    var actionReasonText = document.getElementById('actionReasonText');
+
+    function syncDeleteReason() {
+        var deleting = actionType.value === 'delete';
+        var other = deleting && actionReason.value === 'other';
+        deleteReasonWrap.classList.toggle('d-none', !deleting);
+        actionReason.disabled = !deleting;
+        actionOtherWrap.classList.toggle('d-none', !other);
+        actionReasonText.required = other;
+        actionReasonText.disabled = !other;
+        if (!other) {
+            actionReasonText.value = '';
+        }
+    }
+    actionReason.addEventListener('change', syncDeleteReason);
+
+    var dayRecordsWrap = document.getElementById('dayRecordsWrap');
+    var dayRecordsEmpty = document.getElementById('dayRecordsEmpty');
+    var dayRecordsBody = document.getElementById('dayRecordsBody');
+    var actionAttendanceId = document.getElementById('actionAttendanceId');
+    var actionType = document.getElementById('actionType');
+    var actionNewPunch = document.getElementById('actionNewPunch');
+    var actionSubmitBtn = document.getElementById('actionSubmitBtn');
+
+    function markSelected(attendanceId, action) {
+        dayRecordsBody.querySelectorAll('[data-action]').forEach(function (btn) {
+            var on = btn.getAttribute('data-id') === String(attendanceId)
+                && btn.getAttribute('data-action') === action;
+            btn.classList.toggle('active', on);
+        });
+    }
+
+    function resetActionSelection() {
+        actionAttendanceId.value = '';
+        actionType.value = '';
+        actionNewPunch.value = '';
+        actionSubmitBtn.disabled = true;
+        actionSubmitBtn.textContent = 'ارسال';
+        syncDeleteReason();
+        markSelected('', '');
+    }
+
+    function chooseAction(rec, action) {
+        var opposite = rec.punch === 0 ? 1 : 0;
+        var oppositeLabel = opposite === 0 ? 'ورود' : 'خروج';
+        actionAttendanceId.value = String(rec.id);
+        actionType.value = action;
+        if (action === 'delete') {
+            actionNewPunch.value = '';
+            actionSubmitBtn.textContent = 'ارسال حذف';
+        } else {
+            actionNewPunch.value = String(opposite);
+            actionSubmitBtn.textContent = 'ارسال تغییر به ' + oppositeLabel;
+        }
+        actionSubmitBtn.disabled = false;
+        markSelected(rec.id, action);
+        syncDeleteReason();
+    }
+
+    function renderDayRecords(records) {
+        dayRecordsBody.innerHTML = '';
+        resetActionSelection();
+        if (!records.length) {
+            dayRecordsWrap.classList.add('d-none');
+            dayRecordsEmpty.classList.remove('d-none');
+            return;
+        }
+        dayRecordsEmpty.classList.add('d-none');
+        dayRecordsWrap.classList.remove('d-none');
+        records.forEach(function (rec) {
+            var oppositeLabel = rec.punch === 0 ? 'خروج' : 'ورود';
+            var tr = document.createElement('tr');
+            tr.innerHTML =
+                '<td class="text-center" dir="ltr">' + rec.time + '</td>' +
+                '<td class="text-center">' + rec.punch_label + '</td>' +
+                '<td class="text-center">' +
+                '<button type="button" class="btn btn-sm btn-outline-danger me-1" data-action="delete" data-id="' + rec.id + '">حذف</button>' +
+                '<button type="button" class="btn btn-sm btn-outline-primary" data-action="change_punch" data-id="' + rec.id + '">تغییر به ' + oppositeLabel + '</button>' +
+                '</td>';
+            tr.querySelectorAll('[data-action]').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    chooseAction(rec, btn.getAttribute('data-action'));
+                });
+            });
+            dayRecordsBody.appendChild(tr);
+        });
+    }
+
+    document.getElementById('loadDayRecordsBtn').addEventListener('click', function () {
+        var dateVal = (document.getElementById('actionDateStr').value || '').trim();
+        if (!dateVal) {
+            return;
+        }
+        fetch('/attendance/missed/day-records?date_str=' + encodeURIComponent(dateVal), {
+            credentials: 'same-origin'
+        })
+            .then(function (resp) { return resp.json(); })
+            .then(function (data) {
+                if (data.error) {
+                    dayRecordsWrap.classList.add('d-none');
+                    dayRecordsEmpty.classList.remove('d-none');
+                    dayRecordsEmpty.textContent = data.error;
+                    return;
+                }
+                dayRecordsEmpty.textContent = 'در این تاریخ ترددی ثبت نشده است.';
+                renderDayRecords(data.records || []);
+            })
+            .catch(function () {
+                dayRecordsEmpty.classList.remove('d-none');
+                dayRecordsEmpty.textContent = 'بارگذاری ترددها ممکن نشد.';
+            });
     });
 })();
 </script>

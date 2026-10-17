@@ -23,10 +23,28 @@ REASON_OPTIONS = (
 )
 REASON_LABELS = dict(REASON_OPTIONS)
 
+DELETE_REASON_OPTIONS = (
+    ("duplicate", "تکراری"),
+    ("mistake", "اشتباه"),
+    ("other", "سایر"),
+)
+DELETE_REASON_LABELS = dict(DELETE_REASON_OPTIONS)
+
 PUNCH_LABELS = {
     0: "ورود",
     1: "خروج",
 }
+
+ACTION_CREATE = "create"
+ACTION_DELETE = "delete"
+ACTION_CHANGE_PUNCH = "change_punch"
+
+ACTION_OPTIONS = (
+    (ACTION_CREATE, "ثبت تردد"),
+    (ACTION_DELETE, "حذف تردد"),
+    (ACTION_CHANGE_PUNCH, "تغییر وضعیت"),
+)
+ACTION_LABELS = dict(ACTION_OPTIONS)
 
 
 class MissedAttendanceRequest(TimestampMixin, Base):
@@ -68,6 +86,19 @@ class MissedAttendanceRequest(TimestampMixin, Base):
         nullable=True,
     )
 
+    action: Mapped[Optional[str]] = mapped_column(
+        String(32),
+        nullable=True,
+        index=True,
+        comment="create | delete | change_punch",
+    )
+    target_attendance_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("attendances.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     user = relationship("User", backref="missed_attendance_requests")
 
     def __repr__(self) -> str:
@@ -82,7 +113,11 @@ class MissedAttendanceRequest(TimestampMixin, Base):
 
     @property
     def reason_label(self) -> str:
-        label = REASON_LABELS.get(self.reason_code, self.reason_code)
+        if not self.reason_code:
+            return "—"
+        label = REASON_LABELS.get(self.reason_code) or DELETE_REASON_LABELS.get(
+            self.reason_code, self.reason_code
+        )
         if self.reason_code == "other" and self.reason_text:
             return f"{label}: {self.reason_text}"
         return label
@@ -90,3 +125,14 @@ class MissedAttendanceRequest(TimestampMixin, Base):
     @property
     def punch_label(self) -> str:
         return PUNCH_LABELS.get(self.punch, "نامشخص")
+
+    @property
+    def effective_action(self) -> str:
+        return self.action or ACTION_CREATE
+
+    @property
+    def action_label(self) -> str:
+        code = self.effective_action
+        if code == ACTION_CHANGE_PUNCH:
+            return f"تغییر به {self.punch_label}"
+        return ACTION_LABELS.get(code, code)

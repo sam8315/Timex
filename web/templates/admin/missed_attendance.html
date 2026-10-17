@@ -35,6 +35,7 @@
                 <tr>
                     <th>کارمند</th>
                     <th>زمان</th>
+                    <th>عمل</th>
                     <th>نوع</th>
                     <th>دلیل</th>
                     <th>ثبت درخواست</th>
@@ -46,10 +47,16 @@
                 <tr>
                     <td>{{ item.employee_name }}</td>
                     <td dir="ltr" class="text-end">{{ item.punch_at_j }}</td>
+                    <td>{{ item.action_label }}</td>
                     <td>{{ item.punch_label }}</td>
                     <td>{{ item.reason_label }}</td>
                     <td dir="ltr" class="text-end">{{ item.created_at_j }}</td>
                     <td class="text-end">
+                        <button type="button"
+                                class="btn btn-sm btn-link nearby-punches"
+                                data-request-id="{{ item.id }}">
+                            تردد اطراف
+                        </button>
                         <form method="post" action="/admin/missed-attendance/{{ item.id }}/approve" class="d-inline">
                             <button type="submit" class="btn btn-sm btn-success">تأیید</button>
                         </form>
@@ -69,4 +76,85 @@
         {% endif %}
     </div>
 </div>
+
+<div class="modal fade" id="nearbyPunchesModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">تردد اطراف</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="بستن"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small mb-3" id="nearbyModalSubtitle"></p>
+                <div id="nearbyModalContent">
+                    <div class="text-center text-muted py-3">در حال بارگذاری...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    var modalEl = document.getElementById('nearbyPunchesModal');
+    if (!modalEl || !window.bootstrap) {
+        return;
+    }
+    var modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    var subtitle = document.getElementById('nearbyModalSubtitle');
+    var content = document.getElementById('nearbyModalContent');
+
+    function renderNearby(data) {
+        subtitle.textContent = (data.employee_name || '') + ' — تاریخ درخواست: ' + (data.request_date_j || '');
+        if (!data.days || !data.days.length) {
+            content.innerHTML = '<p class="text-muted mb-0">ترددی یافت نشد.</p>';
+            return;
+        }
+        var html = '';
+        data.days.forEach(function (day) {
+            html += '<div class="mb-3"><h6 class="mb-2">' + day.label + ' <span class="text-muted small" dir="ltr">(' + day.date_j + ')</span></h6>';
+            if (!day.records || !day.records.length) {
+                html += '<p class="text-muted small">بدون تردد</p>';
+            } else {
+                html += '<div class="table-responsive"><table class="table table-sm table-bordered mb-0"><thead class="table-light"><tr>' +
+                    '<th class="text-center">ساعت</th><th class="text-center">نوع</th></tr></thead><tbody>';
+                day.records.forEach(function (rec) {
+                    var rowClass = rec.highlight ? 'table-warning' : '';
+                    html += '<tr class="' + rowClass + '"><td class="text-center" dir="ltr">' + rec.time + '</td>' +
+                        '<td class="text-center">' + rec.punch_label + '</td></tr>';
+                });
+                html += '</tbody></table></div>';
+            }
+            html += '</div>';
+        });
+        content.innerHTML = html;
+    }
+
+    document.querySelectorAll('.nearby-punches').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var requestId = btn.getAttribute('data-request-id');
+            content.innerHTML = '<div class="text-center text-muted py-3">در حال بارگذاری...</div>';
+            subtitle.textContent = '';
+            modal.show();
+            fetch('/admin/missed-attendance/' + requestId + '/nearby', {credentials: 'same-origin'})
+                .then(function (resp) {
+                    return resp.json().then(function (data) {
+                        if (!resp.ok) {
+                            throw new Error(data.error || 'بارگذاری ممکن نشد');
+                        }
+                        return data;
+                    });
+                })
+                .then(function (data) {
+                    renderNearby(data);
+                })
+                .catch(function (err) {
+                    content.innerHTML = '<p class="text-danger mb-0">' + (err && err.message ? err.message : 'بارگذاری ترددها ممکن نشد.') + '</p>';
+                });
+        });
+    });
+})();
+</script>
 {% endblock %}
