@@ -79,7 +79,20 @@
     .summary-box .summary-item .value {
         font-weight: 700;
         direction: ltr;
-        unicode-bidi: embed;
+        unicode-bidi: isolate;
+    }
+    .summary-box .summary-item .value.mixed {
+        direction: rtl;
+        unicode-bidi: isolate;
+        display: inline-flex;
+        align-items: baseline;
+        gap: 0.35em;
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+    .summary-box .summary-item .value.mixed .num {
+        direction: ltr;
+        unicode-bidi: isolate;
     }
     .summary-box .summary-section {
         margin-top: 12px;
@@ -579,7 +592,13 @@
         <div class="col-md-4">
             <div class="summary-item">
                 <span>📋 موظفی:</span>
-                <span class="value">{{ report.summary.duty_days }} روز / {{ report.summary.duty_hours | hhmm }} ساعت</span>
+                <span class="value mixed">
+                    <span class="num">{{ report.summary.duty_days }}</span>
+                    <span>روز</span>
+                    <span>/</span>
+                    <span class="num">{{ report.summary.duty_hours | hhmm }}</span>
+                    <span>ساعت</span>
+                </span>
             </div>
             <div class="summary-item">
                 <span>✅ حضور:</span>
@@ -608,6 +627,20 @@
             <div class="summary-item">
                 <span>🏖️ تعطیل:</span>
                 <span class="value">{{ report.summary.holiday_days }}</span>
+            </div>
+            <div class="summary-item" title="روزهای جمعه با حضور — جدا از «حضور» روزهای کاری">
+                <span>🕌 جمعه‌کاری:</span>
+                <span class="value">{{ report.summary.friday_work_days }}</span>
+            </div>
+            <div class="summary-item" title="روزهای تعطیل رسمی با حضور — جدا از «حضور» روزهای کاری">
+                <span>🏢 تعطیل‌کاری:</span>
+                <span class="value">{{ report.summary.holiday_work_days }}</span>
+            </div>
+            <div class="summary-section">
+                <div class="summary-item" title="جمع وضعیت‌ها برابر تعداد روزهای ماه">
+                    <span>جمع روزها:</span>
+                    <span class="value">{{ report.summary.status_days_total }}</span>
+                </div>
             </div>
         </div>
 
@@ -675,7 +708,10 @@
                 </div>
                 <div class="summary-item">
                     <span>⚖️ خالص:</span>
-                    <span class="value">{{ report.summary.net_balance_hours | hhmm }} ساعت</span>
+                    <span class="value mixed">
+                        <span class="num">{{ report.summary.net_balance_hours | hhmm }}</span>
+                        <span>ساعت</span>
+                    </span>
                 </div>
             </div>
         </div>

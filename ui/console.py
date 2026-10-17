@@ -5638,9 +5638,12 @@ class ConsoleUI:
         print(f"     جمعه کاری         : {summary['friday_work_days']} روز")
         print(f"     تعطیل کاری        : {summary['holiday_work_days']} روز")
         print(f"     مرخصی             : {summary['leave_days']} روز")
+        print(f"     مأموریت           : {summary['mission_days']} روز")
         print(f"     غیبت              : {summary['absent_days']} روز")
+        print(f"     بدون تردد         : {summary['no_punch_days']} روز")
         print(f"     استراحت           : {summary['rest_days']} روز")
         print(f"     تعطیل             : {summary['holiday_days']} روز")
+        print(f"     جمع روزها         : {summary['status_days_total']} روز")
 
         print(f"\n  ساعات کاری:")
         print(f"     کارکرد ماهانه       : {fmt_hours_summary(summary['total_work_hours'])} ساعت")

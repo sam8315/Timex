@@ -216,8 +216,10 @@ class DetailedExcelExporterV2:
         entry('مرخصی', summary['leave_days'])
         entry('مأموریت', summary['mission_days'])
         entry('غیبت', summary['absent_days'])
+        entry('بدون تردد', summary['no_punch_days'])
         entry('استراحت', summary['rest_days'])
         entry('تعطیل', summary['holiday_days'])
+        entry('جمع روزها', summary['status_days_total'])
 
         section('ساعات کاری')
         entry('کارکرد ماهانه', self._fmt_hours(summary['total_work_hours']))

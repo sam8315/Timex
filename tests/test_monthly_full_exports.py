@@ -219,8 +219,11 @@ class TestExcelExport:
         assert cells['مرخصی'] == summary['leave_days']
         assert cells['مأموریت'] == summary['mission_days']
         assert cells['غیبت'] == summary['absent_days']
+        assert cells['بدون تردد'] == summary['no_punch_days']
         assert cells['استراحت'] == summary['rest_days']
         assert cells['تعطیل'] == summary['holiday_days']
+        assert cells['جمع روزها'] == summary['status_days_total']
+        assert summary['status_days_total'] == summary['month_days']
         assert cells['کارکرد ماهانه'] == _fmt_hours(
             summary['total_work_hours'])
         assert cells['ساعات صبح'] == _fmt_hours(summary['total_morning'])

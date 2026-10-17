@@ -479,6 +479,14 @@ class TestScenarioMatrix:
             assert s['leave_days'] == 2
             assert s['mission_days'] == 1
             assert s['rest_days'] == 1
+            # جمع وضعیت‌های کارت خلاصه = روزهای همان ماه
+            assert s['month_days'] == len(report['days'])
+            assert s['status_days_total'] == s['month_days']
+            assert (
+                s['present_days'] + s['friday_work_days'] + s['holiday_work_days']
+                + s['leave_days'] + s['mission_days'] + s['absent_days']
+                + s['no_punch_days'] + s['rest_days'] + s['holiday_days']
+            ) == s['month_days']
             # internal consistency (جمع‌ها با دقت دقیقه هم‌تراز با لایه گزارش)
             from core.detailed_monthly_report_v2 import (
                 _hours_to_minutes, _minutes_to_hours,

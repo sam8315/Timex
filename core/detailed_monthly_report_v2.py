@@ -776,6 +776,13 @@ class DetailedMonthlyReportGeneratorV2:
             if d['is_holiday'] and not d['is_friday'] and d['person_status'] == 'P'
         ))
 
+        # افراز روزهای ماه: حضور عادی + جمعه‌کاری + تعطیل‌کاری + بقیه وضعیت‌ها
+        status_days_total = (
+            present_days + friday_work_days + holiday_work_days
+            + leave_days + mission_days + absent_days + no_punch_days
+            + rest_days + holiday_days
+        )
+
         return {
             'duty_days': duty_days,
             'duty_hours': total_duty_hours,
@@ -788,6 +795,8 @@ class DetailedMonthlyReportGeneratorV2:
             'mission_days': mission_days,
             'friday_work_days': friday_work_days,
             'holiday_work_days': holiday_work_days,
+            'status_days_total': status_days_total,
+            'month_days': len(days),
             'total_work_hours': total_work_hours,
             'total_punch_hours': grace_totals['total_punch_hours'],
             'total_grace_hours': grace_totals['total_grace_hours'],

@@ -238,8 +238,10 @@ class DetailedPDFExporterV2:
         pdf.set_font(font_name, '', 7)
         lines = [
             f"موظفی: {summary['duty_days']} روز / {self._fmt_hours(summary['duty_hours'])} | "
-            f"حضور: {summary['present_days']} | مرخصی: {summary['leave_days']} | "
-            f"مأموریت: {summary['mission_days']} | غیبت: {summary['absent_days']} | "
+            f"حضور: {summary['present_days']} | جمعه‌کاری: {summary['friday_work_days']} | "
+            f"تعطیل‌کاری: {summary['holiday_work_days']} | جمع روزها: {summary['status_days_total']}",
+            f"مرخصی: {summary['leave_days']} | مأموریت: {summary['mission_days']} | "
+            f"غیبت: {summary['absent_days']} | بدون تردد: {summary['no_punch_days']} | "
             f"استراحت: {summary['rest_days']} | تعطیل: {summary['holiday_days']}",
             f"کارکرد: {self._fmt_hours(summary['total_work_hours'])} | "
             f"صبح: {self._fmt_hours(summary['total_morning'])} | "
