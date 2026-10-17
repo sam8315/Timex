@@ -1,12 +1,17 @@
 """نمایش و محاسبه H:MM برای گزارش تفصیلی / کامل ماهانه."""
-from datetime import date
+from datetime import date, datetime, time
 
 from web.routes.reports import format_hhmm
+from web.services.report_policy_service import (
+    DEFICIT_METHOD_LEGACY,
+    LEGAL_OT_DEFAULTS,
+)
 from core.detailed_monthly_report_v2 import (
     _hours_to_minutes,
     _minutes_to_hours,
     _DEFAULT_DUTY_MINUTES,
     DetailedMonthlyReportGeneratorV2,
+    apply_no_punch_deficit,
 )
 
 
@@ -76,21 +81,92 @@ def test_surplus_deficit_adds_late_early_violations():
     assert _hours_to_minutes(deficit) == 100
 
 
-def test_no_punch_is_not_absence_and_has_no_deficit():
+def _nopunch_day(d, **extra):
+    row = {
+        'date': d,
+        'person_status': 'N',
+        'is_friday': False,
+        'is_holiday': False,
+        'has_duty': True,
+        'surplus': 0.0,
+        'deficit': 0.0,
+        'daily_duty': _minutes_to_hours(440),
+        'base_duty_minutes': 440,
+        'work_hours': 0.0,
+        'morning_hours': 0.0,
+        'evening_hours': 0.0,
+        'night_hours': 0.0,
+        'late_violation_minutes': 0,
+        'early_leave_violation_minutes': 0,
+        'hourly_leave_minutes': 0,
+        'hourly_mission_minutes': 0,
+        'duty_start_time': time(7, 0),
+    }
+    row.update(extra)
+    return row
+
+
+def test_no_punch_is_not_absence_and_follows_elapsed_rules():
+    """بدون تردد غیبت نیست؛ کسری‌اش مثل گزارش قانونی به زمان مرجع بستگی دارد."""
     gen = DetailedMonthlyReportGeneratorV2.__new__(DetailedMonthlyReportGeneratorV2)
     day = date(2024, 4, 2)
     recorded = gen._determine_person_status(day, {day: "A"}, {}, is_day_off=False)
     assert recorded == {"code": "A", "name": "غایب"}
     missing = gen._determine_person_status(day, {}, {}, is_day_off=False)
     assert missing == {"code": "N", "name": "بدون تردد"}
-    surplus, deficit = gen._calculate_surplus_deficit(
-        0.0,
-        False,
-        missing,
-        daily_required_hours=_minutes_to_hours(440),
+
+    ref = datetime(2024, 4, 2, 10, 0)
+    past = _nopunch_day(date(2024, 4, 1))
+    today = _nopunch_day(date(2024, 4, 2))
+    future = _nopunch_day(date(2024, 4, 3))
+    present = _nopunch_day(
+        date(2024, 4, 1),
+        person_status='P',
+        surplus=_minutes_to_hours(40),
+        work_hours=8.0,
     )
-    assert surplus == 0.0
-    assert deficit == 0.0
+    apply_no_punch_deficit(
+        [past, today, future, present], LEGAL_OT_DEFAULTS, ref,
+    )
+    assert past['surplus'] == 0.0
+    assert _hours_to_minutes(past['deficit']) == 440
+    assert _hours_to_minutes(today['deficit']) == 180
+    assert future['deficit'] == 0.0
+    assert _hours_to_minutes(present['surplus']) == 40
+    assert present['deficit'] == 0.0
+
+    with_leave = _nopunch_day(date(2024, 4, 1), hourly_leave_minutes=60)
+    apply_no_punch_deficit([with_leave], LEGAL_OT_DEFAULTS, ref)
+    assert _hours_to_minutes(with_leave['deficit']) == 380
+
+    legacy = _nopunch_day(date(2024, 4, 1))
+    apply_no_punch_deficit(
+        [legacy],
+        {**LEGAL_OT_DEFAULTS, 'deficit_method': DEFICIT_METHOD_LEGACY},
+        ref,
+    )
+    assert legacy['deficit'] == 0.0
+
+
+def test_past_no_punch_deficit_is_included_in_monthly_total():
+    """مرجع بعد از ماه: کسری روزهای بدون تردد در مجموع کسری می‌آید."""
+    gen = DetailedMonthlyReportGeneratorV2.__new__(DetailedMonthlyReportGeneratorV2)
+    short = _nopunch_day(
+        date(2024, 4, 2),
+        person_status='P',
+        work_hours=6.0,
+        deficit=_minutes_to_hours(80),
+        has_duty=True,
+    )
+    missed = _nopunch_day(date(2024, 4, 3))
+    later = _nopunch_day(date(2024, 5, 1))
+    days = [short, missed, later]
+    apply_no_punch_deficit(days, LEGAL_OT_DEFAULTS, datetime(2024, 4, 30, 12, 0))
+    summary = gen._calculate_monthly_summary(days)
+    assert _hours_to_minutes(missed['deficit']) == 440
+    assert later['deficit'] == 0.0
+    assert _hours_to_minutes(summary['total_deficit']) == 440 + 80
+    assert summary['overall_status'] == 'کسری'
 
 
 def test_leave_on_day_off_counts_as_holiday_not_leave():

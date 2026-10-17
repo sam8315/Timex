@@ -10,7 +10,7 @@ Phase 5: محاسبه «تردد واقعی» (Actual Attendance) از Central A
     Policy Engine   → Required Duty / موظفی روز
     Report Layer    → surplus / deficit / weekly overtime / monthly summary
 """
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import List, Dict, Optional
 from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
@@ -66,6 +66,36 @@ def _hours_to_minutes(hours: float) -> int:
 def _minutes_to_hours(minutes: int) -> float:
     """دقیقه → ساعت اعشاری طوری که round(h*60) همان دقیقه را برگرداند."""
     return minutes / 60.0
+
+
+def apply_no_punch_deficit(
+    days: List[Dict],
+    settings: Dict,
+    reference_at: datetime,
+) -> None:
+    """کسری روز بدون تردد را طبق سیاست گزارش اضافه‌کار قانونی روی همان ردیف می‌نویسد.
+
+    روش legacy صفر می‌ماند. در روش تجمیعی روز گذشته موظفی کامل، امروز فقط
+    بخش سپری‌شده، و فردا به بعد صفر است. کارکرد همان روز از کسری کم می‌شود.
+    """
+    from core.legal_overtime_monthly_report import (
+        _unelapsed_minutes,
+        deficit_duty_minutes,
+    )
+    from web.services.report_policy_service import DEFICIT_METHOD_LEGACY
+
+    if settings.get('deficit_method') == DEFICIT_METHOD_LEGACY:
+        return
+    for day in days:
+        if day.get('person_status') != 'N':
+            continue
+        marked = dict(day)
+        marked['is_future_day'] = day['date'] >= reference_at.date()
+        duty_m = deficit_duty_minutes(marked, settings)
+        unelapsed_m = _unelapsed_minutes(duty_m, marked, reference_at)
+        work_m = _hours_to_minutes(day.get('work_hours') or 0)
+        day['surplus'] = 0.0
+        day['deficit'] = _minutes_to_hours(max(0, duty_m - unelapsed_m - work_m))
 
 
 def punch_grace_totals(days: List[Dict]) -> Dict:
@@ -134,7 +164,8 @@ class DetailedMonthlyReportGeneratorV2:
         self,
         user_id: str,
         year: int,
-        month: int
+        month: int,
+        reference_at: Optional[datetime] = None,
     ) -> Dict:
         """تولید گزارش تفصیلی ماهانه برای یک کارمند - نسخه ۲"""
         # محاسبه بازه ماه
@@ -432,6 +463,8 @@ class DetailedMonthlyReportGeneratorV2:
 
             current += timedelta(days=1)
 
+        self._apply_no_punch_deficit(days, year, month, reference_at)
+
         # محاسبه خلاصه ماهانه
         summary = self._calculate_monthly_summary(days)
         sick_warnings = []
@@ -632,6 +665,7 @@ class DetailedMonthlyReportGeneratorV2:
             return _minutes_to_hours(work_m), _minutes_to_hours(violation_m)
 
         if person_status['code'] == 'N':
+            # کسری بدون تردد بعداً با سیاست گزارش قانونی روی ردیف روز نوشته می‌شود.
             return 0.0, 0.0
 
         if person_status['code'] in ['L', 'SL', 'R']:
@@ -648,6 +682,27 @@ class DetailedMonthlyReportGeneratorV2:
 
         # work_m == duty_m
         return 0.0, _minutes_to_hours(violation_m)
+
+    def _apply_no_punch_deficit(
+        self,
+        days: List[Dict],
+        year: int,
+        month: int,
+        reference_at: Optional[datetime] = None,
+    ) -> None:
+        """سیاست ذخیره‌شدهٔ اضافه‌کار قانونی؛ نبودن ردیف یعنی پیش‌فرض کد."""
+        from web.services.report_policy_service import (
+            LEGAL_OVERTIME_MONTHLY,
+            month_end,
+            resolve_report_policy,
+        )
+
+        policy = resolve_report_policy(
+            self.db, LEGAL_OVERTIME_MONTHLY, month_end(year, month),
+        )
+        apply_no_punch_deficit(
+            days, policy.settings, reference_at or datetime.now(),
+        )
 
     def _calculate_monthly_summary(self, days: List[Dict]) -> Dict:
         """محاسبه خلاصه ماهانه (جمع‌ها با دقت دقیقه)."""
