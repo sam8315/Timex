@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}گزارش لیست حقوق #{{ run.id }}{% endblock %}
+{% block title %}{{ report_title }}{% endblock %}
 {% block extra_css %}
 <style>
 #reportSheet { width: 100%; }
@@ -34,26 +34,29 @@ body.report-bw #reportSheet table > tbody > tr.report-grand > td {
     box-shadow: none !important;
 }
 body.report-bw .report-approval-role { color: #000; }
-.report-approvals { margin-top: 6mm; break-inside: auto; }
-.report-approvals-title { font-weight: 700; margin-bottom: 2mm; break-after: avoid; page-break-after: avoid; }
-#reportSheet table.report-approvals-table { width: 100% !important; max-width: 100% !important; table-layout: fixed !important; border-collapse: separate !important; border-spacing: 3mm; border: 0 !important; font-size: 9pt !important; }
+.report-approvals { margin-top: 3mm; }
+#reportSheet table.report-approvals-table { width: 100% !important; max-width: 100% !important; table-layout: fixed !important; border-collapse: separate !important; border-spacing: 1.5mm 1mm; border: 0 !important; font-size: 9pt !important; }
 table.report-approvals-table tr { break-inside: avoid; page-break-inside: avoid; }
-td.report-approval-box {
-    break-inside: avoid;
-    page-break-inside: avoid;
-    border: 0.3mm solid #000;
-    padding: 2mm 2.5mm;
-    height: 28mm;
+td.report-approval-cell,
+td.report-approval-empty {
+    border: 0;
+    padding: 0 1mm;
+    height: auto;
     vertical-align: top;
     overflow-wrap: break-word;
-    background: #fff;
+    background: transparent;
 }
-#reportSheet td.report-approval-box { padding: 2mm 2.5mm !important; white-space: normal !important; overflow: visible !important; border: 0.3mm solid #000 !important; }
-#reportSheet table.report-approvals-table > tbody > tr > td.report-approval-empty,
-body.report-bw #reportSheet table.report-approvals-table > tbody > tr > td.report-approval-empty { border: 0 !important; }
+#reportSheet td.report-approval-cell,
+#reportSheet td.report-approval-empty { padding: 0 1mm !important; white-space: normal !important; overflow: visible !important; border: 0 !important; height: auto !important; }
+body.report-bw #reportSheet table.report-approvals-table { border: 0 !important; border-collapse: separate !important; background: transparent !important; }
+body.report-bw #reportSheet table.report-approvals-table > tbody > tr > td { border: 0 !important; background: transparent !important; }
+td.report-approval-cell { text-align: center; }
+.report-approval-name,
+.report-approval-role,
+.report-approval-time { display: block; text-align: center; }
 .report-approval-name { font-weight: 700; }
 .report-approval-role { font-size: 0.875em; color: #444; }
-.report-approval-time { margin-top: 1.5mm; font-size: 0.9em; }
+.report-approval-time { margin-top: 0.4mm; font-size: 0.9em; }
 @page {
     size: A4 landscape;
     margin: 12mm 10mm 14mm;
@@ -94,7 +97,7 @@ body.report-bw #reportSheet table.report-approvals-table > tbody > tr > td.repor
 {% block content %}
 {% set numeric_fields = ['row', 'user_id'] %}
 <div class="d-flex justify-content-between align-items-center mb-3 no-print">
-    <h4 class="mb-0">گزارش لیست حقوق — {{ period_label }}</h4>
+    <h4 class="mb-0">{{ report_title }}</h4>
     <a href="/admin/payroll/runs/{{ run.id }}" class="btn btn-outline-secondary btn-sm">بازگشت به لیست</a>
 </div>
 <form method="post" action="/admin/payroll/runs/{{ run.id }}/report.pdf" class="d-flex flex-wrap gap-2 align-items-center mb-3 no-print">
@@ -134,9 +137,8 @@ body.report-bw #reportSheet table.report-approvals-table > tbody > tr > td.repor
 </form>
 
 <div id="reportSheet">
-    <div class="mb-2">
-        <div class="fw-bold">گزارش لیست حقوق شماره {{ run.id }}</div>
-        <div class="small text-muted">دوره {{ period_label }}</div>
+    <div class="mb-2 text-center">
+        <div class="fw-bold">{{ report_title }}</div>
     </div>
     <div class="table-responsive">
         <table class="table table-sm table-bordered align-middle mb-0">
@@ -195,13 +197,12 @@ body.report-bw #reportSheet table.report-approvals-table > tbody > tr > td.repor
     </div>
     {% if approvals %}
     <section class="report-approvals" id="reportApprovals">
-        <div class="report-approvals-title">تأییدکنندگان</div>
         <table class="report-approvals-table">
             {% for row in approvals|batch(4, none) %}
             <tr>
                 {% for box in row %}
                 {% if box %}
-                <td class="report-approval-box{% if box.approved %} is-done{% endif %}" data-approved="{{ 1 if box.approved else 0 }}">
+                <td class="report-approval-cell{% if box.approved %} is-done{% endif %}" data-approved="{{ 1 if box.approved else 0 }}">
                     <div class="report-approval-name">{{ box.name }}</div>
                     {% if box.role %}<div class="report-approval-role">{{ box.role }}</div>{% endif %}
                     {% if box.time %}<div class="report-approval-time">{{ box.time }}</div>{% endif %}
@@ -232,9 +233,15 @@ body.report-bw #reportSheet table.report-approvals-table > tbody > tr > td.repor
         probe.style.position = 'absolute';
         probe.style.left = '-10000px';
         probe.style.top = '0';
+        probe.querySelectorAll('table:not(.report-approvals-table)').forEach((table) => {
+            table.style.fontSize = '{{ report.layout.font_pt }}pt';
+        });
+        probe.querySelectorAll('th, td').forEach((cell) => {
+            cell.style.padding = '0.5mm 0.8mm';
+        });
         document.body.appendChild(probe);
-        const usable = 182 * 96 / 25.4;
-        const pages = Math.ceil(probe.scrollHeight / usable);
+        const usable = (210 - 12 - 14) * 96 / 25.4;
+        const pages = Math.ceil((probe.scrollHeight - 1) / usable);
         probe.remove();
         document.body.classList.toggle('print-multipage', pages > 1);
     }

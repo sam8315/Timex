@@ -21,6 +21,7 @@ from models.payroll import (
     PayrollInsuranceExemption,
     PayrollRateSettings,
     SICK_DAY_MODES,
+    DEFAULT_REPORT_ORG_NAME,
 )
 from core.payroll.day_adjustment import DayAdjustmentRule as DayRuleView
 from web.services.payroll.seed import ensure_payroll_defaults
@@ -150,6 +151,12 @@ def get_rate_settings(db: Session) -> PayrollRateSettings:
     row = db.query(PayrollRateSettings).order_by(PayrollRateSettings.id).first()
     assert row is not None
     return row
+
+
+def report_organization_name(db: Session) -> str:
+    """نام سازمان در عنوان گزارش حقوق؛ اگر خالی باشد مقدار پیش‌فرض."""
+    raw = (get_rate_settings(db).report_org_name or "").strip()
+    return raw or DEFAULT_REPORT_ORG_NAME
 
 
 def update_rate_settings(db: Session, **kwargs) -> PayrollRateSettings:

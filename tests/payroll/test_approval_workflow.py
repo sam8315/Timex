@@ -537,12 +537,15 @@ def test_print_html_shows_boxes_in_order_with_times_only_for_approved(client, db
     html = _report_html(client, rid)
     block = html[html.index('id="reportApprovals"'):]
     assert block.index("الف") < block.index("ب") < block.index("ج")
-    assert block.count('class="report-approval-box') == 3
+    assert block.count('class="report-approval-cell') == 3
+    assert "تأییدکنندگان" not in block
+    assert "report-approval-box" not in html and "height: 28mm" not in html
     assert block.count('data-approved="1"') == 1
     assert block.count("report-approval-time") == 1 + 0  # فقط مرحلهٔ تأییدشده (به‌علاوه تعریف CSS در بالا)
-    assert "break-inside: avoid" in html and "height: 28mm" in html
+    assert "break-inside: avoid" in html
     assert "<img" not in block and 'type="file"' not in block
     assert "تاریخ:" not in block and "ساعت:" not in block
+    assert ".report-approval-name,\n.report-approval-role,\n.report-approval-time { display: block; text-align: center; }" in html
 
 
 def test_print_html_legacy_and_draft_runs(client, db, make_user):
@@ -561,7 +564,8 @@ def test_print_html_legacy_and_draft_runs(client, db, make_user):
     db.rollback()
     html = _report_html(client, rid)
     block = html[html.index('id="reportApprovals"'):]
-    assert block.count('class="report-approval-box') == 1 and 'data-approved="1"' in block
+    assert block.count('class="report-approval-cell') == 1 and 'data-approved="1"' in block
+    assert "تأییدکنندگان" not in block
 
     draft = _run(db, status="draft", month=4)
     db.add(PayrollResult(run_id=draft.id, user_id=admin["user_id"], employee_name="ک", gross_earnings=D(1),
@@ -584,6 +588,71 @@ def test_signature_boxes_content():
         {"name": "علی", "role": "حسابدار", "time": "T", "approved": True},
         {"name": "مدیر مالی", "role": "", "time": "", "approved": False},
     ]
+
+
+def test_payroll_report_title_uses_month_name_year_and_org():
+    from web.services.payroll.run_report import payroll_report_title
+
+    assert (
+        payroll_report_title(1405, 6, "درمانگاه امام سجاد(ع)")
+        == "گزارش لیست حقوق شهریور 1405 درمانگاه امام سجاد(ع)"
+    )
+
+
+def test_print_html_title_has_no_number_or_period(client, db, make_user):
+    admin = _ui_login(client, make_user)
+    rid = _report_run(db, admin["user_id"], [("الف", None)])
+    sheet = _report_html(client, rid)
+    sheet = sheet[sheet.index('id="reportSheet"'):]
+    assert "گزارش لیست حقوق اردیبهشت 1390 درمانگاه امام سجاد(ع)" in sheet
+    assert "شماره" not in sheet and "دوره" not in sheet
+
+
+def test_saved_org_name_changes_print_title(client, db, make_user):
+    from web.services.payroll import policy_service
+
+    admin = _ui_login(client, make_user)
+    rid = _report_run(db, admin["user_id"], [("الف", None)])
+    resp = client.post(
+        "/admin/policies/payroll/rates",
+        data={
+            "insurance_employee_pct": "7",
+            "tax_pct": "0",
+            "eidi_payment_month": "12",
+            "bonus_payment_month": "12",
+            "eidi_day_factor": "60",
+            "bonus_day_factor": "0",
+            "hours_per_day": "7.3333",
+            "report_org_name": "کلینیک نمونه",
+        },
+    )
+    assert resp.status_code in (200, 302, 303)
+    db.expire_all()
+    assert policy_service.report_organization_name(db) == "کلینیک نمونه"
+    sheet = _report_html(client, rid)
+    assert "گزارش لیست حقوق اردیبهشت 1390 کلینیک نمونه" in sheet
+    policy_service.update_rate_settings(db, report_org_name="")
+    assert policy_service.report_organization_name(db) == "درمانگاه امام سجاد(ع)"
+
+
+def test_pdf_role_line_is_centered(monkeypatch):
+    from core.payroll import pdf_run_report as mod
+
+    aligns = {}
+    original = mod.RunReportPDF.cell_rtl
+
+    def spy(self, w, h, text, *args, **kwargs):
+        aligns[str(text)] = kwargs.get("align")
+        return original(self, w, h, text, *args, **kwargs)
+
+    monkeypatch.setattr(mod.RunReportPDF, "cell_rtl", spy)
+    mod.build_run_report_pdf(
+        _pdf_report(), title="گزارش", period_label="1405/01", monochrome=True,
+        approvals=[{"name": "علی", "role": "حسابدار", "time": "۱۴۰۵/۰۱/۱۱", "approved": True}],
+    )
+    assert aligns["حسابدار"] == "C"
+    assert aligns["علی"] == "C"
+    assert aligns["۱۴۰۵/۰۱/۱۱"] == "C"
 
 
 def _pdf_text_calls(monkeypatch):
@@ -623,7 +692,8 @@ def test_pdf_includes_approval_boxes_only_with_real_data(monkeypatch):
     data = build_run_report_pdf(_pdf_report(), title="گزارش", period_label="1405/01",
                                 monochrome=True, approvals=boxes)
     assert data.startswith(b"%PDF")
-    assert "تأییدکنندگان" in texts
+    assert "تأییدکنندگان" not in texts
+    assert not any(text.startswith("دوره") for text in texts)
     assert texts.index("علی رضایی") < texts.index("حسابدار") < texts.index("۱۴۰۵/۰۱/۱۱ ۰۸:۳۰")
     assert texts.index("علی رضایی") < texts.index("مدیر مالی")
     # تنها متن زمان‌دار همان مرحلهٔ تأییدشده است؛ مرحلهٔ تأییدنشده زمانی ندارد
@@ -637,7 +707,7 @@ def test_pdf_includes_approval_boxes_only_with_real_data(monkeypatch):
 def test_pdf_boxes_never_split_and_continue_on_next_page():
     from core.payroll import pdf_run_report as mod
 
-    boxes = [{"name": f"نفر {i}", "role": "مرحله", "time": "", "approved": False} for i in range(40)]
+    boxes = [{"name": f"نفر {i}", "role": "مرحله", "time": "", "approved": False} for i in range(80)]
     pdf = mod._render(_pdf_report(), title="گزارش", period_label="1405/01",
                       monochrome=True, page_numbers=False, approvals=boxes)
     assert pdf.page >= 2

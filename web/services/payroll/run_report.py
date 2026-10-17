@@ -8,6 +8,7 @@ from typing import Optional, Sequence
 from sqlalchemy.orm import Session, joinedload
 
 from core.payroll.money import D
+from core.raw_report import JALALI_MONTHS
 from core.payroll.pdf_run_report import (
     A4_LANDSCAPE_USABLE_MM,
     estimate_measure,
@@ -16,6 +17,13 @@ from core.payroll.pdf_run_report import (
     report_specs,
 )
 from core.payroll.payslip_present import payslip_sort_key
+
+
+def payroll_report_title(year_j: int, month_j: int, org_name: str) -> str:
+    """عنوان چاپ: گزارش لیست حقوق {ماه} {سال} {سازمان}."""
+    month = JALALI_MONTHS.get(int(month_j), str(month_j))
+    return f"گزارش لیست حقوق {month} {int(year_j)} {(org_name or '').strip()}"
+
 
 NO_DEPARTMENT = "بدون دپارتمان"
 GROSS = "__GROSS__"

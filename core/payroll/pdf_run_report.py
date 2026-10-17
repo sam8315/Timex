@@ -137,7 +137,7 @@ def build_run_report_pdf(
     monochrome: bool,
     approvals: Optional[Sequence[dict]] = None,
 ) -> bytes:
-    """approvals: کادرهای آمادهٔ نمایش {name, role, time} به ترتیب مراحل گردش؛ زمان فقط برای مرحلهٔ تأییدشده."""
+    """approvals: متن آمادهٔ نمایش {name, role, time} به ترتیب مراحل گردش؛ زمان فقط برای مرحلهٔ تأییدشده."""
     approvals = list(approvals or [])
     numbered = _render(
         report, title=title, period_label=period_label, monochrome=monochrome,
@@ -171,8 +171,6 @@ def _render(report, *, title, period_label, monochrome, page_numbers, approvals=
     pdf.set_line_width(0.35 if monochrome else 0.2)
     pdf.set_font(pdf.font_family_name, "B", 14)
     pdf.cell_rtl(0, 8, title, ln=1, align="C")
-    pdf.set_font(pdf.font_family_name, "", 10)
-    pdf.cell_rtl(0, 6, f"دوره {fa_digits(period_label)}", ln=1, align="C")
     pdf.ln(2)
 
     columns = report.get("columns") or []
@@ -213,62 +211,64 @@ def _render(report, *, title, period_label, monochrome, page_numbers, approvals=
 
 
 APPROVAL_PER_ROW = 4
-APPROVAL_BOX_H = 36.0
-_APPROVAL_GAP = 4.0
-_APPROVAL_HEAD_H = 8.0
+_APPROVAL_GAP = 2.0
+_NAME_LINE_H = 5.0
+_ROLE_LINE_H = 4.5
+_TIME_LINE_H = 5.0
 
 
-def _approval_heading(pdf, text: str) -> None:
-    pdf.set_text_color(0, 0, 0)
+def _approval_entry_height(pdf, item: dict, width: float) -> float:
     pdf.set_font(pdf.font_family_name, "B", 10)
-    pdf.set_x(pdf.l_margin)
-    pdf.cell_rtl(pdf.w - pdf.l_margin - pdf.r_margin, _APPROVAL_HEAD_H, text, ln=1, align="R")
+    height = _NAME_LINE_H * max(len(_wrap(pdf, item.get("name", ""), width)[:2]), 1)
+    role = item.get("role") or ""
+    if role:
+        pdf.set_font(pdf.font_family_name, "", 8.5)
+        height += _ROLE_LINE_H * len(_wrap(pdf, role, width)[:2])
+    if item.get("time"):
+        height += _TIME_LINE_H
+    return height
 
 
 def _approval_boxes(pdf, approvals: Sequence[dict]) -> None:
-    """کادرهای تأییدکنندگان، چهار تا در هر ردیف و از راست به چپ به ترتیب مراحل.
+    """متن تأییدکنندگان، چهار تا در هر ردیف و از راست به چپ به ترتیب مراحل.
 
-    هر ردیف کامل در یک صفحه می‌ماند؛ اگر جا نبود، با عنوان ادامه به صفحهٔ بعد می‌رود.
+    بدون عنوان و بدون کادر. هر ردیف کامل در یک صفحه می‌ماند و فقط اگر جا نباشد به صفحهٔ بعد می‌رود.
     """
     usable = pdf.w - pdf.l_margin - pdf.r_margin
     width = (usable - _APPROVAL_GAP * (APPROVAL_PER_ROW - 1)) / APPROVAL_PER_ROW
-    pdf.ln(5)
-    if pdf.get_y() + _APPROVAL_HEAD_H + APPROVAL_BOX_H > pdf.page_break_trigger:
-        pdf.add_page()
-    _approval_heading(pdf, "تأییدکنندگان")
-    pdf.set_draw_color(0, 0, 0)
+    pdf.ln(3)
     for start in range(0, len(approvals), APPROVAL_PER_ROW):
-        if pdf.get_y() + APPROVAL_BOX_H > pdf.page_break_trigger:
+        chunk = list(approvals[start:start + APPROVAL_PER_ROW])
+        height = max(_approval_entry_height(pdf, item, width) for item in chunk)
+        if pdf.get_y() + height > pdf.page_break_trigger:
             pdf.add_page()
-            _approval_heading(pdf, "تأییدکنندگان (ادامه)")
         y = pdf.get_y()
-        for index, item in enumerate(approvals[start:start + APPROVAL_PER_ROW]):
+        for index, item in enumerate(chunk):
             x = pdf.w - pdf.r_margin - (index + 1) * width - index * _APPROVAL_GAP
-            _approval_box(pdf, x, y, width, item)
-        pdf.set_xy(pdf.l_margin, y + APPROVAL_BOX_H + _APPROVAL_GAP)
+            _approval_text(pdf, x, y, width, item)
+        pdf.set_xy(pdf.l_margin, y + height + _APPROVAL_GAP)
 
 
-def _approval_box(pdf, x: float, y: float, width: float, item: dict) -> None:
-    pdf.rect(x, y, width, APPROVAL_BOX_H, style="D")
-    cursor = y + 2
+def _approval_text(pdf, x: float, y: float, width: float, item: dict) -> None:
+    cursor = y
     pdf.set_text_color(0, 0, 0)
     pdf.set_font(pdf.font_family_name, "B", 10)
     for line in _wrap(pdf, item.get("name", ""), width)[:2]:
         pdf.set_xy(x, cursor)
-        pdf.cell_rtl(width, 5, line, align="R")
-        cursor += 5
+        pdf.cell_rtl(width, _NAME_LINE_H, line, align="C")
+        cursor += _NAME_LINE_H
     role = item.get("role") or ""
     if role:
         pdf.set_font(pdf.font_family_name, "", 8.5)
         for line in _wrap(pdf, role, width)[:2]:
             pdf.set_xy(x, cursor)
-            pdf.cell_rtl(width, 4.5, line, align="R")
-            cursor += 4.5
+            pdf.cell_rtl(width, _ROLE_LINE_H, line, align="C")
+            cursor += _ROLE_LINE_H
     stamp = item.get("time") or ""
     if stamp:
         pdf.set_font(pdf.font_family_name, "", 9)
-        pdf.set_xy(x, cursor + 1)
-        pdf.cell_rtl(width, 5, stamp, align="R")
+        pdf.set_xy(x, cursor)
+        pdf.cell_rtl(width, _TIME_LINE_H, stamp, align="C")
 
 
 def _total_row(pdf, total, columns, fields, widths, monochrome, paint_header, *, grand: bool) -> None:

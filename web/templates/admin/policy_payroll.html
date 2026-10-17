@@ -248,6 +248,10 @@
                         <label class="form-label">ساعت در روز</label>
                         <input name="hours_per_day" class="form-control" dir="ltr" value="{{ rates.hours_per_day|payroll_num }}">
                     </div>
+                    <div class="col-12">
+                        <label class="form-label">نام سازمان در عنوان گزارش</label>
+                        <input name="report_org_name" class="form-control" value="{{ rates.report_org_name or default_report_org_name }}">
+                    </div>
                     <div class="col-12"><button class="btn btn-primary">ذخیره نرخ‌ها</button></div>
                 </form>
             </div>

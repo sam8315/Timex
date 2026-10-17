@@ -26,6 +26,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from models.base import Base, TimestampMixin
 
 
+DEFAULT_REPORT_ORG_NAME = "درمانگاه امام سجاد(ع)"
+
 COMPONENT_KINDS = ("earning", "deduction")
 CALC_MODES = (
     "daily_x_covered",
@@ -126,6 +128,9 @@ class PayrollRateSettings(TimestampMixin, Base):
     )
     hours_per_day: Mapped[Decimal] = mapped_column(
         Numeric(8, 4), nullable=False, default=Decimal("7.3333")
+    )
+    report_org_name: Mapped[Optional[str]] = mapped_column(
+        String(200), nullable=True, default=DEFAULT_REPORT_ORG_NAME
     )
 
 

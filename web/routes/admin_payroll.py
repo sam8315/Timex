@@ -32,6 +32,7 @@ from web.services.payroll.run_report import (
     build_run_report,
     load_report_people,
     parse_report_form,
+    payroll_report_title,
     report_choices,
 )
 from core.payroll.pdf_payslip import build_payslip_pdf
@@ -712,6 +713,15 @@ def _run_report_payload(db: Session, run_id: int, form):
     return run, posted, report, f"{period.year_j}/{period.month_j:02d}"
 
 
+def _report_heading(db: Session, run: PayrollRun) -> str:
+    period = run.period
+    return payroll_report_title(
+        period.year_j,
+        period.month_j,
+        policy_service.report_organization_name(db),
+    )
+
+
 def _report_approvals(db: Session, run: PayrollRun) -> list:
     """کادرهای تأییدکنندگان چاپ/PDF؛ از همان مراحل ثبت‌شدهٔ همین لیست."""
     workflow = approval_service.build_workflows(db, [run])[run.id]
@@ -728,7 +738,7 @@ async def payroll_run_report(
     if not _can_view(db, user):
         return _deny()
     try:
-        run, posted, report, period_label = _run_report_payload(db, run_id, await request.form())
+        run, posted, report, _period_label = _run_report_payload(db, run_id, await request.form())
     except PayrollRunError as exc:
         return _redirect("/admin/payroll", error=str(exc))
     return templates.TemplateResponse(
@@ -740,7 +750,7 @@ async def payroll_run_report(
             "run": run,
             "posted": posted,
             "report": report,
-            "period_label": period_label,
+            "report_title": _report_heading(db, run),
             "approvals": _report_approvals(db, run),
         },
     )
@@ -761,7 +771,7 @@ async def payroll_run_report_pdf(
         return _redirect("/admin/payroll", error=str(exc))
     data = build_run_report_pdf(
         report,
-        title=f"گزارش لیست حقوق شماره {run.id}",
+        title=_report_heading(db, run),
         period_label=period_label,
         monochrome=posted["monochrome"],
         approvals=_report_approvals(db, run),
@@ -807,6 +817,7 @@ async def payroll_policy_page(
             "components": policy_service.list_components(db),
             "annual_laws": policy_service.list_annual_laws(db),
             "rates": policy_service.get_rate_settings(db),
+            "default_report_org_name": policy_service.DEFAULT_REPORT_ORG_NAME,
             "insurance_exemptions": policy_service.list_insurance_exemptions(db),
             "employees": employees,
             "employee_names": {
@@ -933,6 +944,7 @@ async def payroll_rates_save(
     eidi_day_factor: str = Form("60"),
     bonus_day_factor: str = Form("0"),
     hours_per_day: str = Form("7.3333"),
+    report_org_name: str = Form(""),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -948,6 +960,7 @@ async def payroll_rates_save(
             eidi_day_factor=_dec(eidi_day_factor, "ضریب عیدی"),
             bonus_day_factor=_dec(bonus_day_factor, "ضریب پاداش"),
             hours_per_day=_dec(hours_per_day, "ساعت روزانه"),
+            report_org_name=report_org_name.strip(),
         )
         return _redirect("/admin/policies/payroll", success="نرخ‌ها ذخیره شد")
     except PayrollPolicyError as exc:
