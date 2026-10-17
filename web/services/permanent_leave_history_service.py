@@ -120,6 +120,31 @@ def get_used_by_year_from_contract(db: Session, contract_id: int) -> Dict[int, i
     return out
 
 
+def _find_leave_balance(
+    db: Session,
+    *,
+    user_id: str,
+    year: int,
+    leave_type: str,
+) -> Optional[LeaveBalance]:
+    """مانده در DB یا هنوز flush نشده (سشن با autoflush=False)."""
+    for obj in db.new:
+        if (
+            isinstance(obj, LeaveBalance)
+            and obj.user_id == user_id
+            and obj.year == year
+            and obj.leave_type == leave_type
+        ):
+            return obj
+    return db.query(LeaveBalance).filter(
+        and_(
+            LeaveBalance.user_id == user_id,
+            LeaveBalance.year == year,
+            LeaveBalance.leave_type == leave_type,
+        )
+    ).first()
+
+
 def _adjust_balance(
     db: Session,
     *,
@@ -130,13 +155,9 @@ def _adjust_balance(
 ) -> None:
     if delta == 0:
         return
-    bal = db.query(LeaveBalance).filter(
-        and_(
-            LeaveBalance.user_id == user_id,
-            LeaveBalance.year == year,
-            LeaveBalance.leave_type == leave_type,
-        )
-    ).first()
+    bal = _find_leave_balance(
+        db, user_id=user_id, year=year, leave_type=leave_type,
+    )
     if bal:
         # بدون clamp: clear/reapply باید CHARGE را کامل برگرداند
         bal.balance = int(bal.balance or 0) + int(delta)
@@ -180,13 +201,9 @@ def _rebuild_balance_from_ledger(
         .all()
     )
     total = sum(_tx_signed_delta(tx) for tx in txs)
-    bal = db.query(LeaveBalance).filter(
-        and_(
-            LeaveBalance.user_id == user_id,
-            LeaveBalance.year == year,
-            LeaveBalance.leave_type == leave_type,
-        )
-    ).first()
+    bal = _find_leave_balance(
+        db, user_id=user_id, year=year, leave_type=leave_type,
+    )
     if bal:
         bal.balance = total
     elif total != 0:

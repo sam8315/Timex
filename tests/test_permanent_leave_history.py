@@ -20,6 +20,7 @@ from web.services.leave_entitlement_service import jalali_year_bounds_g
 from web.services.leave_service import get_buyback_quota, get_stored_leave_balance
 from web.services.permanent_leave_history_service import (
     HISTORY_PREFIX,
+    _adjust_balance,
     apply_permanent_history,
     build_year_plan,
     get_used_by_year_from_contract,
@@ -115,6 +116,36 @@ class TestBuildYearPlan:
 
 
 class TestApplyPermanentHistory:
+    def test_adjust_balance_merges_pending_rows_without_flush(self, db, make_user):
+        """با autoflush=False نباید برای هر delta یک LeaveBalance جدید ساخته شود."""
+        user = make_user(department="1", balance_al=None, contract_type_code="1")
+        current = jdatetime.date.today().year
+        year = current - 1
+        uid = user["user_id"]
+        db.query(LeaveBalance).filter(
+            LeaveBalance.user_id == uid,
+            LeaveBalance.year == year,
+            LeaveBalance.leave_type == LEAVE_TYPE_AL,
+        ).delete()
+        db.commit()
+
+        _adjust_balance(
+            db, user_id=uid, year=year, leave_type=LEAVE_TYPE_AL, delta=35,
+        )
+        _adjust_balance(
+            db, user_id=uid, year=year, leave_type=LEAVE_TYPE_AL, delta=-35,
+        )
+        pending = [
+            o for o in db.new
+            if isinstance(o, LeaveBalance)
+            and o.user_id == uid
+            and o.year == year
+            and o.leave_type == LEAVE_TYPE_AL
+        ]
+        assert len(pending) == 1
+        assert pending[0].balance == 0
+        db.flush()
+
     def test_charge_use_and_cw_from_1380_style(self, db, make_user):
         user = make_user(department="1", balance_al=None, contract_type_code="1")
         db.query(Contract).filter(Contract.user_id == user["user_id"]).delete()
