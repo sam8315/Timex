@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone
 from decimal import Decimal
-from typing import List, Optional, Sequence
+from typing import List, Optional, Sequence, Tuple
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session, joinedload, selectinload
@@ -58,6 +58,10 @@ from web.services.payroll.policy_service import (
     resolve_amount,
 )
 from web.services.payroll.seed import ensure_payroll_defaults
+from web.services.payroll_audience_settings import (
+    PayrollAudienceMode,
+    load_payroll_audience_mode,
+)
 
 
 class PayrollRunError(Exception):
@@ -296,13 +300,45 @@ def _component_defs(db: Session, selected: Optional[set[str]] = None) -> List[Co
     ]
 
 
-def _eligible_employees(
+def _payroll_month_days(month_start: date, month_end: date) -> int:
+    return (month_end - month_start).days + 1
+
+
+def _payroll_membership_code(emp: Employee, contract: Optional[Contract]) -> Optional[str]:
+    if contract is not None:
+        return contract.contract_type_code
+    return emp.membership_type_code
+
+
+def _contracts_overlapping_month(
+    contracts: Sequence[Contract],
+    month_start: date,
+    month_end: date,
+    membership_type_code: Optional[str],
+    allowed_membership_codes: Optional[set[str]],
+) -> list[Contract]:
+    out: list[Contract] = []
+    for c in contracts:
+        if membership_type_code and c.contract_type_code != membership_type_code:
+            continue
+        if allowed_membership_codes is not None and c.contract_type_code not in allowed_membership_codes:
+            continue
+        if c.start_date > month_end:
+            continue
+        end = c.actual_end_date
+        if end is not None and end < month_start:
+            continue
+        out.append(c)
+    return out
+
+
+def _eligible_employees_by_contract(
     db: Session,
     month_start: date,
     month_end: date,
     membership_type_code: Optional[str],
-    allowed_membership_codes: Optional[set[str]] = None,
-) -> List[tuple[Employee, Contract, int]]:
+    allowed_membership_codes: Optional[set[str]],
+) -> List[Tuple[Employee, Optional[Contract], int]]:
     q = db.query(Contract).filter(Contract.start_date <= month_end)
     if membership_type_code:
         q = q.filter(Contract.contract_type_code == membership_type_code)
@@ -312,8 +348,7 @@ def _eligible_employees(
         q = q.filter(Contract.contract_type_code.in_(allowed_membership_codes))
     contracts = q.all()
 
-    # گروه‌بندی بر اساس user
-    by_user: dict[str, list] = {}
+    by_user: dict[str, list[Contract]] = {}
     for c in contracts:
         end = c.actual_end_date
         if end is not None and end < month_start:
@@ -325,10 +360,10 @@ def _eligible_employees(
         for row in db.query(Employee).filter(Employee.user_id.in_(by_user.keys())).all()
     } if by_user else {}
 
-    out = []
+    out: List[Tuple[Employee, Optional[Contract], int]] = []
     for user_id, user_contracts in by_user.items():
         emp = employees_by_id.get(user_id)
-        if not emp or not emp.is_active:
+        if not emp:
             continue
         covered, best = best_contract_coverage(month_start, month_end, user_contracts)
         if covered <= 0 or best is None:
@@ -336,6 +371,81 @@ def _eligible_employees(
         out.append((emp, best, covered))
     out.sort(key=lambda t: (t[0].last_name or "", t[0].first_name or ""))
     return out
+
+
+def _eligible_employees_by_profile(
+    db: Session,
+    month_start: date,
+    month_end: date,
+    membership_type_code: Optional[str],
+    allowed_membership_codes: Optional[set[str]],
+    *,
+    active_only: bool,
+) -> List[Tuple[Employee, Optional[Contract], int]]:
+    if allowed_membership_codes is not None and not allowed_membership_codes:
+        return []
+
+    q = db.query(Employee)
+    if membership_type_code:
+        q = q.filter(Employee.membership_type_code == membership_type_code)
+    elif allowed_membership_codes is not None:
+        q = q.filter(Employee.membership_type_code.in_(allowed_membership_codes))
+    if active_only:
+        q = q.filter(Employee.is_active.is_(True))
+
+    employees = q.order_by(Employee.last_name, Employee.first_name).all()
+    if not employees:
+        return []
+
+    user_ids = [emp.user_id for emp in employees]
+    all_contracts = (
+        db.query(Contract).filter(Contract.user_id.in_(user_ids)).all()
+        if user_ids
+        else []
+    )
+    by_user: dict[str, list[Contract]] = {}
+    for c in all_contracts:
+        by_user.setdefault(c.user_id, []).append(c)
+
+    month_days = _payroll_month_days(month_start, month_end)
+    out: List[Tuple[Employee, Optional[Contract], int]] = []
+    for emp in employees:
+        user_contracts = _contracts_overlapping_month(
+            by_user.get(emp.user_id, []),
+            month_start,
+            month_end,
+            membership_type_code,
+            allowed_membership_codes,
+        )
+        covered, best = best_contract_coverage(month_start, month_end, user_contracts)
+        if covered > 0 and best is not None:
+            out.append((emp, best, covered))
+        else:
+            out.append((emp, None, month_days))
+    return out
+
+
+def _eligible_employees(
+    db: Session,
+    month_start: date,
+    month_end: date,
+    membership_type_code: Optional[str],
+    allowed_membership_codes: Optional[set[str]] = None,
+    audience_mode: Optional[PayrollAudienceMode] = None,
+) -> List[Tuple[Employee, Optional[Contract], int]]:
+    mode = audience_mode or load_payroll_audience_mode(db)
+    if mode == "contract":
+        return _eligible_employees_by_contract(
+            db, month_start, month_end, membership_type_code, allowed_membership_codes
+        )
+    return _eligible_employees_by_profile(
+        db,
+        month_start,
+        month_end,
+        membership_type_code,
+        allowed_membership_codes,
+        active_only=(mode == "active"),
+    )
 
 
 def shift_roster(db: Session, run: PayrollRun) -> list[dict]:
@@ -357,11 +467,12 @@ def shift_roster(db: Session, run: PayrollRun) -> list[dict]:
     ):
         seen.add(emp.user_id)
         result = results.get(emp.user_id)
+        membership = _payroll_membership_code(emp, contract) or ""
         rows.append(
             {
                 "user_id": emp.user_id,
                 "name": emp.full_name,
-                "membership": contract.contract_type_code,
+                "membership": membership,
                 "covered_days": result.covered_days if result else covered,
                 "work_days": result.shown_work_days if result else None,
                 "month_days": result.month_days if result else month_days,
@@ -813,6 +924,9 @@ def iter_calculate(db: Session, run_id: int, user_ids: Optional[Sequence[str]] =
     min_wage_cache: dict[Optional[str], Decimal] = {}
 
     for index, (emp, contract, covered) in enumerate(employees, start=1):
+        membership_code = _payroll_membership_code(emp, contract)
+        if not membership_code:
+            continue
         yield {
             "index": index,
             "total": total,
@@ -827,7 +941,7 @@ def iter_calculate(db: Session, run_id: int, user_ids: Optional[Sequence[str]] =
                 db,
                 component_code=code,
                 user_id=emp.user_id,
-                membership_type_code=contract.contract_type_code,
+                membership_type_code=membership_code,
                 on_date=payroll_date,
             )
         manuals = {
@@ -845,7 +959,7 @@ def iter_calculate(db: Session, run_id: int, user_ids: Optional[Sequence[str]] =
             EmployeeCalcInput(
                 user_id=emp.user_id,
                 employee_name=emp.full_name,
-                membership_type_code=contract.contract_type_code,
+                membership_type_code=membership_code,
                 hire_date=emp.hire_date,
                 marital_status=emp.marital_status,
                 gender=emp.gender,
@@ -873,16 +987,16 @@ def iter_calculate(db: Session, run_id: int, user_ids: Optional[Sequence[str]] =
                     insurance_exemptions, emp.user_id, payroll_date
                 ),
                 shift_pattern=choices.get(emp.user_id, PATTERN_NONE),
-                overtime_rule=policy_cache.overtime(contract.contract_type_code),
-                deficit_rule=policy_cache.deficit(contract.contract_type_code),
-                shift_rule=policy_cache.shift(contract.contract_type_code),
-                night_rule=policy_cache.night(contract.contract_type_code),
-                friday_rule=policy_cache.friday(contract.contract_type_code),
+                overtime_rule=policy_cache.overtime(membership_code),
+                deficit_rule=policy_cache.deficit(membership_code),
+                shift_rule=policy_cache.shift(membership_code),
+                night_rule=policy_cache.night(membership_code),
+                friday_rule=policy_cache.friday(membership_code),
                 children=_children_of(db, emp.user_id),
-                child_rule=policy_cache.child(contract.contract_type_code),
+                child_rule=policy_cache.child(membership_code),
                 minimum_daily_wage=min_wage_cache.setdefault(
-                    contract.contract_type_code,
-                    _minimum_daily_wage(db, period.year_j, contract.contract_type_code),
+                    membership_code,
+                    _minimum_daily_wage(db, period.year_j, membership_code),
                 ),
             ),
             components,

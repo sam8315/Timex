@@ -20,6 +20,10 @@ from web.services.midnight_bridge_settings import (
     load_midnight_bridge_settings,
     save_midnight_bridge_settings,
 )
+from web.services.payroll_audience_settings import (
+    load_payroll_audience_mode,
+    save_payroll_audience_mode,
+)
 from models.user import User
 from models.region import Region
 from models.policy import Policy, PolicyValue, PolicyAuditLog
@@ -1098,7 +1102,26 @@ async def admin_policies_attendance(
         "policies_by_type": policies_by_type,
         "overrides": override_list,
         "midnight_bridge": load_midnight_bridge_settings(db),
+        "payroll_audience_mode": load_payroll_audience_mode(db),
     })
+
+
+@router.post("/admin/policies/attendance/payroll-audience/save")
+async def admin_policies_attendance_payroll_audience_save(
+    request: Request,
+    mode: str = Form("contract"),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission("manage_policies")),
+):
+    """ذخیره ملاک انتخاب افراد در محاسبه حقوق"""
+    if not has_permission(db, user, 'manage_users'):
+        return RedirectResponse(url="/admin/", status_code=302)
+
+    save_payroll_audience_mode(db, mode, changed_by=user.user_id)
+    return RedirectResponse(
+        url="/admin/policies/attendance?success=saved",
+        status_code=302,
+    )
 
 
 @router.post("/admin/policies/attendance/midnight-bridge/save")

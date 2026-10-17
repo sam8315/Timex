@@ -85,6 +85,53 @@
         </div>
     </div>
 
+    <!-- Payroll audience -->
+    <div class="col-12">
+        <div class="card shadow-sm">
+            <div class="card-header bg-light">
+                <h5 class="mb-0"><i class="bi bi-people text-primary"></i> ملاک انتخاب افراد حقوق</h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted small mb-3">
+                    تعیین می‌کند در محاسبه حقوق، چه کسانی از بین عضویت انتخاب‌شده در لیست حقوق وارد شوند.
+                    بازهٔ «قرارداد معتبر» همان ماه شمسی دورهٔ حقوق است.
+                </p>
+                <form method="post" action="/admin/policies/attendance/payroll-audience/save">
+                    <div class="mb-2">
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="mode" id="payroll_audience_all" value="all"
+                                   {% if payroll_audience_mode == 'all' %}checked{% endif %}>
+                            <label class="form-check-label" for="payroll_audience_all">
+                                <strong>همه</strong> — همه افراد عضویت انتخاب‌شده
+                            </label>
+                        </div>
+                    </div>
+                    <div class="mb-2">
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="mode" id="payroll_audience_active" value="active"
+                                   {% if payroll_audience_mode == 'active' %}checked{% endif %}>
+                            <label class="form-check-label" for="payroll_audience_active">
+                                <strong>فعال</strong> — افراد فعال عضویت انتخاب‌شده
+                            </label>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="mode" id="payroll_audience_contract" value="contract"
+                                   {% if payroll_audience_mode == 'contract' %}checked{% endif %}>
+                            <label class="form-check-label" for="payroll_audience_contract">
+                                <strong>قرارداد معتبر</strong> — افرادی که قرارداد معتبر در بازه حقوق انتخابی دارند
+                            </label>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-save"></i> ذخیره
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <!-- Employee Overrides -->
     <div class="col-12">
         <div class="card shadow-sm">
